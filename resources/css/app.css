@@ -1,0 +1,210 @@
+@import url('https://fonts.googleapis.com/css2?family=Reddit+Sans:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === Design tokens (Amber Design System) ============================== */
+:root {
+    --colors-primary-g100: #fff8e1;
+    --colors-primary-g500: #f5b800;
+    --colors-primary-g600: #d99e00;
+
+    --colors-monochromatic-white: #ffffff;
+    --colors-monochromatic-black: #212427;
+    --colors-monochromatic-g50:  #f5f6f7;
+    --colors-monochromatic-g100: #ecedef;
+    --colors-monochromatic-g200: #d5d7da;
+    --colors-monochromatic-g300: #b2b7bb;
+    --colors-monochromatic-g600: #8d959d;
+    --colors-monochromatic-g900: #212529;
+
+    --colors-system-up:           #15a96f;
+    --colors-system-down:         #e43b3b;
+    --colors-system-success:      #1cc97d;
+    --colors-system-success-bg:   #e8f3ea;
+    --colors-system-error:        #ff4747;
+    --colors-system-error-bg:     #fdeaea;
+    --colors-system-info:         #1a73e8;
+    --colors-system-info-bg:      #e8f0fe;
+
+    --shadow-card:     0 2px 8px rgba(0,0,0,.06);
+    --shadow-elevated: 0 8px 32px rgba(0,0,0,.12);
+    --shadow-dropdown: 0 4px 20px 0 hsla(0,0%,54%,.16), 0 4px 20px 0 rgba(0,0,0,.1);
+
+    --radius-pill: 999px;
+
+    --z-index-dropdown: 100;
+    --z-index-modal:    1000;
+}
+
+[data-theme="dark"] {
+    --colors-monochromatic-white: #1a1d21;
+    --colors-monochromatic-black: #f5f6f7;
+    --colors-monochromatic-g50:   #22262b;
+    --colors-monochromatic-g100:  #2c3138;
+    --colors-monochromatic-g200:  #3a4049;
+    --colors-monochromatic-g300:  #4d5560;
+    --colors-monochromatic-g600:  #aab1ba;
+    --colors-monochromatic-g900:  #f5f6f7;
+    --colors-system-success-bg:   #1a3324;
+    --colors-system-error-bg:     #3a1f1f;
+    --colors-system-info-bg:      #1a2a3a;
+    --shadow-card:     0 2px 8px rgba(0,0,0,.4);
+    --shadow-elevated: 0 8px 32px rgba(0,0,0,.5);
+    --shadow-dropdown: 0 4px 20px rgba(0,0,0,.4);
+}
+
+/* Smooth transition de tema */
+html { color-scheme: light; transition: background-color .15s ease, color .15s ease; }
+[data-theme="dark"] html, html[data-theme="dark"] { color-scheme: dark; }
+
+/* === Base ============================================================= */
+@layer base {
+    html {
+        font-family: 'Reddit Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    body {
+        @apply bg-mono-50 text-mono-900 antialiased;
+    }
+}
+
+/* === Componentes utilitários do design system ========================= */
+@layer components {
+    /* Botões pill */
+    .fx-btn {
+        @apply inline-flex items-center justify-center gap-xxs h-11 px-lg
+               rounded-pill font-semibold text-xs
+               transition-colors duration-150
+               focus:outline-none focus:ring-2 focus:ring-primary-500/40
+               disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+    .fx-btn--sm { @apply h-9 px-md text-xs; }
+
+    .fx-btn--primary  { @apply bg-primary-500 text-mono-900 hover:bg-primary-600; }
+    .fx-btn--standard { @apply bg-transparent text-mono-900 border border-mono-200 hover:border-mono-300; }
+    .fx-btn--mono     { @apply bg-mono-100 text-mono-900 hover:bg-mono-200; }
+    .fx-btn--text     { @apply bg-transparent text-primary-600 hover:text-mono-900 px-xs; }
+    .fx-btn--icon     { @apply h-10 w-10 p-0 rounded-full bg-mono-100 hover:bg-mono-200; }
+
+    /* Inputs pill */
+    .fx-form-field {
+        @apply relative flex items-center gap-xs h-12 px-md
+               rounded-pill bg-mono-white border border-mono-200
+               transition-all duration-150
+               hover:border-mono-300
+               focus-within:border-primary-500
+               focus-within:shadow-[0_0_0_3px_rgba(245,184,0,0.15)];
+    }
+    .fx-form-field input,
+    .fx-form-field select {
+        @apply flex-1 bg-transparent border-0 p-0 text-sm text-mono-900
+               placeholder:text-mono-300
+               focus:outline-none focus:ring-0;
+    }
+    .fx-form-field--success  { @apply border-system-success; }
+    .fx-form-field--error    { @apply border-system-error; }
+    .fx-form-field--disabled { @apply opacity-60 pointer-events-none; }
+    .fx-field-icon { @apply text-mono-300 w-5 h-5 flex-shrink-0; }
+    .fx-form-field:focus-within .fx-field-icon { @apply text-primary-600; }
+
+    .fx-form-helper       { @apply text-xxs text-mono-600 mt-xxs; }
+    .fx-form-helper--error{ @apply text-system-error; }
+    .fx-form-link         { @apply text-xxs text-primary-600 hover:underline; }
+
+    /* Badges */
+    .fx-badge {
+        @apply inline-flex items-center gap-xxxs px-xs py-xxxs
+               rounded-pill text-xxs font-semibold;
+    }
+    .fx-badge--up      { @apply bg-system-success-bg text-system-up; }
+    .fx-badge--down    { @apply bg-system-error-bg text-system-down; }
+    .fx-badge--neutral { @apply bg-mono-100 text-mono-600; }
+
+    .fx-notif-badge {
+        @apply inline-flex items-center justify-center min-w-5 h-5 px-xxs
+               rounded-pill bg-system-error text-mono-white text-xxs font-bold;
+    }
+
+    /* Alertas */
+    .fx-alert         { @apply flex items-center gap-xs px-md py-xs rounded-md text-xs; }
+    .fx-alert--error  { @apply bg-system-error-bg text-system-error; }
+    .fx-alert--success{ @apply bg-system-success-bg text-system-success; }
+    .fx-alert--info   { @apply bg-system-info-bg text-system-info; }
+
+    /* Cards */
+    .fx-card       { @apply bg-mono-white border border-mono-100 rounded-lg shadow-card p-lg; }
+    .fx-card-title { @apply text-md font-semibold text-mono-900 mb-sm; }
+
+    /* Tabela */
+    .fx-table {
+        @apply w-full border-collapse bg-mono-white rounded-lg overflow-hidden shadow-card;
+    }
+    .fx-table thead th {
+        @apply bg-mono-50 text-mono-600 text-xxs font-semibold uppercase tracking-wide
+               px-md py-xs text-left;
+    }
+    .fx-table tbody td {
+        @apply px-md py-sm text-xs text-mono-900 border-b border-mono-100;
+    }
+    .fx-table tbody tr:last-child td { @apply border-b-0; }
+    .fx-table tbody tr:hover { @apply bg-mono-50; }
+
+    /* Pills (filtros) */
+    .fx-pills { @apply flex flex-wrap gap-xs; }
+    .fx-pill {
+        @apply inline-flex items-center px-md h-9 rounded-pill
+               bg-mono-white border border-mono-200 text-xs text-mono-900
+               transition-colors duration-150
+               hover:border-primary-500 hover:text-primary-600;
+    }
+    .fx-pill--active { @apply bg-primary-500 border-primary-500 text-mono-900; }
+
+    /* Menu lateral */
+    .fx-menu-item {
+        @apply flex items-center gap-xs px-md h-11 rounded-md
+               text-xs text-mono-900 transition-colors duration-150
+               hover:bg-mono-100;
+    }
+    .fx-menu-item--active { @apply bg-primary-100 text-primary-600 font-semibold; }
+    .fx-menu-icon { @apply w-5 h-5 flex-shrink-0; }
+    .fx-divider   { @apply my-sm border-0 border-t border-mono-100; }
+
+    /* Toggle */
+    .fx-toggle {
+        @apply appearance-none w-[50px] h-[24px] rounded-pill bg-mono-300
+               relative cursor-pointer transition-colors duration-200
+               checked:bg-primary-500;
+    }
+    .fx-toggle::after {
+        content: '';
+        @apply absolute top-[2px] left-[2px] w-5 h-5 rounded-full
+               bg-mono-white shadow transition-transform duration-200;
+    }
+    .fx-toggle:checked::after { transform: translateX(26px); }
+
+    /* Progress */
+    .fx-progress     { @apply w-full h-2 rounded-pill bg-mono-100 overflow-hidden; }
+    .fx-progress-bar { @apply h-full bg-primary-500 transition-all duration-[400ms]; }
+
+    /* Highlight card */
+    .fx-highlight-card {
+        @apply flex items-center gap-sm px-md py-sm rounded-md
+               hover:bg-mono-50 transition-colors duration-150;
+    }
+
+    /* Toast */
+    .fx-toast {
+        @apply rounded-md px-sm py-xs shadow-elevated bg-mono-white border border-mono-100;
+    }
+    .fx-toast--success { @apply border-l-4 border-l-system-success; }
+    .fx-toast--error   { @apply border-l-4 border-l-system-error; }
+    .fx-toast--info    { @apply border-l-4 border-l-system-info; }
+
+    /* Keyboard shortcut hint */
+    .fx-kbd {
+        @apply inline-flex items-center justify-center min-w-[1.5rem] h-5 px-1.5
+               rounded text-xxs font-medium font-mono
+               bg-mono-100 text-mono-600 border border-mono-200;
+    }
+}

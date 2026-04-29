@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php --version)",
+      "Bash(composer --version)",
+      "Bash(npm --version)",
+      "Bash(laravel --version)",
+      "Bash(composer create-project *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(shopt -s dotglob)",
+      "Bash(mv tmp-laravel/* .)",
+      "Bash(shopt -u dotglob)",
+      "Bash(rmdir tmp-laravel *)",
+      "WebFetch(domain:livewire.laravel.com)",
+      "Bash(composer require *)",
+      "Bash(php artisan *)",
+      "Bash(npm uninstall *)",
+      "Bash(touch app/Domains/__TRACKED_VAR__/.gitkeep)",
+      "Bash(touch resources/views/livewire/__TRACKED_VAR__/.gitkeep)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} | %{time_total}s\\\\n\" http://localhost:8080/)",
+      "Bash(curl -s http://localhost:8080/login)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8080/)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8080/login)",
+      "Bash(curl -s -o /dev/null -w \"Dashboard \\(sem auth\\) HTTP %{http_code}\\\\n\" http://localhost:8080/dashboard)",
+      "Bash(curl -s -o /dev/null -w \"login=%{http_code}\\\\n\" http://localhost:8080/login)",
+      "Bash(curl -s -o /dev/null -w \"register=%{http_code}\\\\n\" http://localhost:8080/register)",
+      "Bash(curl -s -o /dev/null -w \"dashboard=%{http_code}\\\\n\" http://localhost:8080/dashboard)",
+      "Bash(curl -sI http://localhost:8080/login)",
+      "Bash(curl -s -o /dev/null -w \"forgot=%{http_code}\\\\n\" http://localhost:8080/forgot-password)",
+      "Bash(curl -s -o /dev/null -w \"dashboard=%{http_code}\\\\nbanking=%{http_code}\\\\n\" -L --max-redirs 0 http://localhost:8080/dashboard http://localhost:8080/banking)",
+      "Bash(grep -E \"FAIL|Failed asserting|Tests\\\\\\\\\\\\\\\\Feature\" \"C:/Users/JAIROR~1/AppData/Local/Temp/claude/C--Users-Jairo-Rodrigues-PhpstormProjects-app-cassio/bf143048-33a2-4071-8e54-c440a9ac1fe1/tasks/bgf5vj8ss.output\")",
+      "Bash(grep -n 'public string $type\\\\|public function mount' 'C:/Users/Jairo Rodrigues/PhpstormProjects/app-cassio/resources/views/livewire/banking/transactions/form.blade.php')",
+      "Bash(grep -v \"//\")"
+    ]
+  }
+}
