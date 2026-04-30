@@ -3,7 +3,11 @@
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
-Route::view('/', 'welcome');
+Route::get('/', function () {
+    return auth()->check()
+        ? redirect()->route('dashboard')
+        : redirect()->route('login');
+});
 
 Volt::route('dashboard', 'dashboard.index')
     ->middleware(['auth', 'verified', 'inactivity'])
