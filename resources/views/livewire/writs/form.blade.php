@@ -150,15 +150,15 @@ new #[Layout('layouts.app')] class extends Component {
         <section>
             <h3 class="text-md font-semibold mb-xs">Valores e Deságio</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
-                <x-fx.input label="Valor de face" type="number" step="0.01" wire:model.live="face_value" />
-                <x-fx.input label="Valor pago ao cedente" type="number" step="0.01" wire:model.live="paid_amount" />
+                <x-fx.input label="Valor de face" type="text" x-money wire:model.live="face_value" />
+                <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Deságio (calculado)</label>
                     <div class="fx-form-field bg-mono-50">
                         <input type="text" disabled value="{{ number_format($this->discountPreview(), 2, ',', '.') }}%" />
                     </div>
                 </div>
-                <x-fx.input label="Recebimento estimado" type="number" step="0.01" wire:model="estimated_receipt_amount" />
+                <x-fx.input label="Recebimento estimado" type="text" x-money wire:model="estimated_receipt_amount" />
                 <x-fx.input label="Prazo estimado (meses)" type="number" min="0" wire:model="estimated_months" />
             </div>
         </section>

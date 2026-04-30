@@ -163,7 +163,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
             <x-fx.input label="Data" type="date" wire:model="date" />
-            <x-fx.input label="Valor" type="number" step="0.01" wire:model="amount" />
+            <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
         </div>
 
         <x-fx.input label="Descrição" wire:model="description" required />

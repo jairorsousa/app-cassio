@@ -71,7 +71,7 @@ new #[Layout('layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <x-fx.input label="Valor base *" type="number" step="0.01" wire:model="base_amount" />
+                <x-fx.input label="Valor base *" type="text" x-money wire:model="base_amount" />
                 <x-fx.input label="Data de referência *" type="date" wire:model="reference_date" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Conta para pagamento</label>

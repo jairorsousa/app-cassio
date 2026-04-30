@@ -219,7 +219,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <x-fx.input label="Quantidade" type="number" step="0.000001" wire:model="quantity" />
                 <x-fx.input label="Preço unitário" type="number" step="0.0001" wire:model="unit_price" />
             </div>
-            <x-fx.input label="Taxas/corretagem" type="number" step="0.01" wire:model="fees" />
+            <x-fx.input label="Taxas/corretagem" type="text" x-money wire:model="fees" />
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Conta liquidação</label>
                 <select wire:model="bank_account_id" class="fx-form-field">

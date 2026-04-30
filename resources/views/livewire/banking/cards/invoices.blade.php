@@ -121,7 +121,7 @@ new #[Layout('layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <x-fx.input label="Valor" type="number" step="0.01" wire:model="payment_amount" />
+                <x-fx.input label="Valor" type="text" x-money wire:model="payment_amount" />
                 <x-fx.input label="Data" type="date" wire:model="payment_date" />
                 <div class="flex gap-xs">
                     <button type="submit" class="fx-btn fx-btn--primary">Confirmar</button>

@@ -139,7 +139,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                 @if ($transitionTo === 'paid')
                     <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />
-                    <x-fx.input label="Valor pago" type="number" step="0.01" wire:model="transition_paid_amount" />
+                    <x-fx.input label="Valor pago" type="text" x-money wire:model="transition_paid_amount" />
                     <div>
                         <label class="block text-xxs text-mono-600 mb-xxxs">Conta de origem</label>
                         <select wire:model="transition_source_account" class="fx-form-field">
@@ -153,7 +153,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                 @if ($transitionTo === 'finalized')
                     <x-fx.input label="Data do recebimento" type="date" wire:model="transition_finalized_at" />
-                    <x-fx.input label="Valor recebido" type="number" step="0.01" wire:model="transition_actual_receipt_amount" />
+                    <x-fx.input label="Valor recebido" type="text" x-money wire:model="transition_actual_receipt_amount" />
                     <div>
                         <label class="block text-xxs text-mono-600 mb-xxxs">Conta de destino</label>
                         <select wire:model="transition_destination_account" class="fx-form-field">

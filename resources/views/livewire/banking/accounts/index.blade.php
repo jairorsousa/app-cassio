@@ -135,7 +135,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="cash">Caixa</option>
                 </select>
             </div>
-            <x-fx.input label="Saldo inicial" type="number" step="0.01" wire:model="initial_balance" />
+            <x-fx.input label="Saldo inicial" type="text" x-money wire:model="initial_balance" />
             <label class="flex items-center gap-xs text-sm">
                 <input type="checkbox" wire:model="status" /> Ativa
             </label>

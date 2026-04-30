@@ -156,7 +156,7 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.input label="Data" type="date" wire:model="expenseDate" />
             <x-fx.input label="Descrição" wire:model="description" required />
             <div class="grid grid-cols-2 gap-xs">
-                <x-fx.input label="Total" type="number" step="0.01" wire:model.live="total_amount" />
+                <x-fx.input label="Total" type="text" x-money wire:model.live="total_amount" />
                 <x-fx.input label="% aplicado" type="number" step="0.001" min="0" max="100" wire:model.live="applied_percentage" />
             </div>
             <div class="text-xxs text-mono-600">

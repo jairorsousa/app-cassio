@@ -173,7 +173,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
             <x-fx.input label="Descrição" wire:model="description" required />
-            <x-fx.input label="Valor" type="number" step="0.01" wire:model="amount" />
+            <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Frequência</label>
                 <select wire:model="frequency" class="fx-form-field">

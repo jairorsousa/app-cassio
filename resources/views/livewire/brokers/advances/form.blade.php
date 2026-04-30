@@ -60,7 +60,7 @@ new #[Layout('layouts.app')] class extends Component {
     <form wire:submit="save" class="flex flex-col gap-md">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
             <x-fx.input label="Data *" type="date" wire:model="date" />
-            <x-fx.input label="Valor *" type="number" step="0.01" wire:model="amount" />
+            <x-fx.input label="Valor *" type="text" x-money wire:model="amount" />
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Forma de pagamento</label>
                 <select wire:model="payment_method" class="fx-form-field">

@@ -129,7 +129,7 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.input label="Nome" wire:model="name" required />
             <x-fx.input label="Bandeira" wire:model="brand" />
             <x-fx.input label="Banco emissor" wire:model="bank" />
-            <x-fx.input label="Limite" type="number" step="0.01" wire:model="limit" />
+            <x-fx.input label="Limite" type="text" x-money wire:model="limit" />
             <div class="grid grid-cols-2 gap-xs">
                 <x-fx.input label="Dia fechamento" type="number" min="1" max="31" wire:model="closing_day" />
                 <x-fx.input label="Dia vencimento" type="number" min="1" max="31" wire:model="due_day" />

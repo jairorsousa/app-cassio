@@ -146,7 +146,7 @@ new #[Layout('layouts.app')] class extends Component {
         <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Novo' }} aporte</h3>
         <form wire:submit="save" class="flex flex-col gap-sm">
             <x-fx.input label="Data" type="date" wire:model="contribDate" />
-            <x-fx.input label="Valor" type="number" step="0.01" wire:model="amount" />
+            <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
                 <select wire:model="contribStatus" class="fx-form-field">
