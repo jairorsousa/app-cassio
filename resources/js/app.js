@@ -65,11 +65,14 @@ document.addEventListener('alpine:init', () => {
     Alpine.directive('money', (el, {}, { cleanup }) => {
         el.type = 'text';
         el.autocomplete = 'off';
+        el.placeholder = '0,00';
 
-        // Formata valor inicial do servidor ("1234.56" → "1.234,56", "0" → "")
+        // Formata valor inicial do servidor ("1234.56" → "1.234,56", "0" → "0,00")
         if (el.value !== '') {
             const n = parseFloat(el.value);
-            if (!isNaN(n)) el.value = n > 0 ? formatBRL(n) : '';
+            if (!isNaN(n)) el.value = formatBRL(n);
+        } else {
+            el.value = '0,00';
         }
 
         let processing = false;
@@ -88,7 +91,7 @@ document.addEventListener('alpine:init', () => {
             el.dispatchEvent(new Event('input', { bubbles: true }));
 
             // Restaura exibição formatada com vírgula
-            el.value = num > 0 ? formatBRL(num) : '';
+            el.value = formatBRL(num);
             el.setSelectionRange(el.value.length, el.value.length);
 
             processing = false;
@@ -119,10 +122,10 @@ document.addEventListener('livewire:initialized', () => {
         succeed(() => {
             requestAnimationFrame(() => {
                 document.querySelectorAll('[x-money]').forEach(el => {
-                    // Já formatado (tem vírgula) ou vazio → não mexer
-                    if (!el.value || el.value.includes(',')) return;
+                    // Já formatado (tem vírgula)
+                    if (el.value && el.value.includes(',')) return;
                     const num = parseFloat(el.value);
-                    if (!isNaN(num)) el.value = num > 0 ? formatBRL(num) : '';
+                    if (!isNaN(num)) el.value = formatBRL(num);
                 });
             });
         });
