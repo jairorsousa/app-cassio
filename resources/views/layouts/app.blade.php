@@ -32,89 +32,124 @@
 
             {{-- Top navbar --}}
             <header class="bg-mono-white border-b border-mono-100 shrink-0">
-                <div class="flex items-center h-16 px-lg gap-lg">
+                <div class="flex items-center h-16 px-lg gap-md">
 
                     {{-- Logo --}}
-                    <a href="{{ route('dashboard') }}" class="flex items-center gap-xs shrink-0">
+                    <a href="{{ route('dashboard') }}" class="flex items-center gap-xs shrink-0 mr-sm">
                         <span class="inline-block w-8 h-8 rounded-full bg-primary-500"></span>
-                        <span class="font-bold text-md text-mono-900 whitespace-nowrap">Cassio Finance</span>
+                        <span class="font-bold text-sm text-mono-900 whitespace-nowrap">Cassio Finance</span>
                     </a>
 
                     {{-- Nav links --}}
                     <nav class="flex-1 flex items-center gap-xxxs">
 
-                        <x-fx.menu-item href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">
+                        @php
+                            $navItem = 'flex items-center gap-1 px-3 h-9 rounded-md text-xs font-medium transition-colors duration-150 whitespace-nowrap hover:bg-mono-100 text-mono-900';
+                            $navItemActive = 'bg-primary-100 text-primary-600 font-semibold';
+                            $navItemInactive = 'text-mono-900 hover:bg-mono-100';
+                            $dropdownItem = 'flex items-center px-3 h-9 rounded-md text-xs transition-colors duration-150 whitespace-nowrap hover:bg-mono-100 text-mono-900';
+                            $dropdownItemActive = 'bg-primary-100 text-primary-600 font-semibold';
+                        @endphp
+
+                        {{-- Dashboard --}}
+                        <a href="{{ route('dashboard') }}"
+                           class="{{ $navItem }} {{ request()->routeIs('dashboard') ? $navItemActive : $navItemInactive }}">
                             🏠 Dashboard
-                        </x-fx.menu-item>
+                        </a>
 
                         {{-- Financeiro --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
-                            <x-fx.menu-item href="{{ route('banking.dashboard') }}" :active="request()->routeIs('banking.*')">
+                            <a href="{{ route('banking.dashboard') }}"
+                               class="{{ $navItem }} {{ request()->routeIs('banking.*') ? $navItemActive : $navItemInactive }}">
                                 💰 Financeiro
-                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </x-fx.menu-item>
-                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-48 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
-                                <x-fx.menu-item href="{{ route('banking.transactions.index') }}" :active="request()->routeIs('banking.transactions.*')">Lançamentos</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('banking.accounts.index') }}" :active="request()->routeIs('banking.accounts.*')">Contas</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('banking.cards.index') }}" :active="request()->routeIs('banking.cards.*')">Cartões</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('banking.recurring.index') }}" :active="request()->routeIs('banking.recurring.*')">Recorrências</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('banking.categories.index') }}" :active="request()->routeIs('banking.categories.*')">Categorias</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('banking.reports.cashflow') }}" :active="request()->routeIs('banking.reports.*')">Fluxo de caixa</x-fx.menu-item>
+                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </a>
+                            <div x-show="open" x-cloak
+                                 class="absolute top-full left-0 mt-1 w-48 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
+                                 style="box-shadow: var(--shadow-dropdown)">
+                                <a href="{{ route('banking.transactions.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.transactions.*') ? $dropdownItemActive : '' }}">Lançamentos</a>
+                                <a href="{{ route('banking.accounts.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.accounts.*') ? $dropdownItemActive : '' }}">Contas</a>
+                                <a href="{{ route('banking.cards.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.cards.*') ? $dropdownItemActive : '' }}">Cartões</a>
+                                <a href="{{ route('banking.recurring.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.recurring.*') ? $dropdownItemActive : '' }}">Recorrências</a>
+                                <a href="{{ route('banking.categories.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.categories.*') ? $dropdownItemActive : '' }}">Categorias</a>
+                                <a href="{{ route('banking.reports.cashflow') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.reports.*') ? $dropdownItemActive : '' }}">Fluxo de caixa</a>
                             </div>
                         </div>
 
                         {{-- Corretores --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
-                            <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.*')">
+                            <a href="{{ route('brokers.index') }}"
+                               class="{{ $navItem }} {{ request()->routeIs('brokers.*') ? $navItemActive : $navItemInactive }}">
                                 👥 Corretores
-                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </x-fx.menu-item>
-                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
-                                <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.index')">Lista</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('brokers.create') }}" :active="request()->routeIs('brokers.create')">Novo</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('brokers.case-types.index') }}" :active="request()->routeIs('brokers.case-types.*')">Tipos de caso</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('brokers.reports') }}" :active="request()->routeIs('brokers.reports')">Relatórios</x-fx.menu-item>
+                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </a>
+                            <div x-show="open" x-cloak
+                                 class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
+                                 style="box-shadow: var(--shadow-dropdown)">
+                                <a href="{{ route('brokers.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.index') ? $dropdownItemActive : '' }}">Lista</a>
+                                <a href="{{ route('brokers.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.create') ? $dropdownItemActive : '' }}">Novo</a>
+                                <a href="{{ route('brokers.case-types.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.case-types.*') ? $dropdownItemActive : '' }}">Tipos de caso</a>
+                                <a href="{{ route('brokers.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.reports') ? $dropdownItemActive : '' }}">Relatórios</a>
                             </div>
                         </div>
 
                         {{-- Sociedade --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
-                            <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.*')">
+                            <a href="{{ route('partnership.index') }}"
+                               class="{{ $navItem }} {{ request()->routeIs('partnership.*') ? $navItemActive : $navItemInactive }}">
                                 🏢 Sociedade
-                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </x-fx.menu-item>
-                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
-                                <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.index')">Lista</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('partnership.create') }}" :active="request()->routeIs('partnership.create')">Nova</x-fx.menu-item>
+                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </a>
+                            <div x-show="open" x-cloak
+                                 class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
+                                 style="box-shadow: var(--shadow-dropdown)">
+                                <a href="{{ route('partnership.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.index') ? $dropdownItemActive : '' }}">Lista</a>
+                                <a href="{{ route('partnership.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.create') ? $dropdownItemActive : '' }}">Nova</a>
                             </div>
                         </div>
 
                         {{-- Investimentos --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
-                            <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.*')">
+                            <a href="{{ route('investments.dashboard') }}"
+                               class="{{ $navItem }} {{ request()->routeIs('investments.*') ? $navItemActive : $navItemInactive }}">
                                 📈 Investimentos
-                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </x-fx.menu-item>
-                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
-                                <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.dashboard')">Visão geral</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('investments.positions') }}" :active="request()->routeIs('investments.positions')">Posições</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('investments.operations.index') }}" :active="request()->routeIs('investments.operations.*')">Operações</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('investments.dividends.index') }}" :active="request()->routeIs('investments.dividends.*')">Proventos</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('investments.assets.index') }}" :active="request()->routeIs('investments.assets.*')">Ativos</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('investments.reports') }}" :active="request()->routeIs('investments.reports')">Rentabilidade</x-fx.menu-item>
+                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </a>
+                            <div x-show="open" x-cloak
+                                 class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
+                                 style="box-shadow: var(--shadow-dropdown)">
+                                <a href="{{ route('investments.dashboard') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dashboard') ? $dropdownItemActive : '' }}">Visão geral</a>
+                                <a href="{{ route('investments.positions') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.positions') ? $dropdownItemActive : '' }}">Posições</a>
+                                <a href="{{ route('investments.operations.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.operations.*') ? $dropdownItemActive : '' }}">Operações</a>
+                                <a href="{{ route('investments.dividends.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dividends.*') ? $dropdownItemActive : '' }}">Proventos</a>
+                                <a href="{{ route('investments.assets.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.assets.*') ? $dropdownItemActive : '' }}">Ativos</a>
+                                <a href="{{ route('investments.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.reports') ? $dropdownItemActive : '' }}">Rentabilidade</a>
                             </div>
                         </div>
 
                         {{-- Requisitórios --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
-                            <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.*')">
+                            <a href="{{ route('writs.kanban') }}"
+                               class="{{ $navItem }} {{ request()->routeIs('writs.*') ? $navItemActive : $navItemInactive }}">
                                 ⚖️ Requisitórios
-                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            </x-fx.menu-item>
-                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
-                                <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.kanban')">Pipeline</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('writs.create') }}" :active="request()->routeIs('writs.create')">Novo</x-fx.menu-item>
-                                <x-fx.menu-item href="{{ route('writs.reports') }}" :active="request()->routeIs('writs.reports')">Relatórios</x-fx.menu-item>
+                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </a>
+                            <div x-show="open" x-cloak
+                                 class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
+                                 style="box-shadow: var(--shadow-dropdown)">
+                                <a href="{{ route('writs.kanban') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.kanban') ? $dropdownItemActive : '' }}">Pipeline</a>
+                                <a href="{{ route('writs.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.create') ? $dropdownItemActive : '' }}">Novo</a>
+                                <a href="{{ route('writs.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.reports') ? $dropdownItemActive : '' }}">Relatórios</a>
                             </div>
                         </div>
 
@@ -135,9 +170,11 @@
                         </button>
 
                         {{-- Configurações --}}
-                        <x-fx.menu-item href="{{ route('profile') }}" :active="request()->routeIs('profile')">
+                        <a href="{{ route('profile') }}"
+                           class="fx-btn fx-btn--icon {{ request()->routeIs('profile') ? 'bg-primary-100' : '' }}"
+                           title="Configurações">
                             ⚙️
-                        </x-fx.menu-item>
+                        </a>
 
                         {{-- User dropdown --}}
                         <x-dropdown align="right" width="48">
