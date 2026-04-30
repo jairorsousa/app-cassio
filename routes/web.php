@@ -71,4 +71,11 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('
     Volt::route('/reports/overview', 'brokers.reports')->name('reports');
 });
 
+Route::middleware(['auth', 'verified', 'inactivity'])->prefix('contacts')->name('contacts.')->group(function () {
+    Volt::route('/', 'contacts.index')->name('index');
+    Volt::route('/create', 'contacts.form')->name('create');
+    Volt::route('/{contact}/edit', 'contacts.form')->name('edit');
+    Volt::route('/{contact}', 'contacts.show')->name('show');
+});
+
 require __DIR__.'/auth.php';

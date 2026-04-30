@@ -92,6 +92,12 @@
                             </div>
                         </div>
 
+                        {{-- Contatos --}}
+                        <a href="{{ route('contacts.index') }}"
+                           class="{{ $navItem }} {{ request()->routeIs('contacts.*') ? $navItemActive : $navItemInactive }}">
+                            👤 Contatos
+                        </a>
+
                         {{-- Sociedade --}}
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('partnership.index') }}"
