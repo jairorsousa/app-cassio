@@ -67,7 +67,9 @@ new #[Layout('layouts.app')] class extends Component {
         $this->writ->history()->delete();
 
         // Remove logs de atividade (Spatie)
-        $this->writ->activities()->delete();
+        \Spatie\Activitylog\Models\Activity::where('subject_type', Writ::class)
+            ->where('subject_id', $this->writ->id)
+            ->delete();
 
         // Exclui permanentemente o requisitório
         $this->writ->forceDelete();

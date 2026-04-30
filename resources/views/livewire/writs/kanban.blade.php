@@ -35,7 +35,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $writ = Writ::findOrFail($id);
         $writ->transactions()->delete();
         $writ->history()->delete();
-        $writ->activities()->delete();
+        \Spatie\Activitylog\Models\Activity::where('subject_type', Writ::class)
+            ->where('subject_id', $writ->id)
+            ->delete();
         $writ->forceDelete();
         session()->flash('status', 'Requisitório excluído.');
     }
