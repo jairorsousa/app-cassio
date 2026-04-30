@@ -13,7 +13,6 @@ function formatBRL(value) {
 function parseBRL(value) {
     if (value === null || value === undefined || value === '') return 0;
     const s = String(value);
-    // "1.234,56" → 1234.56
     if (s.includes(',')) return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
     return parseFloat(s) || 0;
 }
@@ -68,28 +67,48 @@ document.addEventListener('alpine:init', () => {
         el.autocomplete = 'off';
 
         // Formata valor inicial vindo do servidor (ex: "1234.56" → "1.234,56")
-        if (el.value !== '') el.value = formatBRL(el.value);
+        if (el.value !== '') {
+            const n = parseFloat(el.value);
+            if (!isNaN(n)) el.value = formatBRL(n);
+        }
 
-        // No foco: exibe número puro para o wire:model ler corretamente
-        const onFocus = () => {
-            const num = parseBRL(el.value);
-            el.value = num ? String(num) : '';
+        let processing = false;
+
+        // Máscara em tempo real enquanto o usuário digita
+        const onInput = () => {
+            if (processing) return;
+            processing = true;
+
+            const digits = el.value.replace(/\D/g, '');
+            const num = digits ? parseInt(digits, 10) / 100 : 0;
+            const raw = num ? String(num) : '';
+            const formatted = num ? formatBRL(num) : '';
+
+            // Expõe o valor numérico bruto para o Livewire ler (wire:model.live)
+            el.value = raw;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+
+            // Restaura a exibição formatada
+            el.value = formatted;
+            el.setSelectionRange(formatted.length, formatted.length);
+
+            processing = false;
         };
 
-        // No blur: aguarda Livewire ler o valor bruto, depois formata
-        const onBlur = () => {
-            setTimeout(() => {
-                const num = parseFloat(el.value) || parseBRL(el.value);
-                el.value = num ? formatBRL(num) : '';
-            }, 0);
+        // Antes do submit do form: garante valor bruto para wire:model diferido
+        const form = el.closest('form');
+        const onSubmit = () => {
+            const digits = el.value.replace(/\D/g, '');
+            const num = digits ? parseInt(digits, 10) / 100 : 0;
+            el.value = num ? String(num) : '0';
         };
 
-        el.addEventListener('focus', onFocus);
-        el.addEventListener('blur', onBlur);
+        el.addEventListener('input', onInput);
+        if (form) form.addEventListener('submit', onSubmit, { capture: true });
 
         cleanup(() => {
-            el.removeEventListener('focus', onFocus);
-            el.removeEventListener('blur', onBlur);
+            el.removeEventListener('input', onInput);
+            if (form) form.removeEventListener('submit', onSubmit, { capture: true });
         });
     });
 });
