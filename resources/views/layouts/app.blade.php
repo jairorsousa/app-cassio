@@ -61,10 +61,7 @@
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('banking.dashboard') }}"
                                class="{{ $navItem }} {{ request()->routeIs('banking.*') ? $navItemActive : $navItemInactive }}">
-                                💰 Financeiro
-                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
+                                💰 Financeiro <span class="opacity-40 text-xxs">▾</span>
                             </a>
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-48 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
@@ -82,10 +79,7 @@
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('brokers.index') }}"
                                class="{{ $navItem }} {{ request()->routeIs('brokers.*') ? $navItemActive : $navItemInactive }}">
-                                👥 Corretores
-                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
+                                👥 Corretores <span class="opacity-40 text-xxs">▾</span>
                             </a>
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
@@ -101,10 +95,7 @@
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('partnership.index') }}"
                                class="{{ $navItem }} {{ request()->routeIs('partnership.*') ? $navItemActive : $navItemInactive }}">
-                                🏢 Sociedade
-                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
+                                🏢 Sociedade <span class="opacity-40 text-xxs">▾</span>
                             </a>
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
@@ -118,10 +109,7 @@
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('investments.dashboard') }}"
                                class="{{ $navItem }} {{ request()->routeIs('investments.*') ? $navItemActive : $navItemInactive }}">
-                                📈 Investimentos
-                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
+                                📈 Investimentos <span class="opacity-40 text-xxs">▾</span>
                             </a>
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
@@ -139,10 +127,7 @@
                         <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
                             <a href="{{ route('writs.kanban') }}"
                                class="{{ $navItem }} {{ request()->routeIs('writs.*') ? $navItemActive : $navItemInactive }}">
-                                ⚖️ Requisitórios
-                                <svg class="w-3 h-3 opacity-40 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
+                                ⚖️ Requisitórios <span class="opacity-40 text-xxs">▾</span>
                             </a>
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
