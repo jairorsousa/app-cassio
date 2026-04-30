@@ -44,11 +44,12 @@
                     <nav class="flex-1 flex items-center gap-xxxs">
 
                         @php
-                            $navItem = 'flex items-center gap-1 px-3 h-9 rounded-md text-xs font-medium transition-colors duration-150 whitespace-nowrap hover:bg-mono-100 text-mono-900';
+                            $navItem = 'flex items-center gap-1 px-3 h-9 rounded-md text-xs font-medium transition-colors duration-150 whitespace-nowrap';
                             $navItemActive = 'bg-primary-100 text-primary-600 font-semibold';
                             $navItemInactive = 'text-mono-900 hover:bg-mono-100';
-                            $dropdownItem = 'flex items-center px-3 h-9 rounded-md text-xs transition-colors duration-150 whitespace-nowrap hover:bg-mono-100 text-mono-900';
+                            $dropdownItem = 'flex items-center px-3 h-9 rounded-md text-xs transition-colors duration-150 whitespace-nowrap';
                             $dropdownItemActive = 'bg-primary-100 text-primary-600 font-semibold';
+                            $dropdownItemInactive = 'text-mono-900 hover:bg-mono-100';
                         @endphp
 
                         {{-- Dashboard --}}
@@ -66,12 +67,12 @@
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-48 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
                                  style="box-shadow: var(--shadow-dropdown)">
-                                <a href="{{ route('banking.transactions.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.transactions.*') ? $dropdownItemActive : '' }}">Lançamentos</a>
-                                <a href="{{ route('banking.accounts.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.accounts.*') ? $dropdownItemActive : '' }}">Contas</a>
-                                <a href="{{ route('banking.cards.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.cards.*') ? $dropdownItemActive : '' }}">Cartões</a>
-                                <a href="{{ route('banking.recurring.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.recurring.*') ? $dropdownItemActive : '' }}">Recorrências</a>
-                                <a href="{{ route('banking.categories.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.categories.*') ? $dropdownItemActive : '' }}">Categorias</a>
-                                <a href="{{ route('banking.reports.cashflow') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.reports.*') ? $dropdownItemActive : '' }}">Fluxo de caixa</a>
+                                <a href="{{ route('banking.transactions.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.transactions.*') ? $dropdownItemActive : $dropdownItemInactive }}">Lançamentos</a>
+                                <a href="{{ route('banking.accounts.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.accounts.*') ? $dropdownItemActive : $dropdownItemInactive }}">Contas</a>
+                                <a href="{{ route('banking.cards.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.cards.*') ? $dropdownItemActive : $dropdownItemInactive }}">Cartões</a>
+                                <a href="{{ route('banking.recurring.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.recurring.*') ? $dropdownItemActive : $dropdownItemInactive }}">Recorrências</a>
+                                <a href="{{ route('banking.categories.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.categories.*') ? $dropdownItemActive : $dropdownItemInactive }}">Categorias</a>
+                                <a href="{{ route('banking.reports.cashflow') }}" class="{{ $dropdownItem }} {{ request()->routeIs('banking.reports.*') ? $dropdownItemActive : $dropdownItemInactive }}">Fluxo de caixa</a>
                             </div>
                         </div>
 
@@ -84,10 +85,10 @@
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
                                  style="box-shadow: var(--shadow-dropdown)">
-                                <a href="{{ route('brokers.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.index') ? $dropdownItemActive : '' }}">Lista</a>
-                                <a href="{{ route('brokers.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.create') ? $dropdownItemActive : '' }}">Novo</a>
-                                <a href="{{ route('brokers.case-types.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.case-types.*') ? $dropdownItemActive : '' }}">Tipos de caso</a>
-                                <a href="{{ route('brokers.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.reports') ? $dropdownItemActive : '' }}">Relatórios</a>
+                                <a href="{{ route('brokers.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.index') ? $dropdownItemActive : $dropdownItemInactive }}">Lista</a>
+                                <a href="{{ route('brokers.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.create') ? $dropdownItemActive : $dropdownItemInactive }}">Novo</a>
+                                <a href="{{ route('brokers.case-types.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.case-types.*') ? $dropdownItemActive : $dropdownItemInactive }}">Tipos de caso</a>
+                                <a href="{{ route('brokers.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.reports') ? $dropdownItemActive : $dropdownItemInactive }}">Relatórios</a>
                             </div>
                         </div>
 
@@ -100,8 +101,8 @@
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
                                  style="box-shadow: var(--shadow-dropdown)">
-                                <a href="{{ route('partnership.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.index') ? $dropdownItemActive : '' }}">Lista</a>
-                                <a href="{{ route('partnership.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.create') ? $dropdownItemActive : '' }}">Nova</a>
+                                <a href="{{ route('partnership.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.index') ? $dropdownItemActive : $dropdownItemInactive }}">Lista</a>
+                                <a href="{{ route('partnership.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.create') ? $dropdownItemActive : $dropdownItemInactive }}">Nova</a>
                             </div>
                         </div>
 
@@ -114,12 +115,12 @@
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
                                  style="box-shadow: var(--shadow-dropdown)">
-                                <a href="{{ route('investments.dashboard') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dashboard') ? $dropdownItemActive : '' }}">Visão geral</a>
-                                <a href="{{ route('investments.positions') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.positions') ? $dropdownItemActive : '' }}">Posições</a>
-                                <a href="{{ route('investments.operations.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.operations.*') ? $dropdownItemActive : '' }}">Operações</a>
-                                <a href="{{ route('investments.dividends.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dividends.*') ? $dropdownItemActive : '' }}">Proventos</a>
-                                <a href="{{ route('investments.assets.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.assets.*') ? $dropdownItemActive : '' }}">Ativos</a>
-                                <a href="{{ route('investments.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.reports') ? $dropdownItemActive : '' }}">Rentabilidade</a>
+                                <a href="{{ route('investments.dashboard') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dashboard') ? $dropdownItemActive : $dropdownItemInactive }}">Visão geral</a>
+                                <a href="{{ route('investments.positions') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.positions') ? $dropdownItemActive : $dropdownItemInactive }}">Posições</a>
+                                <a href="{{ route('investments.operations.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.operations.*') ? $dropdownItemActive : $dropdownItemInactive }}">Operações</a>
+                                <a href="{{ route('investments.dividends.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.dividends.*') ? $dropdownItemActive : $dropdownItemInactive }}">Proventos</a>
+                                <a href="{{ route('investments.assets.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.assets.*') ? $dropdownItemActive : $dropdownItemInactive }}">Ativos</a>
+                                <a href="{{ route('investments.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.reports') ? $dropdownItemActive : $dropdownItemInactive }}">Rentabilidade</a>
                             </div>
                         </div>
 
@@ -132,9 +133,9 @@
                             <div x-show="open" x-cloak
                                  class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md z-50 p-xs flex flex-col gap-xxxs"
                                  style="box-shadow: var(--shadow-dropdown)">
-                                <a href="{{ route('writs.kanban') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.kanban') ? $dropdownItemActive : '' }}">Pipeline</a>
-                                <a href="{{ route('writs.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.create') ? $dropdownItemActive : '' }}">Novo</a>
-                                <a href="{{ route('writs.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.reports') ? $dropdownItemActive : '' }}">Relatórios</a>
+                                <a href="{{ route('writs.kanban') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.kanban') ? $dropdownItemActive : $dropdownItemInactive }}">Pipeline</a>
+                                <a href="{{ route('writs.create') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.create') ? $dropdownItemActive : $dropdownItemInactive }}">Novo</a>
+                                <a href="{{ route('writs.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('writs.reports') ? $dropdownItemActive : $dropdownItemInactive }}">Relatórios</a>
                             </div>
                         </div>
 
