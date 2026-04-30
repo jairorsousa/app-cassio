@@ -21,7 +21,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(Writ $writ): void
     {
-        $this->writ = $writ->load('history.user', 'transactions');
+        $this->writ = $writ->load('history.user', 'transactions', 'assignors.contact');
         $this->transition_paid_at = now()->format('Y-m-d');
         $this->transition_finalized_at = now()->format('Y-m-d');
         $this->transition_paid_amount = (string) $writ->paid_amount;
@@ -107,13 +107,24 @@ new #[Layout('layouts.app')] class extends Component {
                 <div><span class="text-mono-600">Natureza:</span> {{ $writ->credit_nature ?: '—' }}</div>
             </div>
 
-            <h3 class="text-md font-semibold mt-md mb-sm">Cedente</h3>
-            <div class="grid grid-cols-2 gap-xs text-sm">
-                <div><span class="text-mono-600">Nome:</span> {{ $writ->assignor_name ?: '—' }}</div>
-                <div><span class="text-mono-600">Documento:</span> {{ $writ->assignor_document ?: '—' }}</div>
-                <div><span class="text-mono-600">Contato:</span> {{ $writ->assignor_contact ?: '—' }}</div>
-                <div><span class="text-mono-600">Advogado:</span> {{ $writ->assignor_lawyer ?: '—' }}</div>
-            </div>
+            <h3 class="text-md font-semibold mt-md mb-sm">Cedentes</h3>
+            @if ($writ->assignors->isEmpty())
+                <div class="text-sm text-mono-600">Nenhum cedente vinculado.</div>
+            @else
+                <div class="flex flex-col gap-xs">
+                    @foreach ($writ->assignors as $a)
+                        <div class="flex items-start gap-sm text-sm">
+                            <span class="fx-badge shrink-0">{{ $a->role === 'advogado' ? 'Advogado' : 'Parte' }}</span>
+                            <div>
+                                <div class="font-medium">{{ $a->contact->name }}</div>
+                                <div class="text-xxs text-mono-600">
+                                    {{ implode(' · ', array_filter([$a->contact->document, $a->contact->phone])) ?: '—' }}
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
 
             <h3 class="text-md font-semibold mt-md mb-sm">Valores</h3>
             <div class="grid grid-cols-3 gap-xs text-sm">

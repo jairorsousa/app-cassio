@@ -65,6 +65,11 @@ class Writ extends Model
         return $this->hasMany(WritStageHistory::class)->orderBy('transitioned_at');
     }
 
+    public function assignors(): HasMany
+    {
+        return $this->hasMany(WritAssignor::class)->with('contact');
+    }
+
     public function sourceAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class, 'source_bank_account_id');

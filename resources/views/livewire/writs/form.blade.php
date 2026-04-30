@@ -1,7 +1,9 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritAssignor;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -14,11 +16,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $debtor_entity = '';
     public string $credit_nature = '';
 
-    public string $assignor_name = '';
-    public string $assignor_document = '';
-    public string $assignor_contact = '';
-    public string $assignor_bank_data = '';
-    public string $assignor_lawyer = '';
+    public array $assignors = [['contact_id' => '', 'role' => 'parte']];
 
     public string $face_value = '0';
     public string $paid_amount = '0';
@@ -33,10 +31,8 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(?Writ $writ = null): void
     {
         if ($writ && $writ->exists) {
-            $this->writ = $writ;
-            foreach (['type', 'process_number', 'court', 'debtor_entity', 'credit_nature',
-                'assignor_name', 'assignor_document', 'assignor_contact', 'assignor_bank_data', 'assignor_lawyer',
-                'estimated_months', 'source_bank_account_id', 'destination_bank_account_id', 'notes'] as $f) {
+            $this->writ = $writ->load('assignors.contact');
+            foreach (['type', 'process_number', 'court', 'debtor_entity', 'credit_nature', 'notes'] as $f) {
                 $this->{$f} = (string) ($writ->{$f} ?? '');
             }
             $this->face_value = (string) $writ->face_value;
@@ -45,6 +41,25 @@ new #[Layout('layouts.app')] class extends Component {
             $this->estimated_months = $writ->estimated_months;
             $this->source_bank_account_id = $writ->source_bank_account_id;
             $this->destination_bank_account_id = $writ->destination_bank_account_id;
+
+            $existing = $writ->assignors->map(fn($a) => [
+                'contact_id' => (string) $a->contact_id,
+                'role' => $a->role,
+            ])->toArray();
+            $this->assignors = !empty($existing) ? $existing : [['contact_id' => '', 'role' => 'parte']];
+        }
+    }
+
+    public function addAssignor(): void
+    {
+        $this->assignors[] = ['contact_id' => '', 'role' => 'parte'];
+    }
+
+    public function removeAssignor(int $index): void
+    {
+        array_splice($this->assignors, $index, 1);
+        if (empty($this->assignors)) {
+            $this->assignors = [['contact_id' => '', 'role' => 'parte']];
         }
     }
 
@@ -56,11 +71,9 @@ new #[Layout('layouts.app')] class extends Component {
             'court' => 'nullable|string|max:120',
             'debtor_entity' => 'nullable|string|max:120',
             'credit_nature' => 'nullable|string|max:120',
-            'assignor_name' => 'nullable|string|max:200',
-            'assignor_document' => 'nullable|string|max:30',
-            'assignor_contact' => 'nullable|string|max:200',
-            'assignor_bank_data' => 'nullable|string',
-            'assignor_lawyer' => 'nullable|string|max:200',
+            'assignors' => 'array',
+            'assignors.*.contact_id' => 'nullable|exists:contacts,id',
+            'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
@@ -82,6 +95,9 @@ new #[Layout('layouts.app')] class extends Component {
     public function save()
     {
         $data = $this->validate();
+        $assignorsData = $data['assignors'] ?? [];
+        unset($data['assignors']);
+
         $face = (float) $data['face_value'];
         $paid = (float) $data['paid_amount'];
         $data['discount_percentage'] = $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
@@ -100,6 +116,17 @@ new #[Layout('layouts.app')] class extends Component {
             ]);
         }
 
+        $writ->assignors()->delete();
+        foreach ($assignorsData as $a) {
+            if (!empty($a['contact_id'])) {
+                WritAssignor::create([
+                    'writ_id' => $writ->id,
+                    'contact_id' => $a['contact_id'],
+                    'role' => $a['role'] ?? 'parte',
+                ]);
+            }
+        }
+
         session()->flash('status', 'Requisitório salvo.');
         return $this->redirectRoute('writs.show', $writ, navigate: true);
     }
@@ -108,6 +135,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         return [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'contacts' => Contact::active()->orderBy('name')->get(),
         ];
     }
 }; ?>
@@ -134,17 +162,38 @@ new #[Layout('layouts.app')] class extends Component {
         </section>
 
         <section>
-            <h3 class="text-md font-semibold mb-xs">Cedente</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-                <x-fx.input label="Nome" wire:model="assignor_name" />
-                <x-fx.input label="CPF/CNPJ" wire:model="assignor_document" />
-                <x-fx.input label="Contato" wire:model="assignor_contact" />
-                <x-fx.input label="Advogado do cedente" wire:model="assignor_lawyer" />
-                <div class="md:col-span-2">
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Dados bancários do cedente</label>
-                    <textarea wire:model="assignor_bank_data" class="fx-form-field" rows="2"></textarea>
-                </div>
+            <div class="flex items-center justify-between mb-xs">
+                <h3 class="text-md font-semibold">Cedentes</h3>
+                <button type="button" wire:click="addAssignor" class="fx-btn fx-btn--text fx-btn--sm">+ Adicionar cedente</button>
             </div>
+            <div class="flex flex-col gap-xs">
+                @foreach ($assignors as $i => $assignor)
+                    <div class="flex gap-sm items-end border border-mono-100 rounded-md p-sm bg-mono-50" wire:key="assignor-{{ $i }}">
+                        <div class="flex-1">
+                            <label class="block text-xxs text-mono-600 mb-xxxs">Contato</label>
+                            <select wire:model="assignors.{{ $i }}.contact_id" class="fx-form-field">
+                                <option value="">— selecionar contato —</option>
+                                @foreach ($contacts as $c)
+                                    <option value="{{ $c->id }}">{{ $c->name }}{{ $c->document ? ' · '.$c->document : '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="w-36">
+                            <label class="block text-xxs text-mono-600 mb-xxxs">Papel</label>
+                            <select wire:model="assignors.{{ $i }}.role" class="fx-form-field">
+                                <option value="parte">Parte</option>
+                                <option value="advogado">Advogado</option>
+                            </select>
+                        </div>
+                        @if (count($assignors) > 1)
+                            <button type="button" wire:click="removeAssignor({{ $i }})" class="text-system-error text-sm px-xs h-9 hover:opacity-70 shrink-0" title="Remover">✕</button>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+            @if ($contacts->isEmpty())
+                <p class="text-xxs text-mono-600 mt-xs">Nenhum contato ativo cadastrado. <a href="{{ route('contacts.create') }}" class="text-primary-500 hover:underline">Cadastrar contato →</a></p>
+            @endif
         </section>
 
         <section>
