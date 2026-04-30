@@ -18,8 +18,51 @@ function parseBRL(value) {
     return parseFloat(s) || 0;
 }
 
+// --- Diretiva Alpine x-cpf-cnpj ---
+function maskCpfCnpj(val) {
+    const d = val.replace(/\D/g, '').slice(0, 14);
+    if (d.length <= 11) {
+        return d
+            .replace(/(\d{3})(\d)/, '$1.$2')
+            .replace(/(\d{3})(\d)/, '$1.$2')
+            .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    }
+    return d
+        .replace(/(\d{2})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1/$2')
+        .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+}
+
+// --- Diretiva Alpine x-phone ---
+function maskPhone(val) {
+    const d = val.replace(/\D/g, '').slice(0, 11);
+    if (d.length <= 10) {
+        return d
+            .replace(/(\d{2})(\d)/, '($1) $2')
+            .replace(/(\d{4})(\d{1,4})$/, '$1-$2');
+    }
+    return d
+        .replace(/(\d{2})(\d)/, '($1) $2')
+        .replace(/(\d{5})(\d{1,4})$/, '$1-$2');
+}
+
 // --- Diretiva Alpine x-money ---
 document.addEventListener('alpine:init', () => {
+    Alpine.directive('cpf-cnpj', (el, {}, { cleanup }) => {
+        if (el.value) el.value = maskCpfCnpj(el.value);
+        const onInput = () => { el.value = maskCpfCnpj(el.value); };
+        el.addEventListener('input', onInput);
+        cleanup(() => el.removeEventListener('input', onInput));
+    });
+
+    Alpine.directive('phone', (el, {}, { cleanup }) => {
+        if (el.value) el.value = maskPhone(el.value);
+        const onInput = () => { el.value = maskPhone(el.value); };
+        el.addEventListener('input', onInput);
+        cleanup(() => el.removeEventListener('input', onInput));
+    });
+
     Alpine.directive('money', (el, {}, { cleanup }) => {
         el.type = 'text';
         el.autocomplete = 'off';

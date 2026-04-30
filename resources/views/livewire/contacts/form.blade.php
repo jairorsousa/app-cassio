@@ -80,7 +80,7 @@ new #[Layout('layouts.app')] class extends Component {
             <h3 class="text-md font-semibold mb-xs">Dados Pessoais</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
                 <x-fx.input label="Nome *" wire:model="name" />
-                <x-fx.input label="CPF/CNPJ" wire:model="document" />
+                <x-fx.input label="CPF/CNPJ" wire:model="document" x-cpf-cnpj />
                 <x-fx.input label="RG" wire:model="rg" />
                 <x-fx.input label="Data de nascimento" type="date" wire:model="birth_date" />
             </div>
@@ -89,7 +89,7 @@ new #[Layout('layouts.app')] class extends Component {
         <section>
             <h3 class="text-md font-semibold mb-xs">Contato</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-                <x-fx.input label="Telefone" wire:model="phone" />
+                <x-fx.input label="Telefone" wire:model="phone" x-phone />
                 <x-fx.input label="E-mail" wire:model="email" type="email" />
                 <div class="md:col-span-2">
                     <label class="block text-xxs text-mono-600 mb-xxxs">Endereço</label>
