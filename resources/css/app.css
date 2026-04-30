@@ -87,10 +87,10 @@ html { color-scheme: light; transition: background-color .15s ease, color .15s e
     .fx-btn--text     { @apply bg-transparent text-primary-600 hover:text-mono-900 px-xs; }
     .fx-btn--icon     { @apply h-10 w-10 p-0 rounded-full bg-mono-100 hover:bg-mono-200; }
 
-    /* Inputs pill */
+    /* Inputs */
     .fx-form-field {
         @apply relative flex items-center gap-xs h-12 px-md
-               rounded-pill bg-mono-white border border-mono-200
+               rounded-md bg-mono-white border border-mono-200
                transition-all duration-150
                hover:border-mono-300
                focus-within:border-primary-500
