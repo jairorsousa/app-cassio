@@ -28,105 +28,101 @@
         })"
     >
         <x-fx.toast />
-        <div class="min-h-screen flex">
-            {{-- Sidebar --}}
-            <aside class="hidden md:flex flex-col w-64 shrink-0 bg-mono-white border-r border-mono-100 p-md">
-                <div class="flex items-center gap-xs px-md py-sm mb-md">
-                    <span class="inline-block w-8 h-8 rounded-full bg-primary-500"></span>
-                    <span class="font-bold text-md text-mono-900">Cassio Finance</span>
-                </div>
+        <div class="min-h-screen flex flex-col">
 
-                <nav class="flex-1 flex flex-col gap-xxxs">
-                    <x-fx.menu-item href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">
-                        <x-slot:icon>🏠</x-slot:icon>
-                        Dashboard
-                    </x-fx.menu-item>
-                    <x-fx.menu-item href="{{ route('banking.dashboard') }}" :active="request()->routeIs('banking.*')">
-                        <x-slot:icon>💰</x-slot:icon>
-                        Financeiro
-                    </x-fx.menu-item>
-                    @if (request()->routeIs('banking.*'))
-                        <div class="ml-md flex flex-col gap-xxxs">
-                            <x-fx.menu-item href="{{ route('banking.transactions.index') }}" :active="request()->routeIs('banking.transactions.*')">Lançamentos</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('banking.accounts.index') }}" :active="request()->routeIs('banking.accounts.*')">Contas</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('banking.cards.index') }}" :active="request()->routeIs('banking.cards.*')">Cartões</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('banking.recurring.index') }}" :active="request()->routeIs('banking.recurring.*')">Recorrências</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('banking.categories.index') }}" :active="request()->routeIs('banking.categories.*')">Categorias</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('banking.reports.cashflow') }}" :active="request()->routeIs('banking.reports.*')">Fluxo de caixa</x-fx.menu-item>
+            {{-- Top navbar --}}
+            <header class="bg-mono-white border-b border-mono-100 shrink-0">
+                <div class="flex items-center h-16 px-lg gap-lg">
+
+                    {{-- Logo --}}
+                    <a href="{{ route('dashboard') }}" class="flex items-center gap-xs shrink-0">
+                        <span class="inline-block w-8 h-8 rounded-full bg-primary-500"></span>
+                        <span class="font-bold text-md text-mono-900 whitespace-nowrap">Cassio Finance</span>
+                    </a>
+
+                    {{-- Nav links --}}
+                    <nav class="flex-1 flex items-center gap-xxxs">
+
+                        <x-fx.menu-item href="{{ route('dashboard') }}" :active="request()->routeIs('dashboard')">
+                            🏠 Dashboard
+                        </x-fx.menu-item>
+
+                        {{-- Financeiro --}}
+                        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                            <x-fx.menu-item href="{{ route('banking.dashboard') }}" :active="request()->routeIs('banking.*')">
+                                💰 Financeiro
+                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </x-fx.menu-item>
+                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-48 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
+                                <x-fx.menu-item href="{{ route('banking.transactions.index') }}" :active="request()->routeIs('banking.transactions.*')">Lançamentos</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('banking.accounts.index') }}" :active="request()->routeIs('banking.accounts.*')">Contas</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('banking.cards.index') }}" :active="request()->routeIs('banking.cards.*')">Cartões</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('banking.recurring.index') }}" :active="request()->routeIs('banking.recurring.*')">Recorrências</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('banking.categories.index') }}" :active="request()->routeIs('banking.categories.*')">Categorias</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('banking.reports.cashflow') }}" :active="request()->routeIs('banking.reports.*')">Fluxo de caixa</x-fx.menu-item>
+                            </div>
                         </div>
-                    @endif
-                    <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.*')">
-                        <x-slot:icon>👥</x-slot:icon>
-                        Corretores
-                    </x-fx.menu-item>
-                    @if (request()->routeIs('brokers.*'))
-                        <div class="ml-md flex flex-col gap-xxxs">
-                            <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.index')">Lista</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('brokers.create') }}" :active="request()->routeIs('brokers.create')">Novo</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('brokers.case-types.index') }}" :active="request()->routeIs('brokers.case-types.*')">Tipos de caso</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('brokers.reports') }}" :active="request()->routeIs('brokers.reports')">Relatórios</x-fx.menu-item>
+
+                        {{-- Corretores --}}
+                        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                            <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.*')">
+                                👥 Corretores
+                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </x-fx.menu-item>
+                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
+                                <x-fx.menu-item href="{{ route('brokers.index') }}" :active="request()->routeIs('brokers.index')">Lista</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('brokers.create') }}" :active="request()->routeIs('brokers.create')">Novo</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('brokers.case-types.index') }}" :active="request()->routeIs('brokers.case-types.*')">Tipos de caso</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('brokers.reports') }}" :active="request()->routeIs('brokers.reports')">Relatórios</x-fx.menu-item>
+                            </div>
                         </div>
-                    @endif
-                    <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.*')">
-                        <x-slot:icon>🏢</x-slot:icon>
-                        Sociedade
-                    </x-fx.menu-item>
-                    @if (request()->routeIs('partnership.*'))
-                        <div class="ml-md flex flex-col gap-xxxs">
-                            <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.index')">Lista</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('partnership.create') }}" :active="request()->routeIs('partnership.create')">Nova</x-fx.menu-item>
+
+                        {{-- Sociedade --}}
+                        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                            <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.*')">
+                                🏢 Sociedade
+                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </x-fx.menu-item>
+                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
+                                <x-fx.menu-item href="{{ route('partnership.index') }}" :active="request()->routeIs('partnership.index')">Lista</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('partnership.create') }}" :active="request()->routeIs('partnership.create')">Nova</x-fx.menu-item>
+                            </div>
                         </div>
-                    @endif
-                    <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.*')">
-                        <x-slot:icon>📈</x-slot:icon>
-                        Investimentos
-                    </x-fx.menu-item>
-                    @if (request()->routeIs('investments.*'))
-                        <div class="ml-md flex flex-col gap-xxxs">
-                            <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.dashboard')">Visão geral</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('investments.positions') }}" :active="request()->routeIs('investments.positions')">Posições</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('investments.operations.index') }}" :active="request()->routeIs('investments.operations.*')">Operações</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('investments.dividends.index') }}" :active="request()->routeIs('investments.dividends.*')">Proventos</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('investments.assets.index') }}" :active="request()->routeIs('investments.assets.*')">Ativos</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('investments.reports') }}" :active="request()->routeIs('investments.reports')">Rentabilidade</x-fx.menu-item>
+
+                        {{-- Investimentos --}}
+                        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                            <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.*')">
+                                📈 Investimentos
+                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </x-fx.menu-item>
+                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-44 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
+                                <x-fx.menu-item href="{{ route('investments.dashboard') }}" :active="request()->routeIs('investments.dashboard')">Visão geral</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('investments.positions') }}" :active="request()->routeIs('investments.positions')">Posições</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('investments.operations.index') }}" :active="request()->routeIs('investments.operations.*')">Operações</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('investments.dividends.index') }}" :active="request()->routeIs('investments.dividends.*')">Proventos</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('investments.assets.index') }}" :active="request()->routeIs('investments.assets.*')">Ativos</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('investments.reports') }}" :active="request()->routeIs('investments.reports')">Rentabilidade</x-fx.menu-item>
+                            </div>
                         </div>
-                    @endif
-                    <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.*')">
-                        <x-slot:icon>⚖️</x-slot:icon>
-                        Requisitórios
-                    </x-fx.menu-item>
-                    @if (request()->routeIs('writs.*'))
-                        <div class="ml-md flex flex-col gap-xxxs">
-                            <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.kanban')">Pipeline</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('writs.create') }}" :active="request()->routeIs('writs.create')">Novo</x-fx.menu-item>
-                            <x-fx.menu-item href="{{ route('writs.reports') }}" :active="request()->routeIs('writs.reports')">Relatórios</x-fx.menu-item>
+
+                        {{-- Requisitórios --}}
+                        <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                            <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.*')">
+                                ⚖️ Requisitórios
+                                <svg class="inline w-3 h-3 ml-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </x-fx.menu-item>
+                            <div x-show="open" x-cloak class="absolute top-full left-0 mt-1 w-40 bg-mono-white border border-mono-100 rounded-md shadow-lg z-50 p-xs flex flex-col gap-xxxs">
+                                <x-fx.menu-item href="{{ route('writs.kanban') }}" :active="request()->routeIs('writs.kanban')">Pipeline</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('writs.create') }}" :active="request()->routeIs('writs.create')">Novo</x-fx.menu-item>
+                                <x-fx.menu-item href="{{ route('writs.reports') }}" :active="request()->routeIs('writs.reports')">Relatórios</x-fx.menu-item>
+                            </div>
                         </div>
-                    @endif
 
-                    <hr class="fx-divider" />
+                    </nav>
 
-                    <x-fx.menu-item href="{{ route('profile') }}" :active="request()->routeIs('profile')">
-                        <x-slot:icon>⚙️</x-slot:icon>
-                        Configurações
-                    </x-fx.menu-item>
-                </nav>
+                    {{-- Right side --}}
+                    <div class="flex items-center gap-xs shrink-0">
 
-                <div class="mt-md px-md py-sm text-xxs text-mono-600">
-                    v1.0 · {{ now()->format('Y') }}
-                </div>
-            </aside>
-
-            {{-- Main column --}}
-            <div class="flex-1 flex flex-col min-w-0">
-                {{-- Topbar --}}
-                <header class="h-16 flex items-center justify-between gap-md px-lg bg-mono-white border-b border-mono-100">
-                    @if (isset($header))
-                        <h1 class="text-lg font-semibold text-mono-900 truncate">{{ $header }}</h1>
-                    @else
-                        <span class="text-sm text-mono-600">{{ auth()->user()->name ?? '' }}</span>
-                    @endif
-
-                    <div class="flex items-center gap-xs">
                         {{-- Theme toggle --}}
                         <button
                             type="button"
@@ -137,6 +133,11 @@
                             <span x-show="theme === 'light'">🌙</span>
                             <span x-show="theme === 'dark'" x-cloak>☀️</span>
                         </button>
+
+                        {{-- Configurações --}}
+                        <x-fx.menu-item href="{{ route('profile') }}" :active="request()->routeIs('profile')">
+                            ⚙️
+                        </x-fx.menu-item>
 
                         {{-- User dropdown --}}
                         <x-dropdown align="right" width="48">
@@ -158,23 +159,32 @@
                                 </form>
                             </x-slot>
                         </x-dropdown>
+
                     </div>
-                </header>
+                </div>
+            </header>
 
-                {{-- Content --}}
-                <main class="flex-1 p-lg">
-                    {{ $slot }}
-                </main>
+            {{-- Page title bar --}}
+            @if (isset($header))
+                <div class="px-lg py-sm bg-mono-white border-b border-mono-100">
+                    <h1 class="text-lg font-semibold text-mono-900">{{ $header }}</h1>
+                </div>
+            @endif
 
-                {{-- Atalhos de teclado --}}
-                <footer class="px-lg py-xs text-xxs text-mono-600 border-t border-mono-100 bg-mono-white flex flex-wrap gap-md">
-                    <span><span class="fx-kbd">n</span> <span class="fx-kbd">r</span> nova receita</span>
-                    <span><span class="fx-kbd">n</span> <span class="fx-kbd">d</span> nova despesa</span>
-                    <span><span class="fx-kbd">n</span> <span class="fx-kbd">t</span> transferência</span>
-                    <span><span class="fx-kbd">n</span> <span class="fx-kbd">w</span> requisitório</span>
-                    <span><span class="fx-kbd">g</span> <span class="fx-kbd">d</span> dashboard</span>
-                </footer>
-            </div>
+            {{-- Content --}}
+            <main class="flex-1 p-lg">
+                {{ $slot }}
+            </main>
+
+            {{-- Keyboard shortcuts footer --}}
+            <footer class="px-lg py-xs text-xxs text-mono-600 border-t border-mono-100 bg-mono-white flex flex-wrap gap-md">
+                <span><span class="fx-kbd">n</span> <span class="fx-kbd">r</span> nova receita</span>
+                <span><span class="fx-kbd">n</span> <span class="fx-kbd">d</span> nova despesa</span>
+                <span><span class="fx-kbd">n</span> <span class="fx-kbd">t</span> transferência</span>
+                <span><span class="fx-kbd">n</span> <span class="fx-kbd">w</span> requisitório</span>
+                <span><span class="fx-kbd">g</span> <span class="fx-kbd">d</span> dashboard</span>
+            </footer>
+
         </div>
 
         <script>
