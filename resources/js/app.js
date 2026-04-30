@@ -46,7 +46,6 @@ function maskPhone(val) {
         .replace(/(\d{5})(\d{1,4})$/, '$1-$2');
 }
 
-// --- Diretiva Alpine x-money ---
 document.addEventListener('alpine:init', () => {
     Alpine.directive('cpf-cnpj', (el, {}, { cleanup }) => {
         if (el.value) el.value = maskCpfCnpj(el.value);
@@ -62,45 +61,45 @@ document.addEventListener('alpine:init', () => {
         cleanup(() => el.removeEventListener('input', onInput));
     });
 
+    // --- x-money: máscara de real em tempo real ---
     Alpine.directive('money', (el, {}, { cleanup }) => {
         el.type = 'text';
         el.autocomplete = 'off';
 
-        // Formata valor inicial vindo do servidor (ex: "1234.56" → "1.234,56")
+        // Formata valor inicial do servidor ("1234.56" → "1.234,56", "0" → "")
         if (el.value !== '') {
             const n = parseFloat(el.value);
-            if (!isNaN(n)) el.value = formatBRL(n);
+            if (!isNaN(n)) el.value = n > 0 ? formatBRL(n) : '';
         }
 
         let processing = false;
 
-        // Máscara em tempo real enquanto o usuário digita
         const onInput = () => {
             if (processing) return;
             processing = true;
 
+            // Extrai só dígitos e converte: 100 = R$ 1,00
             const digits = el.value.replace(/\D/g, '');
             const num = digits ? parseInt(digits, 10) / 100 : 0;
-            const raw = num ? String(num) : '';
-            const formatted = num ? formatBRL(num) : '';
 
             // Expõe o valor numérico bruto para o Livewire ler (wire:model.live)
-            el.value = raw;
+            // "0" em vez de "" para evitar TypeError no PHP com campos required
+            el.value = String(num);
             el.dispatchEvent(new Event('input', { bubbles: true }));
 
-            // Restaura a exibição formatada
-            el.value = formatted;
-            el.setSelectionRange(formatted.length, formatted.length);
+            // Restaura exibição formatada com vírgula
+            el.value = num > 0 ? formatBRL(num) : '';
+            el.setSelectionRange(el.value.length, el.value.length);
 
             processing = false;
         };
 
-        // Antes do submit do form: garante valor bruto para wire:model diferido
+        // Antes do submit: garante valor bruto para wire:model diferido
         const form = el.closest('form');
         const onSubmit = () => {
             const digits = el.value.replace(/\D/g, '');
             const num = digits ? parseInt(digits, 10) / 100 : 0;
-            el.value = num ? String(num) : '0';
+            el.value = String(num);
         };
 
         el.addEventListener('input', onInput);
@@ -113,15 +112,17 @@ document.addEventListener('alpine:init', () => {
     });
 });
 
-// Reformata inputs x-money após re-renders do Livewire
+// Após re-renders do Livewire: reformata valores que voltaram como float bruto (ex: "0.01")
+// Não verifica activeElement — o check da vírgula protege inputs em edição
 document.addEventListener('livewire:initialized', () => {
     Livewire.hook('commit', ({ succeed }) => {
         succeed(() => {
             requestAnimationFrame(() => {
                 document.querySelectorAll('[x-money]').forEach(el => {
-                    if (el === document.activeElement || el.value === '') return;
+                    // Já formatado (tem vírgula) ou vazio → não mexer
+                    if (!el.value || el.value.includes(',')) return;
                     const num = parseFloat(el.value);
-                    if (!isNaN(num)) el.value = formatBRL(num);
+                    if (!isNaN(num)) el.value = num > 0 ? formatBRL(num) : '';
                 });
             });
         });
