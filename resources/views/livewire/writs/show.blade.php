@@ -58,6 +58,24 @@ new #[Layout('layouts.app')] class extends Component {
         }
     }
 
+    public function delete(): void
+    {
+        // Remove transações bancárias vinculadas (polymorphic)
+        $this->writ->transactions()->delete();
+
+        // Remove histórico de etapas
+        $this->writ->history()->delete();
+
+        // Remove logs de atividade (Spatie)
+        $this->writ->activities()->delete();
+
+        // Exclui permanentemente o requisitório
+        $this->writ->forceDelete();
+
+        session()->flash('status', 'Requisitório excluído com sucesso.');
+        $this->redirectRoute('writs.kanban', navigate: true);
+    }
+
     public function with(WritProfitabilityCalculator $calc): array
     {
         return [
@@ -116,9 +134,19 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             @endif
 
-            <div class="mt-md flex gap-xs">
-                <a href="{{ route('writs.edit', $writ) }}" class="fx-btn fx-btn--standard fx-btn--sm">Editar dados</a>
-                <a href="{{ route('writs.kanban') }}" class="fx-btn fx-btn--text fx-btn--sm">← Voltar ao kanban</a>
+            <div class="mt-md flex items-center justify-between">
+                <div class="flex gap-xs">
+                    <a href="{{ route('writs.edit', $writ) }}" class="fx-btn fx-btn--standard fx-btn--sm">Editar dados</a>
+                    <a href="{{ route('writs.kanban') }}" class="fx-btn fx-btn--text fx-btn--sm">← Voltar ao kanban</a>
+                </div>
+                <button
+                    wire:click="delete"
+                    wire:confirm="Tem certeza que deseja excluir este requisitório? Todas as transações bancárias e eventos vinculados serão removidos permanentemente. Esta ação não pode ser desfeita."
+                    class="fx-btn fx-btn--sm"
+                    style="background: var(--colors-system-error-bg); color: var(--colors-system-error);"
+                >
+                    🗑 Excluir requisitório
+                </button>
             </div>
         </x-fx.card>
 

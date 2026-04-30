@@ -30,6 +30,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     #[Url]
     public string $to = '';
 
+    public function delete(int $id): void
+    {
+        $writ = Writ::findOrFail($id);
+        $writ->transactions()->delete();
+        $writ->history()->delete();
+        $writ->activities()->delete();
+        $writ->forceDelete();
+        session()->flash('status', 'Requisitório excluído.');
+    }
+
     public function moveCard(int $writId, string $newStage, WritService $service): void
     {
         try {
@@ -154,7 +164,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         >
                             <div class="flex justify-between items-start gap-xxs">
                                 <span class="fx-badge">{{ $w->type === 'rpv' ? 'RPV' : 'Precat.' }}</span>
-                                <a href="{{ route('writs.show', $w) }}" class="text-xxs text-mono-600 hover:text-primary-500">abrir →</a>
+                                <div class="flex items-center gap-xxs">
+                                    <a href="{{ route('writs.show', $w) }}" class="text-xxs text-mono-600 hover:text-primary-500">abrir →</a>
+                                    <button
+                                        wire:click="delete({{ $w->id }})"
+                                        wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
+                                        class="text-xxs text-system-error hover:opacity-70 leading-none"
+                                        title="Excluir"
+                                    >✕</button>
+                                </div>
                             </div>
                             <div class="mt-xxxs text-sm font-medium truncate" title="{{ $w->process_number }}">
                                 {{ $w->process_number ?: '#'.$w->id }}
