@@ -14,6 +14,99 @@ new #[Layout('layouts.app')] class extends Component {
     #[Url]
     public string $status = '';
 
+    public ?int $editingId = null;
+    public bool $showFormModal = false;
+
+    public string $name = '';
+    public string $document = '';
+    public string $rg = '';
+    public ?string $birth_date = null;
+    public string $phone = '';
+    public string $email = '';
+    public string $address = '';
+    public string $bank_name = '';
+    public string $bank_agency = '';
+    public string $bank_account = '';
+    public string $bank_account_type = '';
+    public string $pix_key = '';
+    public bool $status_form = true;
+    public string $notes = '';
+
+    public function rules(): array
+    {
+        return [
+            'name'              => 'required|string|max:200',
+            'document'          => 'nullable|string|max:30',
+            'rg'                => 'nullable|string|max:30',
+            'birth_date'        => 'nullable|date',
+            'phone'             => 'nullable|string|max:30',
+            'email'             => 'nullable|email|max:200',
+            'address'           => 'nullable|string',
+            'bank_name'         => 'nullable|string|max:100',
+            'bank_agency'       => 'nullable|string|max:20',
+            'bank_account'      => 'nullable|string|max:30',
+            'bank_account_type' => 'nullable|string|max:20',
+            'pix_key'           => 'nullable|string|max:200',
+            'status_form'       => 'boolean',
+            'notes'             => 'nullable|string',
+        ];
+    }
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->showFormModal = true;
+    }
+
+    public function edit(int $id): void
+    {
+        $contact = Contact::findOrFail($id);
+        $this->editingId = $contact->id;
+        
+        foreach (['name', 'document', 'rg', 'phone', 'email', 'address',
+            'bank_name', 'bank_agency', 'bank_account', 'bank_account_type',
+            'pix_key', 'notes'] as $f) {
+            $this->{$f} = (string) ($contact->{$f} ?? '');
+        }
+        $this->birth_date = $contact->birth_date?->format('Y-m-d');
+        $this->status_form = (bool) $contact->status;
+
+        $this->showFormModal = true;
+    }
+
+    public function save(): void
+    {
+        $data = $this->validate();
+        $data['status'] = $data['status_form'];
+        unset($data['status_form']);
+
+        if ($this->editingId) {
+            Contact::find($this->editingId)?->update($data);
+            $msg = 'Contato atualizado com sucesso.';
+        } else {
+            Contact::create($data);
+            $msg = 'Contato criado com sucesso.';
+        }
+
+        $this->resetForm();
+        session()->flash('status', $msg);
+    }
+
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
+
+    private function resetForm(): void
+    {
+        $this->reset([
+            'editingId', 'name', 'document', 'rg', 'birth_date', 'phone', 'email', 
+            'address', 'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 
+            'pix_key', 'notes', 'showFormModal'
+        ]);
+        $this->status_form = true;
+    }
+
     public function delete(int $id): void
     {
         Contact::findOrFail($id)->delete();
@@ -41,64 +134,172 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Contatos</x-slot>
 
-<div class="flex flex-col gap-md">
+<div class="flex flex-col gap-6">
     @if (session('status'))
-        <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
+        <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>
     @endif
 
-    <x-fx.card>
-        <div class="flex flex-wrap items-end gap-xs">
-            <x-fx.input label="Buscar" wire:model.live.debounce.500ms="search" placeholder="Nome ou CPF/CNPJ..." />
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
-                <select wire:model.live="status" class="fx-form-field">
+    <x-jr.card>
+        <div class="flex flex-wrap items-end gap-4">
+            <div class="flex-1 min-w-[240px]">
+                <x-jr.input label="Buscar" icon="search" wire:model.live.debounce.500ms="search" placeholder="Nome ou CPF/CNPJ..." />
+            </div>
+            <div class="w-48">
+                <label class="mb-2 block text-sm font-medium text-mono-600">Status</label>
+                <select wire:model.live="status" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0">
                     <option value="">Todos</option>
                     <option value="1">Ativos</option>
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <x-fx.button href="{{ route('contacts.create') }}" variant="primary" size="sm">+ Novo contato</x-fx.button>
+            
+            <x-jr.button type="button" class="shrink-0" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Novo contato
+            </x-jr.button>
         </div>
-    </x-fx.card>
+    </x-jr.card>
 
-    <x-fx.card>
+    <x-jr.card :padding="false">
         @if ($contacts->isEmpty())
-            <div class="text-sm text-mono-600">Nenhum contato encontrado.</div>
+            <div class="py-10 text-center text-sm text-mono-600">Nenhum contato encontrado.</div>
         @else
-            <table class="fx-table w-full text-sm">
-                <thead>
-                    <tr>
-                        <th class="text-left">Nome</th>
-                        <th class="text-left">Documento</th>
-                        <th class="text-left">Telefone</th>
-                        <th class="text-left">E-mail</th>
-                        <th class="text-center">Status</th>
-                        <th class="text-right">Ações</th>
+            <x-jr.table>
+                <x-slot:head>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Nome</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Documento</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Telefone</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">E-mail</th>
+                    <th class="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-mono-600">Status</th>
+                    <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-mono-600">Ações</th>
+                </x-slot>
+
+                @foreach ($contacts as $contact)
+                    <tr class="transition-colors hover:bg-mono-50">
+                        <td class="px-4 py-4 text-sm font-medium text-mono-900">
+                            <a href="{{ route('contacts.show', $contact) }}" class="transition-colors hover:text-primary-500">{{ $contact->name }}</a>
+                        </td>
+                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->document ?: '—' }}</td>
+                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->phone ?: '—' }}</td>
+                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->email ?: '—' }}</td>
+                        <td class="px-4 py-4 text-center">
+                            <x-jr.badge :variant="$contact->status ? 'success' : 'neutral'" size="sm">{{ $contact->status ? 'Ativo' : 'Inativo' }}</x-jr.badge>
+                        </td>
+                        <td class="px-4 py-4 text-right">
+                            <div class="flex justify-end gap-2">
+                                <button type="button" class="rounded-lg p-1.5 text-mono-400 transition-colors hover:bg-primary-100 hover:text-primary-500" wire:click="edit({{ $contact->id }})" title="Editar">
+                                    <span class="material-icons-outlined text-[18px]">edit</span>
+                                </button>
+                                <a href="{{ route('contacts.show', $contact) }}" class="rounded-lg p-1.5 text-mono-400 transition-colors hover:bg-mono-100 hover:text-mono-900" title="Ver detalhes">
+                                    <span class="material-icons-outlined text-[18px]">visibility</span>
+                                </a>
+                            </div>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach ($contacts as $contact)
-                        <tr>
-                            <td>
-                                <a href="{{ route('contacts.show', $contact) }}" class="font-medium hover:text-primary-500">{{ $contact->name }}</a>
-                            </td>
-                            <td>{{ $contact->document ?: '—' }}</td>
-                            <td>{{ $contact->phone ?: '—' }}</td>
-                            <td>{{ $contact->email ?: '—' }}</td>
-                            <td class="text-center">
-                                <x-fx.badge :variant="$contact->status ? 'up' : 'neutral'">{{ $contact->status ? 'Ativo' : 'Inativo' }}</x-fx.badge>
-                            </td>
-                            <td class="text-right">
-                                <div class="flex justify-end gap-xxs">
-                                    <a href="{{ route('contacts.edit', $contact) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
-                                    <a href="{{ route('contacts.show', $contact) }}" class="fx-btn fx-btn--text fx-btn--sm">Ver</a>
-                                </div>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-            <div class="mt-md">{{ $contacts->links() }}</div>
+                @endforeach
+            </x-jr.table>
+            <div class="p-6">{{ $contacts->links() }}</div>
         @endif
-    </x-fx.card>
+    </x-jr.card>
+
+    {{-- MODAL DE CADASTRO/EDIÇÃO --}}
+    @if ($showFormModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
+
+            <div class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <h3 class="text-lg font-bold text-mono-900">{{ $editingId ? 'Editar Contato' : 'Novo Contato' }}</h3>
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancel" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="save" class="flex min-h-0 flex-1 flex-col">
+                    <div class="flex-1 overflow-y-auto px-6 py-5">
+                        <div class="space-y-8">
+                        
+                        <section>
+                            <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                <span class="material-icons-outlined text-[20px] text-primary-500">person</span>
+                                <h4 class="text-base font-bold text-mono-900">Dados Pessoais</h4>
+                            </div>
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />
+                                <x-jr.input label="CPF/CNPJ" icon="article" name="document" wire:model="document" x-cpf-cnpj />
+                                <x-jr.input label="RG" icon="fingerprint" name="rg" wire:model="rg" />
+                                <x-jr.input label="Data de nascimento" icon="calendar_month" name="birth_date" type="date" wire:model="birth_date" />
+                            </div>
+                        </section>
+
+                        <section>
+                            <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                <span class="material-icons-outlined text-[20px] text-primary-500">call</span>
+                                <h4 class="text-base font-bold text-mono-900">Contato</h4>
+                            </div>
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <x-jr.input label="Telefone" icon="phone" name="phone" wire:model="phone" x-phone />
+                                <x-jr.input label="E-mail" icon="mail" name="email" wire:model="email" type="email" />
+                                <div class="md:col-span-2">
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Endereço</label>
+                                    <textarea wire:model="address" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="2"></textarea>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                <span class="material-icons-outlined text-[20px] text-primary-500">account_balance</span>
+                                <h4 class="text-base font-bold text-mono-900">Dados Bancários</h4>
+                            </div>
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <x-jr.input label="Banco" icon="account_balance" name="bank_name" wire:model="bank_name" />
+                                <x-jr.input label="Agência" icon="confirmation_number" name="bank_agency" wire:model="bank_agency" />
+                                <x-jr.input label="Conta" icon="credit_card" name="bank_account" wire:model="bank_account" />
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Tipo de conta</label>
+                                    <select wire:model="bank_account_type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                        <option value="">Selecionar</option>
+                                        <option value="corrente">Corrente</option>
+                                        <option value="poupanca">Poupança</option>
+                                    </select>
+                                </div>
+                                <div class="md:col-span-2">
+                                    <x-jr.input label="Chave PIX" icon="key" name="pix_key" wire:model="pix_key" />
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                <span class="material-icons-outlined text-[20px] text-primary-500">tune</span>
+                                <h4 class="text-base font-bold text-mono-900">Outros</h4>
+                            </div>
+                            <div class="flex flex-col gap-4">
+                                <label class="flex w-fit cursor-pointer items-center gap-3 text-sm">
+                                    <input type="checkbox" wire:model="status_form" class="h-5 w-5 rounded border-mono-300 text-primary-500 focus:ring-primary-500">
+                                    <span class="font-medium text-mono-900">Contato ativo</span>
+                                </label>
+
+                                <div>
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Observações</label>
+                                    <textarea wire:model="notes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3"></textarea>
+                                </div>
+                            </div>
+                        </section>
+
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
+                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            <span class="material-icons-outlined text-[18px]">check</span>
+                            {{ $editingId ? 'Salvar Contato' : 'Criar Contato' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>

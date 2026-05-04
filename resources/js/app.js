@@ -46,6 +46,18 @@ function maskPhone(val) {
         .replace(/(\d{5})(\d{1,4})$/, '$1-$2');
 }
 
+// --- Diretiva Alpine x-process-number ---
+function maskProcessNumber(val) {
+    const d = val.replace(/\D/g, '').slice(0, 20);
+
+    return d
+        .replace(/^(\d{7})(\d)/, '$1-$2')
+        .replace(/^(\d{7}-\d{2})(\d)/, '$1.$2')
+        .replace(/^(\d{7}-\d{2}\.\d{4})(\d)/, '$1.$2')
+        .replace(/^(\d{7}-\d{2}\.\d{4}\.\d)(\d)/, '$1.$2')
+        .replace(/^(\d{7}-\d{2}\.\d{4}\.\d\.\d{2})(\d)/, '$1.$2');
+}
+
 document.addEventListener('alpine:init', () => {
     Alpine.directive('cpf-cnpj', (el, {}, { cleanup }) => {
         if (el.value) el.value = maskCpfCnpj(el.value);
@@ -57,6 +69,18 @@ document.addEventListener('alpine:init', () => {
     Alpine.directive('phone', (el, {}, { cleanup }) => {
         if (el.value) el.value = maskPhone(el.value);
         const onInput = () => { el.value = maskPhone(el.value); };
+        el.addEventListener('input', onInput);
+        cleanup(() => el.removeEventListener('input', onInput));
+    });
+
+    Alpine.directive('process-number', (el, {}, { cleanup }) => {
+        el.maxLength = 25;
+        el.inputMode = 'numeric';
+        el.placeholder = '0000000-00.0000.0.00.0000';
+
+        if (el.value) el.value = maskProcessNumber(el.value);
+
+        const onInput = () => { el.value = maskProcessNumber(el.value); };
         el.addEventListener('input', onInput);
         cleanup(() => el.removeEventListener('input', onInput));
     });
@@ -75,34 +99,29 @@ document.addEventListener('alpine:init', () => {
             el.value = '0,00';
         }
 
-        let processing = false;
+        let submitting = false;
+
+        const rawValue = () => {
+            const digits = el.value.replace(/\D/g, '');
+            return String(digits ? parseInt(digits, 10) / 100 : 0);
+        };
 
         const onInput = () => {
-            if (processing) return;
-            processing = true;
+            if (submitting) return;
 
-            // Extrai só dígitos e converte: 100 = R$ 1,00
-            const digits = el.value.replace(/\D/g, '');
-            const num = digits ? parseInt(digits, 10) / 100 : 0;
-
-            // Expõe o valor numérico bruto para o Livewire ler (wire:model.live)
-            // "0" em vez de "" para evitar TypeError no PHP com campos required
-            el.value = String(num);
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-
-            // Restaura exibição formatada com vírgula
+            const num = parseFloat(rawValue());
+            el.dataset.moneyRaw = String(num);
             el.value = formatBRL(num);
             el.setSelectionRange(el.value.length, el.value.length);
-
-            processing = false;
         };
 
         // Antes do submit: garante valor bruto para wire:model diferido
         const form = el.closest('form');
         const onSubmit = () => {
-            const digits = el.value.replace(/\D/g, '');
-            const num = digits ? parseInt(digits, 10) / 100 : 0;
-            el.value = String(num);
+            submitting = true;
+            el.value = rawValue();
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            submitting = false;
         };
 
         el.addEventListener('input', onInput);
@@ -115,13 +134,15 @@ document.addEventListener('alpine:init', () => {
     });
 });
 
-// Após re-renders do Livewire: reformata valores que voltaram como float bruto (ex: "0.01")
-// Não verifica activeElement — o check da vírgula protege inputs em edição
+// Após re-renders do Livewire: reformata valores que voltaram como float bruto (ex: "0.01").
+// Não toca no campo em edição para preservar o cursor e evitar travar a digitação rápida.
 document.addEventListener('livewire:initialized', () => {
     Livewire.hook('commit', ({ succeed }) => {
         succeed(() => {
             requestAnimationFrame(() => {
                 document.querySelectorAll('[x-money]').forEach(el => {
+                    if (document.activeElement === el) return;
+
                     // Já formatado (tem vírgula)
                     if (el.value && el.value.includes(',')) return;
                     const num = parseFloat(el.value);

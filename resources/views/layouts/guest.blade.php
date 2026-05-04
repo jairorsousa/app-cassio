@@ -7,16 +7,22 @@
 
         <title>{{ config('app.name', 'Cassio Finance') }}</title>
 
+        <script>
+            if (localStorage.getItem('jr-theme') === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        </script>
+
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans text-mono-900 antialiased">
-        <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-mono-50">
-            <div class="flex items-center gap-xs mb-md">
-                <span class="inline-block w-12 h-12 rounded-full bg-primary-500"></span>
-                <span class="font-bold text-xl text-mono-900">Cassio Finance</span>
+    <body class="bg-mono-50 font-sans text-mono-900 antialiased">
+        <div class="flex min-h-screen flex-col items-center justify-center px-4 py-8">
+            <div class="mb-8 flex items-center gap-3">
+                <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500 text-base font-bold text-white shadow-card">CM</span>
+                <span class="text-xl font-bold text-mono-900">Cassio Finance</span>
             </div>
 
-            <div class="w-full sm:max-w-md mt-md px-lg py-lg bg-mono-white shadow-elevated rounded-lg">
+            <div class="w-full max-w-md rounded-2xl border border-mono-100 bg-mono-white px-8 py-8 shadow-card">
                 {{ $slot }}
             </div>
         </div>

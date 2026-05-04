@@ -13,7 +13,15 @@ class WritObserver
 
     public function saved(Writ $writ): void
     {
-        $relevantFields = ['stage', 'paid_amount', 'face_value', 'estimated_receipt_amount', 'actual_receipt_amount'];
+        $relevantFields = [
+            'stage',
+            'paid_amount',
+            'notary_expenses_amount',
+            'other_expenses_amount',
+            'face_value',
+            'estimated_receipt_amount',
+            'actual_receipt_amount',
+        ];
         foreach ($relevantFields as $f) {
             if ($writ->wasChanged($f)) {
                 ($this->trigger)();

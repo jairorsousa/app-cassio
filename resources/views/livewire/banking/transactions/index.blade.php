@@ -72,7 +72,7 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Financeiro · Lançamentos</x-slot>
 
-<div class="flex flex-col gap-md">
+<div class="flex flex-col gap-space-5">
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
@@ -81,16 +81,16 @@ new #[Layout('layouts.app')] class extends Component {
     @endif
 
     <x-fx.card>
-        <div class="flex justify-between items-center mb-sm">
-            <h3 class="text-md font-semibold">Filtros</h3>
-            <x-fx.button href="{{ route('banking.transactions.create') }}" variant="primary" size="sm">+ Novo lançamento</x-fx.button>
+        <div class="flex justify-between items-center mb-space-4">
+            <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Filtros</h3>
+            <x-fx.button href="{{ route('banking.transactions.create') }}" variant="primary" size="sm">Novo lançamento</x-fx.button>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-6 gap-xs">
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-space-3">
             <x-fx.input label="De" type="date" wire:model.live="from" />
             <x-fx.input label="Até" type="date" wire:model.live="to" />
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model.live="type" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Tipo</label>
+                <select wire:model.live="type" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="">Todos</option>
                     <option value="income">Receita</option>
                     <option value="expense">Despesa</option>
@@ -98,35 +98,35 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="invoice_payment">Pagto fatura</option>
                 </select>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Categoria</label>
-                <select wire:model.live="category" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Categoria</label>
+                <select wire:model.live="category" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="">Todas</option>
                     @foreach ($categories as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta</label>
-                <select wire:model.live="account" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Conta</label>
+                <select wire:model.live="account" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="">Todas</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
-                <select wire:model.live="status" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Status</label>
+                <select wire:model.live="status" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="">Todos</option>
                     <option value="settled">Liquidado</option>
                     <option value="pending">Pendente</option>
                 </select>
             </div>
         </div>
-        <div class="mt-xs">
-            <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="clearFilters">Limpar filtros</button>
+        <div class="mt-space-3">
+            <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors" wire:click="clearFilters">Limpar filtros</button>
         </div>
     </x-fx.card>
 
@@ -139,49 +139,37 @@ new #[Layout('layouts.app')] class extends Component {
                 actionLabel="+ Novo lançamento"
                 :actionHref="route('banking.transactions.create')" />
         @else
-            <table class="fx-table w-full text-sm">
-                <thead>
+            <x-fx.table :headers="['Data', 'Descrição', 'Categoria', 'Conta', 'Valor', '']">
+                @foreach ($transactions as $t)
                     <tr>
-                        <th class="text-left">Data</th>
-                        <th class="text-left">Descrição</th>
-                        <th class="text-left">Categoria</th>
-                        <th class="text-left">Conta</th>
-                        <th class="text-right">Valor</th>
-                        <th></th>
+                        <td class="px-space-4 py-space-3 text-fs-14 font-mono text-cryptex-text-secondary whitespace-nowrap">{{ $t->date->format('d/m/Y') }}</td>
+                        <td class="px-space-4 py-space-3 text-fs-14">
+                            <span class="text-cryptex-text-primary">{{ $t->description }}</span>
+                            @if ($t->isInstallment())
+                                <span class="text-fs-12 text-cryptex-text-tertiary ml-1 font-mono">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
+                            @endif
+                            @if ($t->isReadOnly())
+                                <x-fx.badge variant="neutral" class="ml-space-2">origem: {{ class_basename($t->source_type) }}</x-fx.badge>
+                            @endif
+                            @if ($t->status === 'pending')
+                                <x-fx.badge variant="warning" class="ml-space-2">pendente</x-fx.badge>
+                            @endif
+                        </td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $t->category?->name }}</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $t->bankAccount?->name ?? $t->creditCard?->name }}</td>
+                        <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $t->type === 'income' ? 'text-cryptex-green-500' : ($t->type === 'transfer' ? 'text-cryptex-text-primary' : 'text-cryptex-red-500') }}">
+                            R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
+                        </td>
+                        <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
+                            @unless ($t->isReadOnly())
+                                <a href="{{ route('banking.transactions.edit', $t) }}" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Editar</a>
+                                <button class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $t->id }})" wire:confirm="Excluir lançamento?">Excluir</button>
+                            @endunless
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach ($transactions as $t)
-                        <tr>
-                            <td>{{ $t->date->format('d/m/Y') }}</td>
-                            <td>
-                                {{ $t->description }}
-                                @if ($t->isInstallment())
-                                    <span class="text-xxs text-mono-600">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
-                                @endif
-                                @if ($t->isReadOnly())
-                                    <span class="fx-badge ml-xxxs">origem: {{ class_basename($t->source_type) }}</span>
-                                @endif
-                                @if ($t->status === 'pending')
-                                    <span class="fx-badge ml-xxxs">pendente</span>
-                                @endif
-                            </td>
-                            <td>{{ $t->category?->name }}</td>
-                            <td>{{ $t->bankAccount?->name ?? $t->creditCard?->name }}</td>
-                            <td class="text-right font-semibold {{ $t->type === 'income' ? 'text-system-up' : ($t->type === 'transfer' ? '' : 'text-system-down') }}">
-                                R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
-                            </td>
-                            <td class="text-right whitespace-nowrap">
-                                @unless ($t->isReadOnly())
-                                    <a href="{{ route('banking.transactions.edit', $t) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
-                                    <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $t->id }})" wire:confirm="Excluir lançamento?">Excluir</button>
-                                @endunless
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-            <div class="mt-sm">{{ $transactions->links() }}</div>
+                @endforeach
+            </x-fx.table>
+            <div class="mt-space-4">{{ $transactions->links() }}</div>
         @endif
     </x-fx.card>
 </div>

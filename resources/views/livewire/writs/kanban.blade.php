@@ -1,6 +1,10 @@
 <?php
 
+use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritAssignor;
+use App\Domains\Writs\Models\WritStageHistory;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
@@ -11,12 +15,20 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public function placeholder(): string
     {
         return <<<'HTML'
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-xs animate-pulse">
-            <div class="h-96 bg-mono-100 rounded-md"></div>
-            <div class="h-96 bg-mono-100 rounded-md"></div>
-            <div class="h-96 bg-mono-100 rounded-md"></div>
-            <div class="h-96 bg-mono-100 rounded-md"></div>
-            <div class="h-96 bg-mono-100 rounded-md"></div>
+        <div class="space-y-6 animate-pulse">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="h-24 bg-mono-100 rounded-2xl"></div>
+                <div class="h-24 bg-mono-100 rounded-2xl"></div>
+                <div class="h-24 bg-mono-100 rounded-2xl"></div>
+            </div>
+            <div class="h-12 bg-mono-100 rounded-pill"></div>
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+            </div>
         </div>
         HTML;
     }
@@ -29,6 +41,180 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $from = '';
     #[Url]
     public string $to = '';
+
+    public bool $showFormModal = false;
+    public string $formType = 'rpv';
+    public string $process_number = '';
+    public string $court = '';
+    public string $debtor_entity = '';
+    public string $credit_nature = '';
+    public array $assignors = [['contact_id' => '', 'role' => 'parte']];
+    public string $face_value = '0';
+    public string $paid_amount = '0';
+    public string $notary_expenses_amount = '0';
+    public string $other_expenses_amount = '0';
+    public string $estimated_receipt_amount = '0';
+    public ?int $estimated_months = null;
+    public ?int $source_bank_account_id = null;
+    public ?int $destination_bank_account_id = null;
+    public string $notes = '';
+
+    public function rules(): array
+    {
+        return [
+            'formType' => 'required|in:rpv,precatorio',
+            'process_number' => 'nullable|string|max:80',
+            'court' => 'nullable|string|max:120',
+            'debtor_entity' => 'nullable|string|max:120',
+            'credit_nature' => 'nullable|string|max:120',
+            'assignors' => 'array',
+            'assignors.*.contact_id' => 'nullable|exists:contacts,id',
+            'assignors.*.role' => 'nullable|in:parte,advogado',
+            'face_value' => 'required|numeric|min:0',
+            'paid_amount' => 'required|numeric|min:0',
+            'notary_expenses_amount' => 'required|numeric|min:0',
+            'other_expenses_amount' => 'required|numeric|min:0',
+            'estimated_receipt_amount' => 'required|numeric|min:0',
+            'estimated_months' => 'nullable|integer|min:0',
+            'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'destination_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'notes' => 'nullable|string',
+        ];
+    }
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->showFormModal = true;
+    }
+
+    public function cancelCreate(): void
+    {
+        $this->resetForm();
+    }
+
+    public function addAssignor(): void
+    {
+        $this->assignors[] = ['contact_id' => '', 'role' => 'parte'];
+    }
+
+    public function removeAssignor(int $index): void
+    {
+        array_splice($this->assignors, $index, 1);
+        if (empty($this->assignors)) {
+            $this->assignors = [['contact_id' => '', 'role' => 'parte']];
+        }
+    }
+
+    public function discountPreview(): float
+    {
+        $face = $this->moneyValue($this->face_value);
+        $paid = $this->moneyValue($this->paid_amount);
+
+        if ($face <= 0) {
+            return 0;
+        }
+
+        return round((1 - $paid / $face) * 100, 2);
+    }
+
+    public function saveWrit(): void
+    {
+        $this->normalizeMoneyFields();
+
+        $data = $this->validate();
+        $assignorsData = $data['assignors'] ?? [];
+        unset($data['assignors']);
+
+        $data['type'] = $data['formType'];
+        unset($data['formType']);
+
+        $face = (float) $data['face_value'];
+        $paid = (float) $data['paid_amount'];
+        $data['discount_percentage'] = $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
+
+        $writ = Writ::create(['stage' => 'negotiation'] + $data);
+
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => null,
+            'to_stage' => 'negotiation',
+            'transitioned_at' => now(),
+            'user_id' => auth()->id(),
+        ]);
+
+        foreach ($assignorsData as $assignor) {
+            if (!empty($assignor['contact_id'])) {
+                WritAssignor::create([
+                    'writ_id' => $writ->id,
+                    'contact_id' => $assignor['contact_id'],
+                    'role' => $assignor['role'] ?? 'parte',
+                ]);
+            }
+        }
+
+        $this->resetForm();
+        session()->flash('status', 'Requisitório criado.');
+    }
+
+    private function moneyValue(string|int|float|null $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $value = (string) $value;
+
+        if (str_contains($value, ',')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        }
+
+        return (float) $value;
+    }
+
+    private function normalizeMoneyFields(): void
+    {
+        foreach ([
+            'face_value',
+            'paid_amount',
+            'notary_expenses_amount',
+            'other_expenses_amount',
+            'estimated_receipt_amount',
+        ] as $field) {
+            $this->{$field} = (string) $this->moneyValue($this->{$field});
+        }
+    }
+
+    private function resetForm(): void
+    {
+        $this->reset([
+            'showFormModal',
+            'formType',
+            'process_number',
+            'court',
+            'debtor_entity',
+            'credit_nature',
+            'assignors',
+            'face_value',
+            'paid_amount',
+            'notary_expenses_amount',
+            'other_expenses_amount',
+            'estimated_receipt_amount',
+            'estimated_months',
+            'source_bank_account_id',
+            'destination_bank_account_id',
+            'notes',
+        ]);
+
+        $this->formType = 'rpv';
+        $this->assignors = [['contact_id' => '', 'role' => 'parte']];
+        $this->face_value = '0';
+        $this->paid_amount = '0';
+        $this->notary_expenses_amount = '0';
+        $this->other_expenses_amount = '0';
+        $this->estimated_receipt_amount = '0';
+    }
 
     public function delete(int $id): void
     {
@@ -62,7 +248,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $q = Writ::query();
         if ($this->type) $q->where('type', $this->type);
-        if ($this->debtor) $q->where('debtor_entity', 'like', '%'.$this->debtor.'%');
+        if ($this->debtor) {
+            $q->where(function ($query) {
+                $query->where('debtor_entity', 'like', '%'.$this->debtor.'%')
+                    ->orWhere('assignor_name', 'like', '%'.$this->debtor.'%')
+                    ->orWhere('process_number', 'like', '%'.$this->debtor.'%');
+            });
+        }
         if ($this->from) $q->where('paid_at', '>=', $this->from);
         if ($this->to) $q->where('paid_at', '<=', $this->to);
 
@@ -80,126 +272,413 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ];
         }
 
-        $totalInvested = Writ::whereIn('stage', ['paid', 'petitioning'])->sum('paid_amount');
-        $totalReceived = Writ::where('stage', 'finalized')->sum('actual_receipt_amount');
+        $totalFace = Writ::sum('face_value');
+        $totalOpenInvested = Writ::where('stage', '!=', 'finalized')->sum('paid_amount');
+        $finalizedWrits = Writ::where('stage', 'finalized')->get();
+        $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
+        $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
+        $profitAmount = round((float) $totalReceived - (float) $totalFinalizedCost, 2);
+        $profitPercentage = $totalFinalizedCost > 0
+            ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
+            : 0.0;
 
-        return compact('stages', 'totalInvested', 'totalReceived');
+        return compact('stages', 'totalFace', 'totalOpenInvested', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+            'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'contacts' => Contact::active()->orderBy('name')->get(),
+        ];
     }
 }; ?>
 
 <x-slot name="header">Requisitórios · Pipeline</x-slot>
 
-<div class="flex flex-col gap-md" x-data="writsKanban(@js(\App\Domains\Writs\Models\Writ::STAGES))">
+<div class="flex flex-col gap-6" x-data="writsKanban(@js(\App\Domains\Writs\Models\Writ::STAGES))">
     @if (session('status'))
-        <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
+        <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>
     @endif
     @if (session('error'))
-        <x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>
+        <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    {{-- Indicadores --}}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Total investido em aberto</div>
-            <div class="text-xl font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Total recebido (finalizados)</div>
-            <div class="text-xl font-bold text-system-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="flex justify-between items-center">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <x-jr.card>
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
+                    <span class="material-icons-outlined text-[22px]">request_quote</span>
+                </div>
                 <div>
-                    <div class="text-xxs text-mono-600 uppercase">Operações</div>
-                    <div class="text-xl font-bold">{{ collect($stages)->sum('count') }}</div>
+                    <p class="text-xs font-medium text-mono-600">Total Face</p>
+                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalFace, 2, ',', '.') }}</p>
                 </div>
-                <x-fx.button href="{{ route('writs.create') }}" variant="primary" size="sm">+ Novo card</x-fx.button>
             </div>
-        </x-fx.card>
+        </x-jr.card>
+
+        <x-jr.card>
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
+                    <span class="material-icons-outlined text-[22px]">payments</span>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Total Investido em aberto</p>
+                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card>
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
+                    <span class="material-icons-outlined text-[22px]">account_balance_wallet</span>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Total recebido (finalizados)</p>
+                    <p class="mt-1 text-2xl font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card>
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">
+                    <span class="material-icons-outlined text-[22px]">trending_up</span>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Lucro líquido</p>
+                    <p class="mt-1 text-2xl font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</p>
+                    <p class="mt-1 text-xs font-semibold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</p>
+                </div>
+            </div>
+        </x-jr.card>
     </div>
 
-    {{-- Filtros --}}
-    <x-fx.card>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-xs items-end">
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model.live="type" class="fx-form-field">
-                    <option value="">Todos</option>
-                    <option value="rpv">RPV</option>
-                    <option value="precatorio">Precatório</option>
-                </select>
+    <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
+        <div class="min-w-0 flex-1">
+            <div class="flex h-12 items-center gap-3 rounded-pill border border-mono-200 bg-mono-white px-4 shadow-sm transition-all focus-within:border-primary-500 focus-within:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                <span class="material-icons-outlined text-[20px] text-mono-300">search</span>
+                <input
+                    type="text"
+                    wire:model.live.debounce.500ms="debtor"
+                    placeholder="Buscar requisitório, cedente ou ente devedor..."
+                    class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-mono-900 placeholder:text-mono-300 focus:outline-none focus:ring-0"
+                />
             </div>
-            <x-fx.input label="Ente devedor" wire:model.live.debounce.500ms="debtor" placeholder="União, INSS..." />
-            <x-fx.input label="Pago de" type="date" wire:model.live="from" />
-            <x-fx.input label="Pago até" type="date" wire:model.live="to" />
-            <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="clearFilters">Limpar filtros</button>
         </div>
-    </x-fx.card>
 
-    @php $hasAnyWrit = collect($stages)->sum('count') > 0; @endphp
+        <div class="flex flex-wrap items-center gap-3">
+            <select wire:model.live="type" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 pr-10 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0">
+                <option value="">Todos os tipos</option>
+                <option value="rpv">RPV</option>
+                <option value="precatorio">Precatório</option>
+            </select>
+
+            <input type="date" wire:model.live="from" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
+            <input type="date" wire:model.live="to" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
+
+            @if ($type || $debtor || $from || $to)
+                <button type="button" class="h-12 rounded-pill px-4 text-sm font-semibold text-mono-600 transition-colors hover:bg-mono-100 hover:text-mono-900" wire:click="clearFilters">
+                    Limpar
+                </button>
+            @endif
+
+            <x-jr.button type="button" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Novo Requisitório
+            </x-jr.button>
+        </div>
+    </div>
+
+    @php
+        $hasAnyWrit = collect($stages)->sum('count') > 0;
+        $stageMeta = [
+            'negotiation' => ['icon' => 'person_add', 'dot' => 'bg-info', 'tint' => 'bg-info-bg text-info', 'bar' => 'bg-primary-500'],
+            'pending' => ['icon' => 'edit_document', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-mono-400'],
+            'paid' => ['icon' => 'payments', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'bg-success'],
+            'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info'],
+            'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300'],
+        ];
+    @endphp
+
     @if (! $hasAnyWrit)
-        <x-fx.card>
-            <x-fx.empty-state
-                icon="⚖️"
-                title="Nenhum requisitório no pipeline"
-                description="Crie um card e arraste pelas etapas: Negociação → Cessão Pendente → Pago → Peticionar → Finalizar."
-                actionLabel="+ Novo requisitório"
-                :actionHref="route('writs.create')" />
-        </x-fx.card>
+        <x-jr.empty-state
+            icon="gavel"
+            title="Nenhum requisitório no pipeline"
+            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar e Finalizar."
+        >
+            <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
+        </x-jr.empty-state>
     @endif
 
-    {{-- Kanban board --}}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-xs">
-        @foreach ($stages as $stage)
-            <div class="bg-mono-50 border border-mono-100 rounded-md flex flex-col min-h-[400px]" data-stage="{{ $stage['key'] }}">
-                <div class="px-sm py-xs border-b border-mono-100">
-                    <div class="text-xxs uppercase text-mono-600 tracking-wide">{{ $stage['label'] }}</div>
-                    <div class="text-sm font-bold">{{ $stage['count'] }} cards</div>
-                    <div class="text-xxs text-mono-600">R$ {{ number_format($stage['face_total'], 2, ',', '.') }}</div>
-                </div>
-                <div class="kanban-list flex-1 p-xs flex flex-col gap-xs" data-stage="{{ $stage['key'] }}">
-                    @foreach ($stage['cards'] as $w)
-                        <div
-                            class="kanban-card bg-mono-white border border-mono-100 rounded-md p-xs cursor-grab"
-                            data-id="{{ $w->id }}"
-                            wire:key="writ-{{ $w->id }}"
-                        >
-                            <div class="flex justify-between items-start gap-xxs">
-                                <span class="fx-badge">{{ $w->type === 'rpv' ? 'RPV' : 'Precat.' }}</span>
-                                <div class="flex items-center gap-xxs">
-                                    <a href="{{ route('writs.show', $w) }}" class="text-xxs text-mono-600 hover:text-primary-500">abrir →</a>
-                                    <button
-                                        wire:click="delete({{ $w->id }})"
-                                        wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
-                                        class="text-xxs text-system-error hover:opacity-70 leading-none"
-                                        title="Excluir"
-                                    >✕</button>
-                                </div>
+    <div class="overflow-x-auto pb-2">
+        <div class="grid min-w-[1500px] grid-cols-5 gap-4">
+            @foreach ($stages as $stage)
+                @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
+                <section class="flex min-h-[520px] flex-col rounded-2xl border border-mono-100 bg-mono-50" data-stage="{{ $stage['key'] }}">
+                    <div class="h-1 w-full shrink-0 rounded-t-2xl {{ $meta['bar'] }}"></div>
+                    <div class="px-3 py-4">
+                        <div class="writ-stage-header mb-4">
+                            <div class="writ-stage-title">
+                                <span class="material-icons-outlined text-[18px] text-mono-400">{{ $meta['icon'] }}</span>
+                                <h3 class="text-sm font-bold text-mono-900" title="{{ $stage['label'] }}">{{ $stage['label'] }}</h3>
                             </div>
-                            <div class="mt-xxxs text-sm font-medium truncate" title="{{ $w->process_number }}">
-                                {{ $w->process_number ?: '#'.$w->id }}
+
+                            <div class="writ-stage-actions">
+                                <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-mono-100 px-1.5 text-[11px] font-bold text-mono-600">{{ $stage['count'] }}</span>
+                                <button type="button" wire:click="create" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-primary-500" title="Novo requisitório">
+                                    <span class="material-icons-outlined text-[20px]">add</span>
+                                </button>
                             </div>
-                            <div class="text-xxs text-mono-600 truncate">{{ $w->debtor_entity }}</div>
-                            <div class="mt-xxs text-xxs flex justify-between">
-                                <span class="text-mono-600">Face</span>
-                                <span class="font-semibold">R$ {{ number_format($w->face_value, 2, ',', '.') }}</span>
-                            </div>
-                            <div class="text-xxs flex justify-between">
-                                <span class="text-mono-600">Pago</span>
-                                <span>R$ {{ number_format($w->paid_amount, 2, ',', '.') }}</span>
-                            </div>
-                            @if ($stage['key'] === 'finalized' && $w->actual_receipt_amount)
-                                <div class="text-xxs flex justify-between text-system-up font-semibold">
-                                    <span>Recebido</span>
-                                    <span>R$ {{ number_format($w->actual_receipt_amount, 2, ',', '.') }}</span>
-                                </div>
-                            @endif
                         </div>
-                    @endforeach
-                </div>
-            </div>
-        @endforeach
+
+                        <p class="mb-3 text-xs text-mono-600">R$ {{ number_format($stage['face_total'], 2, ',', '.') }}</p>
+
+                        <div class="kanban-list flex flex-1 flex-col gap-3" data-stage="{{ $stage['key'] }}">
+                            @foreach ($stage['cards'] as $w)
+                                <article
+                                    class="kanban-card cursor-grab rounded-2xl border border-mono-100 bg-mono-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
+                                    data-id="{{ $w->id }}"
+                                    wire:key="writ-{{ $w->id }}"
+                                >
+                                    <div class="mb-3 flex items-start justify-between gap-3">
+                                        <div class="flex min-w-0 items-center gap-2">
+                                            <span class="h-2.5 w-2.5 shrink-0 rounded-full {{ $meta['dot'] }}"></span>
+                                            <a href="{{ route('writs.show', $w) }}" class="truncate text-sm font-bold text-mono-900 transition-colors hover:text-primary-500" title="{{ $w->process_number }}">
+                                                {{ $w->process_number ?: 'Requisitório #'.$w->id }}
+                                            </a>
+                                        </div>
+
+                                        <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
+                                            <button type="button" class="flex h-8 w-8 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" @click="open = !open">
+                                                <span class="material-icons-outlined text-[20px]">more_vert</span>
+                                            </button>
+                                            <div x-show="open" x-transition class="absolute right-0 top-9 z-dropdown w-40 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
+                                                <a href="{{ route('writs.show', $w) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
+                                                    <span class="material-icons-outlined text-[18px] text-mono-400">visibility</span>
+                                                    Abrir
+                                                </a>
+                                                <a href="{{ route('writs.edit', $w) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
+                                                    <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
+                                                    Editar
+                                                </a>
+                                                <button
+                                                    type="button"
+                                                    wire:click="delete({{ $w->id }})"
+                                                    wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
+                                                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-error hover:bg-down-bg"
+                                                >
+                                                    <span class="material-icons-outlined text-[18px]">delete_outline</span>
+                                                    Excluir
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-3 flex items-center gap-2 text-xs text-mono-600">
+                                        <span class="material-icons-outlined text-[16px]">person</span>
+                                        <span class="truncate">{{ $w->assignor_name ?: 'Cedente não informado' }}</span>
+                                    </div>
+
+                                    <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
+
+                                    <div class="mt-2 flex items-center justify-between gap-2 border-t border-mono-100 pt-2">
+                                        <span class="truncate rounded-pill bg-mono-100 px-2.5 py-1 text-[10px] font-semibold text-mono-600">
+                                            {{ $w->type === 'rpv' ? 'RPV' : 'Precatório' }}
+                                        </span>
+                                        <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
+                                    </div>
+
+                                    <div class="mt-3 flex items-center gap-2 text-xs text-down">
+                                        <span class="material-icons-outlined text-[16px]">calendar_today</span>
+                                        <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
+                                    </div>
+
+                                    @if ($stage['key'] === 'finalized' && $w->actual_receipt_amount)
+                                        <div class="mt-2 flex items-center justify-between rounded-xl bg-up-bg px-3 py-2 text-xs font-semibold text-up">
+                                            <span>Recebido</span>
+                                            <span>R$ {{ number_format($w->actual_receipt_amount, 2, ',', '.') }}</span>
+                                        </div>
+                                    @endif
+                                </article>
+                            @endforeach
+                        </div>
+                    </div>
+                </section>
+            @endforeach
+        </div>
     </div>
+
+    @if ($showFormModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelCreate" aria-label="Fechar modal"></button>
+
+            <div class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <div>
+                        <h3 class="text-lg font-bold text-mono-900">Novo Requisitório</h3>
+                    </div>
+
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancelCreate" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="saveWrit" class="flex min-h-0 flex-1 flex-col">
+                    <div class="flex-1 overflow-y-auto px-6 py-5">
+                        <div class="space-y-8">
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">description</span>
+                                    <h4 class="text-base font-bold text-mono-900">Identificação</h4>
+                                </div>
+
+                                <div class="space-y-4">
+                                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Tipo</label>
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <button
+                                                    type="button"
+                                                    wire:click="$set('formType', 'rpv')"
+                                                    class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $formType === 'rpv' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                                >
+                                                    RPV
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    wire:click="$set('formType', 'precatorio')"
+                                                    class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $formType === 'precatorio' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                                >
+                                                    Precatório
+                                                </button>
+                                            </div>
+                                            @error('formType') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+
+                                        <x-jr.input label="Número do processo" icon="tag" wire:model="process_number" x-process-number />
+                                    </div>
+
+                                    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        <x-jr.input label="Vara / Tribunal" icon="account_balance" wire:model="court" />
+                                        <x-jr.input label="Ente devedor" icon="business" wire:model="debtor_entity" placeholder="União, INSS, Estado..." />
+                                        <x-jr.input label="Natureza do crédito" icon="category" wire:model="credit_nature" placeholder="alimentar, comum..." />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center justify-between gap-3 border-b border-mono-100 pb-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-icons-outlined text-[20px] text-primary-500">group</span>
+                                        <h4 class="text-base font-bold text-mono-900">Cedentes</h4>
+                                    </div>
+                                    <button type="button" wire:click="addAssignor" class="inline-flex h-9 items-center gap-2 rounded-pill px-4 text-sm font-semibold text-primary-500 transition-colors hover:bg-primary-100">
+                                        <span class="material-icons-outlined text-[18px]">add</span>
+                                        Adicionar cedente
+                                    </button>
+                                </div>
+
+                                <div class="space-y-3">
+                                    @foreach ($assignors as $i => $assignor)
+                                        <div class="grid grid-cols-1 items-end gap-3 rounded-2xl border border-mono-100 bg-mono-50 p-4 md:grid-cols-[1fr_160px_auto]" wire:key="modal-assignor-{{ $i }}">
+                                            <div>
+                                                <label class="mb-2 block text-sm font-medium text-mono-600">Contato</label>
+                                                <select wire:model="assignors.{{ $i }}.contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                    <option value="">Selecionar contato</option>
+                                                    @foreach ($contacts as $contact)
+                                                        <option value="{{ $contact->id }}">{{ $contact->name }}{{ $contact->document ? ' · '.$contact->document : '' }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label class="mb-2 block text-sm font-medium text-mono-600">Papel</label>
+                                                <select wire:model="assignors.{{ $i }}.role" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                    <option value="parte">Parte</option>
+                                                    <option value="advogado">Advogado</option>
+                                                </select>
+                                            </div>
+
+                                            @if (count($assignors) > 1)
+                                                <button type="button" wire:click="removeAssignor({{ $i }})" class="flex h-11 w-11 items-center justify-center rounded-xl text-error transition-colors hover:bg-down-bg" title="Remover cedente">
+                                                    <span class="material-icons-outlined text-[20px]">delete_outline</span>
+                                                </button>
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                </div>
+
+                                @if ($contacts->isEmpty())
+                                    <p class="mt-3 text-xs text-mono-600">Nenhum contato ativo cadastrado. <a href="{{ route('contacts.create') }}" class="font-semibold text-primary-500 hover:underline">Cadastrar contato</a></p>
+                                @endif
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">payments</span>
+                                    <h4 class="text-base font-bold text-mono-900">Valores e Deságio</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                    <x-jr.input label="Valor de face" icon="attach_money" type="text" x-money wire:model.live="face_value" />
+                                    <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
+                                    <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />
+                                    <x-jr.input label="Outras despesas" icon="request_quote" type="text" x-money wire:model="other_expenses_amount" />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Deságio calculado</label>
+                                        <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-mono-900">
+                                            {{ number_format($this->discountPreview(), 2, ',', '.') }}%
+                                        </div>
+                                    </div>
+                                    <x-jr.input label="Recebimento estimado" icon="savings" type="text" x-money wire:model="estimated_receipt_amount" />
+                                    <x-jr.input label="Prazo estimado (meses)" icon="calendar_month" type="number" min="0" wire:model="estimated_months" />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">account_balance_wallet</span>
+                                    <h4 class="text-base font-bold text-mono-900">Movimentação financeira</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta de origem</label>
+                                        <select wire:model="source_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="">Selecionar</option>
+                                            @foreach ($accounts as $account)
+                                                <option value="{{ $account->id }}">{{ $account->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta de destino</label>
+                                        <select wire:model="destination_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="">Selecionar</option>
+                                            @foreach ($accounts as $account)
+                                                <option value="{{ $account->id }}">{{ $account->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <label class="mb-2 block text-sm font-medium text-mono-600">Observações</label>
+                                <textarea wire:model="notes" rows="3" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 focus:border-primary-500 focus:ring-0"></textarea>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelCreate">Cancelar</button>
+                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            <span class="material-icons-outlined text-[18px]">check</span>
+                            Criar Requisitório
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>
 
 @assets

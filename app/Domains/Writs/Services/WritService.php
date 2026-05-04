@@ -18,7 +18,7 @@ class WritService
     private const ALLOWED_TRANSITIONS = [
         'negotiation' => ['pending', 'paid'],
         'pending' => ['negotiation', 'paid'],
-        'paid' => ['pending', 'petitioning'],
+        'paid' => ['pending', 'petitioning', 'finalized'],
         'petitioning' => ['paid', 'finalized'],
         'finalized' => ['petitioning'],
     ];

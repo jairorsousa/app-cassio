@@ -20,6 +20,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public string $face_value = '0';
     public string $paid_amount = '0';
+    public string $notary_expenses_amount = '0';
+    public string $other_expenses_amount = '0';
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
 
@@ -37,6 +39,8 @@ new #[Layout('layouts.app')] class extends Component {
             }
             $this->face_value = (string) $writ->face_value;
             $this->paid_amount = (string) $writ->paid_amount;
+            $this->notary_expenses_amount = (string) $writ->notary_expenses_amount;
+            $this->other_expenses_amount = (string) $writ->other_expenses_amount;
             $this->estimated_receipt_amount = (string) $writ->estimated_receipt_amount;
             $this->estimated_months = $writ->estimated_months;
             $this->source_bank_account_id = $writ->source_bank_account_id;
@@ -76,6 +80,8 @@ new #[Layout('layouts.app')] class extends Component {
             'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
+            'notary_expenses_amount' => 'required|numeric|min:0',
+            'other_expenses_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
             'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
@@ -86,14 +92,16 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function discountPreview(): float
     {
-        $face = (float) $this->face_value;
-        $paid = (float) $this->paid_amount;
+        $face = $this->moneyValue($this->face_value);
+        $paid = $this->moneyValue($this->paid_amount);
         if ($face <= 0) return 0;
         return round((1 - $paid / $face) * 100, 2);
     }
 
     public function save()
     {
+        $this->normalizeMoneyFields();
+
         $data = $this->validate();
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
@@ -131,6 +139,35 @@ new #[Layout('layouts.app')] class extends Component {
         return $this->redirectRoute('writs.show', $writ, navigate: true);
     }
 
+    private function moneyValue(string|int|float|null $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $value = (string) $value;
+
+        if (str_contains($value, ',')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        }
+
+        return (float) $value;
+    }
+
+    private function normalizeMoneyFields(): void
+    {
+        foreach ([
+            'face_value',
+            'paid_amount',
+            'notary_expenses_amount',
+            'other_expenses_amount',
+            'estimated_receipt_amount',
+        ] as $field) {
+            $this->{$field} = (string) $this->moneyValue($this->{$field});
+        }
+    }
+
     public function with(): array
     {
         return [
@@ -146,18 +183,23 @@ new #[Layout('layouts.app')] class extends Component {
     <form wire:submit="save" class="flex flex-col gap-md">
         <section>
             <h3 class="text-md font-semibold mb-xs">Identificação</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                    <select wire:model="type" class="fx-form-field">
-                        <option value="rpv">RPV</option>
-                        <option value="precatorio">Precatório</option>
-                    </select>
+            <div class="space-y-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
+                    <div>
+                        <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
+                        <select wire:model="type" class="fx-form-field">
+                            <option value="rpv">RPV</option>
+                            <option value="precatorio">Precatório</option>
+                        </select>
+                    </div>
+                    <x-fx.input label="Número do processo" wire:model="process_number" x-process-number />
                 </div>
-                <x-fx.input label="Número do processo" wire:model="process_number" />
-                <x-fx.input label="Vara / Tribunal" wire:model="court" />
-                <x-fx.input label="Ente devedor" wire:model="debtor_entity" placeholder="União, INSS, Estado..." />
-                <x-fx.input label="Natureza do crédito" wire:model="credit_nature" placeholder="alimentar, comum..." />
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
+                    <x-fx.input label="Vara / Tribunal" wire:model="court" />
+                    <x-fx.input label="Ente devedor" wire:model="debtor_entity" placeholder="União, INSS, Estado..." />
+                    <x-fx.input label="Natureza do crédito" wire:model="credit_nature" placeholder="alimentar, comum..." />
+                </div>
             </div>
         </section>
 
@@ -201,6 +243,8 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                 <x-fx.input label="Valor de face" type="text" x-money wire:model.live="face_value" />
                 <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
+                <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />
+                <x-fx.input label="Outras despesas" type="text" x-money wire:model="other_expenses_amount" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Deságio (calculado)</label>
                     <div class="fx-form-field bg-mono-50">

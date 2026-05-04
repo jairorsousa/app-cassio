@@ -81,7 +81,7 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Financeiro · Contas Bancárias</x-slot>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-space-5">
     <x-fx.card class="lg:col-span-2">
         @if ($accounts->isEmpty())
             <x-fx.empty-state
@@ -89,64 +89,53 @@ new #[Layout('layouts.app')] class extends Component {
                 title="Nenhuma conta cadastrada"
                 description="Cadastre suas contas correntes, poupança e caixa para começar a registrar lançamentos." />
         @else
-            <table class="fx-table w-full text-sm">
-                <thead>
+            <x-fx.table :headers="['Nome', 'Banco', 'Tipo', 'Saldo', '']">
+                @foreach ($accounts as $a)
                     <tr>
-                        <th class="text-left">Nome</th>
-                        <th class="text-left">Banco</th>
-                        <th class="text-left">Tipo</th>
-                        <th class="text-right">Saldo</th>
-                        <th></th>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-primary whitespace-nowrap">{{ $a->name }} @unless($a->status)<span class="text-fs-12 text-cryptex-text-secondary ml-1">(inativa)</span>@endunless</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $a->bank }}</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Caixa'][$a->type] }}</td>
+                        <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $a->balance() >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">R$ {{ number_format($a->balance(), 2, ',', '.') }}</td>
+                        <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
+                            <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3" wire:click="edit({{ $a->id }})">Editar</button>
+                            <button class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $a->id }})" wire:confirm="Excluir conta?">Excluir</button>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach ($accounts as $a)
-                        <tr>
-                            <td>{{ $a->name }} @unless($a->status)<span class="text-xxs text-mono-600">(inativa)</span>@endunless</td>
-                            <td>{{ $a->bank }}</td>
-                            <td>{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Caixa'][$a->type] }}</td>
-                            <td class="text-right font-semibold">R$ {{ number_format($a->balance(), 2, ',', '.') }}</td>
-                            <td class="text-right">
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $a->id }})">Editar</button>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $a->id }})" wire:confirm="Excluir conta?">Excluir</button>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                @endforeach
+            </x-fx.table>
         @endif
     </x-fx.card>
 
     <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Nova' }} conta</h3>
-        <form wire:submit="save" class="flex flex-col gap-sm">
+        <h3 class="text-fs-16 font-semibold mb-space-4 text-cryptex-text-primary">{{ $editingId ? 'Editar' : 'Nova' }} conta</h3>
+        <form wire:submit="save" class="flex flex-col gap-space-4">
             <x-fx.input label="Nome" wire:model="name" required />
             <x-fx.input label="Banco" wire:model="bank" />
-            <div class="grid grid-cols-2 gap-xs">
+            <div class="grid grid-cols-2 gap-space-3">
                 <x-fx.input label="Agência" wire:model="agency" />
                 <x-fx.input label="Conta" wire:model="number" />
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model="type" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Tipo</label>
+                <select wire:model="type" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="checking">Corrente</option>
                     <option value="savings">Poupança</option>
                     <option value="investment">Investimento</option>
                     <option value="cash">Caixa</option>
                 </select>
             </div>
-            <x-fx.input label="Saldo inicial" type="text" x-money wire:model="initial_balance" />
-            <label class="flex items-center gap-xs text-sm">
-                <input type="checkbox" wire:model="status" /> Ativa
+            <x-fx.input label="Saldo inicial" type="text" x-money wire:model="initial_balance" numeric />
+            <label class="flex items-center gap-space-3 text-fs-14 text-cryptex-text-primary mt-space-2">
+                <x-fx.toggle wire:model="status" /> Ativa
             </label>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>
-                <textarea wire:model="notes" class="fx-form-field" rows="2"></textarea>
+            <div class="flex flex-col gap-space-1 mt-space-2">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Observações</label>
+                <textarea wire:model="notes" class="w-full py-space-3 px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors" rows="2"></textarea>
             </div>
-            <div class="flex gap-xs">
-                <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
+            <div class="flex gap-space-3 mt-space-4">
+                <x-fx.button type="submit" variant="primary">Salvar</x-fx.button>
                 @if ($editingId)
-                    <button type="button" class="fx-btn fx-btn--text" wire:click="cancel">Cancelar</button>
+                    <x-fx.button type="button" variant="ghost" wire:click="cancel">Cancelar</x-fx.button>
                 @endif
             </div>
         </form>

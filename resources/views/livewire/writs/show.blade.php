@@ -95,12 +95,26 @@ new #[Layout('layouts.app')] class extends Component {
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <a href="{{ route('writs.kanban') }}" class="inline-flex h-10 w-fit items-center rounded-pill px-3 text-sm font-semibold text-mono-600 transition-colors hover:bg-mono-100 hover:text-mono-900">
+            ← Voltar
+        </a>
+
+        <div class="inline-flex w-fit items-center gap-2 rounded-pill border border-primary-500 bg-primary-100 px-4 py-2 text-sm font-bold text-primary-500">
+            <span class="material-icons-outlined text-[18px]">flag</span>
+            {{ $writ->stageLabel() }}
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
         <x-fx.card class="lg:col-span-2">
             <h3 class="text-md font-semibold mb-sm">Identificação</h3>
             <div class="grid grid-cols-2 gap-xs text-sm">
                 <div><span class="text-mono-600">Tipo:</span> {{ $writ->type === 'rpv' ? 'RPV' : 'Precatório' }}</div>
-                <div><span class="text-mono-600">Etapa:</span> <span class="fx-badge">{{ $writ->stageLabel() }}</span></div>
+                <div>
+                    <span class="text-mono-600">Etapa:</span>
+                    <span class="inline-flex items-center rounded-pill bg-primary-100 px-3 py-1 text-xs font-bold text-primary-500">{{ $writ->stageLabel() }}</span>
+                </div>
                 <div><span class="text-mono-600">Processo:</span> {{ $writ->process_number ?: '—' }}</div>
                 <div><span class="text-mono-600">Vara/Tribunal:</span> {{ $writ->court ?: '—' }}</div>
                 <div><span class="text-mono-600">Ente devedor:</span> {{ $writ->debtor_entity ?: '—' }}</div>
@@ -130,6 +144,9 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="grid grid-cols-3 gap-xs text-sm">
                 <div><span class="text-mono-600">Face:</span> R$ {{ number_format($writ->face_value, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Pago:</span> R$ {{ number_format($writ->paid_amount, 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Despesas cartorais:</span> R$ {{ number_format($writ->notary_expenses_amount, 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Outras despesas:</span> R$ {{ number_format($writ->other_expenses_amount, 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Custo total:</span> R$ {{ number_format($writ->totalCost(), 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Deságio:</span> {{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
                 <div><span class="text-mono-600">Receb. estimado:</span> R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Prazo:</span> {{ $writ->estimated_months ?? '—' }} meses</div>
@@ -150,7 +167,6 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="mt-md flex items-center justify-between">
                 <div class="flex gap-xs">
                     <a href="{{ route('writs.edit', $writ) }}" class="fx-btn fx-btn--standard fx-btn--sm">Editar dados</a>
-                    <a href="{{ route('writs.kanban') }}" class="fx-btn fx-btn--text fx-btn--sm">← Voltar ao kanban</a>
                 </div>
                 <button
                     wire:click="delete"

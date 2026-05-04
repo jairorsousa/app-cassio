@@ -152,35 +152,35 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">{{ $transaction ? 'Editar' : 'Novo' }} lançamento</x-slot>
 
 <x-fx.card class="max-w-2xl">
-    <form wire:submit="save" class="flex flex-col gap-sm">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model.live="type" class="fx-form-field" {{ $transaction ? 'disabled' : '' }}>
+    <form wire:submit="save" class="flex flex-col gap-space-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-space-4">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Tipo</label>
+                <select wire:model.live="type" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors" {{ $transaction ? 'disabled' : '' }}>
                     <option value="expense">Despesa</option>
                     <option value="income">Receita</option>
                     <option value="transfer">Transferência</option>
                 </select>
             </div>
             <x-fx.input label="Data" type="date" wire:model="date" />
-            <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
+            <x-fx.input label="Valor" type="text" x-money wire:model="amount" numeric />
         </div>
 
         <x-fx.input label="Descrição" wire:model="description" required />
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Categoria</label>
-                <select wire:model="category_id" class="fx-form-field">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Categoria</label>
+                <select wire:model="category_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="">— sem categoria —</option>
                     @foreach ($categories as $c)
                         <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->type === 'income' ? 'R' : 'D' }})</option>
                     @endforeach
                 </select>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
-                <select wire:model="status" class="fx-form-field">
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Status</label>
+                <select wire:model="status" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                     <option value="settled">Liquidado</option>
                     <option value="pending">Pendente</option>
                 </select>
@@ -188,19 +188,19 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
 
         @if ($type === 'transfer')
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Origem</label>
-                    <select wire:model="bank_account_id" class="fx-form-field">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+                <div class="flex flex-col gap-space-1">
+                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Origem</label>
+                    <select wire:model="bank_account_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                         <option value="">—</option>
                         @foreach ($accounts as $a)
                             <option value="{{ $a->id }}">{{ $a->name }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Destino</label>
-                    <select wire:model="transfer_to_id" class="fx-form-field">
+                <div class="flex flex-col gap-space-1">
+                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Destino</label>
+                    <select wire:model="transfer_to_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                         <option value="">—</option>
                         @foreach ($accounts as $a)
                             <option value="{{ $a->id }}">{{ $a->name }}</option>
@@ -209,10 +209,10 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             </div>
         @else
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Conta bancária</label>
-                    <select wire:model.live="bank_account_id" class="fx-form-field">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
+                <div class="flex flex-col gap-space-1">
+                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Conta bancária</label>
+                    <select wire:model.live="bank_account_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                         <option value="">— nenhuma —</option>
                         @foreach ($accounts as $a)
                             <option value="{{ $a->id }}">{{ $a->name }}</option>
@@ -220,9 +220,9 @@ new #[Layout('layouts.app')] class extends Component {
                     </select>
                 </div>
                 @if ($type === 'expense')
-                    <div>
-                        <label class="block text-xxs text-mono-600 mb-xxxs">Cartão de crédito</label>
-                        <select wire:model.live="credit_card_id" class="fx-form-field">
+                    <div class="flex flex-col gap-space-1">
+                        <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Cartão de crédito</label>
+                        <select wire:model.live="credit_card_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
                             <option value="">— nenhum —</option>
                             @foreach ($cards as $c)
                                 <option value="{{ $c->id }}">{{ $c->name }}</option>
@@ -233,18 +233,18 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             @if ($type === 'expense' && $credit_card_id && ! $transaction)
-                <x-fx.input label="Parcelas" type="number" min="1" max="36" wire:model="installments" />
+                <x-fx.input label="Parcelas" type="number" min="1" max="36" wire:model="installments" numeric />
             @endif
         @endif
 
-        <div>
-            <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>
-            <textarea wire:model="notes" class="fx-form-field" rows="2"></textarea>
+        <div class="flex flex-col gap-space-1">
+            <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Observações</label>
+            <textarea wire:model="notes" class="w-full py-space-3 px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors" rows="2"></textarea>
         </div>
 
-        <div class="flex gap-xs">
-            <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
-            <a href="{{ route('banking.transactions.index') }}" class="fx-btn fx-btn--text">Cancelar</a>
+        <div class="flex gap-space-3 mt-space-2">
+            <x-fx.button type="submit" variant="primary">Salvar</x-fx.button>
+            <x-fx.button href="{{ route('banking.transactions.index') }}" variant="ghost">Cancelar</x-fx.button>
         </div>
     </form>
 </x-fx.card>

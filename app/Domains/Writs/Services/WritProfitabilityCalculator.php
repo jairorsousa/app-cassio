@@ -16,7 +16,7 @@ class WritProfitabilityCalculator
      */
     public function realized(Writ $writ): array
     {
-        $paid = (float) $writ->paid_amount;
+        $paid = $writ->totalCost();
         $received = (float) ($writ->actual_receipt_amount ?? 0);
 
         $profit = round($received - $paid, 2);

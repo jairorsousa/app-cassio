@@ -21,6 +21,7 @@ class Writ extends Model
     {
         return LogOptions::defaults()
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'paid_amount',
+                'notary_expenses_amount', 'other_expenses_amount',
                 'estimated_receipt_amount', 'actual_receipt_amount', 'paid_at', 'finalized_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
@@ -42,7 +43,7 @@ class Writ extends Model
         'process_number', 'court', 'debtor_entity', 'credit_nature',
         'assignor_name', 'assignor_document', 'assignor_contact',
         'assignor_bank_data', 'assignor_lawyer',
-        'face_value', 'paid_amount', 'discount_percentage',
+        'face_value', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
         'actual_receipt_amount', 'paid_at', 'finalized_at',
         'source_bank_account_id', 'destination_bank_account_id',
@@ -52,6 +53,8 @@ class Writ extends Model
     protected $casts = [
         'face_value' => 'decimal:2',
         'paid_amount' => 'decimal:2',
+        'notary_expenses_amount' => 'decimal:2',
+        'other_expenses_amount' => 'decimal:2',
         'discount_percentage' => 'decimal:3',
         'estimated_receipt_amount' => 'decimal:2',
         'actual_receipt_amount' => 'decimal:2',
@@ -106,7 +109,7 @@ class Writ extends Model
 
     public function estimatedProfit(): float
     {
-        return round((float) $this->estimated_receipt_amount - (float) $this->paid_amount, 2);
+        return round((float) $this->estimated_receipt_amount - $this->totalCost(), 2);
     }
 
     public function actualProfit(): ?float
@@ -115,6 +118,16 @@ class Writ extends Model
             return null;
         }
 
-        return round((float) $this->actual_receipt_amount - (float) $this->paid_amount, 2);
+        return round((float) $this->actual_receipt_amount - $this->totalCost(), 2);
+    }
+
+    public function totalExpenses(): float
+    {
+        return round((float) $this->notary_expenses_amount + (float) $this->other_expenses_amount, 2);
+    }
+
+    public function totalCost(): float
+    {
+        return round((float) $this->paid_amount + $this->totalExpenses(), 2);
     }
 }

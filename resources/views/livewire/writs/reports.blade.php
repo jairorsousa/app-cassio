@@ -21,7 +21,7 @@ new #[Layout('layouts.app')] class extends Component {
             ];
         });
 
-        $totalInvested = $finalized->sum('paid_amount');
+        $totalInvested = $finalized->sum(fn (Writ $writ) => $writ->totalCost());
         $totalReceived = $finalized->sum('actual_receipt_amount');
         $totalProfit = $totalReceived - $totalInvested;
         $avgPct = $finalized->count() > 0
@@ -82,7 +82,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <tr>
                             <td><a href="{{ route('writs.show', $w) }}" class="hover:text-primary-500">{{ $w->process_number ?: '#'.$w->id }}</a></td>
                             <td>{{ $w->type === 'rpv' ? 'RPV' : 'Precat.' }}</td>
-                            <td class="text-right">R$ {{ number_format($w->paid_amount, 2, ',', '.') }}</td>
+                            <td class="text-right">R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</td>
                             <td class="text-right">R$ {{ number_format($w->actual_receipt_amount, 2, ',', '.') }}</td>
                             <td class="text-right font-semibold {{ $p['profit_amount'] >= 0 ? 'text-system-up' : 'text-system-down' }}">
                                 R$ {{ number_format($p['profit_amount'], 2, ',', '.') }}
