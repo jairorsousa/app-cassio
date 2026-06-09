@@ -17,27 +17,39 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function loadContacts()
     {
-        try {
-            $response = Http::withHeaders([
-                'api_access_token' => 'txw3GA1xq1PvVaB7buNca6Bk',
-                'Content-Type' => 'application/json',
-            ])->post('https://msa.vozconecta.com.br/api/v1/accounts/1/contacts/filter', [
-                'payload' => [
-                    [
-                        'attribute_key' => 'labels',
-                        'filter_operator' => 'equal_to',
-                        'values' => ['parceiros'],
-                        'query_operator' => null
-                    ]
-                ]
-            ]);
+        $this->contacts = [];
+        $page = 1;
 
-            if ($response->successful()) {
-                $data = $response->json();
-                $this->contacts = $data['payload'] ?? [];
-            } else {
-                $this->errorMessage = 'Falha ao carregar contatos do Chatwoot.';
-            }
+        try {
+            do {
+                $response = Http::withHeaders([
+                    'api_access_token' => 'txw3GA1xq1PvVaB7buNca6Bk',
+                    'Content-Type' => 'application/json',
+                ])->post('https://msa.vozconecta.com.br/api/v1/accounts/1/contacts/filter?page=' . $page, [
+                    'payload' => [
+                        [
+                            'attribute_key' => 'labels',
+                            'filter_operator' => 'equal_to',
+                            'values' => ['parceiros'],
+                            'query_operator' => null
+                        ]
+                    ]
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $pageContacts = $data['payload'] ?? [];
+                    
+                    if (!empty($pageContacts)) {
+                        $this->contacts = array_merge($this->contacts, $pageContacts);
+                    }
+                    
+                    $page++;
+                } else {
+                    $this->errorMessage = 'Falha ao carregar contatos do Chatwoot.';
+                    break;
+                }
+            } while (!empty($pageContacts) && count($pageContacts) >= 15); // Continue looping while we receive full pages
         } catch (\Exception $e) {
             $this->errorMessage = 'Erro ao conectar com Chatwoot: ' . $e->getMessage();
         }
