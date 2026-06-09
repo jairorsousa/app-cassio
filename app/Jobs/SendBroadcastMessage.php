@@ -56,8 +56,8 @@ class SendBroadcastMessage implements ShouldQueue
                 Log::info("Mensagem enviada com sucesso para o contato {$idContato}");
             }
 
-            // Delay aleatório entre 10 e 15 segundos
-            sleep(rand(10, 15));
+            // Delay aleatório entre 30 e 45 segundos para evitar bloqueios por spam
+            sleep(rand(30, 45));
         });
     }
 }
