@@ -188,7 +188,7 @@ O Laravel registra detalhes precisos dos erros (como problemas de conexão com b
 ```bash
 tail -n 50 storage/logs/laravel.log
 # ou no container:
-docker compose exec app tail -n 50 storage/logs/laravel.log
+    docker compose exec app tail -n 50 storage/logs/laravel.log
 ```
 
 **2. Verifique os logs do container (PHP/Nginx)**

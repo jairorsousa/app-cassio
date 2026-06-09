@@ -78,4 +78,8 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('contacts')->name(
     Volt::route('/{contact}', 'contacts.show')->name('show');
 });
 
+Route::middleware(['auth', 'verified', 'inactivity'])->prefix('broadcasts')->name('broadcasts.')->group(function () {
+    Volt::route('/', 'broadcasts.index')->name('index');
+});
+
 require __DIR__.'/auth.php';

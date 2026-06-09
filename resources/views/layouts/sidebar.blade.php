@@ -61,6 +61,11 @@
             Contatos
         </a>
 
+        <a href="{{ route('broadcasts.index') }}" class="{{ $topItem }} {{ request()->routeIs('broadcasts.*') ? $topActive : $topInactive }}">
+            <span class="material-icons-outlined text-[20px]">campaign</span>
+            Transmissão
+        </a>
+
         <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
             <button type="button" class="{{ $topItem }} {{ request()->routeIs('investments.*') || request()->routeIs('brokers.*') || request()->routeIs('partnership.*') ? $topActive : $topInactive }}" @click="open = !open">
                 <span class="material-icons-outlined text-[20px]">workspaces</span>
