@@ -171,6 +171,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return round(($profit / $cost) * 100, 2);
     }
 
+    public function estimatedProfitPerMonthPreview(): float
+    {
+        $months = (int) $this->estimated_months;
+        if ($months <= 0) return 0.0;
+        return round($this->estimatedProfitPreview() / $months, 2);
+    }
+
     public function saveWrit(): void
     {
         $this->normalizeMoneyFields();
@@ -827,6 +834,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Lucro estimado (%)</label>
                                         <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
                                             {{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Lucro / Mês</label>
+                                        <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
+                                            R$ {{ number_format($this->estimatedProfitPerMonthPreview(), 2, ',', '.') }}
                                         </div>
                                     </div>
 

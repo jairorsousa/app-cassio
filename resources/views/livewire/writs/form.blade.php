@@ -152,6 +152,13 @@ new #[Layout('layouts.app')] class extends Component {
         return round(($profit / $cost) * 100, 2);
     }
 
+    public function estimatedProfitPerMonthPreview(): float
+    {
+        $months = (int) $this->estimated_months;
+        if ($months <= 0) return 0.0;
+        return round($this->estimatedProfitPreview() / $months, 2);
+    }
+
     public function save()
     {
         if ($this->writ) {
@@ -417,6 +424,12 @@ new #[Layout('layouts.app')] class extends Component {
                     <label class="block text-xxs text-mono-600 mb-xxxs">Lucro estimado (%)</label>
                     <div class="fx-form-field bg-mono-50">
                         <input type="text" disabled value="{{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%" class="font-semibold text-up" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Lucro / Mês</label>
+                    <div class="fx-form-field bg-mono-50">
+                        <input type="text" disabled value="R$ {{ number_format($this->estimatedProfitPerMonthPreview(), 2, ',', '.') }}" class="font-semibold text-up" />
                     </div>
                 </div>
 
