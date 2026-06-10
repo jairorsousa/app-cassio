@@ -72,6 +72,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public ?int $cessionWritId = null;
     public string $promptCessionAt = '';
 
+    public bool $showPaidModal = false;
+    public ?int $promptPaidWritId = null;
+    public string $promptPaidAmount = '';
+    public string $promptNotaryExpenses = '';
+    public string $promptOtherExpenses = '';
+    public string $promptPaidAt = '';
+    public ?int $promptSourceBankAccountId = null;
+    public string $promptTransactionNote = '';
+
     public function rules(): array
     {
         return [
@@ -408,6 +417,57 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->showCessionModal = false;
         $this->cessionWritId = null;
+    }
+
+    public function promptPaidDate(int $id): void
+    {
+        $this->promptPaidWritId = $id;
+        $writ = Writ::findOrFail($id);
+        
+        $this->promptPaidAmount = (string) $writ->paid_amount;
+        $this->promptNotaryExpenses = (string) $writ->notary_expenses_amount;
+        $this->promptOtherExpenses = (string) $writ->other_expenses_amount;
+        $this->promptPaidAt = now()->format('Y-m-d');
+        $this->promptSourceBankAccountId = $writ->source_bank_account_id;
+        $this->promptTransactionNote = '';
+        
+        $this->showPaidModal = true;
+    }
+
+    public function confirmPaidDate(WritService $service): void
+    {
+        $this->validate([
+            'promptPaidAmount' => 'required',
+            'promptNotaryExpenses' => 'required',
+            'promptOtherExpenses' => 'required',
+            'promptPaidAt' => 'required|date',
+            'promptSourceBankAccountId' => 'required|exists:bank_accounts,id',
+        ]);
+
+        try {
+            $writ = Writ::findOrFail($this->promptPaidWritId);
+            $writ->update([
+                'paid_amount' => $this->moneyValue($this->promptPaidAmount),
+                'notary_expenses_amount' => $this->moneyValue($this->promptNotaryExpenses),
+                'other_expenses_amount' => $this->moneyValue($this->promptOtherExpenses),
+            ]);
+            
+            $service->transitionTo($writ, 'paid', [
+                'paid_at' => $this->promptPaidAt,
+                'source_bank_account_id' => $this->promptSourceBankAccountId,
+                'notes' => $this->promptTransactionNote ?: null,
+            ]);
+            $this->showPaidModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['paid'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelPaidDate(): void
+    {
+        $this->showPaidModal = false;
+        $this->promptPaidWritId = null;
     }
 
     public function clearFilters(): void
@@ -939,6 +999,47 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
         </div>
     @endif
+
+    @if ($showPaidModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center bg-black/45 px-4 overflow-y-auto">
+            <div class="w-full max-w-lg rounded-2xl bg-mono-white p-6 shadow-elevated my-8" @click.stop>
+                <h3 class="mb-4 text-lg font-bold text-mono-900">Confirmar Pagamento</h3>
+                <p class="mb-4 text-sm text-mono-600">Por favor, preencha os dados de pagamento para mover o card para a etapa Pago.</p>
+                <form wire:submit="confirmPaidDate">
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <x-jr.input label="Valor pago ao cedente *" icon="payments" type="text" x-money wire:model="promptPaidAmount" required />
+                            <x-jr.input label="Data do pagamento *" icon="event_available" type="date" wire:model="promptPaidAt" required />
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <x-jr.input label="Despesas cartorais *" icon="receipt_long" type="text" x-money wire:model="promptNotaryExpenses" required />
+                            <x-jr.input label="Outras despesas *" icon="request_quote" type="text" x-money wire:model="promptOtherExpenses" required />
+                        </div>
+                        <div>
+                            <label class="mb-2 block text-sm font-medium text-mono-600">Conta de origem *</label>
+                            <select wire:model="promptSourceBankAccountId" required class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                <option value="">Selecionar</option>
+                                @foreach ($accounts as $account)
+                                    <option value="{{ $account->id }}">{{ $account->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="mb-2 block text-sm font-medium text-mono-600">Nota da transação (opcional)</label>
+                            <textarea wire:model="promptTransactionNote" rows="2" class="w-full rounded-xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 focus:border-primary-500 focus:ring-0"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex items-center justify-end gap-3">
+                        <button type="button" class="rounded-pill bg-mono-100 px-4 py-2 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelPaidDate">Cancelar</button>
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-pill bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            Confirmar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>
 
 @assets
@@ -963,6 +1064,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         if (oldStage === 'negotiation' && newStage === 'pending') {
                             evt.from.appendChild(evt.item);
                             $wire.promptCessionDate(id);
+                        } else if (oldStage === 'pending' && newStage === 'paid') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptPaidDate(id);
                         } else {
                             $wire.moveCard(id, newStage);
                         }
