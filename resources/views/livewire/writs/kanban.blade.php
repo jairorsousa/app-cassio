@@ -231,8 +231,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $value = (string) $value;
 
         if (str_contains($value, ',')) {
-            $value = str_replace('.', '', $value);
-            $value = str_replace(',', '.', $value);
+            $digits = preg_replace('/\D/', '', $value);
+            return (float) ($digits / 100);
         }
 
         return (float) $value;
@@ -834,12 +834,6 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Lucro estimado (%)</label>
                                         <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
                                             {{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Lucro / Mês</label>
-                                        <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
-                                            R$ {{ number_format($this->estimatedProfitPerMonthPreview(), 2, ',', '.') }}
                                         </div>
                                     </div>
 

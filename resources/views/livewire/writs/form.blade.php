@@ -217,8 +217,8 @@ new #[Layout('layouts.app')] class extends Component {
         $value = (string) $value;
 
         if (str_contains($value, ',')) {
-            $value = str_replace('.', '', $value);
-            $value = str_replace(',', '.', $value);
+            $digits = preg_replace('/\D/', '', $value);
+            return (float) ($digits / 100);
         }
 
         return (float) $value;
@@ -424,12 +424,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <label class="block text-xxs text-mono-600 mb-xxxs">Lucro estimado (%)</label>
                     <div class="fx-form-field bg-mono-50">
                         <input type="text" disabled value="{{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%" class="font-semibold text-up" />
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Lucro / Mês</label>
-                    <div class="fx-form-field bg-mono-50">
-                        <input type="text" disabled value="R$ {{ number_format($this->estimatedProfitPerMonthPreview(), 2, ',', '.') }}" class="font-semibold text-up" />
                     </div>
                 </div>
 
