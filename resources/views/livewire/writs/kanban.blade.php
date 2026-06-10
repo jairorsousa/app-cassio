@@ -68,6 +68,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public ?int $destination_bank_account_id = null;
     public string $notes = '';
 
+    public bool $showCessionModal = false;
+    public ?int $cessionWritId = null;
+    public string $promptCessionAt = '';
+
     public function rules(): array
     {
         return [
@@ -342,6 +346,34 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         } catch (\DomainException|\InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
+    }
+
+    public function promptCessionDate(int $id): void
+    {
+        $this->cessionWritId = $id;
+        $this->promptCessionAt = now()->format('Y-m-d\TH:i');
+        $this->showCessionModal = true;
+    }
+
+    public function confirmCessionDate(WritService $service): void
+    {
+        $this->validate(['promptCessionAt' => 'required|date']);
+
+        try {
+            $writ = Writ::findOrFail($this->cessionWritId);
+            $writ->update(['cession_at' => $this->promptCessionAt]);
+            $service->transitionTo($writ, 'pending');
+            $this->showCessionModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['pending'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelCessionDate(): void
+    {
+        $this->showCessionModal = false;
+        $this->cessionWritId = null;
     }
 
     public function clearFilters(): void
@@ -831,6 +863,25 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
         </div>
     @endif
+
+    @if ($showCessionModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center bg-black/45 px-4">
+            <div class="w-full max-w-md rounded-2xl bg-mono-white p-6 shadow-elevated" @click.stop>
+                <h3 class="mb-4 text-lg font-bold text-mono-900">Data e hora da cessão</h3>
+                <p class="mb-4 text-sm text-mono-600">Por favor, informe a data e hora em que a cessão foi realizada para continuar.</p>
+                <form wire:submit="confirmCessionDate">
+                    <x-jr.input label="Data da cessão" icon="edit_calendar" type="datetime-local" wire:model="promptCessionAt" required />
+                    
+                    <div class="mt-6 flex items-center justify-end gap-3">
+                        <button type="button" class="rounded-pill bg-mono-100 px-4 py-2 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelCessionDate">Cancelar</button>
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-pill bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            Confirmar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>
 
 @assets
@@ -850,7 +901,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     onAdd: (evt) => {
                         const id = parseInt(evt.item.dataset.id);
                         const newStage = evt.to.dataset.stage;
-                        $wire.moveCard(id, newStage);
+                        const oldStage = evt.from.dataset.stage;
+
+                        if (oldStage === 'negotiation' && newStage === 'pending') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptCessionDate(id);
+                        } else {
+                            $wire.moveCard(id, newStage);
+                        }
                     },
                 });
             });
