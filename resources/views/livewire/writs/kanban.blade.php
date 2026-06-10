@@ -627,7 +627,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
                                     </div>
 
-                                    @if ($w->paid_at || $stage['key'] !== 'negotiation')
+                                    @if ($stage['key'] === 'pending' && $w->cession_at)
+                                    <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
+                                        <span class="material-icons-outlined text-[16px]">edit_calendar</span>
+                                        <span>Cessão: {{ $w->cession_at->format('d/m/Y \à\s H:i') }}</span>
+                                    </div>
+                                    @endif
+
+                                    @if ($w->paid_at || !in_array($stage['key'], ['negotiation', 'pending']))
                                     <div class="mt-3 flex items-center gap-2 text-xs {{ $w->paid_at ? 'text-mono-600' : 'text-down' }}">
                                         <span class="material-icons-outlined text-[16px]">calendar_today</span>
                                         <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
