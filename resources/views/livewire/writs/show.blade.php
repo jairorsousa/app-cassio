@@ -11,6 +11,7 @@ new #[Layout('layouts.app')] class extends Component {
     public Writ $writ;
 
     public string $transitionTo = '';
+    public string $transition_cession_at = '';
     public string $transition_paid_at = '';
     public string $transition_paid_amount = '';
     public ?int $transition_source_account = null;
@@ -22,6 +23,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(Writ $writ): void
     {
         $this->writ = $writ->load('history.user', 'transactions', 'assignors.contact');
+        $this->transition_cession_at = now()->format('Y-m-d\TH:i');
         $this->transition_paid_at = now()->format('Y-m-d');
         $this->transition_finalized_at = now()->format('Y-m-d');
         $this->transition_paid_amount = (string) $writ->paid_amount;
@@ -36,6 +38,10 @@ new #[Layout('layouts.app')] class extends Component {
         ]);
 
         $context = ['notes' => $this->transition_notes ?: null];
+
+        if ($this->transitionTo === 'pending') {
+            $context['cession_at'] = $this->transition_cession_at ?: null;
+        }
 
         if ($this->transitionTo === 'paid') {
             $context['paid_at'] = $this->transition_paid_at;
@@ -115,6 +121,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="text-mono-600">Etapa:</span>
                     <span class="inline-flex items-center rounded-pill bg-primary-100 px-3 py-1 text-xs font-bold text-primary-500">{{ $writ->stageLabel() }}</span>
                 </div>
+                @if ($writ->cession_at)
+                    <div><span class="text-mono-600">Data da cessão:</span> {{ $writ->cession_at->format('d/m/Y H:i') }}</div>
+                @endif
                 <div><span class="text-mono-600">Processo:</span> {{ $writ->process_number ?: '—' }}</div>
                 <div><span class="text-mono-600">Vara/Tribunal:</span> {{ $writ->court ?: '—' }}</div>
                 <div><span class="text-mono-600">Ente devedor:</span> {{ $writ->debtor_entity ?: '—' }}</div>
@@ -151,6 +160,8 @@ new #[Layout('layouts.app')] class extends Component {
                 <div><span class="text-mono-600">Receb. estimado:</span> R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Prazo:</span> {{ $writ->estimated_months ?? '—' }} meses</div>
                 <div><span class="text-mono-600">Lucro estimado:</span> R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Data pagamento:</span> {{ $writ->paid_at ? $writ->paid_at->format('d/m/Y') : '—' }}</div>
+                <div><span class="text-mono-600">Data recebimento:</span> {{ $writ->finalized_at ? $writ->finalized_at->format('d/m/Y') : '—' }}</div>
             </div>
 
             @if ($writ->actual_receipt_amount)
@@ -193,6 +204,10 @@ new #[Layout('layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
+
+                @if ($transitionTo === 'pending')
+                    <x-fx.input label="Data da cessão" type="datetime-local" wire:model="transition_cession_at" />
+                @endif
 
                 @if ($transitionTo === 'paid')
                     <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />

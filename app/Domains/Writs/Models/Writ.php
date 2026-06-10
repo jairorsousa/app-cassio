@@ -22,7 +22,7 @@ class Writ extends Model
         return LogOptions::defaults()
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
-                'estimated_receipt_amount', 'actual_receipt_amount', 'paid_at', 'finalized_at'])
+                'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('writs');
@@ -45,7 +45,7 @@ class Writ extends Model
         'assignor_bank_data', 'assignor_lawyer',
         'face_value', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
-        'actual_receipt_amount', 'paid_at', 'finalized_at',
+        'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
         'source_bank_account_id', 'destination_bank_account_id',
         'notes',
     ];
@@ -59,6 +59,7 @@ class Writ extends Model
         'estimated_receipt_amount' => 'decimal:2',
         'actual_receipt_amount' => 'decimal:2',
         'estimated_months' => 'integer',
+        'cession_at' => 'datetime',
         'paid_at' => 'date',
         'finalized_at' => 'date',
     ];

@@ -101,6 +101,18 @@ class WritPipelineTest extends TestCase
         $this->assertEquals($account->id, $transactions->first()->bank_account_id);
     }
 
+    public function test_pending_stage_stores_cession_datetime(): void
+    {
+        $writ = $this->makeWrit();
+
+        $updated = app(WritService::class)->transitionTo($writ, 'pending', [
+            'cession_at' => '2026-06-15 14:30:00',
+        ]);
+
+        $this->assertEquals('pending', $updated->stage);
+        $this->assertEquals('2026-06-15 14:30:00', $updated->cession_at->format('Y-m-d H:i:s'));
+    }
+
     public function test_finalized_stage_creates_income_transaction(): void
     {
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 100000, 'status' => true]);

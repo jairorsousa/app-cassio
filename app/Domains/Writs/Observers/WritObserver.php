@@ -21,6 +21,9 @@ class WritObserver
             'face_value',
             'estimated_receipt_amount',
             'actual_receipt_amount',
+            'cession_at',
+            'paid_at',
+            'finalized_at',
         ];
         foreach ($relevantFields as $f) {
             if ($writ->wasChanged($f)) {
