@@ -94,9 +94,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         ];
     }
 
-    public function create(): void
+    public function create(?string $stage = null): void
     {
         $this->resetForm();
+        if ($stage !== null && in_array($stage, Writ::STAGES, true)) {
+            $this->stage = $stage;
+        }
         $this->showFormModal = true;
     }
 
@@ -506,7 +509,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
                             <div class="writ-stage-actions">
                                 <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-mono-100 px-1.5 text-[11px] font-bold text-mono-600">{{ $stage['count'] }}</span>
-                                <button type="button" wire:click="create" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-primary-500" title="Novo requisitório">
+                                <button type="button" wire:click="create('{{ $stage['key'] }}')" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-primary-500" title="Novo requisitório">
                                     <span class="material-icons-outlined text-[20px]">add</span>
                                 </button>
                             </div>
