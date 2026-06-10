@@ -102,9 +102,11 @@ new #[Layout('layouts.app')] class extends Component {
                     <label for="message" class="block text-sm font-medium text-mono-700 mb-xxxs">Mensagem</label>
                     <textarea
                         id="message"
+                        name="message"
                         wire:model="message"
-                        rows="8"
-                        class="fx-form-field w-full p-sm resize-none"
+                        rows="7"
+                        maxlength="1000"
+                        class="w-full min-h-[180px] resize-y rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm leading-6 text-mono-900 placeholder:text-mono-300 transition-all duration-200 hover:border-mono-300 focus:border-primary-500 focus:outline-none focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]"
                         placeholder="Digite sua mensagem aqui..."
                         required
                     ></textarea>
