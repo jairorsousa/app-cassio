@@ -257,6 +257,10 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="text-xs text-mono-500 mb-1">Lucro estimado (%)</div>
                         <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentage(), 2, ',', '.') }}%</div>
                     </div>
+                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                        <div class="text-xs text-mono-500 mb-1">Lucro estimado / Mês</div>
+                        <div class="font-bold text-sm text-up">R$ {{ number_format($writ->estimatedProfitPerMonth(), 2, ',', '.') }}</div>
+                    </div>
                 </div>
 
                 <div class="mt-6 flex items-center justify-between">
