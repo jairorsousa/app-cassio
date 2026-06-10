@@ -95,109 +95,197 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">{{ $writ->process_number ?: '#'.$writ->id }} · {{ $writ->stageLabel() }}</x-slot>
-
-<div class="flex flex-col gap-md">
+<div class="flex flex-col gap-6 pt-4 pb-12">
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <a href="{{ route('writs.kanban') }}" class="inline-flex h-10 w-fit items-center rounded-pill px-3 text-sm font-semibold text-mono-600 transition-colors hover:bg-mono-100 hover:text-mono-900">
-            ← Voltar
+    <div class="flex items-center justify-between mb-2">
+        <a href="{{ route('writs.kanban') }}" class="inline-flex items-center gap-2 text-sm font-medium text-mono-500 hover:text-mono-900 transition-colors">
+            <span class="material-icons-outlined text-[18px]">arrow_back</span> Voltar
         </a>
-
-        <div class="inline-flex w-fit items-center gap-2 rounded-pill border border-primary-500 bg-primary-100 px-4 py-2 text-sm font-bold text-primary-500">
-            <span class="material-icons-outlined text-[18px]">flag</span>
-            {{ $writ->stageLabel() }}
-        </div>
+        <a href="{{ route('writs.edit', $writ) }}" class="inline-flex items-center gap-2 rounded-lg border border-primary-500 px-4 py-2 text-sm font-semibold text-primary-500 hover:bg-primary-50 transition-colors">
+            <span class="material-icons-outlined text-[18px]">edit_note</span> Editar dados
+        </a>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
-        <x-fx.card class="lg:col-span-2">
-            <h3 class="text-md font-semibold mb-sm">Identificação</h3>
-            <div class="grid grid-cols-2 gap-xs text-sm">
-                <div><span class="text-mono-600">Tipo:</span> {{ $writ->type === 'rpv' ? 'RPV' : 'Precatório' }}</div>
-                <div>
-                    <span class="text-mono-600">Etapa:</span>
-                    <span class="inline-flex items-center rounded-pill bg-primary-100 px-3 py-1 text-xs font-bold text-primary-500">{{ $writ->stageLabel() }}</span>
-                </div>
-                @if ($writ->cession_at)
-                    <div><span class="text-mono-600">Data da cessão:</span> {{ $writ->cession_at->format('d/m/Y H:i') }}</div>
-                @endif
-                <div><span class="text-mono-600">Processo:</span> {{ $writ->process_number ?: '—' }}</div>
-                <div><span class="text-mono-600">Vara/Tribunal:</span> {{ $writ->court ?: '—' }}</div>
-                <div><span class="text-mono-600">Ente devedor:</span> {{ $writ->debtor_entity ?: '—' }}</div>
-                <div><span class="text-mono-600">Natureza:</span> {{ $writ->credit_nature ?: '—' }}</div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Esquerda: Detalhes -->
+        <x-fx.card class="lg:col-span-2 flex flex-col gap-6">
+            <div class="flex items-center gap-2">
+                <span class="material-icons-outlined text-primary-500">assignment</span>
+                <h2 class="text-lg font-bold text-mono-900">Detalhes da requisição</h2>
             </div>
 
-            <h3 class="text-md font-semibold mt-md mb-sm">Cedentes</h3>
-            @if ($writ->assignors->isEmpty())
-                <div class="text-sm text-mono-600">Nenhum cedente vinculado.</div>
-            @else
-                <div class="flex flex-col gap-xs">
-                    @foreach ($writ->assignors as $a)
-                        <div class="flex items-start gap-sm text-sm">
-                            <span class="fx-badge shrink-0">{{ $a->role === 'advogado' ? 'Advogado' : 'Parte' }}</span>
-                            <div>
-                                <div class="font-medium">{{ $a->contact->name }}</div>
-                                <div class="text-xxs text-mono-600">
-                                    {{ implode(' · ', array_filter([$a->contact->document, $a->contact->phone])) ?: '—' }}
+            <!-- 4 columns grid for Tipo, Status, Vencimento, Natureza -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 border-b border-mono-100 pb-6">
+                <div>
+                    <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
+                        <span class="material-icons-outlined text-[16px]">receipt_long</span> Tipo
+                    </div>
+                    <div class="font-medium text-sm">
+                        <span class="inline-flex items-center rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
+                            {{ $writ->type === 'rpv' ? 'RPV' : 'Precatório' }}
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
+                        Status
+                    </div>
+                    <div class="font-medium text-sm">
+                        <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                            <span class="w-1.5 h-1.5 rounded-full bg-green-600 mr-1.5"></span>
+                            {{ $writ->stageLabel() }}
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
+                        <span class="material-icons-outlined text-[16px]">calendar_today</span> Vencimento
+                    </div>
+                    <div class="font-medium text-sm text-mono-900">
+                        {{ $writ->cession_at ? $writ->cession_at->format('d/m/Y') : '—' }}
+                    </div>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
+                        <span class="material-icons-outlined text-[16px]">folder_open</span> Natureza
+                    </div>
+                    <div class="font-medium text-sm text-mono-900">
+                        {{ $writ->credit_nature ?: '—' }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Processo -->
+            <div class="border-b border-mono-100 pb-6">
+                <div class="text-xs text-mono-500 mb-1">Processo</div>
+                <div class="flex items-center gap-2 font-medium text-sm text-mono-900 mb-4">
+                    <span class="material-icons-outlined text-[18px] text-mono-400">balance</span>
+                    {{ $writ->process_number ?: '—' }}
+                </div>
+                <div class="text-xs text-mono-500 mb-1">Vara/Tribunal</div>
+                <div class="font-medium text-sm text-mono-900">
+                    {{ $writ->court ?: '—' }}
+                </div>
+                <div class="text-xs text-mono-500 mb-1 mt-4">Ente devedor</div>
+                <div class="font-medium text-sm text-mono-900">
+                    {{ $writ->debtor_entity ?: '—' }}
+                </div>
+            </div>
+
+            <!-- Cedentes -->
+            <div class="border-b border-mono-100 pb-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="material-icons-outlined text-primary-500">people_outline</span>
+                    <h3 class="text-base font-bold text-mono-900">Cedentes</h3>
+                </div>
+                <div class="text-xs text-mono-500 mb-2">Parte</div>
+                @if ($writ->assignors->isEmpty())
+                    <div class="text-sm text-mono-600">Nenhum cedente vinculado.</div>
+                @else
+                    <div class="flex flex-col gap-4">
+                        @foreach ($writ->assignors as $a)
+                            <div class="flex items-center gap-3 text-sm">
+                                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">
+                                    {{ str($a->contact->name)->substr(0, 2)->upper() }}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-mono-900 uppercase">{{ $a->contact->name }}</div>
+                                    <div class="text-xs text-mono-500">
+                                        CPF: {{ $a->contact->document ?: '—' }}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    @endforeach
-                </div>
-            @endif
-
-            <h3 class="text-md font-semibold mt-md mb-sm">Valores</h3>
-            <div class="grid grid-cols-3 gap-xs text-sm">
-                <div><span class="text-mono-600">Valor do requisitório:</span> R$ {{ number_format($writ->face_value, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Parte negociada:</span> R$ {{ number_format($writ->negotiated_amount, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Pago:</span> R$ {{ number_format($writ->paid_amount, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Despesas cartorais:</span> R$ {{ number_format($writ->notary_expenses_amount, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Outras despesas:</span> R$ {{ number_format($writ->other_expenses_amount, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Custo total:</span> R$ {{ number_format($writ->totalCost(), 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Deságio:</span> {{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
-                <div><span class="text-mono-600">Receb. estimado:</span> R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Prazo:</span> {{ $writ->estimated_months ?? '—' }} meses</div>
-                <div><span class="text-mono-600">Lucro estimado:</span> R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
-                <div><span class="text-mono-600">Data pagamento:</span> {{ $writ->paid_at ? $writ->paid_at->format('d/m/Y') : '—' }}</div>
-                <div><span class="text-mono-600">Data recebimento:</span> {{ $writ->finalized_at ? $writ->finalized_at->format('d/m/Y') : '—' }}</div>
+                        @endforeach
+                    </div>
+                @endif
             </div>
 
-            @if ($writ->actual_receipt_amount)
-                <h3 class="text-md font-semibold mt-md mb-sm">Rentabilidade realizada</h3>
-                <div class="grid grid-cols-3 gap-xs text-sm">
-                    <div><span class="text-mono-600">Recebido:</span> R$ {{ number_format($writ->actual_receipt_amount, 2, ',', '.') }}</div>
-                    <div><span class="text-mono-600">Lucro real:</span> <span class="font-semibold text-system-up">R$ {{ number_format($profitability['profit_amount'], 2, ',', '.') }}</span></div>
-                    <div><span class="text-mono-600">% real:</span> {{ number_format($profitability['profit_percentage'], 2, ',', '.') }}%</div>
-                    <div><span class="text-mono-600">Dias decorridos:</span> {{ $profitability['days_elapsed'] ?? '—' }}</div>
-                    <div><span class="text-mono-600">% ao mês:</span> {{ $profitability['monthly_rate'] !== null ? number_format($profitability['monthly_rate'], 3, ',', '.').'%' : '—' }}</div>
+            <!-- Valores -->
+            <div class="bg-mono-50 rounded-xl p-6 border border-mono-100">
+                <div class="flex items-center gap-2 mb-6">
+                    <span class="material-icons-outlined text-primary-500">monetization_on</span>
+                    <h3 class="text-base font-bold text-mono-900">Valores</h3>
                 </div>
-            @endif
+                <div class="grid grid-cols-2 lg:grid-cols-3 gap-y-6 gap-x-4">
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Face</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->face_value, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Parte negociada</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->negotiated_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Valor da proposta</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->proposed_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Despesas cartorárias</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->notary_expenses_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Outros descontos</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->other_expenses_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Custo total</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->totalCost(), 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Deságio</div>
+                        <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Líquido estimado</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Prazo</div>
+                        <div class="font-bold text-sm text-mono-900">{{ $writ->estimated_months ?? '—' }} meses</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-mono-500 mb-1">Líquido estimado final</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
+                    </div>
+                </div>
 
-            <div class="mt-md flex items-center justify-between">
-                <div class="flex gap-xs">
-                    <a href="{{ route('writs.edit', $writ) }}" class="fx-btn fx-btn--standard fx-btn--sm">Editar dados</a>
+                <div class="mt-6 flex items-center justify-between">
+                    <button class="inline-flex items-center gap-2 rounded-lg border border-primary-500 px-4 py-2 text-sm font-semibold text-primary-500 hover:bg-primary-50 transition-colors">
+                        <span class="material-icons-outlined text-[18px]">visibility</span> Ver cálculo
+                    </button>
+                    <a href="#" class="inline-flex items-center gap-2 text-sm font-medium text-mono-500 hover:text-mono-900 transition-colors">
+                        <span class="material-icons-outlined text-[18px]">receipt</span> Exibir requisitório
+                    </a>
                 </div>
+            </div>
+            
+            <div class="flex justify-end mt-2">
                 <button
                     wire:click="delete"
-                    wire:confirm="Tem certeza que deseja excluir este requisitório? Todas as transações bancárias e eventos vinculados serão removidos permanentemente. Esta ação não pode ser desfeita."
-                    class="fx-btn fx-btn--sm"
-                    style="background: var(--colors-system-error-bg); color: var(--colors-system-error);"
+                    wire:confirm="Tem certeza que deseja excluir este requisitório? Esta ação não pode ser desfeita."
+                    class="text-xs text-mono-400 hover:text-red-500 underline transition-colors"
                 >
-                    🗑 Excluir requisitório
+                    Excluir requisitório permanentemente
                 </button>
             </div>
         </x-fx.card>
 
-        <x-fx.card>
-            <h3 class="text-md font-semibold mb-sm">Mover para outra etapa</h3>
-            <form wire:submit="transition" class="flex flex-col gap-sm">
+        <!-- Direita: Mover para outra etapa -->
+        <x-fx.card class="h-fit">
+            <div class="flex items-center gap-3 mb-6">
+                <span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-primary-500 shrink-0">
+                    <span class="material-icons-outlined text-[18px]">arrow_forward</span>
+                </span>
+                <h3 class="text-lg font-bold text-mono-900">Mover para outra etapa</h3>
+            </div>
+
+            <form wire:submit="transition" class="flex flex-col gap-5">
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Nova etapa</label>
+                    <label class="block text-sm font-medium text-mono-700 mb-1">Nova etapa</label>
                     <select wire:model.live="transitionTo" class="fx-form-field">
-                        <option value="">—</option>
+                        <option value="">Selecione a etapa</option>
                         @foreach (\App\Domains\Writs\Models\Writ::STAGES as $s)
                             @if ($s !== $writ->stage)
                                 <option value="{{ $s }}">{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$s] }}</option>
@@ -214,7 +302,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />
                     <x-fx.input label="Valor pago" type="text" x-money wire:model="transition_paid_amount" />
                     <div>
-                        <label class="block text-xxs text-mono-600 mb-xxxs">Conta de origem</label>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Conta de origem</label>
                         <select wire:model="transition_source_account" class="fx-form-field">
                             <option value="">—</option>
                             @foreach ($accounts as $a)
@@ -228,7 +316,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <x-fx.input label="Data do recebimento" type="date" wire:model="transition_finalized_at" />
                     <x-fx.input label="Valor recebido" type="text" x-money wire:model="transition_actual_receipt_amount" />
                     <div>
-                        <label class="block text-xxs text-mono-600 mb-xxxs">Conta de destino</label>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Conta de destino</label>
                         <select wire:model="transition_destination_account" class="fx-form-field">
                             <option value="">—</option>
                             @foreach ($accounts as $a)
@@ -239,57 +327,119 @@ new #[Layout('layouts.app')] class extends Component {
                 @endif
 
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Notas da transição</label>
-                    <textarea wire:model="transition_notes" class="fx-form-field" rows="2"></textarea>
+                    <label class="block text-sm font-medium text-mono-700 mb-1">Nota da transição (opcional)</label>
+                    <textarea wire:model="transition_notes" class="fx-form-field" rows="4" placeholder="Digite uma observação (opcional)..."></textarea>
                 </div>
 
-                <button type="submit" class="fx-btn fx-btn--primary" @disabled(! $transitionTo)>Confirmar</button>
+                <button type="submit" class="w-full rounded-lg bg-primary-500 px-4 py-3 text-sm font-bold text-white hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2" @disabled(! $transitionTo)>
+                    Confirmar <span class="material-icons-outlined text-[18px]">arrow_forward</span>
+                </button>
             </form>
         </x-fx.card>
     </div>
 
+    @if ($writ->actual_receipt_amount)
+        <!-- Rentabilidade Realizada -->
+        <x-fx.card>
+            <h3 class="text-lg font-bold text-mono-900 mb-4">Rentabilidade realizada</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                    <div class="text-xs text-mono-500 mb-1">Recebido</div>
+                    <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->actual_receipt_amount, 2, ',', '.') }}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-mono-500 mb-1">Lucro real</div>
+                    <div class="font-bold text-sm text-system-up">R$ {{ number_format($profitability['profit_amount'], 2, ',', '.') }}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-mono-500 mb-1">% real</div>
+                    <div class="font-bold text-sm text-mono-900">{{ number_format($profitability['profit_percentage'], 2, ',', '.') }}%</div>
+                </div>
+                <div>
+                    <div class="text-xs text-mono-500 mb-1">Dias decorridos</div>
+                    <div class="font-bold text-sm text-mono-900">{{ $profitability['days_elapsed'] ?? '—' }}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-mono-500 mb-1">% ao mês</div>
+                    <div class="font-bold text-sm text-mono-900">{{ $profitability['monthly_rate'] !== null ? number_format($profitability['monthly_rate'], 3, ',', '.').'%' : '—' }}</div>
+                </div>
+            </div>
+        </x-fx.card>
+    @endif
+
+    <!-- Histórico de transições -->
     <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">Histórico de transições</h3>
+        <div class="flex items-center gap-2 mb-6">
+            <span class="material-icons-outlined text-primary-500">history</span>
+            <h3 class="text-lg font-bold text-mono-900">Histórico de transições</h3>
+        </div>
+        
         @if ($history->isEmpty())
             <div class="text-sm text-mono-600">Sem histórico.</div>
         @else
-            <ul class="flex flex-col gap-xxs">
-                @foreach ($history as $h)
-                    <li class="flex justify-between items-start py-xxs border-b border-mono-100">
-                        <div>
-                            <div class="text-sm">
-                                {{ $h->from_stage ? Writ::STAGE_LABELS[$h->from_stage] : 'Criado' }}
-                                @if ($h->from_stage) → @endif
-                                <strong>{{ Writ::STAGE_LABELS[$h->to_stage] }}</strong>
+            <div class="relative ml-2">
+                <!-- Linha vertical -->
+                <div class="absolute left-[5px] top-2 bottom-2 w-[2px] bg-mono-200"></div>
+                
+                <ul class="flex flex-col gap-6 relative">
+                    @foreach ($history as $h)
+                        <li class="flex items-start gap-4">
+                            <div class="relative z-10 mt-1.5 w-3 h-3 rounded-full bg-primary-500 ring-4 ring-white shrink-0"></div>
+                            <div class="flex-1 flex flex-col md:flex-row md:justify-between md:items-start border-b border-mono-100 pb-4 last:border-0 last:pb-0">
+                                <div>
+                                    <div class="text-sm font-bold text-mono-900">
+                                        {{ $h->from_stage ? Writ::STAGE_LABELS[$h->from_stage] : 'Criado' }}
+                                        @if ($h->from_stage) <span class="text-mono-400 font-normal mx-1">→</span> @endif
+                                        {{ Writ::STAGE_LABELS[$h->to_stage] }}
+                                    </div>
+                                    @if ($h->user)<div class="text-xs text-mono-500 mt-1">por {{ $h->user->name }}</div>@endif
+                                    @if ($h->notes)<div class="text-sm text-mono-600 mt-2 bg-mono-50 p-2 rounded">{{ $h->notes }}</div>@endif
+                                </div>
+                                <div class="text-xs text-mono-500 font-medium whitespace-nowrap mt-2 md:mt-0">{{ $h->transitioned_at->format('d/m/Y H:i') }}</div>
                             </div>
-                            @if ($h->notes)<div class="text-xxs text-mono-600 mt-xxxs">{{ $h->notes }}</div>@endif
-                            @if ($h->user)<div class="text-xxs text-mono-600">por {{ $h->user->name }}</div>@endif
-                        </div>
-                        <div class="text-xxs text-mono-600">{{ $h->transitioned_at->format('d/m/Y H:i') }}</div>
-                    </li>
-                @endforeach
-            </ul>
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
         @endif
     </x-fx.card>
 
+    <!-- Lançamentos vinculados -->
     @if ($transactions->isNotEmpty())
         <x-fx.card>
-            <h3 class="text-md font-semibold mb-sm">Lançamentos vinculados</h3>
-            <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Data</th><th class="text-left">Tipo</th><th class="text-left">Descrição</th><th class="text-right">Valor</th></tr></thead>
-                <tbody>
-                    @foreach ($transactions as $t)
+            <div class="flex items-center gap-2 mb-6">
+                <span class="material-icons-outlined text-primary-500">receipt_long</span>
+                <h3 class="text-lg font-bold text-mono-900">Lançamentos vinculados</h3>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs text-mono-500 font-semibold border-b border-mono-100 bg-mono-50">
                         <tr>
-                            <td>{{ $t->date->format('d/m/Y') }}</td>
-                            <td>{{ $t->type === 'income' ? 'Receita' : 'Despesa' }}</td>
-                            <td>{{ $t->description }}</td>
-                            <td class="text-right font-semibold {{ $t->type === 'income' ? 'text-system-up' : 'text-system-down' }}">
-                                R$ {{ number_format($t->amount, 2, ',', '.') }}
-                            </td>
+                            <th class="px-4 py-3 rounded-tl-lg">DATA</th>
+                            <th class="px-4 py-3">TIPO</th>
+                            <th class="px-4 py-3">DESCRIÇÃO</th>
+                            <th class="px-4 py-3 text-right rounded-tr-lg">VALOR</th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody class="divide-y divide-mono-100">
+                        @foreach ($transactions as $t)
+                            <tr class="hover:bg-mono-50/50 transition-colors">
+                                <td class="px-4 py-4 text-mono-900 font-medium">{{ $t->date->format('d/m/Y') }}</td>
+                                <td class="px-4 py-4">
+                                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{ $t->type === 'income' ? 'bg-blue-100 text-blue-700' : 'bg-mono-100 text-mono-700' }}">
+                                        {{ $t->type === 'income' ? 'Receita' : 'Despesa' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-4 text-mono-900">{{ $t->description }}</td>
+                                <td class="px-4 py-4 text-right font-bold {{ $t->type === 'income' ? 'text-mono-900' : 'text-mono-900' }}">
+                                    R$ {{ number_format($t->amount, 2, ',', '.') }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </x-fx.card>
     @endif
 </div>

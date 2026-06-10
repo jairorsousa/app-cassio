@@ -20,7 +20,7 @@ class Writ extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'paid_amount',
+            ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
                 'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at'])
             ->logOnlyDirty()
@@ -43,7 +43,7 @@ class Writ extends Model
         'process_number', 'court', 'debtor_entity', 'credit_nature',
         'assignor_name', 'assignor_document', 'assignor_contact',
         'assignor_bank_data', 'assignor_lawyer',
-        'face_value', 'negotiated_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
+        'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
         'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
         'source_bank_account_id', 'destination_bank_account_id',
@@ -53,6 +53,7 @@ class Writ extends Model
     protected $casts = [
         'face_value' => 'decimal:2',
         'negotiated_amount' => 'decimal:2',
+        'proposed_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'notary_expenses_amount' => 'decimal:2',
         'other_expenses_amount' => 'decimal:2',
@@ -108,7 +109,9 @@ class Writ extends Model
             return 0.0;
         }
 
-        return round((1 - ((float) $this->paid_amount / $baseValue)) * 100, 3);
+        $amount = $this->paid_amount > 0 ? $this->paid_amount : $this->proposed_amount;
+
+        return round((1 - ((float) $amount / $baseValue)) * 100, 3);
     }
 
     public function negotiationBaseValue(): float

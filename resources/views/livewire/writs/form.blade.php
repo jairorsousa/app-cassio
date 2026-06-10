@@ -24,6 +24,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public string $face_value = '0';
     public string $negotiated_amount = '0';
+    public string $proposed_amount = '0';
     public string $paid_amount = '0';
     public string $notary_expenses_amount = '0';
     public string $other_expenses_amount = '0';
@@ -48,6 +49,7 @@ new #[Layout('layouts.app')] class extends Component {
             }
             $this->face_value = (string) $writ->face_value;
             $this->negotiated_amount = (string) $writ->negotiated_amount;
+            $this->proposed_amount = (string) $writ->proposed_amount;
             $this->paid_amount = (string) $writ->paid_amount;
             $this->notary_expenses_amount = (string) $writ->notary_expenses_amount;
             $this->other_expenses_amount = (string) $writ->other_expenses_amount;
@@ -95,6 +97,7 @@ new #[Layout('layouts.app')] class extends Component {
             'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
             'negotiated_amount' => 'required|numeric|min:0',
+            'proposed_amount' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
             'notary_expenses_amount' => 'required|numeric|min:0',
             'other_expenses_amount' => 'required|numeric|min:0',
@@ -112,14 +115,14 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function discountPreview(): float
     {
-        if (! $this->usesPaymentFields()) {
-            return 0;
-        }
-
         $face = $this->discountBaseValue();
         $paid = $this->moneyValue($this->paid_amount);
+        $proposed = $this->moneyValue($this->proposed_amount);
+        
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+
         if ($face <= 0) return 0;
-        return round((1 - $paid / $face) * 100, 2);
+        return round((1 - $amount / $face) * 100, 2);
     }
 
     public function save()
@@ -137,7 +140,9 @@ new #[Layout('layouts.app')] class extends Component {
 
         $face = $this->discountBaseValue();
         $paid = (float) $data['paid_amount'];
-        $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
+        $proposed = (float) $data['proposed_amount'];
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+        $data['discount_percentage'] = $face > 0 ? round((1 - $amount / $face) * 100, 3) : 0;
 
         if ($this->writ) {
             $previousStage = $this->writ->stage;
@@ -190,6 +195,7 @@ new #[Layout('layouts.app')] class extends Component {
         foreach ([
             'face_value',
             'negotiated_amount',
+            'proposed_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -364,6 +370,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                 <x-fx.input label="Valor do requisitório" type="text" x-money wire:model.live="face_value" />
                 <x-fx.input label="Valor da parte negociada" type="text" x-money wire:model.live="negotiated_amount" />
+                <x-fx.input label="Valor da proposta" type="text" x-money wire:model.live="proposed_amount" />
                 @if ($this->usesPaymentFields())
                     <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
                     <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />
