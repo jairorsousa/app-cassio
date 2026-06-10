@@ -54,6 +54,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
     public string $face_value = '0';
     public string $negotiated_amount = '0';
+    public string $proposed_amount = '0';
     public string $paid_amount = '0';
     public string $notary_expenses_amount = '0';
     public string $other_expenses_amount = '0';
@@ -81,6 +82,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
             'negotiated_amount' => 'required|numeric|min:0',
+            'proposed_amount' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
             'notary_expenses_amount' => 'required|numeric|min:0',
             'other_expenses_amount' => 'required|numeric|min:0',
@@ -125,18 +127,17 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function discountPreview(): float
     {
-        if (! $this->usesPaymentFields()) {
-            return 0;
-        }
-
         $face = $this->discountBaseValue();
         $paid = $this->moneyValue($this->paid_amount);
+        $proposed = $this->moneyValue($this->proposed_amount);
+
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
 
         if ($face <= 0) {
             return 0;
         }
 
-        return round((1 - $paid / $face) * 100, 2);
+        return round((1 - $amount / $face) * 100, 2);
     }
 
     public function saveWrit(): void
@@ -153,7 +154,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         $face = $this->discountBaseValue();
         $paid = (float) $data['paid_amount'];
-        $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
+        $proposed = (float) $data['proposed_amount'];
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+        $data['discount_percentage'] = $face > 0 ? round((1 - $amount / $face) * 100, 3) : 0;
 
         $writ = Writ::create($data);
 
@@ -202,6 +205,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         foreach ([
             'face_value',
             'negotiated_amount',
+            'proposed_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -289,6 +293,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'assignors',
             'face_value',
             'negotiated_amount',
+            'proposed_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -308,6 +313,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->assignors = [['contact_id' => '', 'role' => 'parte']];
         $this->face_value = '0';
         $this->negotiated_amount = '0';
+        $this->proposed_amount = '0';
         $this->paid_amount = '0';
         $this->notary_expenses_amount = '0';
         $this->other_expenses_amount = '0';
@@ -731,6 +737,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                     <x-jr.input label="Valor do requisitório" icon="attach_money" type="text" x-money wire:model.live="face_value" />
                                     <x-jr.input label="Valor da parte negociada" icon="price_check" type="text" x-money wire:model.live="negotiated_amount" />
+                                    <x-jr.input label="Valor da proposta" icon="local_offer" type="text" x-money wire:model.live="proposed_amount" />
                                     @if ($this->usesPaymentFields())
                                         <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
                                         <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />
