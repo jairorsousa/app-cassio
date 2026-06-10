@@ -164,4 +164,13 @@ class Writ extends Model
 
         return round($this->estimatedProfit() / $this->estimated_months, 2);
     }
+
+    public function estimatedProfitPercentagePerMonth(): float
+    {
+        if (!$this->estimated_months || $this->estimated_months <= 0) {
+            return 0.0;
+        }
+
+        return round($this->estimatedProfitPercentage() / $this->estimated_months, 2);
+    }
 }
