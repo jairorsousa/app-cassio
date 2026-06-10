@@ -125,6 +125,33 @@ new #[Layout('layouts.app')] class extends Component {
         return round((1 - $amount / $face) * 100, 2);
     }
 
+    public function totalCostPreview(): float
+    {
+        $paid = $this->moneyValue($this->paid_amount);
+        $proposed = $this->moneyValue($this->proposed_amount);
+        $notary = $this->moneyValue($this->notary_expenses_amount);
+        $other = $this->moneyValue($this->other_expenses_amount);
+
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+        return round($amount + $notary + $other, 2);
+    }
+
+    public function estimatedProfitPreview(): float
+    {
+        $cost = $this->totalCostPreview();
+        $receipt = $this->moneyValue($this->estimated_receipt_amount);
+        return round($receipt - $cost, 2);
+    }
+
+    public function estimatedProfitPercentagePreview(): float
+    {
+        $cost = $this->totalCostPreview();
+        if ($cost <= 0) return 0;
+        
+        $profit = $this->estimatedProfitPreview();
+        return round(($profit / $cost) * 100, 2);
+    }
+
     public function save()
     {
         if ($this->writ) {
@@ -367,23 +394,39 @@ new #[Layout('layouts.app')] class extends Component {
 
         <section>
             <h3 class="text-md font-semibold mb-xs">Valores e Deságio</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-sm">
                 <x-fx.input label="Valor do requisitório" type="text" x-money wire:model.live="face_value" />
                 <x-fx.input label="Valor da parte negociada" type="text" x-money wire:model.live="negotiated_amount" />
                 <x-fx.input label="Valor da proposta" type="text" x-money wire:model.live="proposed_amount" />
-                @if ($this->usesPaymentFields())
-                    <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
-                    <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />
-                    <x-fx.input label="Outras despesas" type="text" x-money wire:model="other_expenses_amount" />
-                @endif
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Deságio (calculado)</label>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Deságio %</label>
                     <div class="fx-form-field bg-mono-50">
-                        <input type="text" disabled value="{{ number_format($this->discountPreview(), 2, ',', '.') }}%" />
+                        <input type="text" disabled value="{{ number_format($this->discountPreview(), 2, ',', '.') }}%" class="font-semibold" />
                     </div>
                 </div>
-                <x-fx.input label="Recebimento estimado" type="text" x-money wire:model="estimated_receipt_amount" />
-                <x-fx.input label="Prazo estimado (meses)" type="number" min="0" wire:model="estimated_months" />
+                
+                <x-fx.input label="Prazo estimado (meses)" type="number" min="0" wire:model.live="estimated_months" />
+                <x-fx.input label="Recebimento estimado" type="text" x-money wire:model.live="estimated_receipt_amount" />
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Lucro estimado (R$)</label>
+                    <div class="fx-form-field bg-mono-50">
+                        <input type="text" disabled value="R$ {{ number_format($this->estimatedProfitPreview(), 2, ',', '.') }}" class="font-semibold text-up" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Lucro estimado (%)</label>
+                    <div class="fx-form-field bg-mono-50">
+                        <input type="text" disabled value="{{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%" class="font-semibold text-up" />
+                    </div>
+                </div>
+
+                @if ($this->usesPaymentFields())
+                    <div class="md:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-sm mt-xs pt-xs border-t border-mono-100">
+                        <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
+                        <x-fx.input label="Despesas cartorais" type="text" x-money wire:model.live="notary_expenses_amount" />
+                        <x-fx.input label="Outras despesas" type="text" x-money wire:model.live="other_expenses_amount" />
+                    </div>
+                @endif
             </div>
         </section>
 

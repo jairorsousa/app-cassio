@@ -144,6 +144,33 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return round((1 - $amount / $face) * 100, 2);
     }
 
+    public function totalCostPreview(): float
+    {
+        $paid = $this->moneyValue($this->paid_amount);
+        $proposed = $this->moneyValue($this->proposed_amount);
+        $notary = $this->moneyValue($this->notary_expenses_amount);
+        $other = $this->moneyValue($this->other_expenses_amount);
+
+        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+        return round($amount + $notary + $other, 2);
+    }
+
+    public function estimatedProfitPreview(): float
+    {
+        $cost = $this->totalCostPreview();
+        $receipt = $this->moneyValue($this->estimated_receipt_amount);
+        return round($receipt - $cost, 2);
+    }
+
+    public function estimatedProfitPercentagePreview(): float
+    {
+        $cost = $this->totalCostPreview();
+        if ($cost <= 0) return 0;
+        
+        $profit = $this->estimatedProfitPreview();
+        return round(($profit / $cost) * 100, 2);
+    }
+
     public function saveWrit(): void
     {
         $this->normalizeMoneyFields();
@@ -777,23 +804,39 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     <h4 class="text-base font-bold text-mono-900">Valores e Deságio</h4>
                                 </div>
 
-                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
                                     <x-jr.input label="Valor do requisitório" icon="attach_money" type="text" x-money wire:model.live="face_value" />
                                     <x-jr.input label="Valor da parte negociada" icon="price_check" type="text" x-money wire:model.live="negotiated_amount" />
                                     <x-jr.input label="Valor da proposta" icon="local_offer" type="text" x-money wire:model.live="proposed_amount" />
-                                    @if ($this->usesPaymentFields())
-                                        <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
-                                        <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />
-                                        <x-jr.input label="Outras despesas" icon="request_quote" type="text" x-money wire:model="other_expenses_amount" />
-                                    @endif
                                     <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Deságio calculado</label>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Deságio %</label>
                                         <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-mono-900">
                                             {{ number_format($this->discountPreview(), 2, ',', '.') }}%
                                         </div>
                                     </div>
-                                    <x-jr.input label="Recebimento estimado" icon="savings" type="text" x-money wire:model="estimated_receipt_amount" />
-                                    <x-jr.input label="Prazo estimado (meses)" icon="calendar_month" type="number" min="0" wire:model="estimated_months" />
+                                    
+                                    <x-jr.input label="Prazo estimado (meses)" icon="calendar_month" type="number" min="0" wire:model.live="estimated_months" />
+                                    <x-jr.input label="Recebimento estimado" icon="savings" type="text" x-money wire:model.live="estimated_receipt_amount" />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Lucro estimado (R$)</label>
+                                        <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
+                                            R$ {{ number_format($this->estimatedProfitPreview(), 2, ',', '.') }}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Lucro estimado (%)</label>
+                                        <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-up">
+                                            {{ number_format($this->estimatedProfitPercentagePreview(), 2, ',', '.') }}%
+                                        </div>
+                                    </div>
+
+                                    @if ($this->usesPaymentFields())
+                                        <div class="md:col-span-4 grid grid-cols-1 gap-4 md:grid-cols-3 mt-2 pt-4 border-t border-mono-100">
+                                            <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
+                                            <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model.live="notary_expenses_amount" />
+                                            <x-jr.input label="Outras despesas" icon="request_quote" type="text" x-money wire:model.live="other_expenses_amount" />
+                                        </div>
+                                    @endif
                                 </div>
                             </section>
 
