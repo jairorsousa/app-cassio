@@ -351,7 +351,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function with(): array
     {
-        $q = Writ::query();
+        $q = Writ::with('assignors.contact');
         if ($this->type) $q->where('type', $this->type);
         if ($this->debtor) {
             $q->where(function ($query) {
@@ -578,12 +578,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
                                     <div class="mb-3 flex items-center gap-2 text-xs text-mono-600">
                                         <span class="material-icons-outlined text-[16px]">person</span>
-                                        <span class="truncate">{{ $w->assignor_name ?: 'Cedente não informado' }}</span>
+                                        <span class="truncate">{{ $w->assignor_name ?: ($w->assignors->first()?->contact?->name ?: 'Cedente não informado') }}</span>
                                     </div>
 
-                                    <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
                                     @if ((float) $w->negotiated_amount > 0)
-                                        <div class="mt-1 text-xs font-medium text-mono-600">Parte: R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
+                                        <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
+                                        <div class="mt-1 text-xs font-medium text-mono-600">Face: R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
+                                    @else
+                                        <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
                                     @endif
 
                                     <div class="mt-2 flex items-center justify-between gap-2 border-t border-mono-100 pt-2">
@@ -593,10 +595,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
                                     </div>
 
-                                    <div class="mt-3 flex items-center gap-2 text-xs text-down">
+                                    @if ($w->paid_at || $stage['key'] !== 'negotiation')
+                                    <div class="mt-3 flex items-center gap-2 text-xs {{ $w->paid_at ? 'text-mono-600' : 'text-down' }}">
                                         <span class="material-icons-outlined text-[16px]">calendar_today</span>
                                         <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
                                     </div>
+                                    @endif
 
                                     @if ($stage['key'] === 'finalized' && $w->actual_receipt_amount)
                                         <div class="mt-2 flex items-center justify-between rounded-xl bg-up-bg px-3 py-2 text-xs font-semibold text-up">
