@@ -222,11 +222,15 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->proposed_amount, 2, ',', '.') }}</div>
                     </div>
                     <div>
+                        <div class="text-xs text-mono-500 mb-1">Valor pago ao cedente</div>
+                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->paid_amount, 2, ',', '.') }}</div>
+                    </div>
+                    <div>
                         <div class="text-xs text-mono-500 mb-1">Despesas cartorárias</div>
                         <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->notary_expenses_amount, 2, ',', '.') }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-mono-500 mb-1">Outros descontos</div>
+                        <div class="text-xs text-mono-500 mb-1">Outras despesas</div>
                         <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->other_expenses_amount, 2, ',', '.') }}</div>
                     </div>
                     <div>
@@ -234,20 +238,24 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->totalCost(), 2, ',', '.') }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-mono-500 mb-1">Deságio</div>
+                        <div class="text-xs text-mono-500 mb-1">Deságio calculado</div>
                         <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
                     </div>
                     <div>
-                        <div class="text-xs text-mono-500 mb-1">Líquido estimado</div>
+                        <div class="text-xs text-mono-500 mb-1">Recebimento estimado</div>
                         <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
                     </div>
                     <div>
-                        <div class="text-xs text-mono-500 mb-1">Prazo</div>
+                        <div class="text-xs text-mono-500 mb-1">Prazo estimado</div>
                         <div class="font-bold text-sm text-mono-900">{{ $writ->estimated_months ?? '—' }} meses</div>
                     </div>
-                    <div>
-                        <div class="text-xs text-mono-500 mb-1">Líquido estimado final</div>
-                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
+                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                        <div class="text-xs text-mono-500 mb-1">Lucro estimado (R$)</div>
+                        <div class="font-bold text-sm text-up">R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
+                    </div>
+                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                        <div class="text-xs text-mono-500 mb-1">Lucro estimado (%)</div>
+                        <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentage(), 2, ',', '.') }}%</div>
                     </div>
                 </div>
 

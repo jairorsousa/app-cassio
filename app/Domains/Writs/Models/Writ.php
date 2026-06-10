@@ -142,6 +142,17 @@ class Writ extends Model
 
     public function totalCost(): float
     {
-        return round((float) $this->paid_amount + $this->totalExpenses(), 2);
+        $amount = $this->paid_amount > 0 ? $this->paid_amount : $this->proposed_amount;
+        return round((float) $amount + $this->totalExpenses(), 2);
+    }
+
+    public function estimatedProfitPercentage(): float
+    {
+        $cost = $this->totalCost();
+        if ($cost <= 0) {
+            return 0.0;
+        }
+
+        return round(($this->estimatedProfit() / $cost) * 100, 2);
     }
 }
