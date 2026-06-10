@@ -24,7 +24,7 @@ class WritService
     ];
 
     /**
-     * @param  array<string, mixed>  $context  campos opcionais (paid_at, finalized_at, actual_receipt_amount, notes)
+     * @param  array<string, mixed>  $context  campos opcionais (cession_at, paid_at, finalized_at, actual_receipt_amount, notes)
      */
     public function transitionTo(Writ $writ, string $newStage, array $context = []): Writ
     {
@@ -45,6 +45,10 @@ class WritService
 
         return DB::transaction(function () use ($writ, $current, $newStage, $context) {
             $patch = ['stage' => $newStage];
+
+            if ($newStage === 'pending' && isset($context['cession_at'])) {
+                $patch['cession_at'] = $context['cession_at'];
+            }
 
             if ($newStage === 'paid') {
                 $patch['paid_at'] = $context['paid_at'] ?? ($writ->paid_at ?? now()->toDateString());

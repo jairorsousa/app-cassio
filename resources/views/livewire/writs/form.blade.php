@@ -2,8 +2,11 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
+use App\Domains\Writs\Events\WritMovedToFinalized;
+use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
+use App\Domains\Writs\Models\WritStageHistory;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -11,6 +14,7 @@ new #[Layout('layouts.app')] class extends Component {
     public ?Writ $writ = null;
 
     public string $type = 'rpv';
+    public string $stage = 'negotiation';
     public string $process_number = '';
     public string $court = '';
     public string $debtor_entity = '';
@@ -24,6 +28,10 @@ new #[Layout('layouts.app')] class extends Component {
     public string $other_expenses_amount = '0';
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
+    public string $cession_at = '';
+    public string $paid_at = '';
+    public string $finalized_at = '';
+    public string $actual_receipt_amount = '0';
 
     public ?int $source_bank_account_id = null;
     public ?int $destination_bank_account_id = null;
@@ -34,7 +42,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         if ($writ && $writ->exists) {
             $this->writ = $writ->load('assignors.contact');
-            foreach (['type', 'process_number', 'court', 'debtor_entity', 'credit_nature', 'notes'] as $f) {
+            foreach (['type', 'stage', 'process_number', 'court', 'debtor_entity', 'credit_nature', 'notes'] as $f) {
                 $this->{$f} = (string) ($writ->{$f} ?? '');
             }
             $this->face_value = (string) $writ->face_value;
@@ -43,6 +51,10 @@ new #[Layout('layouts.app')] class extends Component {
             $this->other_expenses_amount = (string) $writ->other_expenses_amount;
             $this->estimated_receipt_amount = (string) $writ->estimated_receipt_amount;
             $this->estimated_months = $writ->estimated_months;
+            $this->cession_at = $writ->cession_at?->format('Y-m-d\TH:i') ?? '';
+            $this->paid_at = $writ->paid_at?->format('Y-m-d') ?? '';
+            $this->finalized_at = $writ->finalized_at?->format('Y-m-d') ?? '';
+            $this->actual_receipt_amount = (string) ($writ->actual_receipt_amount ?? '0');
             $this->source_bank_account_id = $writ->source_bank_account_id;
             $this->destination_bank_account_id = $writ->destination_bank_account_id;
 
@@ -71,6 +83,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         return [
             'type' => 'required|in:rpv,precatorio',
+            'stage' => 'required|in:'.implode(',', Writ::STAGES),
             'process_number' => 'nullable|string|max:80',
             'court' => 'nullable|string|max:120',
             'debtor_entity' => 'nullable|string|max:120',
@@ -84,6 +97,10 @@ new #[Layout('layouts.app')] class extends Component {
             'other_expenses_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
+            'cession_at' => 'nullable|date',
+            'paid_at' => 'nullable|date',
+            'finalized_at' => 'nullable|date',
+            'actual_receipt_amount' => 'nullable|numeric|min:0',
             'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'destination_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string',
@@ -92,6 +109,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function discountPreview(): float
     {
+        if (! $this->usesPaymentFields()) {
+            return 0;
+        }
+
         $face = $this->moneyValue($this->face_value);
         $paid = $this->moneyValue($this->paid_amount);
         if ($face <= 0) return 0;
@@ -100,28 +121,34 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save()
     {
+        if ($this->writ) {
+            $this->stage = $this->writ->stage;
+        }
+
         $this->normalizeMoneyFields();
 
         $data = $this->validate();
+        $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
 
         $face = (float) $data['face_value'];
         $paid = (float) $data['paid_amount'];
-        $data['discount_percentage'] = $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
+        $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
 
         if ($this->writ) {
+            $previousStage = $this->writ->stage;
             $this->writ->update($data);
-            $writ = $this->writ;
+            $writ = $this->writ->fresh();
+
+            if ($previousStage !== $writ->stage) {
+                $this->recordStageHistory($writ, $previousStage, $writ->stage);
+                $this->dispatchStageEvents($writ);
+            }
         } else {
-            $writ = Writ::create(['stage' => 'negotiation'] + $data);
-            \App\Domains\Writs\Models\WritStageHistory::create([
-                'writ_id' => $writ->id,
-                'from_stage' => null,
-                'to_stage' => 'negotiation',
-                'transitioned_at' => now(),
-                'user_id' => auth()->id(),
-            ]);
+            $writ = Writ::create($data);
+            $this->recordStageHistory($writ, null, $writ->stage);
+            $this->dispatchStageEvents($writ->fresh());
         }
 
         $writ->assignors()->delete();
@@ -163,8 +190,77 @@ new #[Layout('layouts.app')] class extends Component {
             'notary_expenses_amount',
             'other_expenses_amount',
             'estimated_receipt_amount',
+            'actual_receipt_amount',
         ] as $field) {
             $this->{$field} = (string) $this->moneyValue($this->{$field});
+        }
+    }
+
+    public function usesCessionDate(): bool
+    {
+        return $this->stage === 'pending';
+    }
+
+    public function usesPaymentFields(): bool
+    {
+        return in_array($this->stage, ['paid', 'petitioning', 'finalized'], true);
+    }
+
+    public function usesReceiptFields(): bool
+    {
+        return $this->stage === 'finalized';
+    }
+
+    private function prepareDataForStage(array $data): array
+    {
+        foreach (['cession_at', 'paid_at', 'finalized_at'] as $field) {
+            $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
+        }
+
+        foreach (['source_bank_account_id', 'destination_bank_account_id'] as $field) {
+            $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
+        }
+
+        if (! $this->usesPaymentFields()) {
+            $data['paid_amount'] = 0;
+            $data['notary_expenses_amount'] = 0;
+            $data['other_expenses_amount'] = 0;
+            $data['paid_at'] = null;
+            $data['source_bank_account_id'] = null;
+            $data['destination_bank_account_id'] = null;
+        } elseif ($data['paid_at'] === null) {
+            $data['paid_at'] = now()->toDateString();
+        }
+
+        if (! $this->usesReceiptFields()) {
+            $data['finalized_at'] = null;
+            $data['actual_receipt_amount'] = null;
+        } elseif ($data['finalized_at'] === null) {
+            $data['finalized_at'] = now()->toDateString();
+        }
+
+        return $data;
+    }
+
+    private function recordStageHistory(Writ $writ, ?string $fromStage, string $toStage): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => $fromStage,
+            'to_stage' => $toStage,
+            'transitioned_at' => now(),
+            'user_id' => auth()->id(),
+        ]);
+    }
+
+    private function dispatchStageEvents(Writ $writ): void
+    {
+        if (in_array($writ->stage, ['paid', 'petitioning', 'finalized'], true)) {
+            WritMovedToPaid::dispatch($writ);
+        }
+
+        if ($writ->stage === 'finalized') {
+            WritMovedToFinalized::dispatch($writ);
         }
     }
 
@@ -184,13 +280,27 @@ new #[Layout('layouts.app')] class extends Component {
         <section>
             <h3 class="text-md font-semibold mb-xs">Identificação</h3>
             <div class="space-y-sm">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                     <div>
                         <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
                         <select wire:model="type" class="fx-form-field">
                             <option value="rpv">RPV</option>
                             <option value="precatorio">Precatório</option>
                         </select>
+                    </div>
+                    <div>
+                        <label class="block text-xxs text-mono-600 mb-xxxs">Etapa</label>
+                        @if ($writ)
+                            <div class="fx-form-field bg-mono-50">
+                                <input type="text" disabled value="{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$stage] ?? $stage }}" />
+                            </div>
+                        @else
+                            <select wire:model.live="stage" class="fx-form-field">
+                                @foreach (\App\Domains\Writs\Models\Writ::STAGES as $stageOption)
+                                    <option value="{{ $stageOption }}">{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$stageOption] }}</option>
+                                @endforeach
+                            </select>
+                        @endif
                     </div>
                     <x-fx.input label="Número do processo" wire:model="process_number" x-process-number />
                 </div>
@@ -242,9 +352,11 @@ new #[Layout('layouts.app')] class extends Component {
             <h3 class="text-md font-semibold mb-xs">Valores e Deságio</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                 <x-fx.input label="Valor de face" type="text" x-money wire:model.live="face_value" />
-                <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
-                <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />
-                <x-fx.input label="Outras despesas" type="text" x-money wire:model="other_expenses_amount" />
+                @if ($this->usesPaymentFields())
+                    <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
+                    <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />
+                    <x-fx.input label="Outras despesas" type="text" x-money wire:model="other_expenses_amount" />
+                @endif
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Deságio (calculado)</label>
                     <div class="fx-form-field bg-mono-50">
@@ -256,6 +368,27 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </section>
 
+        @if ($this->usesCessionDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+            <section>
+                <h3 class="text-md font-semibold mb-xs">Datas da etapa</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
+                    @if ($this->usesCessionDate())
+                        <x-fx.input label="Data da cessão" type="datetime-local" wire:model="cession_at" />
+                    @endif
+
+                    @if ($this->usesPaymentFields())
+                        <x-fx.input label="Data do pagamento" type="date" wire:model="paid_at" />
+                    @endif
+
+                    @if ($this->usesReceiptFields())
+                        <x-fx.input label="Data de recebimento" type="date" wire:model="finalized_at" />
+                        <x-fx.input label="Valor recebido" type="text" x-money wire:model="actual_receipt_amount" />
+                    @endif
+                </div>
+            </section>
+        @endif
+
+        @if ($this->usesPaymentFields())
         <section>
             <h3 class="text-md font-semibold mb-xs">Movimentação financeira</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
@@ -269,7 +402,7 @@ new #[Layout('layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Conta de destino (recebimento)</label>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">{{ $this->usesReceiptFields() ? 'Conta (recebimento)' : 'Conta de destino (recebimento)' }}</label>
                     <select wire:model="destination_bank_account_id" class="fx-form-field">
                         <option value="">— selecionar —</option>
                         @foreach ($accounts as $a)
@@ -279,6 +412,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             </div>
         </section>
+        @endif
 
         <div>
             <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>

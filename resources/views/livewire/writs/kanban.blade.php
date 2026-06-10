@@ -2,6 +2,8 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
+use App\Domains\Writs\Events\WritMovedToFinalized;
+use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
@@ -44,6 +46,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public bool $showFormModal = false;
     public string $formType = 'rpv';
+    public string $stage = 'negotiation';
     public string $process_number = '';
     public string $court = '';
     public string $debtor_entity = '';
@@ -55,6 +58,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $other_expenses_amount = '0';
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
+    public string $cession_at = '';
+    public string $paid_at = '';
+    public string $finalized_at = '';
+    public string $actual_receipt_amount = '0';
     public ?int $source_bank_account_id = null;
     public ?int $destination_bank_account_id = null;
     public string $notes = '';
@@ -63,6 +70,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         return [
             'formType' => 'required|in:rpv,precatorio',
+            'stage' => 'required|in:'.implode(',', Writ::STAGES),
             'process_number' => 'nullable|string|max:80',
             'court' => 'nullable|string|max:120',
             'debtor_entity' => 'nullable|string|max:120',
@@ -76,6 +84,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'other_expenses_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
+            'cession_at' => 'nullable|date',
+            'paid_at' => 'nullable|date',
+            'finalized_at' => 'nullable|date',
+            'actual_receipt_amount' => 'nullable|numeric|min:0',
             'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'destination_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string',
@@ -108,6 +120,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function discountPreview(): float
     {
+        if (! $this->usesPaymentFields()) {
+            return 0;
+        }
+
         $face = $this->moneyValue($this->face_value);
         $paid = $this->moneyValue($this->paid_amount);
 
@@ -123,6 +139,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->normalizeMoneyFields();
 
         $data = $this->validate();
+        $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
 
@@ -131,17 +148,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         $face = (float) $data['face_value'];
         $paid = (float) $data['paid_amount'];
-        $data['discount_percentage'] = $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
+        $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
 
-        $writ = Writ::create(['stage' => 'negotiation'] + $data);
+        $writ = Writ::create($data);
 
         WritStageHistory::create([
             'writ_id' => $writ->id,
             'from_stage' => null,
-            'to_stage' => 'negotiation',
+            'to_stage' => $writ->stage,
             'transitioned_at' => now(),
             'user_id' => auth()->id(),
         ]);
+
+        $this->dispatchStageEvents($writ->fresh());
 
         foreach ($assignorsData as $assignor) {
             if (!empty($assignor['contact_id'])) {
@@ -181,8 +200,66 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'notary_expenses_amount',
             'other_expenses_amount',
             'estimated_receipt_amount',
+            'actual_receipt_amount',
         ] as $field) {
             $this->{$field} = (string) $this->moneyValue($this->{$field});
+        }
+    }
+
+    public function usesCessionDate(): bool
+    {
+        return $this->stage === 'pending';
+    }
+
+    public function usesPaymentFields(): bool
+    {
+        return in_array($this->stage, ['paid', 'petitioning', 'finalized'], true);
+    }
+
+    public function usesReceiptFields(): bool
+    {
+        return $this->stage === 'finalized';
+    }
+
+    private function prepareDataForStage(array $data): array
+    {
+        foreach (['cession_at', 'paid_at', 'finalized_at'] as $field) {
+            $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
+        }
+
+        foreach (['source_bank_account_id', 'destination_bank_account_id'] as $field) {
+            $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
+        }
+
+        if (! $this->usesPaymentFields()) {
+            $data['paid_amount'] = 0;
+            $data['notary_expenses_amount'] = 0;
+            $data['other_expenses_amount'] = 0;
+            $data['paid_at'] = null;
+            $data['source_bank_account_id'] = null;
+            $data['destination_bank_account_id'] = null;
+        } elseif ($data['paid_at'] === null) {
+            $data['paid_at'] = now()->toDateString();
+        }
+
+        if (! $this->usesReceiptFields()) {
+            $data['finalized_at'] = null;
+            $data['actual_receipt_amount'] = null;
+        } elseif ($data['finalized_at'] === null) {
+            $data['finalized_at'] = now()->toDateString();
+        }
+
+        return $data;
+    }
+
+    private function dispatchStageEvents(Writ $writ): void
+    {
+        if (in_array($writ->stage, ['paid', 'petitioning', 'finalized'], true)) {
+            WritMovedToPaid::dispatch($writ);
+        }
+
+        if ($writ->stage === 'finalized') {
+            WritMovedToFinalized::dispatch($writ);
         }
     }
 
@@ -191,6 +268,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->reset([
             'showFormModal',
             'formType',
+            'stage',
             'process_number',
             'court',
             'debtor_entity',
@@ -202,18 +280,24 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'other_expenses_amount',
             'estimated_receipt_amount',
             'estimated_months',
+            'cession_at',
+            'paid_at',
+            'finalized_at',
+            'actual_receipt_amount',
             'source_bank_account_id',
             'destination_bank_account_id',
             'notes',
         ]);
 
         $this->formType = 'rpv';
+        $this->stage = 'negotiation';
         $this->assignors = [['contact_id' => '', 'role' => 'parte']];
         $this->face_value = '0';
         $this->paid_amount = '0';
         $this->notary_expenses_amount = '0';
         $this->other_expenses_amount = '0';
         $this->estimated_receipt_amount = '0';
+        $this->actual_receipt_amount = '0';
     }
 
     public function delete(int $id): void
@@ -530,7 +614,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
 
                                 <div class="space-y-4">
-                                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                         <div>
                                             <label class="mb-2 block text-sm font-medium text-mono-600">Tipo</label>
                                             <div class="grid grid-cols-2 gap-3">
@@ -550,6 +634,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                                 </button>
                                             </div>
                                             @error('formType') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Etapa</label>
+                                            <select wire:model.live="stage" class="h-11 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                @foreach (\App\Domains\Writs\Models\Writ::STAGES as $stageOption)
+                                                    <option value="{{ $stageOption }}">{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$stageOption] }}</option>
+                                                @endforeach
+                                            </select>
+                                            @error('stage') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
 
                                         <x-jr.input label="Número do processo" icon="tag" wire:model="process_number" x-process-number />
@@ -618,9 +712,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                     <x-jr.input label="Valor de face" icon="attach_money" type="text" x-money wire:model.live="face_value" />
-                                    <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
-                                    <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />
-                                    <x-jr.input label="Outras despesas" icon="request_quote" type="text" x-money wire:model="other_expenses_amount" />
+                                    @if ($this->usesPaymentFields())
+                                        <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
+                                        <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />
+                                        <x-jr.input label="Outras despesas" icon="request_quote" type="text" x-money wire:model="other_expenses_amount" />
+                                    @endif
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Deságio calculado</label>
                                         <div class="flex h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm font-bold text-mono-900">
@@ -632,6 +728,31 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
                             </section>
 
+                            @if ($this->usesCessionDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+                                <section>
+                                    <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                        <span class="material-icons-outlined text-[20px] text-primary-500">event</span>
+                                        <h4 class="text-base font-bold text-mono-900">Datas da etapa</h4>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        @if ($this->usesCessionDate())
+                                            <x-jr.input label="Data da cessão" icon="edit_calendar" type="datetime-local" wire:model="cession_at" />
+                                        @endif
+
+                                        @if ($this->usesPaymentFields())
+                                            <x-jr.input label="Data do pagamento" icon="event_available" type="date" wire:model="paid_at" />
+                                        @endif
+
+                                        @if ($this->usesReceiptFields())
+                                            <x-jr.input label="Data de recebimento" icon="event_available" type="date" wire:model="finalized_at" />
+                                            <x-jr.input label="Valor recebido" icon="savings" type="text" x-money wire:model="actual_receipt_amount" />
+                                        @endif
+                                    </div>
+                                </section>
+                            @endif
+
+                            @if ($this->usesPaymentFields())
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                     <span class="material-icons-outlined text-[20px] text-primary-500">account_balance_wallet</span>
@@ -650,7 +771,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
 
                                     <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta de destino</label>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">{{ $this->usesReceiptFields() ? 'Conta (recebimento)' : 'Conta de destino' }}</label>
                                         <select wire:model="destination_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
                                             <option value="">Selecionar</option>
                                             @foreach ($accounts as $account)
@@ -660,6 +781,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
                                 </div>
                             </section>
+                            @endif
 
                             <section>
                                 <label class="mb-2 block text-sm font-medium text-mono-600">Observações</label>
