@@ -20,7 +20,7 @@ class Writ extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['type', 'stage', 'process_number', 'face_value', 'paid_amount',
+            ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
                 'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at'])
             ->logOnlyDirty()
@@ -43,7 +43,7 @@ class Writ extends Model
         'process_number', 'court', 'debtor_entity', 'credit_nature',
         'assignor_name', 'assignor_document', 'assignor_contact',
         'assignor_bank_data', 'assignor_lawyer',
-        'face_value', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
+        'face_value', 'negotiated_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
         'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
         'source_bank_account_id', 'destination_bank_account_id',
@@ -52,6 +52,7 @@ class Writ extends Model
 
     protected $casts = [
         'face_value' => 'decimal:2',
+        'negotiated_amount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'notary_expenses_amount' => 'decimal:2',
         'other_expenses_amount' => 'decimal:2',
@@ -101,11 +102,20 @@ class Writ extends Model
 
     public function discountPercentageCalculated(): float
     {
-        if ((float) $this->face_value <= 0) {
+        $baseValue = $this->negotiationBaseValue();
+
+        if ($baseValue <= 0) {
             return 0.0;
         }
 
-        return round((1 - ((float) $this->paid_amount / (float) $this->face_value)) * 100, 3);
+        return round((1 - ((float) $this->paid_amount / $baseValue)) * 100, 3);
+    }
+
+    public function negotiationBaseValue(): float
+    {
+        $negotiated = (float) ($this->negotiated_amount ?? 0);
+
+        return $negotiated > 0 ? $negotiated : (float) $this->face_value;
     }
 
     public function estimatedProfit(): float

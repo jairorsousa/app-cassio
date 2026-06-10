@@ -53,6 +53,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $credit_nature = '';
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
     public string $face_value = '0';
+    public string $negotiated_amount = '0';
     public string $paid_amount = '0';
     public string $notary_expenses_amount = '0';
     public string $other_expenses_amount = '0';
@@ -79,6 +80,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'assignors.*.contact_id' => 'nullable|exists:contacts,id',
             'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
+            'negotiated_amount' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
             'notary_expenses_amount' => 'required|numeric|min:0',
             'other_expenses_amount' => 'required|numeric|min:0',
@@ -127,7 +129,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             return 0;
         }
 
-        $face = $this->moneyValue($this->face_value);
+        $face = $this->discountBaseValue();
         $paid = $this->moneyValue($this->paid_amount);
 
         if ($face <= 0) {
@@ -149,7 +151,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $data['type'] = $data['formType'];
         unset($data['formType']);
 
-        $face = (float) $data['face_value'];
+        $face = $this->discountBaseValue();
         $paid = (float) $data['paid_amount'];
         $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
 
@@ -199,6 +201,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         foreach ([
             'face_value',
+            'negotiated_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -222,6 +225,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public function usesReceiptFields(): bool
     {
         return $this->stage === 'finalized';
+    }
+
+    private function discountBaseValue(): float
+    {
+        $negotiated = $this->moneyValue($this->negotiated_amount);
+
+        return $negotiated > 0 ? $negotiated : $this->moneyValue($this->face_value);
     }
 
     private function prepareDataForStage(array $data): array
@@ -278,6 +288,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'credit_nature',
             'assignors',
             'face_value',
+            'negotiated_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -296,6 +307,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->stage = 'negotiation';
         $this->assignors = [['contact_id' => '', 'role' => 'parte']];
         $this->face_value = '0';
+        $this->negotiated_amount = '0';
         $this->paid_amount = '0';
         $this->notary_expenses_amount = '0';
         $this->other_expenses_amount = '0';
@@ -393,7 +405,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     <span class="material-icons-outlined text-[22px]">request_quote</span>
                 </div>
                 <div>
-                    <p class="text-xs font-medium text-mono-600">Total Face</p>
+                    <p class="text-xs font-medium text-mono-600">Total requisitórios</p>
                     <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalFace, 2, ',', '.') }}</p>
                 </div>
             </div>
@@ -564,6 +576,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
 
                                     <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
+                                    @if ((float) $w->negotiated_amount > 0)
+                                        <div class="mt-1 text-xs font-medium text-mono-600">Parte: R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
+                                    @endif
 
                                     <div class="mt-2 flex items-center justify-between gap-2 border-t border-mono-100 pt-2">
                                         <span class="truncate rounded-pill bg-mono-100 px-2.5 py-1 text-[10px] font-semibold text-mono-600">
@@ -714,7 +729,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                                    <x-jr.input label="Valor de face" icon="attach_money" type="text" x-money wire:model.live="face_value" />
+                                    <x-jr.input label="Valor do requisitório" icon="attach_money" type="text" x-money wire:model.live="face_value" />
+                                    <x-jr.input label="Valor da parte negociada" icon="price_check" type="text" x-money wire:model.live="negotiated_amount" />
                                     @if ($this->usesPaymentFields())
                                         <x-jr.input label="Valor pago ao cedente" icon="payments" type="text" x-money wire:model.live="paid_amount" />
                                         <x-jr.input label="Despesas cartorais" icon="receipt_long" type="text" x-money wire:model="notary_expenses_amount" />

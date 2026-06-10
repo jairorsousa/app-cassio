@@ -16,6 +16,7 @@ class WritObserver
         $relevantFields = [
             'stage',
             'paid_amount',
+            'negotiated_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
             'face_value',

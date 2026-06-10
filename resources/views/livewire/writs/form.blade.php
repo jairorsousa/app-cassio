@@ -23,6 +23,7 @@ new #[Layout('layouts.app')] class extends Component {
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
 
     public string $face_value = '0';
+    public string $negotiated_amount = '0';
     public string $paid_amount = '0';
     public string $notary_expenses_amount = '0';
     public string $other_expenses_amount = '0';
@@ -46,6 +47,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $this->{$f} = (string) ($writ->{$f} ?? '');
             }
             $this->face_value = (string) $writ->face_value;
+            $this->negotiated_amount = (string) $writ->negotiated_amount;
             $this->paid_amount = (string) $writ->paid_amount;
             $this->notary_expenses_amount = (string) $writ->notary_expenses_amount;
             $this->other_expenses_amount = (string) $writ->other_expenses_amount;
@@ -92,6 +94,7 @@ new #[Layout('layouts.app')] class extends Component {
             'assignors.*.contact_id' => 'nullable|exists:contacts,id',
             'assignors.*.role' => 'nullable|in:parte,advogado',
             'face_value' => 'required|numeric|min:0',
+            'negotiated_amount' => 'required|numeric|min:0',
             'paid_amount' => 'required|numeric|min:0',
             'notary_expenses_amount' => 'required|numeric|min:0',
             'other_expenses_amount' => 'required|numeric|min:0',
@@ -113,7 +116,7 @@ new #[Layout('layouts.app')] class extends Component {
             return 0;
         }
 
-        $face = $this->moneyValue($this->face_value);
+        $face = $this->discountBaseValue();
         $paid = $this->moneyValue($this->paid_amount);
         if ($face <= 0) return 0;
         return round((1 - $paid / $face) * 100, 2);
@@ -132,7 +135,7 @@ new #[Layout('layouts.app')] class extends Component {
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
 
-        $face = (float) $data['face_value'];
+        $face = $this->discountBaseValue();
         $paid = (float) $data['paid_amount'];
         $data['discount_percentage'] = $this->usesPaymentFields() && $face > 0 ? round((1 - $paid / $face) * 100, 3) : 0;
 
@@ -186,6 +189,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         foreach ([
             'face_value',
+            'negotiated_amount',
             'paid_amount',
             'notary_expenses_amount',
             'other_expenses_amount',
@@ -209,6 +213,13 @@ new #[Layout('layouts.app')] class extends Component {
     public function usesReceiptFields(): bool
     {
         return $this->stage === 'finalized';
+    }
+
+    private function discountBaseValue(): float
+    {
+        $negotiated = $this->moneyValue($this->negotiated_amount);
+
+        return $negotiated > 0 ? $negotiated : $this->moneyValue($this->face_value);
     }
 
     private function prepareDataForStage(array $data): array
@@ -351,7 +362,8 @@ new #[Layout('layouts.app')] class extends Component {
         <section>
             <h3 class="text-md font-semibold mb-xs">Valores e Deságio</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
-                <x-fx.input label="Valor de face" type="text" x-money wire:model.live="face_value" />
+                <x-fx.input label="Valor do requisitório" type="text" x-money wire:model.live="face_value" />
+                <x-fx.input label="Valor da parte negociada" type="text" x-money wire:model.live="negotiated_amount" />
                 @if ($this->usesPaymentFields())
                     <x-fx.input label="Valor pago ao cedente" type="text" x-money wire:model.live="paid_amount" />
                     <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="notary_expenses_amount" />

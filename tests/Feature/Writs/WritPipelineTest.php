@@ -424,6 +424,18 @@ class WritPipelineTest extends TestCase
         $this->assertEquals(40.0, $writ->discountPercentageCalculated());
     }
 
+    public function test_writ_model_discount_uses_negotiated_amount_when_present(): void
+    {
+        $writ = $this->makeWrit([
+            'face_value' => 100000.00,
+            'negotiated_amount' => 70000.00,
+            'paid_amount' => 49000.00,
+        ]);
+
+        // (1 - 49000/70000) * 100 = 30%
+        $this->assertEquals(30.0, $writ->discountPercentageCalculated());
+    }
+
     public function test_writ_model_estimated_profit(): void
     {
         $writ = $this->makeWrit([

@@ -151,7 +151,8 @@ new #[Layout('layouts.app')] class extends Component {
 
             <h3 class="text-md font-semibold mt-md mb-sm">Valores</h3>
             <div class="grid grid-cols-3 gap-xs text-sm">
-                <div><span class="text-mono-600">Face:</span> R$ {{ number_format($writ->face_value, 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Valor do requisitório:</span> R$ {{ number_format($writ->face_value, 2, ',', '.') }}</div>
+                <div><span class="text-mono-600">Parte negociada:</span> R$ {{ number_format($writ->negotiated_amount, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Pago:</span> R$ {{ number_format($writ->paid_amount, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Despesas cartorais:</span> R$ {{ number_format($writ->notary_expenses_amount, 2, ',', '.') }}</div>
                 <div><span class="text-mono-600">Outras despesas:</span> R$ {{ number_format($writ->other_expenses_amount, 2, ',', '.') }}</div>
