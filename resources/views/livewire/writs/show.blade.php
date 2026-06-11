@@ -270,7 +270,7 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                     <div>
                         <div class="text-xs text-mono-500 mb-1">Deságio calculado</div>
-                        <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
+                        <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discountPercentageCalculated(), 2, ',', '.') }}%</div>
                     </div>
                     @if ($writ->stage === 'finalized')
                         <div>
