@@ -174,4 +174,46 @@ class Writ extends Model
 
         return round($this->estimatedProfitPercentage() / $this->estimated_months, 2);
     }
+
+    public function actualMonths(): ?int
+    {
+        if (!$this->paid_at || !$this->finalized_at) {
+            return null;
+        }
+
+        $start = \Carbon\Carbon::parse($this->paid_at);
+        $end = \Carbon\Carbon::parse($this->finalized_at);
+
+        $months = $start->diffInMonths($end);
+        
+        return max(1, $months);
+    }
+
+    public function actualProfitPercentage(): ?float
+    {
+        if ($this->actualProfit() === null) {
+            return null;
+        }
+
+        $cost = $this->totalCost();
+        if ($cost <= 0) {
+            return 0.0;
+        }
+
+        return round(($this->actualProfit() / $cost) * 100, 2);
+    }
+
+    public function actualProfitPercentagePerMonth(): ?float
+    {
+        if ($this->actualProfitPercentage() === null) {
+            return null;
+        }
+
+        $months = $this->actualMonths();
+        if (!$months || $months <= 0) {
+            return 0.0;
+        }
+
+        return round($this->actualProfitPercentage() / $months, 2);
+    }
 }

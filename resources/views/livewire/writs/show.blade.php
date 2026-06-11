@@ -272,26 +272,53 @@ new #[Layout('layouts.app')] class extends Component {
                         <div class="text-xs text-mono-500 mb-1">Deságio calculado</div>
                         <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discount_percentage, 2, ',', '.') }}%</div>
                     </div>
-                    <div>
-                        <div class="text-xs text-mono-500 mb-1">Recebimento estimado</div>
-                        <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
-                    </div>
-                    <div>
-                        <div class="text-xs text-mono-500 mb-1">Prazo estimado</div>
-                        <div class="font-bold text-sm text-mono-900">{{ $writ->estimated_months ?? '—' }} meses</div>
-                    </div>
-                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
-                        <div class="text-xs text-mono-500 mb-1">Lucro estimado (R$)</div>
-                        <div class="font-bold text-sm text-up">R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
-                    </div>
-                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
-                        <div class="text-xs text-mono-500 mb-1">Lucro estimado (%)</div>
-                        <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentage(), 2, ',', '.') }}%</div>
-                    </div>
-                    <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
-                        <div class="text-xs text-mono-500 mb-1">Lucro estimado / Mês</div>
-                        <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentagePerMonth(), 2, ',', '.') }}%</div>
-                    </div>
+                    @if ($writ->stage === 'finalized')
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Valor recebido</div>
+                            <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->actual_receipt_amount, 2, ',', '.') }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Data do recebimento</div>
+                            <div class="font-bold text-sm text-mono-900">{{ $writ->finalized_at ? $writ->finalized_at->format('d/m/Y') : '—' }}</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro real (R$)</div>
+                            <div class="font-bold text-sm text-up">R$ {{ number_format($writ->actualProfit(), 2, ',', '.') }}</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro real (%)</div>
+                            <div class="font-bold text-sm text-up">{{ number_format($writ->actualProfitPercentage(), 2, ',', '.') }}%</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Prazo real</div>
+                            <div class="font-bold text-sm text-mono-900">{{ $writ->actualMonths() ?? '—' }} meses</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro real / Mês</div>
+                            <div class="font-bold text-sm text-up">{{ number_format($writ->actualProfitPercentagePerMonth(), 2, ',', '.') }}%</div>
+                        </div>
+                    @else
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Recebimento estimado</div>
+                            <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->estimated_receipt_amount, 2, ',', '.') }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Prazo estimado</div>
+                            <div class="font-bold text-sm text-mono-900">{{ $writ->estimated_months ?? '—' }} meses</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro estimado (R$)</div>
+                            <div class="font-bold text-sm text-up">R$ {{ number_format($writ->estimatedProfit(), 2, ',', '.') }}</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro estimado (%)</div>
+                            <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentage(), 2, ',', '.') }}%</div>
+                        </div>
+                        <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
+                            <div class="text-xs text-mono-500 mb-1">Lucro estimado / Mês</div>
+                            <div class="font-bold text-sm text-up">{{ number_format($writ->estimatedProfitPercentagePerMonth(), 2, ',', '.') }}%</div>
+                        </div>
+                    @endif
                 </div>
 
                 <div class="mt-6 flex items-center justify-between">
@@ -387,34 +414,7 @@ new #[Layout('layouts.app')] class extends Component {
         </x-fx.card>
     </div>
 
-    @if ($writ->actual_receipt_amount)
-        <!-- Rentabilidade Realizada -->
-        <x-fx.card>
-            <h3 class="text-lg font-bold text-mono-900 mb-4">Rentabilidade realizada</h3>
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div>
-                    <div class="text-xs text-mono-500 mb-1">Recebido</div>
-                    <div class="font-bold text-sm text-mono-900">R$ {{ number_format($writ->actual_receipt_amount, 2, ',', '.') }}</div>
-                </div>
-                <div>
-                    <div class="text-xs text-mono-500 mb-1">Lucro real</div>
-                    <div class="font-bold text-sm text-system-up">R$ {{ number_format($profitability['profit_amount'], 2, ',', '.') }}</div>
-                </div>
-                <div>
-                    <div class="text-xs text-mono-500 mb-1">% real</div>
-                    <div class="font-bold text-sm text-mono-900">{{ number_format($profitability['profit_percentage'], 2, ',', '.') }}%</div>
-                </div>
-                <div>
-                    <div class="text-xs text-mono-500 mb-1">Dias decorridos</div>
-                    <div class="font-bold text-sm text-mono-900">{{ $profitability['days_elapsed'] ?? '—' }}</div>
-                </div>
-                <div>
-                    <div class="text-xs text-mono-500 mb-1">% ao mês</div>
-                    <div class="font-bold text-sm text-mono-900">{{ $profitability['monthly_rate'] !== null ? number_format($profitability['monthly_rate'], 3, ',', '.').'%' : '—' }}</div>
-                </div>
-            </div>
-        </x-fx.card>
-    @endif
+
 
     <!-- Histórico de transições -->
     <x-fx.card>
