@@ -48,6 +48,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public bool $showPetitionModal = false;
     public ?int $promptPetitionWritId = null;
     public string $promptPetitionAt = '';
+    
+    public bool $showFinalizedModal = false;
+    public ?int $promptFinalizedWritId = null;
+    public string $promptFinalizedAt = '';
+    public string $promptActualReceiptAmount = '';
+    public ?int $promptDestinationBankAccountId = null;
 
     public bool $showFilters = false;
     public string $formType = 'rpv';
@@ -499,6 +505,48 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->showPetitionModal = false;
         $this->promptPetitionWritId = null;
+    }
+
+    public function promptFinalizedDate(int $id): void
+    {
+        $this->promptFinalizedWritId = $id;
+        $writ = Writ::findOrFail($id);
+        
+        $this->promptFinalizedAt = now()->format('Y-m-d');
+        $this->promptActualReceiptAmount = (string) $writ->actual_receipt_amount;
+        $this->promptDestinationBankAccountId = $writ->destination_bank_account_id;
+        $this->promptTransactionNote = '';
+        
+        $this->showFinalizedModal = true;
+    }
+
+    public function confirmFinalizedDate(WritService $service): void
+    {
+        $this->validate([
+            'promptFinalizedAt' => 'required|date',
+            'promptActualReceiptAmount' => 'required',
+            'promptDestinationBankAccountId' => 'required|exists:bank_accounts,id',
+        ]);
+
+        try {
+            $writ = Writ::findOrFail($this->promptFinalizedWritId);
+            $service->transitionTo($writ, 'finalized', [
+                'finalized_at' => $this->promptFinalizedAt,
+                'actual_receipt_amount' => $this->moneyValue($this->promptActualReceiptAmount),
+                'destination_bank_account_id' => $this->promptDestinationBankAccountId,
+                'notes' => $this->promptTransactionNote ?: null,
+            ]);
+            $this->showFinalizedModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['finalized'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelFinalizedDate(): void
+    {
+        $this->showFinalizedModal = false;
+        $this->promptFinalizedWritId = null;
     }
 
     public function clearFilters(): void
@@ -1107,6 +1155,55 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </div>
     </div>
 
+    <!-- Modal Confirmar Finalização -->
+    <div
+        x-show="$wire.showFinalizedModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-mono-900/50 backdrop-blur-sm"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" @click.outside="$wire.cancelFinalizedDate()">
+            <div class="px-6 py-4 border-b border-mono-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-mono-900">Confirmar Recebimento</h3>
+                <button wire:click="cancelFinalizedDate" class="text-mono-400 hover:text-mono-600 transition-colors">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+            
+            <div class="p-6 flex flex-col gap-5">
+                <x-fx.input label="Data do recebimento" type="date" wire:model="promptFinalizedAt" />
+                <x-fx.input label="Valor recebido" type="text" x-money wire:model="promptActualReceiptAmount" />
+                <div>
+                    <label class="block text-sm font-medium text-mono-700 mb-1">Conta de destino</label>
+                    <select wire:model="promptDestinationBankAccountId" class="fx-form-field">
+                        <option value="">—</option>
+                        @foreach (App\Domains\BankAccounts\Models\BankAccount::all() as $a)
+                            <option value="{{ $a->id }}">{{ $a->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-mono-700 mb-1">Nota da transição (opcional)</label>
+                    <textarea wire:model="promptTransactionNote" class="fx-form-field" rows="3" placeholder="Digite uma observação..."></textarea>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-mono-50 border-t border-mono-100 flex items-center justify-end gap-3">
+                <button wire:click="cancelFinalizedDate" class="px-4 py-2 text-sm font-bold text-mono-600 hover:text-mono-900 transition-colors">
+                    Cancelar
+                </button>
+                <button wire:click="confirmFinalizedDate" class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 @assets
@@ -1137,6 +1234,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         } else if (oldStage === 'paid' && newStage === 'petitioning') {
                             evt.from.appendChild(evt.item);
                             $wire.promptPetitionDate(id);
+                        } else if (oldStage === 'petitioning' && newStage === 'finalized') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptFinalizedDate(id);
                         } else {
                             $wire.moveCard(id, newStage);
                         }
