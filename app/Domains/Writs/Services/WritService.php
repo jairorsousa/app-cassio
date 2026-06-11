@@ -60,8 +60,12 @@ class WritService
                 }
             }
 
+            if ($newStage === 'petitioning' && isset($context['petitioned_at'])) {
+                $patch['petitioned_at'] = $context['petitioned_at'];
+            }
+
             if ($newStage === 'finalized') {
-                $patch['finalized_at'] = $context['finalized_at'] ?? now()->toDateString();
+                $patch['finalized_at'] = $context['finalized_at'] ?? ($writ->finalized_at ?? now()->toDateString());
                 if (isset($context['actual_receipt_amount'])) {
                     $patch['actual_receipt_amount'] = $context['actual_receipt_amount'];
                 }

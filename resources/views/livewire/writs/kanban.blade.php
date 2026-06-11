@@ -44,7 +44,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     #[Url]
     public string $to = '';
 
-    public bool $showFormModal = false;
+    public bool $showPetitionModal = false;
+    public ?int $promptPetitionWritId = null;
+    public string $promptPetitionAt = '';
+
+    public bool $showFilters = false;
     public string $formType = 'rpv';
     public string $stage = 'negotiation';
     public string $process_number = '';
@@ -465,6 +469,35 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->showPaidModal = false;
         $this->promptPaidWritId = null;
+    }
+
+    public function promptPetitionDate(int $id): void
+    {
+        $this->promptPetitionWritId = $id;
+        $this->promptPetitionAt = now()->format('Y-m-d\TH:i');
+        $this->showPetitionModal = true;
+    }
+
+    public function confirmPetitionDate(WritService $service): void
+    {
+        $this->validate(['promptPetitionAt' => 'required|date']);
+
+        try {
+            $writ = Writ::findOrFail($this->promptPetitionWritId);
+            $service->transitionTo($writ, 'petitioning', [
+                'petitioned_at' => $this->promptPetitionAt,
+            ]);
+            $this->showPetitionModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['petitioning'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelPetitionDate(): void
+    {
+        $this->showPetitionModal = false;
+        $this->promptPetitionWritId = null;
     }
 
     public function clearFilters(): void
@@ -1037,6 +1070,42 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
         </div>
     @endif
+
+    <!-- Modal Confirmar Peticionamento -->
+    <div
+        x-show="$wire.showPetitionModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-mono-900/50 backdrop-blur-sm"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" @click.outside="$wire.cancelPetitionDate()">
+            <div class="px-6 py-4 border-b border-mono-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-mono-900">Confirmar Peticionamento</h3>
+                <button wire:click="cancelPetitionDate" class="text-mono-400 hover:text-mono-600 transition-colors">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+            
+            <div class="p-6 flex flex-col gap-5">
+                <x-fx.input label="Data e hora do peticionamento" type="datetime-local" wire:model="promptPetitionAt" />
+            </div>
+
+            <div class="px-6 py-4 bg-mono-50 border-t border-mono-100 flex items-center justify-end gap-3">
+                <button wire:click="cancelPetitionDate" class="px-4 py-2 text-sm font-bold text-mono-600 hover:text-mono-900 transition-colors">
+                    Cancelar
+                </button>
+                <button wire:click="confirmPetitionDate" class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 @assets
@@ -1064,6 +1133,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         } else if (oldStage === 'pending' && newStage === 'paid') {
                             evt.from.appendChild(evt.item);
                             $wire.promptPaidDate(id);
+                        } else if (oldStage === 'paid' && newStage === 'petitioning') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptPetitionDate(id);
                         } else {
                             $wire.moveCard(id, newStage);
                         }

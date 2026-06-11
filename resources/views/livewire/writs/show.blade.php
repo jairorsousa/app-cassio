@@ -17,6 +17,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $transition_notary_expenses = '';
     public string $transition_other_expenses = '';
     public ?int $transition_source_account = null;
+    public string $transition_petitioned_at = '';
     public string $transition_finalized_at = '';
     public string $transition_actual_receipt_amount = '';
     public ?int $transition_destination_account = null;
@@ -27,6 +28,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->writ = $writ->load('history.user', 'transactions', 'assignors.contact');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
         $this->transition_paid_at = now()->format('Y-m-d');
+        $this->transition_petitioned_at = now()->format('Y-m-d\TH:i');
         $this->transition_finalized_at = now()->format('Y-m-d');
         $this->transition_paid_amount = (string) $writ->paid_amount;
         $this->transition_notary_expenses = (string) $writ->notary_expenses_amount;
@@ -72,6 +74,10 @@ new #[Layout('layouts.app')] class extends Component {
             $context['paid_at'] = $this->transition_paid_at;
             $context['paid_amount'] = $this->moneyValue($this->transition_paid_amount);
             $context['source_bank_account_id'] = $this->transition_source_account;
+        }
+
+        if ($this->transitionTo === 'petitioning') {
+            $context['petitioned_at'] = $this->transition_petitioned_at ?: null;
         }
 
         if ($this->transitionTo === 'finalized') {
@@ -349,6 +355,10 @@ new #[Layout('layouts.app')] class extends Component {
                             @endforeach
                         </select>
                     </div>
+                @endif
+
+                @if ($transitionTo === 'petitioning')
+                    <x-fx.input label="Data e hora do peticionamento" type="datetime-local" wire:model="transition_petitioned_at" required />
                 @endif
 
                 @if ($transitionTo === 'finalized')
