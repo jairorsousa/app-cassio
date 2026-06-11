@@ -14,6 +14,8 @@ new #[Layout('layouts.app')] class extends Component {
     public string $transition_cession_at = '';
     public string $transition_paid_at = '';
     public string $transition_paid_amount = '';
+    public string $transition_notary_expenses = '';
+    public string $transition_other_expenses = '';
     public ?int $transition_source_account = null;
     public string $transition_finalized_at = '';
     public string $transition_actual_receipt_amount = '';
@@ -27,8 +29,26 @@ new #[Layout('layouts.app')] class extends Component {
         $this->transition_paid_at = now()->format('Y-m-d');
         $this->transition_finalized_at = now()->format('Y-m-d');
         $this->transition_paid_amount = (string) $writ->paid_amount;
+        $this->transition_notary_expenses = (string) $writ->notary_expenses_amount;
+        $this->transition_other_expenses = (string) $writ->other_expenses_amount;
         $this->transition_source_account = $writ->source_bank_account_id;
         $this->transition_destination_account = $writ->destination_bank_account_id;
+    }
+
+    private function moneyValue(string|int|float|null $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $value = (string) $value;
+
+        if (str_contains($value, ',')) {
+            $digits = preg_replace('/\D/', '', $value);
+            return (float) ($digits / 100);
+        }
+
+        return (float) $value;
     }
 
     public function transition(WritService $service)
@@ -44,14 +64,19 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         if ($this->transitionTo === 'paid') {
+            $this->writ->update([
+                'notary_expenses_amount' => $this->moneyValue($this->transition_notary_expenses),
+                'other_expenses_amount' => $this->moneyValue($this->transition_other_expenses),
+            ]);
+
             $context['paid_at'] = $this->transition_paid_at;
-            $context['paid_amount'] = (float) $this->transition_paid_amount;
+            $context['paid_amount'] = $this->moneyValue($this->transition_paid_amount);
             $context['source_bank_account_id'] = $this->transition_source_account;
         }
 
         if ($this->transitionTo === 'finalized') {
             $context['finalized_at'] = $this->transition_finalized_at;
-            $context['actual_receipt_amount'] = (float) $this->transition_actual_receipt_amount;
+            $context['actual_receipt_amount'] = $this->moneyValue($this->transition_actual_receipt_amount);
             $context['destination_bank_account_id'] = $this->transition_destination_account;
         }
 
@@ -313,6 +338,8 @@ new #[Layout('layouts.app')] class extends Component {
                 @if ($transitionTo === 'paid')
                     <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />
                     <x-fx.input label="Valor pago" type="text" x-money wire:model="transition_paid_amount" />
+                    <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="transition_notary_expenses" />
+                    <x-fx.input label="Outras despesas" type="text" x-money wire:model="transition_other_expenses" />
                     <div>
                         <label class="block text-sm font-medium text-mono-700 mb-1">Conta de origem</label>
                         <select wire:model="transition_source_account" class="fx-form-field">
