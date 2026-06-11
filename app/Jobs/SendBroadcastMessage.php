@@ -33,18 +33,20 @@ class SendBroadcastMessage implements ShouldQueue
      */
     public function handle(): void
     {
-        $url = 'https://msa.vozconecta.com.br/api/v1/accounts/1/conversations';
-        $token = 'txw3GA1xq1PvVaB7buNca6Bk'; // Ideally from config/env
+        $baseUrl = rtrim((string) config('services.chatwoot.base_url'), '/');
+        $accountId = config('services.chatwoot.account_id');
+        $url = "{$baseUrl}/api/v1/accounts/{$accountId}/conversations";
+        $token = (string) config('services.chatwoot.api_access_token');
 
         collect($this->contactIds)->each(function ($idContato) use ($url, $token) {
             
             $response = Http::withHeaders([
                 'api_access_token' => $token
             ])->post($url, [
-                "inbox_id"    => 15,
+                "inbox_id"    => (int) config('services.chatwoot.inbox_id'),
                 "contact_id"  => $idContato,
                 "status"      => "open",
-                "assignee_id" => 4,
+                "assignee_id" => (int) config('services.chatwoot.assignee_id'),
                 "message"     => [
                     "content" => $this->message
                 ]

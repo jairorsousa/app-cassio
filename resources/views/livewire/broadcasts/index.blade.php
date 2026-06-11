@@ -7,34 +7,80 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component {
     public string $message = '';
     public array $contacts = [];
+    public array $labels = [];
+    public string $selectedLabel = '';
     public bool $loading = true;
+    public bool $loadingLabels = true;
     public string $errorMessage = '';
+    public string $labelsErrorMessage = '';
 
     public function mount()
     {
+        $this->loadLabels();
         $this->loadContacts();
+    }
+
+    public function updatedSelectedLabel(): void
+    {
+        $this->loadContacts();
+    }
+
+    public function loadLabels(): void
+    {
+        $this->loadingLabels = true;
+        $this->labelsErrorMessage = '';
+
+        try {
+            $response = $this->chatwootRequest()
+                ->get($this->chatwootUrl('labels'));
+
+            if ($response->failed()) {
+                $this->labelsErrorMessage = 'Falha ao carregar labels do Chatwoot.';
+                return;
+            }
+
+            $this->labels = $this->normalizeLabels($response->json());
+
+            if ($this->selectedLabel === '' && ! empty($this->labels)) {
+                $availableLabels = collect($this->labels)->pluck('title');
+                $this->selectedLabel = $availableLabels->contains('parceiros')
+                    ? 'parceiros'
+                    : (string) $availableLabels->first();
+            }
+        } catch (\Exception $e) {
+            $this->labelsErrorMessage = 'Erro ao carregar labels do Chatwoot: ' . $e->getMessage();
+        } finally {
+            $this->loadingLabels = false;
+        }
     }
 
     public function loadContacts()
     {
         $this->contacts = [];
+        $this->errorMessage = '';
+        $this->loading = true;
         $page = 1;
+        $pageContacts = [];
+
+        if ($this->selectedLabel === '') {
+            $this->errorMessage = 'Selecione uma label para carregar os contatos.';
+            $this->loading = false;
+            return;
+        }
 
         try {
             do {
-                $response = Http::withHeaders([
-                    'api_access_token' => 'txw3GA1xq1PvVaB7buNca6Bk',
-                    'Content-Type' => 'application/json',
-                ])->post('https://msa.vozconecta.com.br/api/v1/accounts/1/contacts/filter?page=' . $page, [
-                    'payload' => [
-                        [
-                            'attribute_key' => 'labels',
-                            'filter_operator' => 'equal_to',
-                            'values' => ['parceiros'],
-                            'query_operator' => null
+                $response = $this->chatwootRequest()
+                    ->post($this->chatwootUrl('contacts/filter') . '?page=' . $page, [
+                        'payload' => [
+                            [
+                                'attribute_key' => 'labels',
+                                'filter_operator' => 'equal_to',
+                                'values' => [$this->selectedLabel],
+                                'query_operator' => null
+                            ]
                         ]
-                    ]
-                ]);
+                    ]);
 
                 if ($response->successful()) {
                     $data = $response->json();
@@ -80,6 +126,54 @@ new #[Layout('layouts.app')] class extends Component {
 
         session()->flash('status', 'Envio iniciado! As mensagens estão sendo processadas em segundo plano (com o delay configurado).');
         $this->reset('message');
+    }
+
+    private function chatwootRequest()
+    {
+        return Http::withHeaders([
+            'api_access_token' => (string) config('services.chatwoot.api_access_token'),
+            'Content-Type' => 'application/json',
+        ]);
+    }
+
+    private function chatwootUrl(string $path): string
+    {
+        $baseUrl = rtrim((string) config('services.chatwoot.base_url'), '/');
+        $accountId = config('services.chatwoot.account_id');
+
+        return "{$baseUrl}/api/v1/accounts/{$accountId}/" . ltrim($path, '/');
+    }
+
+    private function normalizeLabels(?array $data): array
+    {
+        $labels = $data['payload'] ?? $data ?? [];
+
+        return collect($labels)
+            ->map(function ($label) {
+                if (is_string($label)) {
+                    return ['title' => $label, 'color' => null];
+                }
+
+                if (! is_array($label)) {
+                    return null;
+                }
+
+                $title = $label['title'] ?? $label['name'] ?? null;
+
+                if (! is_string($title) || trim($title) === '') {
+                    return null;
+                }
+
+                return [
+                    'title' => trim($title),
+                    'color' => $label['color'] ?? null,
+                ];
+            })
+            ->filter()
+            ->unique('title')
+            ->sortBy('title', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
     }
 }; ?>
 
@@ -129,10 +223,47 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="w-full md:w-80 shrink-0 order-1 md:order-2">
         <x-fx.card>
             <div class="flex justify-between items-center mb-sm">
-                <h3 class="text-md font-semibold text-mono-900">Contatos (Parceiros)</h3>
+                <h3 class="text-md font-semibold text-mono-900">Contatos</h3>
                 <span class="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full font-medium">
                     {{ count($contacts) }}
                 </span>
+            </div>
+
+            <div class="mb-sm">
+                <label for="selectedLabel" class="block text-sm font-medium text-mono-700 mb-xxxs">Label do Chatwoot</label>
+                <div class="flex gap-xxs">
+                    <select
+                        id="selectedLabel"
+                        wire:model.live="selectedLabel"
+                        class="min-w-0 flex-1 rounded-xl border border-mono-200 bg-mono-white px-3 py-2 text-sm text-mono-900 transition-all duration-200 hover:border-mono-300 focus:border-primary-500 focus:outline-none focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]"
+                        @disabled($loadingLabels || empty($labels))
+                    >
+                        @if(empty($labels))
+                            <option value="">Nenhuma label encontrada</option>
+                        @else
+                            @foreach($labels as $label)
+                                <option value="{{ $label['title'] }}">{{ $label['title'] }}</option>
+                            @endforeach
+                        @endif
+                    </select>
+
+                    <button
+                        type="button"
+                        wire:click="loadContacts"
+                        wire:loading.attr="disabled"
+                        wire:target="loadContacts,selectedLabel"
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-mono-200 text-mono-600 transition-colors hover:bg-mono-50 hover:text-mono-900 disabled:cursor-not-allowed disabled:opacity-60"
+                        title="Recarregar contatos"
+                        aria-label="Recarregar contatos"
+                        @disabled($selectedLabel === '')
+                    >
+                        <span class="material-icons-outlined text-[20px]">refresh</span>
+                    </button>
+                </div>
+
+                @if($labelsErrorMessage)
+                    <div class="mt-2 text-xs text-red-500">{{ $labelsErrorMessage }}</div>
+                @endif
             </div>
 
             @if($errorMessage)

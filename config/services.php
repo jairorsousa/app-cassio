@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'chatwoot' => [
+        'base_url' => env('CHATWOOT_BASE_URL', 'https://msa.vozconecta.com.br'),
+        'account_id' => env('CHATWOOT_ACCOUNT_ID', 1),
+        'api_access_token' => env('CHATWOOT_API_ACCESS_TOKEN'),
+        'inbox_id' => env('CHATWOOT_INBOX_ID', 15),
+        'assignee_id' => env('CHATWOOT_ASSIGNEE_ID', 4),
+    ],
+
 ];
