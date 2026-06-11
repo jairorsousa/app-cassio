@@ -44,6 +44,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     #[Url]
     public string $to = '';
 
+    public bool $showFormModal = false;
     public bool $showPetitionModal = false;
     public ?int $promptPetitionWritId = null;
     public string $promptPetitionAt = '';
