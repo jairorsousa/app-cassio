@@ -3,9 +3,13 @@
 use Illuminate\Support\Facades\Http;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('layouts.app')] class extends Component {
+    use WithFileUploads;
+
     public string $message = '';
+    public $attachment = null;
     public array $contacts = [];
     public array $labels = [];
     public string $selectedLabel = '';
@@ -106,6 +110,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'message' => 'required|string|max:1000',
+            'attachment' => 'nullable|file|mimetypes:image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm|max:12288',
         ]);
 
         if (empty($this->contacts)) {
@@ -121,11 +126,21 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        $attachment = null;
+
+        if ($this->attachment) {
+            $attachment = [
+                'path' => $this->attachment->store('broadcast-attachments', 'local'),
+                'name' => $this->attachment->getClientOriginalName(),
+                'mime_type' => $this->attachment->getMimeType(),
+            ];
+        }
+
         // Dispatch background job to send messages with sleep intervals
-        \App\Jobs\SendBroadcastMessage::dispatch($contactIds, $this->message);
+        \App\Jobs\SendBroadcastMessage::dispatch($contactIds, $this->message, $attachment);
 
         session()->flash('status', 'Envio iniciado! As mensagens estão sendo processadas em segundo plano (com o delay configurado).');
-        $this->reset('message');
+        $this->reset('message', 'attachment');
     }
 
     private function chatwootRequest()
@@ -191,7 +206,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <p class="text-sm text-mono-600">Escreva uma mensagem para enviar para os seus contatos, semelhante a uma lista de transmissão do WhatsApp.</p>
             </div>
 
-            <form wire:submit="send" class="flex flex-col gap-sm">
+            <form wire:submit="send" class="flex flex-col gap-sm" enctype="multipart/form-data">
                 <div>
                     <label for="message" class="block text-sm font-medium text-mono-700 mb-xxxs">Mensagem</label>
                     <textarea
@@ -207,8 +222,40 @@ new #[Layout('layouts.app')] class extends Component {
                     @error('message') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
 
+                <div>
+                    <label for="attachment" class="block text-sm font-medium text-mono-700 mb-xxxs">Mídia</label>
+                    <label
+                        for="attachment"
+                        class="flex cursor-pointer items-center gap-xs rounded-2xl border border-dashed border-mono-200 bg-mono-50 px-4 py-3 text-sm text-mono-600 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
+                    >
+                        <span class="material-icons-outlined text-[20px] text-mono-500">attach_file</span>
+                        <span class="min-w-0 flex-1 truncate">
+                            @if($attachment)
+                                {{ $attachment->getClientOriginalName() }}
+                            @else
+                                Imagem ou vídeo até 12 MB
+                            @endif
+                        </span>
+                    </label>
+                    <input
+                        id="attachment"
+                        type="file"
+                        wire:model="attachment"
+                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
+                        class="sr-only"
+                    >
+                    <div wire:loading wire:target="attachment" class="mt-1 text-xs text-mono-500">Carregando mídia...</div>
+                    @error('attachment') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                </div>
+
                 <div class="flex justify-end mt-sm">
-                    <x-fx.button type="submit" variant="primary" class="flex items-center gap-xs px-md py-sm">
+                    <x-fx.button
+                        type="submit"
+                        variant="primary"
+                        class="flex items-center gap-xs px-md py-sm"
+                        wire:loading.attr="disabled"
+                        wire:target="attachment,send"
+                    >
                         <span>Enviar Mensagem</span>
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
