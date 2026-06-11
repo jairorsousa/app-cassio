@@ -1182,7 +1182,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     <label class="block text-sm font-medium text-mono-700 mb-1">Conta de destino</label>
                     <select wire:model="promptDestinationBankAccountId" class="fx-form-field">
                         <option value="">—</option>
-                        @foreach (App\Domains\BankAccounts\Models\BankAccount::all() as $a)
+                        @foreach (App\Domains\Banking\Models\BankAccount::all() as $a)
                             <option value="{{ $a->id }}">{{ $a->name }}</option>
                         @endforeach
                     </select>
