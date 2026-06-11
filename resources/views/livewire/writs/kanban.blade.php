@@ -141,10 +141,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public function discountPreview(): float
     {
         $face = $this->discountBaseValue();
-        $paid = $this->moneyValue($this->paid_amount);
-        $proposed = $this->moneyValue($this->proposed_amount);
-
-        $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+        $amount = $this->totalCostPreview();
 
         if ($face <= 0) {
             return 0;

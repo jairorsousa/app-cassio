@@ -109,7 +109,7 @@ class Writ extends Model
             return 0.0;
         }
 
-        $amount = $this->paid_amount > 0 ? $this->paid_amount : $this->proposed_amount;
+        $amount = $this->totalCost();
 
         return round((1 - ((float) $amount / $baseValue)) * 100, 3);
     }
