@@ -157,4 +157,20 @@ class WritService
             'user_id' => Auth::id(),
         ]);
     }
+
+    public function recordAwaitingReceiptDateChange(Writ $writ, ?CarbonInterface $previousAwaitingReceiptAt, CarbonInterface $newAwaitingReceiptAt): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => 'awaiting_receipt',
+            'to_stage' => 'awaiting_receipt',
+            'transitioned_at' => now(),
+            'notes' => sprintf(
+                'Data de aguardar recebimento atualizada de: %s para: %s',
+                $previousAwaitingReceiptAt ? $previousAwaitingReceiptAt->format('d/m/Y H:i') : '—',
+                $newAwaitingReceiptAt->format('d/m/Y H:i'),
+            ),
+            'user_id' => Auth::id(),
+        ]);
+    }
 }

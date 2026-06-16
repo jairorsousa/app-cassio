@@ -42,12 +42,12 @@ class WritGoogleCalendarSyncDispatcher
         SyncWritPetitionToGoogleCalendar::dispatchSync($writ->id);
     }
 
-    public function syncAwaitingReceipt(Writ $writ, bool $forceNewEvent = false): void
+    public function syncAwaitingReceipt(Writ $writ): void
     {
         if (! $writ->awaiting_receipt_at) {
             return;
         }
 
-        SyncWritAwaitingReceiptToGoogleCalendar::dispatchSync($writ->id, $forceNewEvent);
+        SyncWritAwaitingReceiptToGoogleCalendar::dispatchSync($writ->id);
     }
 }

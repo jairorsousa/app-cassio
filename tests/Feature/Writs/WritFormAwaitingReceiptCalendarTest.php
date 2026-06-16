@@ -4,6 +4,7 @@ namespace Tests\Feature\Writs;
 
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritStageHistory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
@@ -34,13 +35,14 @@ class WritFormAwaitingReceiptCalendarTest extends TestCase
         ]);
     }
 
-    public function test_editing_awaiting_receipt_date_dispatches_new_calendar_event_sync(): void
+    public function test_editing_awaiting_receipt_date_updates_calendar_event_and_records_history(): void
     {
         Bus::fake();
 
         $writ = $this->makeAwaitingReceiptWrit();
+        $user = User::factory()->create();
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs($user);
 
         Volt::test('writs.form', ['writ' => $writ])
             ->set('awaiting_receipt_at', '2026-06-24T10:00')
@@ -49,11 +51,19 @@ class WritFormAwaitingReceiptCalendarTest extends TestCase
 
         Bus::assertDispatchedSync(
             SyncWritAwaitingReceiptToGoogleCalendar::class,
-            fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id && $job->forceNewEvent === true,
+            fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id,
         );
+
+        $history = WritStageHistory::query()->where('writ_id', $writ->id)->latest('id')->first();
+
+        $this->assertNotNull($history);
+        $this->assertSame('awaiting_receipt', $history->from_stage);
+        $this->assertSame('awaiting_receipt', $history->to_stage);
+        $this->assertSame('Data de aguardar recebimento atualizada de: 23/06/2026 16:00 para: 24/06/2026 10:00', $history->notes);
+        $this->assertSame($user->id, $history->user_id);
     }
 
-    public function test_editing_awaiting_receipt_without_date_change_does_not_force_new_event(): void
+    public function test_editing_awaiting_receipt_without_date_change_does_not_sync_calendar(): void
     {
         Bus::fake();
 
@@ -67,5 +77,6 @@ class WritFormAwaitingReceiptCalendarTest extends TestCase
             ->assertHasNoErrors();
 
         Bus::assertNotDispatched(SyncWritAwaitingReceiptToGoogleCalendar::class);
+        $this->assertSame(0, WritStageHistory::query()->where('writ_id', $writ->id)->count());
     }
 }

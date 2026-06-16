@@ -110,7 +110,7 @@ class WritGoogleCalendarSyncTest extends TestCase
         Bus::assertDispatchedSync(SyncWritAwaitingReceiptToGoogleCalendar::class, fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id);
     }
 
-    public function test_sync_awaiting_receipt_dispatcher_can_force_new_event(): void
+    public function test_sync_awaiting_receipt_dispatcher_updates_existing_event(): void
     {
         Bus::fake();
 
@@ -130,11 +130,11 @@ class WritGoogleCalendarSyncTest extends TestCase
             'google_calendar_awaiting_receipt_event_id' => 'existing-event-id',
         ]);
 
-        app(WritGoogleCalendarSyncDispatcher::class)->syncAwaitingReceipt($writ, forceNewEvent: true);
+        app(WritGoogleCalendarSyncDispatcher::class)->syncAwaitingReceipt($writ);
 
         Bus::assertDispatchedSync(
             SyncWritAwaitingReceiptToGoogleCalendar::class,
-            fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id && $job->forceNewEvent === true,
+            fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id,
         );
     }
 }

@@ -18,7 +18,7 @@ class SyncWritAwaitingReceiptToGoogleCalendar implements ShouldQueue
 
     public int $tries = 3;
 
-    public function __construct(public int $writId, public bool $forceNewEvent = false) {}
+    public function __construct(public int $writId) {}
 
     /**
      * @return array<int, int>
@@ -36,7 +36,7 @@ class SyncWritAwaitingReceiptToGoogleCalendar implements ShouldQueue
             return;
         }
 
-        $googleCalendar->syncWritAwaitingReceipt($writ, $this->forceNewEvent);
+        $googleCalendar->syncWritAwaitingReceipt($writ);
     }
 
     public function failed(Throwable $exception): void
