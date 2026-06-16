@@ -8,6 +8,7 @@ use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
 use App\Domains\Writs\Services\WritGoogleCalendarSyncDispatcher;
+use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -228,6 +229,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($this->writ) {
             $previousStage = $this->writ->stage;
+            $previousCessionAt = $this->writ->cession_at;
             $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at?->getTimestamp();
             $this->writ->update($data);
             $writ = $this->writ->fresh();
@@ -235,6 +237,13 @@ new #[Layout('layouts.app')] class extends Component {
             if ($previousStage !== $writ->stage) {
                 $this->recordStageHistory($writ, $previousStage, $writ->stage);
                 $this->dispatchStageEvents($writ);
+            } elseif (
+                $writ->stage === 'pending'
+                && $writ->cession_at
+                && $previousCessionAt?->getTimestamp() !== $writ->cession_at->getTimestamp()
+            ) {
+                app(WritService::class)->recordCessionDateChange($writ, $previousCessionAt, $writ->cession_at);
+                app(WritGoogleCalendarSyncDispatcher::class)->syncCession($writ);
             } elseif (
                 $writ->stage === 'awaiting_receipt'
                 && $writ->awaiting_receipt_at

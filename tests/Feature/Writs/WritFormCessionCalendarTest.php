@@ -1,0 +1,81 @@
+<?php
+
+namespace Tests\Feature\Writs;
+
+use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritStageHistory;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
+use Livewire\Volt\Volt;
+use Tests\TestCase;
+
+class WritFormCessionCalendarTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function makePendingWrit(): Writ
+    {
+        return Writ::create([
+            'type' => 'rpv',
+            'stage' => 'pending',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'face_value' => 10000,
+            'negotiated_amount' => 10000,
+            'proposed_amount' => 8000,
+            'paid_amount' => 0,
+            'notary_expenses_amount' => 0,
+            'other_expenses_amount' => 0,
+            'discount_percentage' => 20,
+            'estimated_receipt_amount' => 12000,
+            'cession_at' => '2026-06-15 14:00:00',
+            'google_calendar_event_id' => 'existing-cession-event-id',
+        ]);
+    }
+
+    public function test_editing_cession_date_updates_calendar_event_and_records_history(): void
+    {
+        Bus::fake();
+
+        $writ = $this->makePendingWrit();
+        $user = User::factory()->create();
+
+        $this->actingAs($user);
+
+        Volt::test('writs.form', ['writ' => $writ])
+            ->set('cession_at', '2026-06-16T10:30')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        Bus::assertDispatchedSync(
+            SyncWritCessionToGoogleCalendar::class,
+            fn (SyncWritCessionToGoogleCalendar $job): bool => $job->writId === $writ->id,
+        );
+
+        $history = WritStageHistory::query()->where('writ_id', $writ->id)->latest('id')->first();
+
+        $this->assertNotNull($history);
+        $this->assertSame('pending', $history->from_stage);
+        $this->assertSame('pending', $history->to_stage);
+        $this->assertSame('Data da cessão atualizada de: 15/06/2026 14:00 para: 16/06/2026 10:30', $history->notes);
+        $this->assertSame($user->id, $history->user_id);
+    }
+
+    public function test_editing_pending_writ_without_cession_date_change_does_not_sync_calendar(): void
+    {
+        Bus::fake();
+
+        $writ = $this->makePendingWrit();
+
+        $this->actingAs(User::factory()->create());
+
+        Volt::test('writs.form', ['writ' => $writ])
+            ->set('process_number', '0009999-99.2026.8.13.0001')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        Bus::assertNotDispatched(SyncWritCessionToGoogleCalendar::class);
+        $this->assertSame(0, WritStageHistory::query()->where('writ_id', $writ->id)->count());
+    }
+}

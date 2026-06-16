@@ -12,7 +12,7 @@ class WritGoogleCalendarSyncDispatcher
     public function sync(Writ $writ): void
     {
         if ($writ->cession_at) {
-            SyncWritCessionToGoogleCalendar::dispatchSync($writ->id);
+            $this->syncCession($writ);
         }
 
         if ($writ->petitioned_at) {
@@ -22,6 +22,15 @@ class WritGoogleCalendarSyncDispatcher
         if ($writ->awaiting_receipt_at) {
             $this->syncAwaitingReceipt($writ);
         }
+    }
+
+    public function syncCession(Writ $writ): void
+    {
+        if (! $writ->cession_at) {
+            return;
+        }
+
+        SyncWritCessionToGoogleCalendar::dispatchSync($writ->id);
     }
 
     public function syncAwaitingReceipt(Writ $writ, bool $forceNewEvent = false): void

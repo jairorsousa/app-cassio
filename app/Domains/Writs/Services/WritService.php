@@ -6,6 +6,7 @@ use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritStageHistory;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -123,5 +124,21 @@ class WritService
         app(WritGoogleCalendarSyncDispatcher::class)->sync($updatedWrit);
 
         return $updatedWrit;
+    }
+
+    public function recordCessionDateChange(Writ $writ, ?CarbonInterface $previousCessionAt, CarbonInterface $newCessionAt): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => 'pending',
+            'to_stage' => 'pending',
+            'transitioned_at' => now(),
+            'notes' => sprintf(
+                'Data da cessão atualizada de: %s para: %s',
+                $previousCessionAt ? $previousCessionAt->format('d/m/Y H:i') : '—',
+                $newCessionAt->format('d/m/Y H:i'),
+            ),
+            'user_id' => Auth::id(),
+        ]);
     }
 }

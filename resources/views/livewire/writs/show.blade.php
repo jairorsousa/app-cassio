@@ -469,12 +469,16 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="flex-1 flex flex-col md:flex-row md:justify-between md:items-start border-b border-mono-100 pb-4 last:border-0 last:pb-0">
                                 <div>
                                     <div class="text-sm font-bold text-mono-900">
-                                        {{ $h->from_stage ? Writ::STAGE_LABELS[$h->from_stage] : 'Criado' }}
-                                        @if ($h->from_stage) <span class="text-mono-400 font-normal mx-1">→</span> @endif
-                                        {{ Writ::STAGE_LABELS[$h->to_stage] }}
+                                        @if ($h->from_stage === $h->to_stage && $h->notes)
+                                            {{ $h->notes }}
+                                        @else
+                                            {{ $h->from_stage ? Writ::STAGE_LABELS[$h->from_stage] : 'Criado' }}
+                                            @if ($h->from_stage) <span class="text-mono-400 font-normal mx-1">→</span> @endif
+                                            {{ Writ::STAGE_LABELS[$h->to_stage] }}
+                                        @endif
                                     </div>
                                     @if ($h->user)<div class="text-xs text-mono-500 mt-1">por {{ $h->user->name }}</div>@endif
-                                    @if ($h->notes)<div class="text-sm text-mono-600 mt-2 bg-mono-50 p-2 rounded">{{ $h->notes }}</div>@endif
+                                    @if ($h->from_stage !== $h->to_stage && $h->notes)<div class="text-sm text-mono-600 mt-2 bg-mono-50 p-2 rounded">{{ $h->notes }}</div>@endif
                                 </div>
                                 <div class="text-xs text-mono-500 font-medium whitespace-nowrap mt-2 md:mt-0">{{ $h->transitioned_at->format('d/m/Y H:i') }}</div>
                             </div>
