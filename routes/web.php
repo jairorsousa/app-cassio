@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\GoogleCalendarController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -16,6 +17,12 @@ Volt::route('dashboard', 'dashboard.index')
 Route::view('profile', 'profile')
     ->middleware(['auth', 'inactivity'])
     ->name('profile');
+
+Route::middleware(['auth', 'verified', 'inactivity'])->prefix('google/calendar')->name('google.calendar.')->group(function () {
+    Route::get('/connect', [GoogleCalendarController::class, 'connect'])->name('connect');
+    Route::get('/callback', [GoogleCalendarController::class, 'callback'])->name('callback');
+    Route::post('/disconnect', [GoogleCalendarController::class, 'disconnect'])->name('disconnect');
+});
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('partnership')->name('partnership.')->group(function () {
     Volt::route('/', 'partnership.index')->name('index');

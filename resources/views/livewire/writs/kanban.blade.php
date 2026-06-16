@@ -4,6 +4,7 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
+use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
@@ -333,6 +334,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         if ($writ->stage === 'finalized') {
             WritMovedToFinalized::dispatch($writ);
+        }
+
+        if ($writ->stage === 'pending' && $writ->cession_at) {
+            SyncWritCessionToGoogleCalendar::dispatch($writ->id)->afterCommit();
         }
     }
 

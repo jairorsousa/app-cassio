@@ -4,6 +4,7 @@ namespace App\Domains\Writs\Models;
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Transaction;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,15 +15,16 @@ use Spatie\Activitylog\Support\LogOptions;
 
 class Writ extends Model
 {
-    use SoftDeletes;
     use LogsActivity;
+    use SoftDeletes;
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
-                'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at'])
+                'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
+                'google_calendar_event_id', 'google_calendar_synced_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('writs');
@@ -47,6 +49,7 @@ class Writ extends Model
         'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
         'actual_receipt_amount', 'cession_at', 'paid_at', 'petitioned_at', 'finalized_at',
+        'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
         'source_bank_account_id', 'destination_bank_account_id',
         'notes',
     ];
@@ -63,6 +66,7 @@ class Writ extends Model
         'actual_receipt_amount' => 'decimal:2',
         'estimated_months' => 'integer',
         'cession_at' => 'datetime',
+        'google_calendar_synced_at' => 'datetime',
         'paid_at' => 'date',
         'petitioned_at' => 'datetime',
         'finalized_at' => 'date',
@@ -145,6 +149,7 @@ class Writ extends Model
     public function totalCost(): float
     {
         $amount = $this->paid_amount > 0 ? $this->paid_amount : $this->proposed_amount;
+
         return round((float) $amount + $this->totalExpenses(), 2);
     }
 
@@ -160,7 +165,7 @@ class Writ extends Model
 
     public function estimatedProfitPerMonth(): float
     {
-        if (!$this->estimated_months || $this->estimated_months <= 0) {
+        if (! $this->estimated_months || $this->estimated_months <= 0) {
             return 0.0;
         }
 
@@ -169,7 +174,7 @@ class Writ extends Model
 
     public function estimatedProfitPercentagePerMonth(): float
     {
-        if (!$this->estimated_months || $this->estimated_months <= 0) {
+        if (! $this->estimated_months || $this->estimated_months <= 0) {
             return 0.0;
         }
 
@@ -178,15 +183,15 @@ class Writ extends Model
 
     public function actualMonths(): ?int
     {
-        if (!$this->paid_at || !$this->finalized_at) {
+        if (! $this->paid_at || ! $this->finalized_at) {
             return null;
         }
 
-        $start = \Carbon\Carbon::parse($this->paid_at);
-        $end = \Carbon\Carbon::parse($this->finalized_at);
+        $start = Carbon::parse($this->paid_at);
+        $end = Carbon::parse($this->finalized_at);
 
         $months = $start->diffInMonths($end);
-        
+
         return max(1, $months);
     }
 
@@ -211,7 +216,7 @@ class Writ extends Model
         }
 
         $months = $this->actualMonths();
-        if (!$months || $months <= 0) {
+        if (! $months || $months <= 0) {
             return 0.0;
         }
 

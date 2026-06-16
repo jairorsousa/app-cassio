@@ -4,6 +4,7 @@ namespace App\Domains\Writs\Services;
 
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
+use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritStageHistory;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,7 @@ class WritService
 {
     /**
      * Linear pipeline (com possibilidade de regressão livre).
+     *
      * @var array<string, array<int, string>>
      */
     private const ALLOWED_TRANSITIONS = [
@@ -44,7 +46,7 @@ class WritService
             throw new \DomainException("Transição não permitida: {$current} → {$newStage}");
         }
 
-        return DB::transaction(function () use ($writ, $current, $newStage, $context) {
+        $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
             $patch = ['stage' => $newStage];
 
             if ($newStage === 'pending' && isset($context['cession_at'])) {
@@ -96,5 +98,11 @@ class WritService
 
             return $writ->fresh('history');
         });
+
+        if ($updatedWrit->stage === 'pending' && $updatedWrit->cession_at) {
+            SyncWritCessionToGoogleCalendar::dispatch($updatedWrit->id)->afterCommit();
+        }
+
+        return $updatedWrit;
     }
 }
