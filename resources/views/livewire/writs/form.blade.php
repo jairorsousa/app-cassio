@@ -4,6 +4,9 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
+use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
@@ -31,6 +34,8 @@ new #[Layout('layouts.app')] class extends Component {
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
     public string $cession_at = '';
+    public string $petitioned_at = '';
+    public string $awaiting_receipt_at = '';
     public string $paid_at = '';
     public string $finalized_at = '';
     public string $actual_receipt_amount = '0';
@@ -57,6 +62,8 @@ new #[Layout('layouts.app')] class extends Component {
             $this->estimated_receipt_amount = (string) $writ->estimated_receipt_amount;
             $this->estimated_months = $writ->estimated_months;
             $this->cession_at = $writ->cession_at?->format('Y-m-d\TH:i') ?? '';
+            $this->petitioned_at = $writ->petitioned_at?->format('Y-m-d\TH:i') ?? '';
+            $this->awaiting_receipt_at = $writ->awaiting_receipt_at?->format('Y-m-d\TH:i') ?? '';
             $this->paid_at = $writ->paid_at?->format('Y-m-d') ?? '';
             $this->finalized_at = $writ->finalized_at?->format('Y-m-d') ?? '';
             $this->actual_receipt_amount = (string) ($writ->actual_receipt_amount ?? '0');
@@ -106,6 +113,8 @@ new #[Layout('layouts.app')] class extends Component {
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
             'cession_at' => 'nullable|date',
+            'petitioned_at' => 'nullable|date',
+            'awaiting_receipt_at' => 'nullable|date',
             'paid_at' => 'nullable|date',
             'finalized_at' => 'nullable|date',
             'actual_receipt_amount' => 'nullable|numeric|min:0',
@@ -174,6 +183,18 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($this->stage === 'lost' && blank($this->lost_reason)) {
             $this->addError('lost_reason', 'Informe o motivo para marcar o requisitório como perdido.');
+
+            return;
+        }
+
+        if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
+            $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
+
+            return;
+        }
+
+        if ($this->stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
+            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar recebimento.');
 
             return;
         }
@@ -255,6 +276,16 @@ new #[Layout('layouts.app')] class extends Component {
         return $this->stage === 'pending';
     }
 
+    public function usesPetitionDate(): bool
+    {
+        return $this->stage === 'petitioning';
+    }
+
+    public function usesAwaitingReceiptDate(): bool
+    {
+        return $this->stage === 'awaiting_receipt';
+    }
+
     public function usesPaymentFields(): bool
     {
         return in_array($this->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true);
@@ -279,7 +310,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['cession_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -335,6 +366,18 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($writ->stage === 'finalized') {
             WritMovedToFinalized::dispatch($writ);
+        }
+
+        if ($writ->stage === 'pending' && $writ->cession_at) {
+            SyncWritCessionToGoogleCalendar::dispatch($writ->id)->afterCommit();
+        }
+
+        if ($writ->stage === 'petitioning' && $writ->petitioned_at) {
+            SyncWritPetitionToGoogleCalendar::dispatch($writ->id)->afterCommit();
+        }
+
+        if ($writ->stage === 'awaiting_receipt' && $writ->awaiting_receipt_at) {
+            SyncWritAwaitingReceiptToGoogleCalendar::dispatch($writ->id)->afterCommit();
         }
     }
 
@@ -460,12 +503,22 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </section>
 
-        @if ($this->usesCessionDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+        @if ($this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
             <section>
                 <h3 class="text-md font-semibold mb-xs">Datas da etapa</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                     @if ($this->usesCessionDate())
                         <x-fx.input label="Data da cessão" type="datetime-local" wire:model="cession_at" />
+                    @endif
+
+                    @if ($this->usesPetitionDate())
+                        <x-fx.input label="Data e hora do peticionamento" type="datetime-local" wire:model="petitioned_at" required />
+                        @error('petitioned_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
+                    @endif
+
+                    @if ($this->usesAwaitingReceiptDate())
+                        <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="awaiting_receipt_at" required />
+                        @error('awaiting_receipt_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
                     @endif
 
                     @if ($this->usesPaymentFields())

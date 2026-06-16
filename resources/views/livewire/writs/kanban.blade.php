@@ -85,6 +85,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
     public string $cession_at = '';
+    public string $petitioned_at = '';
+    public string $awaiting_receipt_at = '';
     public string $paid_at = '';
     public string $finalized_at = '';
     public string $actual_receipt_amount = '0';
@@ -127,6 +129,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
             'cession_at' => 'nullable|date',
+            'petitioned_at' => 'nullable|date',
+            'awaiting_receipt_at' => 'nullable|date',
             'paid_at' => 'nullable|date',
             'finalized_at' => 'nullable|date',
             'actual_receipt_amount' => 'nullable|numeric|min:0',
@@ -143,6 +147,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         if ($stage !== null && in_array($stage, Writ::STAGES, true)) {
             $this->stage = $stage;
         }
+
+        if ($this->stage === 'pending') {
+            $this->cession_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($this->stage === 'petitioning') {
+            $this->petitioned_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($this->stage === 'awaiting_receipt') {
+            $this->awaiting_receipt_at = now()->format('Y-m-d\TH:i');
+        }
+
         $this->showFormModal = true;
     }
 
@@ -218,6 +235,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         if ($this->stage === 'lost' && blank($this->lost_reason)) {
             $this->addError('lost_reason', 'Informe o motivo para marcar o requisitório como perdido.');
+
+            return;
+        }
+
+        if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
+            $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
+
+            return;
+        }
+
+        if ($this->stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
+            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar recebimento.');
 
             return;
         }
@@ -298,6 +327,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return $this->stage === 'pending';
     }
 
+    public function usesPetitionDate(): bool
+    {
+        return $this->stage === 'petitioning';
+    }
+
+    public function usesAwaitingReceiptDate(): bool
+    {
+        return $this->stage === 'awaiting_receipt';
+    }
+
     public function usesPaymentFields(): bool
     {
         return in_array($this->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true);
@@ -322,7 +361,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['cession_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -402,6 +441,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'estimated_receipt_amount',
             'estimated_months',
             'cession_at',
+            'petitioned_at',
+            'awaiting_receipt_at',
             'paid_at',
             'finalized_at',
             'actual_receipt_amount',
@@ -1129,7 +1170,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
                             </section>
 
-                            @if ($this->usesCessionDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+                            @if ($this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
                                 <section>
                                     <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                         <span class="material-icons-outlined text-[20px] text-primary-500">event</span>
@@ -1139,6 +1180,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                         @if ($this->usesCessionDate())
                                             <x-jr.input label="Data da cessão" icon="edit_calendar" type="datetime-local" wire:model="cession_at" />
+                                        @endif
+
+                                        @if ($this->usesPetitionDate())
+                                            <x-jr.input label="Data e hora do peticionamento" icon="gavel" type="datetime-local" wire:model="petitioned_at" required />
+                                            @error('petitioned_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @endif
+
+                                        @if ($this->usesAwaitingReceiptDate())
+                                            <x-jr.input label="Data e hora para aguardar recebimento" icon="hourglass_top" type="datetime-local" wire:model="awaiting_receipt_at" required />
+                                            @error('awaiting_receipt_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         @endif
 
                                         @if ($this->usesPaymentFields())
