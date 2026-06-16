@@ -214,18 +214,32 @@ class GoogleCalendarService
         }
     }
 
+    private function tokenNeedsRefresh(GoogleCalendarToken $token): bool
+    {
+        if (! $token->expires_at) {
+            return true;
+        }
+
+        return $token->expires_at->lte(now()->addMinute());
+    }
+
     private function authorizedClient(GoogleCalendarToken $token): Client
     {
         $client = $this->makeOAuthClient();
-        $client->setAccessToken([
-            'access_token' => $token->access_token,
-            'refresh_token' => $token->refresh_token,
-            'expires_in' => $token->expires_at ? (int) max(60, now()->diffInSeconds($token->expires_at, false)) : 60,
-            'created' => now()->timestamp,
-        ]);
 
-        if (! $client->isAccessTokenExpired()) {
+        if (! $this->tokenNeedsRefresh($token)) {
+            $client->setAccessToken([
+                'access_token' => $token->access_token,
+                'refresh_token' => $token->refresh_token,
+                'expires_in' => (int) max(1, now()->diffInSeconds($token->expires_at)),
+                'created' => now()->timestamp,
+            ]);
+
             return $client;
+        }
+
+        if (! $token->refresh_token) {
+            throw new RuntimeException('Refresh token do Google Calendar ausente. Reconecte a integracao em /google/calendar/connect.');
         }
 
         $refreshedToken = $client->fetchAccessTokenWithRefreshToken($token->refresh_token);
@@ -245,7 +259,7 @@ class GoogleCalendarService
         $client->setAccessToken([
             'access_token' => $token->access_token,
             'refresh_token' => $token->refresh_token,
-            'expires_in' => (int) max(60, now()->diffInSeconds($token->expires_at, false)),
+            'expires_in' => (int) max(1, now()->diffInSeconds($token->expires_at)),
             'created' => now()->timestamp,
         ]);
 

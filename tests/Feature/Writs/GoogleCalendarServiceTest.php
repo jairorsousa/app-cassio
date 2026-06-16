@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Writs;
 
+use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
 use App\Domains\Writs\Models\Writ;
 use Google\Service\Calendar\Event;
@@ -69,6 +70,28 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertSame('2026-06-22T15:30:00-03:00', $event->getEnd()->getDateTime());
         $this->assertStringContainsString('Etapa: Peticionar', $event->getDescription());
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
+    }
+
+    public function test_token_needs_refresh_when_expires_at_is_missing_or_past(): void
+    {
+        $method = new ReflectionMethod(GoogleCalendarService::class, 'tokenNeedsRefresh');
+        $method->setAccessible(true);
+
+        $service = app(GoogleCalendarService::class);
+
+        Carbon::setTestNow('2026-06-16 10:00:00');
+
+        $missingExpiry = new GoogleCalendarToken(['expires_at' => null]);
+        $expired = new GoogleCalendarToken(['expires_at' => Carbon::parse('2026-06-16 08:00:00')]);
+        $expiringSoon = new GoogleCalendarToken(['expires_at' => now()->addSeconds(30)]);
+        $valid = new GoogleCalendarToken(['expires_at' => now()->addHour()]);
+
+        $this->assertTrue($method->invoke($service, $missingExpiry));
+        $this->assertTrue($method->invoke($service, $expired));
+        $this->assertTrue($method->invoke($service, $expiringSoon));
+        $this->assertFalse($method->invoke($service, $valid));
+
+        Carbon::setTestNow();
     }
 
     public function test_awaiting_receipt_event_uses_stage_title_and_local_time(): void
