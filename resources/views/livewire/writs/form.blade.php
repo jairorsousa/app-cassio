@@ -244,21 +244,27 @@ new #[Layout('layouts.app')] class extends Component {
                 && $previousCessionAt?->getTimestamp() !== $writ->cession_at->getTimestamp()
             ) {
                 app(WritService::class)->recordCessionDateChange($writ, $previousCessionAt, $writ->cession_at);
-                app(WritGoogleCalendarSyncDispatcher::class)->syncCession($writ);
+                if (! app(WritGoogleCalendarSyncDispatcher::class)->syncCession($writ)) {
+                    $this->flashCalendarSyncWarning($writ, 'google_calendar_sync_error');
+                }
             } elseif (
                 $writ->stage === 'petitioning'
                 && $writ->petitioned_at
                 && $previousPetitionedAt?->getTimestamp() !== $writ->petitioned_at->getTimestamp()
             ) {
                 app(WritService::class)->recordPetitionDateChange($writ, $previousPetitionedAt, $writ->petitioned_at);
-                app(WritGoogleCalendarSyncDispatcher::class)->syncPetition($writ);
+                if (! app(WritGoogleCalendarSyncDispatcher::class)->syncPetition($writ)) {
+                    $this->flashCalendarSyncWarning($writ, 'google_calendar_petition_sync_error');
+                }
             } elseif (
                 $writ->stage === 'awaiting_receipt'
                 && $writ->awaiting_receipt_at
                 && $previousAwaitingReceiptAt?->getTimestamp() !== $writ->awaiting_receipt_at->getTimestamp()
             ) {
                 app(WritService::class)->recordAwaitingReceiptDateChange($writ, $previousAwaitingReceiptAt, $writ->awaiting_receipt_at);
-                app(WritGoogleCalendarSyncDispatcher::class)->syncAwaitingReceipt($writ);
+                if (! app(WritGoogleCalendarSyncDispatcher::class)->syncAwaitingReceipt($writ)) {
+                    $this->flashCalendarSyncWarning($writ, 'google_calendar_awaiting_receipt_sync_error');
+                }
             }
         } else {
             $writ = Writ::create($data);
@@ -398,6 +404,27 @@ new #[Layout('layouts.app')] class extends Component {
             'transitioned_at' => now(),
             'user_id' => auth()->id(),
         ]);
+    }
+
+    private function flashCalendarSyncWarning(Writ $writ, string $errorColumn): void
+    {
+        $message = trim((string) $writ->fresh()->{$errorColumn});
+        $connectUrl = url('/google/calendar/connect');
+
+        if ($message === '') {
+            session()->flash('warning', "Requisitório salvo, mas a agenda Google não foi atualizada. Verifique a conexão em {$connectUrl}.");
+
+            return;
+        }
+
+        $needsReconnect = str_contains($message, 'MAC is invalid')
+            || str_contains($message, 'Refresh token')
+            || str_contains($message, 'nao foi conectado')
+            || str_contains($message, 'Reconecte');
+
+        $hint = $needsReconnect ? " Reconecte o Google Calendar em {$connectUrl}." : '';
+
+        session()->flash('warning', "Requisitório salvo, mas a agenda Google não foi atualizada: {$message}{$hint}");
     }
 
     private function dispatchStageEvents(Writ $writ): void

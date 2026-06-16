@@ -97,7 +97,8 @@ class WritFormPetitionCalendarTest extends TestCase
         Volt::test('writs.form', ['writ' => $writ])
             ->set('petitioned_at', '2026-06-23T10:30')
             ->call('save')
-            ->assertHasNoErrors();
+            ->assertHasNoErrors()
+            ->assertSessionHas('warning');
 
         $history = WritStageHistory::query()->where('writ_id', $writ->id)->latest('id')->first();
 

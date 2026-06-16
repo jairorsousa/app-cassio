@@ -209,6 +209,35 @@ Artisan::command('writs:sync-google-calendar-awaiting-receipts {--queue : Dispat
     return $skipped === 0 ? Command::SUCCESS : Command::FAILURE;
 })->purpose('Sync awaiting receipt writ dates with Google Agenda');
 
+Artisan::command('writs:sync-google-calendar {writ}', function (Writ $writ, GoogleCalendarService $googleCalendar) {
+    $rows = [];
+
+    if ($writ->cession_at) {
+        $event = $googleCalendar->syncWritCession($writ);
+        $rows[] = ['Cessao', $event?->getHtmlLink() ?: ($writ->fresh()->google_calendar_sync_error ?: 'falhou')];
+    }
+
+    if ($writ->petitioned_at) {
+        $event = $googleCalendar->syncWritPetition($writ);
+        $rows[] = ['Peticionar', $event?->getHtmlLink() ?: ($writ->fresh()->google_calendar_petition_sync_error ?: 'falhou')];
+    }
+
+    if ($writ->awaiting_receipt_at) {
+        $event = $googleCalendar->syncWritAwaitingReceipt($writ);
+        $rows[] = ['Aguardando recebimento', $event?->getHtmlLink() ?: ($writ->fresh()->google_calendar_awaiting_receipt_sync_error ?: 'falhou')];
+    }
+
+    if ($rows === []) {
+        $this->warn("Requisitorio #{$writ->id} nao possui datas para sincronizar com o Google Calendar.");
+
+        return Command::FAILURE;
+    }
+
+    $this->table(['Etapa', 'Resultado'], $rows);
+
+    return Command::SUCCESS;
+})->purpose('Sync a single writ with Google Calendar');
+
 Schedule::job(new GenerateRecurringTransactionsJob)->dailyAt('00:05');
 Schedule::job(new CloseInvoiceJob)->dailyAt('00:10');
 Schedule::job(new RefreshDashboardSnapshotJob)->everyFifteenMinutes();

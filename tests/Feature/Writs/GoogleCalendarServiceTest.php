@@ -124,6 +124,29 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
     }
 
+    public function test_event_request_params_skip_meet_data_on_update(): void
+    {
+        config([
+            'google-calendar.send_updates' => 'all',
+            'google-calendar.create_meet' => true,
+        ]);
+
+        $method = new ReflectionMethod(GoogleCalendarService::class, 'eventRequestParams');
+        $method->setAccessible(true);
+
+        $service = app(GoogleCalendarService::class);
+
+        $this->assertSame(
+            ['sendUpdates' => 'all', 'conferenceDataVersion' => 1],
+            $method->invoke($service, false),
+        );
+
+        $this->assertSame(
+            ['sendUpdates' => 'none'],
+            $method->invoke($service, true),
+        );
+    }
+
     private function configureGoogleCalendar(): void
     {
         config([

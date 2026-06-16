@@ -139,6 +139,7 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="flex flex-col gap-6 pt-4 pb-12">
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
+    @if (session('warning'))<x-fx.alert variant="warning">{{ session('warning') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
     <div class="flex items-center justify-between mb-2">

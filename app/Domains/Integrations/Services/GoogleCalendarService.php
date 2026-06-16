@@ -177,7 +177,7 @@ class GoogleCalendarService
 
             $calendar = new GoogleCalendar($this->authorizedClient($token));
             $calendarId = $token->calendar_id ?: config('google-calendar.calendar_id', 'primary');
-            $params = $this->eventRequestParams();
+            $params = $this->eventRequestParams(forUpdate: $existingEventId !== null);
 
             if ($existingEventId) {
                 $event->setConferenceData(null);
@@ -458,13 +458,13 @@ class GoogleCalendarService
     /**
      * @return array<string, mixed>
      */
-    private function eventRequestParams(): array
+    private function eventRequestParams(bool $forUpdate = false): array
     {
         $params = [
-            'sendUpdates' => config('google-calendar.send_updates', 'all'),
+            'sendUpdates' => $forUpdate ? 'none' : config('google-calendar.send_updates', 'all'),
         ];
 
-        if (config('google-calendar.create_meet')) {
+        if (config('google-calendar.create_meet') && ! $forUpdate) {
             $params['conferenceDataVersion'] = 1;
         }
 
