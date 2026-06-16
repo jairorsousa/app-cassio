@@ -131,7 +131,7 @@ class GoogleCalendarService
         );
     }
 
-    public function syncWritAwaitingReceipt(Writ $writ): ?Event
+    public function syncWritAwaitingReceipt(Writ $writ, bool $forceNewEvent = false): ?Event
     {
         if (! config('google-calendar.enabled')) {
             $writ->forceFill([
@@ -145,10 +145,12 @@ class GoogleCalendarService
             return null;
         }
 
+        $existingEventId = $forceNewEvent ? null : $writ->google_calendar_awaiting_receipt_event_id;
+
         return $this->syncCalendarEvent(
             writ: $writ,
             event: $this->buildAwaitingReceiptEvent($writ),
-            existingEventId: $writ->google_calendar_awaiting_receipt_event_id,
+            existingEventId: $existingEventId,
             columns: [
                 'event_id' => 'google_calendar_awaiting_receipt_event_id',
                 'event_link' => 'google_calendar_awaiting_receipt_event_link',

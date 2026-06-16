@@ -228,12 +228,19 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($this->writ) {
             $previousStage = $this->writ->stage;
+            $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at?->getTimestamp();
             $this->writ->update($data);
             $writ = $this->writ->fresh();
 
             if ($previousStage !== $writ->stage) {
                 $this->recordStageHistory($writ, $previousStage, $writ->stage);
                 $this->dispatchStageEvents($writ);
+            } elseif (
+                $writ->stage === 'awaiting_receipt'
+                && $writ->awaiting_receipt_at
+                && $previousAwaitingReceiptAt !== $writ->awaiting_receipt_at->getTimestamp()
+            ) {
+                app(WritGoogleCalendarSyncDispatcher::class)->syncAwaitingReceipt($writ, forceNewEvent: true);
             }
         } else {
             $writ = Writ::create($data);

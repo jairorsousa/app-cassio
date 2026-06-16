@@ -20,7 +20,16 @@ class WritGoogleCalendarSyncDispatcher
         }
 
         if ($writ->awaiting_receipt_at) {
-            SyncWritAwaitingReceiptToGoogleCalendar::dispatchSync($writ->id);
+            $this->syncAwaitingReceipt($writ);
         }
+    }
+
+    public function syncAwaitingReceipt(Writ $writ, bool $forceNewEvent = false): void
+    {
+        if (! $writ->awaiting_receipt_at) {
+            return;
+        }
+
+        SyncWritAwaitingReceiptToGoogleCalendar::dispatchSync($writ->id, $forceNewEvent);
     }
 }
