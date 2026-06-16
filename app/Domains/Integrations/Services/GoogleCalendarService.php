@@ -238,7 +238,7 @@ class GoogleCalendarService
             'Etapa: '.$writ->stageLabel(),
             'Ente devedor: '.($writ->debtor_entity ?: '-'),
             'Cedente: '.$this->assignorName($writ),
-            'Valor do requisitorio: R$ '.number_format((float) $writ->face_value, 2, ',', '.'),
+            'Valor negociado: R$ '.number_format($this->negotiatedAmount($writ), 2, ',', '.'),
         ];
 
         if ($writ->notes) {
@@ -271,6 +271,17 @@ class GoogleCalendarService
         }
 
         return $writ->process_number ?: '#'.$writ->id;
+    }
+
+    private function negotiatedAmount(Writ $writ): float
+    {
+        $negotiatedAmount = (float) $writ->negotiated_amount;
+
+        if ($negotiatedAmount > 0) {
+            return $negotiatedAmount;
+        }
+
+        return (float) $writ->proposed_amount;
     }
 
     /**

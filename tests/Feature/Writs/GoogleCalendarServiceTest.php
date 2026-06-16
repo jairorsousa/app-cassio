@@ -27,6 +27,8 @@ class GoogleCalendarServiceTest extends TestCase
             'assignor_name' => 'Maria Clara Santos',
             'debtor_entity' => 'INSS',
             'face_value' => 35000,
+            'negotiated_amount' => 20000,
+            'proposed_amount' => 10000,
         ]);
         $writ->id = 19;
         $writ->cession_at = Carbon::parse('2026-06-19 14:00:00', 'UTC');
@@ -40,5 +42,7 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertSame('Cessao - Maria Clara Santos', $event->getSummary());
         $this->assertSame('2026-06-19T14:00:00-03:00', $event->getStart()->getDateTime());
         $this->assertSame('2026-06-19T14:30:00-03:00', $event->getEnd()->getDateTime());
+        $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
+        $this->assertStringNotContainsString('Valor do requisitorio: R$ 35.000,00', $event->getDescription());
     }
 }
