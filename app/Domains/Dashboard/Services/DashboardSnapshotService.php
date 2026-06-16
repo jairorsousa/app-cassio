@@ -4,6 +4,8 @@ namespace App\Domains\Dashboard\Services;
 
 use App\Domains\Dashboard\Models\DashboardSnapshot;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class DashboardSnapshotService
 {
@@ -42,6 +44,12 @@ class DashboardSnapshotService
 
     public function invalidate(): void
     {
-        Cache::forget(self::CACHE_KEY);
+        try {
+            Cache::forget(self::CACHE_KEY);
+        } catch (Throwable $exception) {
+            Log::warning('Failed to invalidate dashboard snapshot cache.', [
+                'exception' => $exception,
+            ]);
+        }
     }
 }
