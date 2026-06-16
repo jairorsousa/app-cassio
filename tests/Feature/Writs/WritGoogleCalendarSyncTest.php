@@ -76,4 +76,37 @@ class WritGoogleCalendarSyncTest extends TestCase
         Bus::assertDispatchedSync(SyncWritPetitionToGoogleCalendar::class, fn (SyncWritPetitionToGoogleCalendar $job): bool => $job->writId === $writ->id);
         Bus::assertDispatchedSync(SyncWritAwaitingReceiptToGoogleCalendar::class, fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id);
     }
+
+    public function test_transitioning_past_awaiting_receipt_still_dispatches_awaiting_sync(): void
+    {
+        Bus::fake();
+
+        $writ = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'petitioning',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'face_value' => 10000,
+            'negotiated_amount' => 10000,
+            'proposed_amount' => 8000,
+            'paid_amount' => 8000,
+            'notary_expenses_amount' => 0,
+            'other_expenses_amount' => 0,
+            'discount_percentage' => 20,
+            'estimated_receipt_amount' => 12000,
+            'petitioned_at' => '2026-06-22 15:00:00',
+        ]);
+
+        $service = app(WritService::class);
+
+        $service->transitionTo($writ, 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-23 16:00:00',
+        ]);
+
+        $service->transitionTo($writ->fresh(), 'finalized', [
+            'finalized_at' => '2026-10-01',
+            'actual_receipt_amount' => 98000,
+        ]);
+
+        Bus::assertDispatchedSync(SyncWritAwaitingReceiptToGoogleCalendar::class, fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id);
+    }
 }

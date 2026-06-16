@@ -21,17 +21,14 @@ Artisan::command('inspire', function () {
 Artisan::command('google-calendar:status', function () {
     $token = GoogleCalendarToken::central();
     $pendingWrits = Writ::query()
-        ->where('stage', 'pending')
         ->whereNotNull('cession_at')
         ->whereNull('google_calendar_event_id')
         ->count();
     $pendingPetitions = Writ::query()
-        ->where('stage', 'petitioning')
         ->whereNotNull('petitioned_at')
         ->whereNull('google_calendar_petition_event_id')
         ->count();
     $pendingAwaitingReceipts = Writ::query()
-        ->where('stage', 'awaiting_receipt')
         ->whereNotNull('awaiting_receipt_at')
         ->whereNull('google_calendar_awaiting_receipt_event_id')
         ->count();
@@ -67,7 +64,6 @@ Artisan::command('google-calendar:status', function () {
 
 Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google events and update them}', function (GoogleCalendarService $googleCalendar) {
     $query = Writ::query()
-        ->where('stage', 'pending')
         ->whereNotNull('cession_at')
         ->orderBy('cession_at');
 
@@ -117,7 +113,6 @@ Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue 
 
 Artisan::command('writs:sync-google-calendar-petitions {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google petition events and update them}', function (GoogleCalendarService $googleCalendar) {
     $query = Writ::query()
-        ->where('stage', 'petitioning')
         ->whereNotNull('petitioned_at')
         ->orderBy('petitioned_at');
 
@@ -167,7 +162,6 @@ Artisan::command('writs:sync-google-calendar-petitions {--queue : Dispatch queue
 
 Artisan::command('writs:sync-google-calendar-awaiting-receipts {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google awaiting receipt events and update them}', function (GoogleCalendarService $googleCalendar) {
     $query = Writ::query()
-        ->where('stage', 'awaiting_receipt')
         ->whereNotNull('awaiting_receipt_at')
         ->orderBy('awaiting_receipt_at');
 

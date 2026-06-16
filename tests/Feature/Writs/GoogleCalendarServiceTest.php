@@ -117,7 +117,7 @@ class GoogleCalendarServiceTest extends TestCase
         /** @var Event $event */
         $event = $method->invoke(app(GoogleCalendarService::class), $writ);
 
-        $this->assertSame('Aguardando Recebimento - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('Aguardando Pagamento - Maria Clara Santos', $event->getSummary());
         $this->assertSame('2026-06-23T16:00:00-03:00', $event->getStart()->getDateTime());
         $this->assertSame('2026-06-23T16:30:00-03:00', $event->getEnd()->getDateTime());
         $this->assertStringContainsString('Etapa: Aguardando Recebimento', $event->getDescription());

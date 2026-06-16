@@ -259,7 +259,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         }
 
         if ($this->stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
-            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar recebimento.');
+            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar pagamento.');
 
             return;
         }
@@ -998,7 +998,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     @if ($stage['key'] === 'awaiting_receipt' && $w->awaiting_receipt_at)
                                         <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
                                             <span class="material-icons-outlined text-[16px]">hourglass_top</span>
-                                            <span>Aguardando: {{ $w->awaiting_receipt_at->format('d/m/Y \à\s H:i') }}</span>
+                                            <span>Aguard. pagamento: {{ $w->awaiting_receipt_at->format('d/m/Y \à\s H:i') }}</span>
                                         </div>
                                     @endif
 
@@ -1202,7 +1202,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         @endif
 
                                         @if ($this->usesAwaitingReceiptDate())
-                                            <x-jr.input label="Data e hora para aguardar recebimento" icon="hourglass_top" type="datetime-local" wire:model="awaiting_receipt_at" required />
+                                            <x-jr.input label="Data e hora para aguardar pagamento" icon="hourglass_top" type="datetime-local" wire:model="awaiting_receipt_at" required />
                                             @error('awaiting_receipt_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         @endif
 
@@ -1378,7 +1378,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </div>
     </div>
 
-    <!-- Modal Confirmar Aguardando Recebimento -->
+    <!-- Modal Confirmar Aguardando Pagamento -->
     <div
         x-show="$wire.showAwaitingReceiptModal"
         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-mono-900/50 backdrop-blur-sm"
@@ -1392,14 +1392,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     >
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" @click.outside="$wire.cancelAwaitingReceiptDate()">
             <div class="px-6 py-4 border-b border-mono-100 flex items-center justify-between">
-                <h3 class="text-lg font-bold text-mono-900">Confirmar Aguardando Recebimento</h3>
+                <h3 class="text-lg font-bold text-mono-900">Confirmar Aguardando Pagamento</h3>
                 <button wire:click="cancelAwaitingReceiptDate" class="text-mono-400 hover:text-mono-600 transition-colors">
                     <span class="material-icons-outlined">close</span>
                 </button>
             </div>
 
             <div class="p-6 flex flex-col gap-5">
-                <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="promptAwaitingReceiptAt" />
+                <x-fx.input label="Data e hora para aguardar pagamento" type="datetime-local" wire:model="promptAwaitingReceiptAt" />
             </div>
 
             <div class="px-6 py-4 bg-mono-50 border-t border-mono-100 flex items-center justify-end gap-3">

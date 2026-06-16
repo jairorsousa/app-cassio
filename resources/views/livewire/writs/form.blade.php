@@ -44,6 +44,21 @@ new #[Layout('layouts.app')] class extends Component {
 
     public string $notes = '';
 
+    public function updatedStage(string $stage): void
+    {
+        if ($stage === 'pending' && blank($this->cession_at)) {
+            $this->cession_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'petitioning' && blank($this->petitioned_at)) {
+            $this->petitioned_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
+            $this->awaiting_receipt_at = now()->format('Y-m-d\TH:i');
+        }
+    }
+
     public function mount(?Writ $writ = null): void
     {
         if ($writ && $writ->exists) {
@@ -192,7 +207,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         if ($this->stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
-            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar recebimento.');
+            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar pagamento.');
 
             return;
         }
@@ -509,7 +524,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @endif
 
                     @if ($this->usesAwaitingReceiptDate())
-                        <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="awaiting_receipt_at" required />
+                        <x-fx.input label="Data e hora para aguardar pagamento" type="datetime-local" wire:model="awaiting_receipt_at" required />
                         @error('awaiting_receipt_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
                     @endif
 
