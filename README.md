@@ -173,7 +173,7 @@ sudo chmod -R 775 storage bootstrap/cache
 A aplicação agora deve estar rodando na porta configurada na variável `APP_PORT` (por exemplo, `8085`).
 Você pode acessá-la por `http://ip_do_servidor:8085`.
 
-Para apontar um domínio real com SSL (HTTPS), é recomendado configurar um Proxy Reverso (como Nginx, Apache ou Traefik) diretamente no servidor Ubuntu redirecionando o tráfego da porta `80` e `443` para a porta do container (`127.0.0.1:8085`).
+Para publicar com domínio real e SSL via Cloudflare Tunnel, siga o guia específico em [docs/deploy-cloudflare-tunnel.md](docs/deploy-cloudflare-tunnel.md). Para o domínio de produção deste projeto, use `APP_URL=https://app.cassiomota.com` e mantenha a porta HTTP do container bindada em `127.0.0.1`.
 
 > **Isolamento no Docker:** Não se preocupe com conflitos de nome. Os containers foram configurados no `docker-compose.yml` com nomes específicos (como `cassio_app`, `cassio_nginx`, `cassio_redis`) e o Redis só expõe a porta dentro da rede interna do docker (`cassio_net`), garantindo que não colida com outras instâncias de Redis do servidor.
 

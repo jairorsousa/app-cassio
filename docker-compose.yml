@@ -43,12 +43,24 @@ services:
     container_name: cassio_nginx
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:80"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:80"
     volumes:
       - .:/var/www/html
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - app
+    networks:
+      - cassio_net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cassio_cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN:-}
+    profiles:
+      - tunnel
+    depends_on:
+      - nginx
     networks:
       - cassio_net
 
