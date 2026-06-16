@@ -180,8 +180,6 @@ class GoogleCalendarService
             $params = $this->eventRequestParams(forUpdate: $existingEventId !== null);
 
             if ($existingEventId) {
-                $event->setConferenceData(null);
-
                 try {
                     $syncedEvent = $calendar->events->update(
                         $calendarId,
