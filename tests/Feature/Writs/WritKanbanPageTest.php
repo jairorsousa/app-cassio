@@ -19,6 +19,7 @@ class WritKanbanPageTest extends TestCase
 
         Volt::test('writs.kanban')
             ->assertSee('Aguardando Recebimento')
-            ->assertSeeHtml('grid-cols-6');
+            ->assertSee('Perdido')
+            ->assertSeeHtml('grid-cols-7');
     }
 }

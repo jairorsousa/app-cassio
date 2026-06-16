@@ -20,12 +20,13 @@ class WritService
      * @var array<string, array<int, string>>
      */
     private const ALLOWED_TRANSITIONS = [
-        'negotiation' => ['pending', 'paid'],
+        'negotiation' => ['pending', 'paid', 'lost'],
         'pending' => ['negotiation', 'paid'],
         'paid' => ['pending', 'petitioning', 'awaiting_receipt', 'finalized'],
         'petitioning' => ['paid', 'awaiting_receipt', 'finalized'],
         'awaiting_receipt' => ['petitioning', 'finalized'],
         'finalized' => ['awaiting_receipt', 'petitioning'],
+        'lost' => ['negotiation'],
     ];
 
     /**
@@ -46,6 +47,10 @@ class WritService
         $allowed = self::ALLOWED_TRANSITIONS[$current] ?? [];
         if (! in_array($newStage, $allowed, true)) {
             throw new \DomainException("Transição não permitida: {$current} → {$newStage}");
+        }
+
+        if ($newStage === 'lost' && blank($context['lost_reason'] ?? null)) {
+            throw new \DomainException('Informe o motivo para marcar o requisitório como perdido.');
         }
 
         $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
@@ -81,6 +86,11 @@ class WritService
                 if (isset($context['destination_bank_account_id'])) {
                     $patch['destination_bank_account_id'] = $context['destination_bank_account_id'];
                 }
+            }
+
+            if ($newStage === 'lost') {
+                $patch['lost_reason'] = trim((string) $context['lost_reason']);
+                $patch['lost_at'] = $context['lost_at'] ?? now();
             }
 
             $writ->update($patch);

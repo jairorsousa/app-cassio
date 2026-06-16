@@ -26,13 +26,14 @@ class Writ extends Model
                 'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
                 'google_calendar_event_id', 'google_calendar_synced_at',
                 'google_calendar_petition_event_id', 'google_calendar_petition_synced_at',
-                'awaiting_receipt_at', 'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_synced_at'])
+                'awaiting_receipt_at', 'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_synced_at',
+                'lost_reason', 'lost_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('writs');
     }
 
-    public const STAGES = ['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized'];
+    public const STAGES = ['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
 
     public const STAGE_LABELS = [
         'negotiation' => 'Negociação',
@@ -41,6 +42,7 @@ class Writ extends Model
         'petitioning' => 'Peticionar',
         'awaiting_receipt' => 'Aguardando Recebimento',
         'finalized' => 'Finalizar',
+        'lost' => 'Perdido',
     ];
 
     protected $fillable = [
@@ -54,6 +56,7 @@ class Writ extends Model
         'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
         'google_calendar_petition_event_id', 'google_calendar_petition_event_link', 'google_calendar_petition_synced_at', 'google_calendar_petition_sync_error',
         'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_event_link', 'google_calendar_awaiting_receipt_synced_at', 'google_calendar_awaiting_receipt_sync_error',
+        'lost_reason', 'lost_at',
         'source_bank_account_id', 'destination_bank_account_id',
         'notes',
     ];
@@ -77,6 +80,7 @@ class Writ extends Model
         'awaiting_receipt_at' => 'datetime',
         'google_calendar_awaiting_receipt_synced_at' => 'datetime',
         'finalized_at' => 'date',
+        'lost_at' => 'datetime',
     ];
 
     public function history(): HasMany

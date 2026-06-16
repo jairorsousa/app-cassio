@@ -34,6 +34,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $paid_at = '';
     public string $finalized_at = '';
     public string $actual_receipt_amount = '0';
+    public string $lost_reason = '';
 
     public ?int $source_bank_account_id = null;
     public ?int $destination_bank_account_id = null;
@@ -59,6 +60,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->paid_at = $writ->paid_at?->format('Y-m-d') ?? '';
             $this->finalized_at = $writ->finalized_at?->format('Y-m-d') ?? '';
             $this->actual_receipt_amount = (string) ($writ->actual_receipt_amount ?? '0');
+            $this->lost_reason = (string) ($writ->lost_reason ?? '');
             $this->source_bank_account_id = $writ->source_bank_account_id;
             $this->destination_bank_account_id = $writ->destination_bank_account_id;
 
@@ -107,6 +109,7 @@ new #[Layout('layouts.app')] class extends Component {
             'paid_at' => 'nullable|date',
             'finalized_at' => 'nullable|date',
             'actual_receipt_amount' => 'nullable|numeric|min:0',
+            'lost_reason' => 'nullable|string|max:2000',
             'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'destination_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string',
@@ -168,6 +171,13 @@ new #[Layout('layouts.app')] class extends Component {
         $this->normalizeMoneyFields();
 
         $data = $this->validate();
+
+        if ($this->stage === 'lost' && blank($this->lost_reason)) {
+            $this->addError('lost_reason', 'Informe o motivo para marcar o requisitório como perdido.');
+
+            return;
+        }
+
         $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
@@ -255,6 +265,11 @@ new #[Layout('layouts.app')] class extends Component {
         return $this->stage === 'finalized';
     }
 
+    public function usesLostReason(): bool
+    {
+        return $this->stage === 'lost';
+    }
+
     private function discountBaseValue(): float
     {
         $negotiated = $this->moneyValue($this->negotiated_amount);
@@ -288,6 +303,14 @@ new #[Layout('layouts.app')] class extends Component {
             $data['actual_receipt_amount'] = null;
         } elseif ($data['finalized_at'] === null) {
             $data['finalized_at'] = now()->toDateString();
+        }
+
+        if (! $this->usesLostReason()) {
+            $data['lost_reason'] = null;
+            $data['lost_at'] = null;
+        } else {
+            $data['lost_reason'] = trim((string) $data['lost_reason']);
+            $data['lost_at'] = $this->writ?->lost_at ?? now();
         }
 
         return $data;
@@ -453,6 +476,17 @@ new #[Layout('layouts.app')] class extends Component {
                         <x-fx.input label="Data de recebimento" type="date" wire:model="finalized_at" />
                         <x-fx.input label="Valor recebido" type="text" x-money wire:model="actual_receipt_amount" />
                     @endif
+                </div>
+            </section>
+        @endif
+
+        @if ($this->usesLostReason())
+            <section>
+                <h3 class="text-md font-semibold mb-xs">Motivo da perda</h3>
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Motivo *</label>
+                    <textarea wire:model="lost_reason" class="fx-form-field" rows="4" required></textarea>
+                    @error('lost_reason') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
                 </div>
             </section>
         @endif

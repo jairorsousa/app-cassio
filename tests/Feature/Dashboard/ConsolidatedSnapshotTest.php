@@ -6,16 +6,17 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Services\InstallmentService;
 use App\Domains\Dashboard\Services\DashboardSnapshotBuilder;
+use App\Domains\Dashboard\Services\DashboardSnapshotService;
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetClass;
 use App\Domains\Investments\Models\AssetOperation;
 use App\Domains\Investments\Services\AssetPositionService;
 use App\Domains\Partnership\Models\Partnership;
 use App\Domains\Partnership\Models\PartnershipContribution;
-use App\Domains\Partnership\Models\PartnershipDistribution;
 use App\Domains\Writs\Models\Writ;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class ConsolidatedSnapshotTest extends TestCase
@@ -95,12 +96,12 @@ class ConsolidatedSnapshotTest extends TestCase
         $this->assertNotContains('Requisitórios em aberto', $labels);
     }
 
-    public function test_writs_by_stage_returns_all_six_stages(): void
+    public function test_writs_by_stage_returns_all_stages(): void
     {
         $payload = app(DashboardSnapshotBuilder::class)->build();
 
         $stages = collect($payload['writs']['by_stage'])->pluck('stage')->all();
-        $this->assertEquals(['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized'], $stages);
+        $this->assertEquals(['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'], $stages);
     }
 
     public function test_future_contributions_lists_pending(): void
@@ -132,14 +133,14 @@ class ConsolidatedSnapshotTest extends TestCase
             'quantity' => 10, 'unit_price' => 100, 'fees' => 0, 'total' => 1000,
         ]);
 
-        $service = app(\App\Domains\Dashboard\Services\DashboardSnapshotService::class);
+        $service = app(DashboardSnapshotService::class);
         $service->refresh();
-        $this->assertNotNull(\Illuminate\Support\Facades\Cache::get(\App\Domains\Dashboard\Services\DashboardSnapshotService::CACHE_KEY));
+        $this->assertNotNull(Cache::get(DashboardSnapshotService::CACHE_KEY));
 
         // Atualiza cotação → deve invalidar
         app(AssetPositionService::class)->setQuote($asset, '2026-04-29', 110);
 
-        $this->assertNull(\Illuminate\Support\Facades\Cache::get(\App\Domains\Dashboard\Services\DashboardSnapshotService::CACHE_KEY));
+        $this->assertNull(Cache::get(DashboardSnapshotService::CACHE_KEY));
     }
 
     public function test_writ_field_edit_invalidates_snapshot_cache(): void
@@ -150,13 +151,13 @@ class ConsolidatedSnapshotTest extends TestCase
             'paid_at' => '2026-03-01',
         ]);
 
-        $service = app(\App\Domains\Dashboard\Services\DashboardSnapshotService::class);
+        $service = app(DashboardSnapshotService::class);
         $service->refresh();
-        $this->assertNotNull(\Illuminate\Support\Facades\Cache::get(\App\Domains\Dashboard\Services\DashboardSnapshotService::CACHE_KEY));
+        $this->assertNotNull(Cache::get(DashboardSnapshotService::CACHE_KEY));
 
         $writ->update(['paid_amount' => 700]);
 
-        $this->assertNull(\Illuminate\Support\Facades\Cache::get(\App\Domains\Dashboard\Services\DashboardSnapshotService::CACHE_KEY));
+        $this->assertNull(Cache::get(DashboardSnapshotService::CACHE_KEY));
     }
 
     public function test_averages_include_three_six_twelve_months(): void

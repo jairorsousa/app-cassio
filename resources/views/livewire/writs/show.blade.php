@@ -22,6 +22,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $transition_finalized_at = '';
     public string $transition_actual_receipt_amount = '';
     public ?int $transition_destination_account = null;
+    public string $transition_lost_reason = '';
     public string $transition_notes = '';
 
     public function mount(Writ $writ): void
@@ -90,6 +91,10 @@ new #[Layout('layouts.app')] class extends Component {
             $context['finalized_at'] = $this->transition_finalized_at;
             $context['actual_receipt_amount'] = $this->moneyValue($this->transition_actual_receipt_amount);
             $context['destination_bank_account_id'] = $this->transition_destination_account;
+        }
+
+        if ($this->transitionTo === 'lost') {
+            $context['lost_reason'] = $this->transition_lost_reason;
         }
 
         try {
@@ -193,6 +198,16 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                 </div>
             </div>
+
+            @if ($writ->stage === 'lost' && $writ->lost_reason)
+                <div class="rounded-xl border border-red-100 bg-red-50 p-4">
+                    <div class="mb-2 flex items-center gap-2 text-sm font-bold text-red-700">
+                        <span class="material-icons-outlined text-[18px]">block</span>
+                        Motivo da perda
+                    </div>
+                    <p class="text-sm text-red-700">{{ $writ->lost_reason }}</p>
+                </div>
+            @endif
 
             <!-- Processo -->
             <div class="border-b border-mono-100 pb-6">
@@ -409,6 +424,13 @@ new #[Layout('layouts.app')] class extends Component {
                                 <option value="{{ $a->id }}">{{ $a->name }}</option>
                             @endforeach
                         </select>
+                    </div>
+                @endif
+
+                @if ($transitionTo === 'lost')
+                    <div>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Motivo da perda *</label>
+                        <textarea wire:model="transition_lost_reason" class="fx-form-field" rows="4" required placeholder="Informe por que a negociação foi perdida"></textarea>
                     </div>
                 @endif
 

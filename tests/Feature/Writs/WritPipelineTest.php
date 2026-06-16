@@ -35,10 +35,10 @@ class WritPipelineTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    // 1. Card percorre as 6 etapas e gera transactions corretas
+    // 1. Card percorre as etapas principais e gera transactions corretas
     // ──────────────────────────────────────────────
 
-    public function test_writ_traverses_all_six_stages(): void
+    public function test_writ_traverses_all_main_stages(): void
     {
         $account = BankAccount::create(['name' => 'Conta Principal', 'initial_balance' => 100000, 'status' => true]);
         $writ = $this->makeWrit([
@@ -127,6 +127,29 @@ class WritPipelineTest extends TestCase
 
         $this->assertEquals('awaiting_receipt', $updated->stage);
         $this->assertEquals('2026-06-23 16:00:00', $updated->awaiting_receipt_at->format('Y-m-d H:i:s'));
+    }
+
+    public function test_lost_stage_requires_reason(): void
+    {
+        $writ = $this->makeWrit();
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('Informe o motivo para marcar o requisitório como perdido.');
+
+        app(WritService::class)->transitionTo($writ, 'lost');
+    }
+
+    public function test_negotiation_writ_can_be_marked_as_lost_with_reason(): void
+    {
+        $writ = $this->makeWrit();
+
+        $updated = app(WritService::class)->transitionTo($writ, 'lost', [
+            'lost_reason' => 'Cliente recusou a proposta final.',
+        ]);
+
+        $this->assertEquals('lost', $updated->stage);
+        $this->assertEquals('Cliente recusou a proposta final.', $updated->lost_reason);
+        $this->assertNotNull($updated->lost_at);
     }
 
     public function test_finalized_stage_creates_income_transaction(): void

@@ -27,7 +27,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="h-24 bg-mono-100 rounded-2xl"></div>
             </div>
             <div class="h-12 bg-mono-100 rounded-pill"></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-4">
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
@@ -63,6 +64,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $promptActualReceiptAmount = '';
     public ?int $promptDestinationBankAccountId = null;
 
+    public bool $showLostModal = false;
+    public ?int $promptLostWritId = null;
+    public string $promptLostReason = '';
+
     public bool $showFilters = false;
     public string $formType = 'rpv';
     public string $stage = 'negotiation';
@@ -83,6 +88,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $paid_at = '';
     public string $finalized_at = '';
     public string $actual_receipt_amount = '0';
+    public string $lost_reason = '';
     public ?int $source_bank_account_id = null;
     public ?int $destination_bank_account_id = null;
     public string $notes = '';
@@ -124,6 +130,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'paid_at' => 'nullable|date',
             'finalized_at' => 'nullable|date',
             'actual_receipt_amount' => 'nullable|numeric|min:0',
+            'lost_reason' => 'nullable|string|max:2000',
             'source_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'destination_bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string',
@@ -208,6 +215,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->normalizeMoneyFields();
 
         $data = $this->validate();
+
+        if ($this->stage === 'lost' && blank($this->lost_reason)) {
+            $this->addError('lost_reason', 'Informe o motivo para marcar o requisitório como perdido.');
+
+            return;
+        }
+
         $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);
@@ -294,6 +308,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return $this->stage === 'finalized';
     }
 
+    public function usesLostReason(): bool
+    {
+        return $this->stage === 'lost';
+    }
+
     private function discountBaseValue(): float
     {
         $negotiated = $this->moneyValue($this->negotiated_amount);
@@ -327,6 +346,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $data['actual_receipt_amount'] = null;
         } elseif ($data['finalized_at'] === null) {
             $data['finalized_at'] = now()->toDateString();
+        }
+
+        if (! $this->usesLostReason()) {
+            $data['lost_reason'] = null;
+            $data['lost_at'] = null;
+        } else {
+            $data['lost_reason'] = trim((string) $data['lost_reason']);
+            $data['lost_at'] = now();
         }
 
         return $data;
@@ -378,6 +405,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'paid_at',
             'finalized_at',
             'actual_receipt_amount',
+            'lost_reason',
             'source_bank_account_id',
             'destination_bank_account_id',
             'notes',
@@ -394,6 +422,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->other_expenses_amount = '0';
         $this->estimated_receipt_amount = '0';
         $this->actual_receipt_amount = '0';
+        $this->lost_reason = '';
     }
 
     public function delete(int $id): void
@@ -598,6 +627,42 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->promptFinalizedWritId = null;
     }
 
+    public function promptLostReason(int $id): void
+    {
+        $this->promptLostWritId = $id;
+        $this->promptLostReason = '';
+        $this->showLostModal = true;
+    }
+
+    public function confirmLostReason(WritService $service): void
+    {
+        $this->validate([
+            'promptLostReason' => 'required|string|max:2000',
+        ], [
+            'promptLostReason.required' => 'Informe o motivo para marcar o requisitório como perdido.',
+        ]);
+
+        try {
+            $writ = Writ::findOrFail($this->promptLostWritId);
+            $service->transitionTo($writ, 'lost', [
+                'lost_reason' => $this->promptLostReason,
+            ]);
+            $this->showLostModal = false;
+            $this->promptLostWritId = null;
+            $this->promptLostReason = '';
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['lost'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelLostReason(): void
+    {
+        $this->showLostModal = false;
+        $this->promptLostWritId = null;
+        $this->promptLostReason = '';
+    }
+
     public function clearFilters(): void
     {
         $this->reset(['type', 'debtor', 'from', 'to']);
@@ -754,6 +819,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info'],
             'awaiting_receipt' => ['icon' => 'hourglass_top', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-primary-500'],
             'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300'],
+            'lost' => ['icon' => 'block', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-down'],
         ];
     @endphp
 
@@ -761,14 +827,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.empty-state
             icon="gavel"
             title="Nenhum requisitório no pipeline"
-            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento e Finalizar."
+            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Finalizar e Perdido."
         >
             <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
         </x-jr.empty-state>
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[1800px] grid-cols-6 gap-4">
+        <div class="grid min-w-[2100px] grid-cols-7 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border border-mono-100 bg-mono-50" data-stage="{{ $stage['key'] }}">
@@ -818,6 +884,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                                     <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
                                                     Editar
                                                 </a>
+                                                @if ($stage['key'] === 'negotiation')
+                                                    <button
+                                                        type="button"
+                                                        wire:click="promptLostReason({{ $w->id }})"
+                                                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-down hover:bg-down-bg"
+                                                    >
+                                                        <span class="material-icons-outlined text-[18px]">block</span>
+                                                        Marcar como perdido
+                                                    </button>
+                                                @endif
                                                 <button
                                                     type="button"
                                                     wire:click="delete({{ $w->id }})"
@@ -875,6 +951,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <div class="mt-2 flex items-center justify-between rounded-xl bg-up-bg px-3 py-2 text-xs font-semibold text-up">
                                             <span>Recebido</span>
                                             <span>R$ {{ number_format($w->actual_receipt_amount, 2, ',', '.') }}</span>
+                                        </div>
+                                    @endif
+
+                                    @if ($stage['key'] === 'lost' && $w->lost_reason)
+                                        <div class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-xs text-down">
+                                            <div class="mb-1 flex items-center gap-1 font-semibold">
+                                                <span class="material-icons-outlined text-[15px]">block</span>
+                                                Motivo
+                                            </div>
+                                            <p class="line-clamp-3">{{ $w->lost_reason }}</p>
                                         </div>
                                     @endif
                                 </article>
@@ -1063,6 +1149,21 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                             <x-jr.input label="Data de recebimento" icon="event_available" type="date" wire:model="finalized_at" />
                                             <x-jr.input label="Valor recebido" icon="savings" type="text" x-money wire:model="actual_receipt_amount" />
                                         @endif
+                                    </div>
+                                </section>
+                            @endif
+
+                            @if ($this->usesLostReason())
+                                <section>
+                                    <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                        <span class="material-icons-outlined text-[20px] text-down">block</span>
+                                        <h4 class="text-base font-bold text-mono-900">Motivo da perda</h4>
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Motivo *</label>
+                                        <textarea wire:model="lost_reason" rows="4" required class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 focus:border-primary-500 focus:ring-0"></textarea>
+                                        @error('lost_reason') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
                                 </section>
                             @endif
@@ -1296,6 +1397,45 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </div>
     </div>
 
+    <!-- Modal Marcar como Perdido -->
+    <div
+        x-show="$wire.showLostModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-mono-900/50 backdrop-blur-sm"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" @click.outside="$wire.cancelLostReason()">
+            <div class="px-6 py-4 border-b border-mono-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-mono-900">Marcar como perdido</h3>
+                <button wire:click="cancelLostReason" class="text-mono-400 hover:text-mono-600 transition-colors">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-6 flex flex-col gap-5">
+                <div>
+                    <label class="block text-sm font-medium text-mono-700 mb-1">Motivo *</label>
+                    <textarea wire:model="promptLostReason" class="fx-form-field" rows="4" required placeholder="Informe por que a negociação foi perdida"></textarea>
+                    @error('promptLostReason') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <div class="px-6 py-4 bg-mono-50 border-t border-mono-100 flex items-center justify-end gap-3">
+                <button wire:click="cancelLostReason" class="px-4 py-2 text-sm font-bold text-mono-600 hover:text-mono-900 transition-colors">
+                    Cancelar
+                </button>
+                <button wire:click="confirmLostReason" class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 @assets
@@ -1317,7 +1457,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         const newStage = evt.to.dataset.stage;
                         const oldStage = evt.from.dataset.stage;
 
-                        if (oldStage === 'negotiation' && newStage === 'pending') {
+                        if (oldStage === 'negotiation' && newStage === 'lost') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptLostReason(id);
+                        } else if (oldStage === 'negotiation' && newStage === 'pending') {
                             evt.from.appendChild(evt.item);
                             $wire.promptCessionDate(id);
                         } else if (oldStage === 'pending' && newStage === 'paid') {
