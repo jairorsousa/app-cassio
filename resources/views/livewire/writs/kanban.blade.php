@@ -861,13 +861,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @php
         $hasAnyWrit = collect($stages)->sum('count') > 0;
         $stageMeta = [
-            'negotiation' => ['icon' => 'person_add', 'dot' => 'bg-info', 'tint' => 'bg-info-bg text-info', 'bar' => 'bg-primary-500', 'card_border' => 'border-l-primary-500'],
-            'pending' => ['icon' => 'edit_document', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-mono-400', 'card_border' => 'border-l-mono-400'],
-            'paid' => ['icon' => 'payments', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'bg-success', 'card_border' => 'border-l-success'],
-            'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info', 'card_border' => 'border-l-info'],
-            'awaiting_receipt' => ['icon' => 'hourglass_top', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-primary-500', 'card_border' => 'border-l-primary-500'],
-            'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300', 'card_border' => 'border-l-success'],
-            'lost' => ['icon' => 'block', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-down', 'card_border' => 'border-l-down'],
+            'negotiation' => ['icon' => 'person_add', 'dot' => 'bg-info', 'tint' => 'bg-info-bg text-info', 'bar' => 'bg-primary-500', 'card_accent' => 'bg-primary-500'],
+            'pending' => ['icon' => 'edit_document', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-mono-400', 'card_accent' => 'bg-mono-400'],
+            'paid' => ['icon' => 'payments', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'bg-success', 'card_accent' => 'bg-success'],
+            'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info', 'card_accent' => 'bg-info'],
+            'awaiting_receipt' => ['icon' => 'hourglass_top', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-primary-500', 'card_accent' => 'bg-primary-500'],
+            'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300', 'card_accent' => 'bg-success'],
+            'lost' => ['icon' => 'block', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-down', 'card_accent' => 'bg-down'],
         ];
     @endphp
 
@@ -907,10 +907,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         <div class="kanban-list flex flex-1 flex-col gap-3" data-stage="{{ $stage['key'] }}">
                             @foreach ($stage['cards'] as $w)
                                 <article
-                                    class="kanban-card cursor-grab rounded-2xl border border-mono-100 border-l-4 {{ $meta['card_border'] }} bg-mono-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
+                                    class="kanban-card flex cursor-grab overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
                                     data-id="{{ $w->id }}"
                                     wire:key="writ-{{ $w->id }}"
                                 >
+                                    <div class="w-1 shrink-0 {{ $meta['card_accent'] }}" aria-hidden="true"></div>
+                                    <div class="flex min-w-0 flex-1 flex-col p-4">
                                     <div class="mb-3 flex items-start justify-between gap-3">
                                         <div class="flex min-w-0 items-center gap-2">
                                             <span class="h-2.5 w-2.5 shrink-0 rounded-full {{ $meta['dot'] }}"></span>
@@ -1018,6 +1020,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                             <p class="line-clamp-3">{{ $w->lost_reason }}</p>
                                         </div>
                                     @endif
+                                    </div>
                                 </article>
                             @endforeach
                         </div>

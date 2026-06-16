@@ -22,10 +22,27 @@ class WritKanbanPageTest extends TestCase
         $this->actingAs(User::factory()->create());
         Livewire::withoutLazyLoading();
 
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'petitioning',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'face_value' => 10000,
+            'negotiated_amount' => 10000,
+            'proposed_amount' => 8000,
+            'paid_amount' => 8000,
+            'notary_expenses_amount' => 0,
+            'other_expenses_amount' => 0,
+            'discount_percentage' => 20,
+            'estimated_receipt_amount' => 12000,
+            'petitioned_at' => now(),
+        ]);
+
         Volt::test('writs.kanban')
             ->assertSee('Aguardando Recebimento')
             ->assertSee('Perdido')
-            ->assertSeeHtml('grid-cols-7');
+            ->assertSeeHtml('grid-cols-7')
+            ->assertSeeHtml('kanban-card flex')
+            ->assertSeeHtml('w-1 shrink-0 bg-info');
     }
 
     public function test_creating_petitioning_writ_dispatches_google_calendar_sync(): void
