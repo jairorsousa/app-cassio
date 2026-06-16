@@ -184,7 +184,7 @@ class GoogleCalendarService
     private function buildCessionEvent(Writ $writ): Event
     {
         $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
-        $start = $writ->cession_at->copy()->timezone($timezone);
+        $start = $this->localCessionDateTime($writ, $timezone);
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
@@ -211,6 +211,11 @@ class GoogleCalendarService
         }
 
         return $event;
+    }
+
+    private function localCessionDateTime(Writ $writ, string $timezone): CarbonInterface
+    {
+        return Carbon::parse($writ->cession_at->format('Y-m-d H:i:s'), $timezone);
     }
 
     private function eventDateTime(CarbonInterface $dateTime, string $timezone): EventDateTime
