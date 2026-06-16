@@ -3,6 +3,7 @@
 use App\Domains\Banking\Jobs\CloseInvoiceJob;
 use App\Domains\Banking\Jobs\GenerateRecurringTransactionsJob;
 use App\Domains\Dashboard\Jobs\RefreshDashboardSnapshotJob;
+use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
@@ -14,6 +15,41 @@ use Symfony\Component\Console\Command\Command;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('google-calendar:status', function () {
+    $token = GoogleCalendarToken::central();
+    $pendingWrits = Writ::query()
+        ->where('stage', 'pending')
+        ->whereNotNull('cession_at')
+        ->whereNull('google_calendar_event_id')
+        ->count();
+
+    $this->components->info('Google Calendar integration status');
+    $this->table(
+        ['Item', 'Value'],
+        [
+            ['Enabled', config('google-calendar.enabled') ? 'yes' : 'no'],
+            ['Client ID configured', filled(config('google-calendar.client_id')) ? 'yes' : 'no'],
+            ['Client Secret configured', filled(config('google-calendar.client_secret')) ? 'yes' : 'no'],
+            ['Redirect URI', config('google-calendar.redirect_uri') ?: '-'],
+            ['Calendar ID', config('google-calendar.calendar_id') ?: '-'],
+            ['Timezone', config('google-calendar.timezone') ?: '-'],
+            ['Connect URL', url('/google/calendar/connect')],
+            ['Token saved', $token ? 'yes' : 'no'],
+            ['Token calendar', $token?->calendar_id ?: '-'],
+            ['Token connected at', $token?->connected_at?->toDateTimeString() ?: '-'],
+            ['Token expires at', $token?->expires_at?->toDateTimeString() ?: '-'],
+            ['Refresh token saved', $token?->refresh_token ? 'yes' : 'no'],
+            ['Pending writs without event', (string) $pendingWrits],
+        ],
+    );
+
+    if (! $token) {
+        $this->warn('OAuth ainda nao foi concluido. Acesse a Connect URL logado no sistema e autorize a conta Google correta.');
+    }
+
+    return Command::SUCCESS;
+})->purpose('Show Google Calendar integration status');
 
 Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue jobs instead of syncing immediately}', function (GoogleCalendarService $googleCalendar) {
     $writs = Writ::query()
