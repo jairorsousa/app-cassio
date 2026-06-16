@@ -230,6 +230,7 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->writ) {
             $previousStage = $this->writ->stage;
             $previousCessionAt = $this->writ->cession_at;
+            $previousPetitionedAt = $this->writ->petitioned_at;
             $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at?->getTimestamp();
             $this->writ->update($data);
             $writ = $this->writ->fresh();
@@ -244,6 +245,13 @@ new #[Layout('layouts.app')] class extends Component {
             ) {
                 app(WritService::class)->recordCessionDateChange($writ, $previousCessionAt, $writ->cession_at);
                 app(WritGoogleCalendarSyncDispatcher::class)->syncCession($writ);
+            } elseif (
+                $writ->stage === 'petitioning'
+                && $writ->petitioned_at
+                && $previousPetitionedAt?->getTimestamp() !== $writ->petitioned_at->getTimestamp()
+            ) {
+                app(WritService::class)->recordPetitionDateChange($writ, $previousPetitionedAt, $writ->petitioned_at);
+                app(WritGoogleCalendarSyncDispatcher::class)->syncPetition($writ);
             } elseif (
                 $writ->stage === 'awaiting_receipt'
                 && $writ->awaiting_receipt_at

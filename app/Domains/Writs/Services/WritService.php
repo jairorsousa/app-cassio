@@ -141,4 +141,20 @@ class WritService
             'user_id' => Auth::id(),
         ]);
     }
+
+    public function recordPetitionDateChange(Writ $writ, ?CarbonInterface $previousPetitionedAt, CarbonInterface $newPetitionedAt): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => 'petitioning',
+            'to_stage' => 'petitioning',
+            'transitioned_at' => now(),
+            'notes' => sprintf(
+                'Data do peticionamento atualizada de: %s para: %s',
+                $previousPetitionedAt ? $previousPetitionedAt->format('d/m/Y H:i') : '—',
+                $newPetitionedAt->format('d/m/Y H:i'),
+            ),
+            'user_id' => Auth::id(),
+        ]);
+    }
 }
