@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Writs;
 
+use App\Domains\Integrations\Services\GoogleCalendarService;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritStageHistory;
@@ -9,6 +10,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Livewire\Volt\Volt;
+use RuntimeException;
 use Tests\TestCase;
 
 class WritFormPetitionCalendarTest extends TestCase
@@ -78,5 +80,29 @@ class WritFormPetitionCalendarTest extends TestCase
 
         Bus::assertNotDispatched(SyncWritPetitionToGoogleCalendar::class);
         $this->assertSame(0, WritStageHistory::query()->where('writ_id', $writ->id)->count());
+    }
+
+    public function test_editing_petition_date_does_not_fail_when_calendar_sync_errors(): void
+    {
+        $writ = $this->makePetitioningWrit();
+
+        $this->actingAs(User::factory()->create());
+
+        $this->mock(GoogleCalendarService::class, function ($mock): void {
+            $mock->shouldReceive('syncWritPetition')
+                ->once()
+                ->andThrow(new RuntimeException('Google API error'));
+        });
+
+        Volt::test('writs.form', ['writ' => $writ])
+            ->set('petitioned_at', '2026-06-23T10:30')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $history = WritStageHistory::query()->where('writ_id', $writ->id)->latest('id')->first();
+
+        $this->assertNotNull($history);
+        $this->assertSame('Data do peticionamento atualizada de: 22/06/2026 15:00 para: 23/06/2026 10:30', $history->notes);
+        $this->assertSame('2026-06-23 10:30:00', $writ->fresh()->petitioned_at->format('Y-m-d H:i:s'));
     }
 }

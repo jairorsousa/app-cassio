@@ -12,6 +12,7 @@ use Google\Service\Calendar\EventAttendee;
 use Google\Service\Calendar\EventDateTime;
 use Google\Service\Exception as GoogleServiceException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -179,6 +180,8 @@ class GoogleCalendarService
             $params = $this->eventRequestParams();
 
             if ($existingEventId) {
+                $event->setConferenceData(null);
+
                 try {
                     $syncedEvent = $calendar->events->update(
                         $calendarId,
@@ -210,7 +213,13 @@ class GoogleCalendarService
                 $columns['sync_error'] => Str::limit($exception->getMessage(), 2000, ''),
             ])->save();
 
-            throw $exception;
+            Log::error('Google Calendar sync failed for writ #'.$writ->id, [
+                'event_id_column' => $columns['event_id'],
+                'existing_event_id' => $existingEventId,
+                'exception' => $exception,
+            ]);
+
+            return null;
         }
     }
 

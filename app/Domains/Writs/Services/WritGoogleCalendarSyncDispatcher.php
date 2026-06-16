@@ -6,6 +6,7 @@ use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
+use Throwable;
 
 class WritGoogleCalendarSyncDispatcher
 {
@@ -30,7 +31,7 @@ class WritGoogleCalendarSyncDispatcher
             return;
         }
 
-        SyncWritCessionToGoogleCalendar::dispatchSync($writ->id);
+        $this->dispatchSyncSafely(SyncWritCessionToGoogleCalendar::class, $writ->id);
     }
 
     public function syncPetition(Writ $writ): void
@@ -39,7 +40,7 @@ class WritGoogleCalendarSyncDispatcher
             return;
         }
 
-        SyncWritPetitionToGoogleCalendar::dispatchSync($writ->id);
+        $this->dispatchSyncSafely(SyncWritPetitionToGoogleCalendar::class, $writ->id);
     }
 
     public function syncAwaitingReceipt(Writ $writ): void
@@ -48,6 +49,18 @@ class WritGoogleCalendarSyncDispatcher
             return;
         }
 
-        SyncWritAwaitingReceiptToGoogleCalendar::dispatchSync($writ->id);
+        $this->dispatchSyncSafely(SyncWritAwaitingReceiptToGoogleCalendar::class, $writ->id);
+    }
+
+    /**
+     * @param  class-string  $jobClass
+     */
+    private function dispatchSyncSafely(string $jobClass, int $writId): void
+    {
+        try {
+            $jobClass::dispatchSync($writId);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 }
