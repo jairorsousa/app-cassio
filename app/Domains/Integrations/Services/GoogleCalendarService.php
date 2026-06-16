@@ -131,6 +131,33 @@ class GoogleCalendarService
         );
     }
 
+    public function syncWritAwaitingReceipt(Writ $writ): ?Event
+    {
+        if (! config('google-calendar.enabled')) {
+            $writ->forceFill([
+                'google_calendar_awaiting_receipt_sync_error' => 'Google Calendar esta desativado no ambiente.',
+            ])->save();
+
+            return null;
+        }
+
+        if ($writ->stage !== 'awaiting_receipt' || ! $writ->awaiting_receipt_at) {
+            return null;
+        }
+
+        return $this->syncCalendarEvent(
+            writ: $writ,
+            event: $this->buildAwaitingReceiptEvent($writ),
+            existingEventId: $writ->google_calendar_awaiting_receipt_event_id,
+            columns: [
+                'event_id' => 'google_calendar_awaiting_receipt_event_id',
+                'event_link' => 'google_calendar_awaiting_receipt_event_link',
+                'synced_at' => 'google_calendar_awaiting_receipt_synced_at',
+                'sync_error' => 'google_calendar_awaiting_receipt_sync_error',
+            ],
+        );
+    }
+
     /**
      * @param  array{event_id: string, event_link: string, synced_at: string, sync_error: string}  $columns
      */
@@ -282,6 +309,38 @@ class GoogleCalendarService
             $event->setConferenceData([
                 'createRequest' => [
                     'requestId' => 'writ-'.$writ->id.'-petition',
+                ],
+            ]);
+        }
+
+        return $event;
+    }
+
+    private function buildAwaitingReceiptEvent(Writ $writ): Event
+    {
+        $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
+        $start = $this->localWritDateTime($writ->awaiting_receipt_at, $timezone);
+        $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
+
+        $event = new Event([
+            'summary' => $this->eventSummary($writ, 'Aguardando Recebimento'),
+            'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['awaiting_receipt']),
+            'start' => $this->eventDateTime($start, $timezone),
+            'end' => $this->eventDateTime($end, $timezone),
+            'attendees' => $this->eventAttendees(),
+            'reminders' => [
+                'useDefault' => false,
+                'overrides' => [
+                    ['method' => 'popup', 'minutes' => 30],
+                    ['method' => 'email', 'minutes' => 1440],
+                ],
+            ],
+        ]);
+
+        if (config('google-calendar.create_meet')) {
+            $event->setConferenceData([
+                'createRequest' => [
+                    'requestId' => 'writ-'.$writ->id.'-awaiting-receipt',
                 ],
             ]);
         }

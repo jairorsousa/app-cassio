@@ -4,6 +4,7 @@ namespace App\Domains\Writs\Services;
 
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
+use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
@@ -28,7 +29,7 @@ class WritService
     ];
 
     /**
-     * @param  array<string, mixed>  $context  campos opcionais (cession_at, paid_at, finalized_at, actual_receipt_amount, notes)
+     * @param  array<string, mixed>  $context  campos opcionais (cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
      */
     public function transitionTo(Writ $writ, string $newStage, array $context = []): Writ
     {
@@ -66,6 +67,10 @@ class WritService
 
             if ($newStage === 'petitioning' && isset($context['petitioned_at'])) {
                 $patch['petitioned_at'] = $context['petitioned_at'];
+            }
+
+            if ($newStage === 'awaiting_receipt' && isset($context['awaiting_receipt_at'])) {
+                $patch['awaiting_receipt_at'] = $context['awaiting_receipt_at'];
             }
 
             if ($newStage === 'finalized') {
@@ -106,6 +111,10 @@ class WritService
 
         if ($updatedWrit->stage === 'petitioning' && $updatedWrit->petitioned_at) {
             SyncWritPetitionToGoogleCalendar::dispatch($updatedWrit->id)->afterCommit();
+        }
+
+        if ($updatedWrit->stage === 'awaiting_receipt' && $updatedWrit->awaiting_receipt_at) {
+            SyncWritAwaitingReceiptToGoogleCalendar::dispatch($updatedWrit->id)->afterCommit();
         }
 
         return $updatedWrit;

@@ -71,6 +71,36 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
     }
 
+    public function test_awaiting_receipt_event_uses_stage_title_and_local_time(): void
+    {
+        $this->configureGoogleCalendar();
+
+        $writ = new Writ([
+            'type' => 'rpv',
+            'stage' => 'awaiting_receipt',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'assignor_name' => 'Maria Clara Santos',
+            'debtor_entity' => 'INSS',
+            'face_value' => 35000,
+            'negotiated_amount' => 20000,
+            'proposed_amount' => 10000,
+        ]);
+        $writ->id = 22;
+        $writ->awaiting_receipt_at = Carbon::parse('2026-06-23 16:00:00', 'UTC');
+
+        $method = new ReflectionMethod(GoogleCalendarService::class, 'buildAwaitingReceiptEvent');
+        $method->setAccessible(true);
+
+        /** @var Event $event */
+        $event = $method->invoke(app(GoogleCalendarService::class), $writ);
+
+        $this->assertSame('Aguardando Recebimento - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('2026-06-23T16:00:00-03:00', $event->getStart()->getDateTime());
+        $this->assertSame('2026-06-23T16:30:00-03:00', $event->getEnd()->getDateTime());
+        $this->assertStringContainsString('Etapa: Aguardando Recebimento', $event->getDescription());
+        $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
+    }
+
     private function configureGoogleCalendar(): void
     {
         config([

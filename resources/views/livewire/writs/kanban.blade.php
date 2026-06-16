@@ -4,6 +4,7 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
+use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
@@ -51,6 +52,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public bool $showPetitionModal = false;
     public ?int $promptPetitionWritId = null;
     public string $promptPetitionAt = '';
+
+    public bool $showAwaitingReceiptModal = false;
+    public ?int $promptAwaitingReceiptWritId = null;
+    public string $promptAwaitingReceiptAt = '';
     
     public bool $showFinalizedModal = false;
     public ?int $promptFinalizedWritId = null;
@@ -344,6 +349,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         if ($writ->stage === 'petitioning' && $writ->petitioned_at) {
             SyncWritPetitionToGoogleCalendar::dispatch($writ->id)->afterCommit();
         }
+
+        if ($writ->stage === 'awaiting_receipt' && $writ->awaiting_receipt_at) {
+            SyncWritAwaitingReceiptToGoogleCalendar::dispatch($writ->id)->afterCommit();
+        }
     }
 
     private function resetForm(): void
@@ -516,6 +525,35 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->showPetitionModal = false;
         $this->promptPetitionWritId = null;
+    }
+
+    public function promptAwaitingReceiptDate(int $id): void
+    {
+        $this->promptAwaitingReceiptWritId = $id;
+        $this->promptAwaitingReceiptAt = now()->format('Y-m-d\TH:i');
+        $this->showAwaitingReceiptModal = true;
+    }
+
+    public function confirmAwaitingReceiptDate(WritService $service): void
+    {
+        $this->validate(['promptAwaitingReceiptAt' => 'required|date']);
+
+        try {
+            $writ = Writ::findOrFail($this->promptAwaitingReceiptWritId);
+            $service->transitionTo($writ, 'awaiting_receipt', [
+                'awaiting_receipt_at' => $this->promptAwaitingReceiptAt,
+            ]);
+            $this->showAwaitingReceiptModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['awaiting_receipt'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelAwaitingReceiptDate(): void
+    {
+        $this->showAwaitingReceiptModal = false;
+        $this->promptAwaitingReceiptWritId = null;
     }
 
     public function promptFinalizedDate(int $id): void
@@ -826,10 +864,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
                                     @endif
 
-                                    @if ($stage['key'] === 'awaiting_receipt' && $w->petitioned_at)
+                                    @if ($stage['key'] === 'awaiting_receipt' && $w->awaiting_receipt_at)
                                         <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
-                                            <span class="material-icons-outlined text-[16px]">gavel</span>
-                                            <span>Peticionado: {{ $w->petitioned_at->format('d/m/Y \à\s H:i') }}</span>
+                                            <span class="material-icons-outlined text-[16px]">hourglass_top</span>
+                                            <span>Aguardando: {{ $w->awaiting_receipt_at->format('d/m/Y \à\s H:i') }}</span>
                                         </div>
                                     @endif
 
@@ -1174,6 +1212,41 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </div>
     </div>
 
+    <!-- Modal Confirmar Aguardando Recebimento -->
+    <div
+        x-show="$wire.showAwaitingReceiptModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-mono-900/50 backdrop-blur-sm"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        style="display: none;"
+    >
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" @click.outside="$wire.cancelAwaitingReceiptDate()">
+            <div class="px-6 py-4 border-b border-mono-100 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-mono-900">Confirmar Aguardando Recebimento</h3>
+                <button wire:click="cancelAwaitingReceiptDate" class="text-mono-400 hover:text-mono-600 transition-colors">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+
+            <div class="p-6 flex flex-col gap-5">
+                <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="promptAwaitingReceiptAt" />
+            </div>
+
+            <div class="px-6 py-4 bg-mono-50 border-t border-mono-100 flex items-center justify-end gap-3">
+                <button wire:click="cancelAwaitingReceiptDate" class="px-4 py-2 text-sm font-bold text-mono-600 hover:text-mono-900 transition-colors">
+                    Cancelar
+                </button>
+                <button wire:click="confirmAwaitingReceiptDate" class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Confirmar Finalização -->
     <div
         x-show="$wire.showFinalizedModal"
@@ -1253,6 +1326,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         } else if (oldStage === 'paid' && newStage === 'petitioning') {
                             evt.from.appendChild(evt.item);
                             $wire.promptPetitionDate(id);
+                        } else if (newStage === 'awaiting_receipt') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptAwaitingReceiptDate(id);
                         } else if (oldStage === 'petitioning' && newStage === 'finalized') {
                             evt.from.appendChild(evt.item);
                             $wire.promptFinalizedDate(id);

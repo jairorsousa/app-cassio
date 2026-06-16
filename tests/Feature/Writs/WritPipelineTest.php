@@ -117,6 +117,18 @@ class WritPipelineTest extends TestCase
         $this->assertEquals('2026-06-15 14:30:00', $updated->cession_at->format('Y-m-d H:i:s'));
     }
 
+    public function test_awaiting_receipt_stage_stores_datetime(): void
+    {
+        $writ = $this->makeWrit(['stage' => 'petitioning']);
+
+        $updated = app(WritService::class)->transitionTo($writ, 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-23 16:00:00',
+        ]);
+
+        $this->assertEquals('awaiting_receipt', $updated->stage);
+        $this->assertEquals('2026-06-23 16:00:00', $updated->awaiting_receipt_at->format('Y-m-d H:i:s'));
+    }
+
     public function test_finalized_stage_creates_income_transaction(): void
     {
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 100000, 'status' => true]);

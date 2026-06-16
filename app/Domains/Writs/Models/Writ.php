@@ -25,7 +25,8 @@ class Writ extends Model
                 'notary_expenses_amount', 'other_expenses_amount',
                 'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
                 'google_calendar_event_id', 'google_calendar_synced_at',
-                'google_calendar_petition_event_id', 'google_calendar_petition_synced_at'])
+                'google_calendar_petition_event_id', 'google_calendar_petition_synced_at',
+                'awaiting_receipt_at', 'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_synced_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('writs');
@@ -49,9 +50,10 @@ class Writ extends Model
         'assignor_bank_data', 'assignor_lawyer',
         'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
-        'actual_receipt_amount', 'cession_at', 'paid_at', 'petitioned_at', 'finalized_at',
+        'actual_receipt_amount', 'cession_at', 'paid_at', 'petitioned_at', 'awaiting_receipt_at', 'finalized_at',
         'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
         'google_calendar_petition_event_id', 'google_calendar_petition_event_link', 'google_calendar_petition_synced_at', 'google_calendar_petition_sync_error',
+        'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_event_link', 'google_calendar_awaiting_receipt_synced_at', 'google_calendar_awaiting_receipt_sync_error',
         'source_bank_account_id', 'destination_bank_account_id',
         'notes',
     ];
@@ -72,6 +74,8 @@ class Writ extends Model
         'paid_at' => 'date',
         'petitioned_at' => 'datetime',
         'google_calendar_petition_synced_at' => 'datetime',
+        'awaiting_receipt_at' => 'datetime',
+        'google_calendar_awaiting_receipt_synced_at' => 'datetime',
         'finalized_at' => 'date',
     ];
 
