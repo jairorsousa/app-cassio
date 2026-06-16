@@ -24,7 +24,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="h-24 bg-mono-100 rounded-2xl"></div>
             </div>
             <div class="h-12 bg-mono-100 rounded-pill"></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
@@ -278,7 +279,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function usesPaymentFields(): bool
     {
-        return in_array($this->stage, ['paid', 'petitioning', 'finalized'], true);
+        return in_array($this->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true);
     }
 
     public function usesReceiptFields(): bool
@@ -326,7 +327,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     private function dispatchStageEvents(Writ $writ): void
     {
-        if (in_array($writ->stage, ['paid', 'petitioning', 'finalized'], true)) {
+        if (in_array($writ->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true)) {
             WritMovedToPaid::dispatch($writ);
         }
 
@@ -703,6 +704,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'pending' => ['icon' => 'edit_document', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-mono-400'],
             'paid' => ['icon' => 'payments', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'bg-success'],
             'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info'],
+            'awaiting_receipt' => ['icon' => 'hourglass_top', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-primary-500'],
             'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300'],
         ];
     @endphp
@@ -711,14 +713,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.empty-state
             icon="gavel"
             title="Nenhum requisitório no pipeline"
-            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar e Finalizar."
+            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento e Finalizar."
         >
             <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
         </x-jr.empty-state>
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[1500px] grid-cols-5 gap-4">
+        <div class="grid min-w-[1800px] grid-cols-6 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border border-mono-100 bg-mono-50" data-stage="{{ $stage['key'] }}">
@@ -812,6 +814,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <span class="material-icons-outlined text-[16px]">calendar_today</span>
                                         <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
                                     </div>
+                                    @endif
+
+                                    @if ($stage['key'] === 'awaiting_receipt' && $w->petitioned_at)
+                                        <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
+                                            <span class="material-icons-outlined text-[16px]">gavel</span>
+                                            <span>Peticionado: {{ $w->petitioned_at->format('d/m/Y \à\s H:i') }}</span>
+                                        </div>
                                     @endif
 
                                     @if ($stage['key'] === 'finalized' && $w->actual_receipt_amount)
@@ -1235,6 +1244,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                             evt.from.appendChild(evt.item);
                             $wire.promptPetitionDate(id);
                         } else if (oldStage === 'petitioning' && newStage === 'finalized') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptFinalizedDate(id);
+                        } else if (oldStage === 'awaiting_receipt' && newStage === 'finalized') {
                             evt.from.appendChild(evt.item);
                             $wire.promptFinalizedDate(id);
                         } else {

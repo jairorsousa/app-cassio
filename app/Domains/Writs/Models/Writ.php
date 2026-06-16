@@ -28,13 +28,14 @@ class Writ extends Model
             ->useLogName('writs');
     }
 
-    public const STAGES = ['negotiation', 'pending', 'paid', 'petitioning', 'finalized'];
+    public const STAGES = ['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized'];
 
     public const STAGE_LABELS = [
         'negotiation' => 'Negociação',
         'pending' => 'Cessão Pendente',
         'paid' => 'Pago',
         'petitioning' => 'Peticionar',
+        'awaiting_receipt' => 'Aguardando Recebimento',
         'finalized' => 'Finalizar',
     ];
 

@@ -35,10 +35,10 @@ class WritPipelineTest extends TestCase
     }
 
     // ──────────────────────────────────────────────
-    // 1. Card percorre as 5 etapas e gera transactions corretas
+    // 1. Card percorre as 6 etapas e gera transactions corretas
     // ──────────────────────────────────────────────
 
-    public function test_writ_traverses_all_five_stages(): void
+    public function test_writ_traverses_all_six_stages(): void
     {
         $account = BankAccount::create(['name' => 'Conta Principal', 'initial_balance' => 100000, 'status' => true]);
         $writ = $this->makeWrit([
@@ -65,7 +65,11 @@ class WritPipelineTest extends TestCase
         $writ = $service->transitionTo($writ, 'petitioning');
         $this->assertEquals('petitioning', $writ->stage);
 
-        // petitioning → finalized
+        // petitioning → awaiting_receipt
+        $writ = $service->transitionTo($writ, 'awaiting_receipt');
+        $this->assertEquals('awaiting_receipt', $writ->stage);
+
+        // awaiting_receipt → finalized
         $writ = $service->transitionTo($writ, 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
@@ -129,6 +133,7 @@ class WritPipelineTest extends TestCase
             'source_bank_account_id' => $account->id,
         ]);
         $service->transitionTo($writ->fresh(), 'petitioning');
+        $service->transitionTo($writ->fresh(), 'awaiting_receipt');
         $service->transitionTo($writ->fresh(), 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
@@ -164,6 +169,7 @@ class WritPipelineTest extends TestCase
             'source_bank_account_id' => $account->id,
         ]);
         $writ = $service->transitionTo($writ, 'petitioning');
+        $writ = $service->transitionTo($writ, 'awaiting_receipt');
         $writ = $service->transitionTo($writ, 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
@@ -337,19 +343,21 @@ class WritPipelineTest extends TestCase
             'paid_amount' => 60000.00,
         ]);
         $writ = $service->transitionTo($writ, 'petitioning');
+        $writ = $service->transitionTo($writ, 'awaiting_receipt');
         $writ = $service->transitionTo($writ, 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
         ]);
 
         $history = WritStageHistory::where('writ_id', $writ->id)->get();
-        $this->assertCount(4, $history);
+        $this->assertCount(5, $history);
 
         $expectedFlow = [
             ['negotiation', 'pending'],
             ['pending', 'paid'],
             ['paid', 'petitioning'],
-            ['petitioning', 'finalized'],
+            ['petitioning', 'awaiting_receipt'],
+            ['awaiting_receipt', 'finalized'],
         ];
 
         foreach ($expectedFlow as $i => [$from, $to]) {

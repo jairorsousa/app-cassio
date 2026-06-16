@@ -516,7 +516,7 @@ Gerencia operações no mercado de renda variável e fundos imobiliários, com c
 
 ### 11.1 Descrição
 
-Módulo dedicado à operação de aquisição de requisitórios judiciais. Implementa um pipeline visual (kanban) com cinco etapas, controlando dados do crédito, partes envolvidas, deságio aplicado, rentabilidade esperada e movimentação financeira.
+Módulo dedicado à operação de aquisição de requisitórios judiciais. Implementa um pipeline visual (kanban) com seis etapas, controlando dados do crédito, partes envolvidas, deságio aplicado, rentabilidade esperada e movimentação financeira.
 
 ### 11.2 Tipos de Requisitório
 
@@ -531,7 +531,8 @@ Módulo dedicado à operação de aquisição de requisitórios judiciais. Imple
 | 2 | **Cessão Pendente** | Negociação fechada, aguardando assinatura do contrato de cessão e/ou pagamento. |
 | 3 | **Pago** | Pagamento ao cedente realizado. Cessão formalizada. |
 | 4 | **Peticionar no Processo** | Etapa processual: protocolo da petição de habilitação do cessionário no processo judicial. |
-| 5 | **Finalizar** | Recebimento efetivo do requisitório pelo Dr. Cássio. Encerramento da operação. |
+| 5 | **Aguardando Recebimento** | Petição protocolada, aguardando pagamento/recebimento efetivo do requisitório. |
+| 6 | **Finalizar** | Recebimento efetivo do requisitório pelo Dr. Cássio. Encerramento da operação. |
 
 ### 11.4 Dados de Cada Card
 
@@ -571,7 +572,7 @@ Módulo dedicado à operação de aquisição de requisitórios judiciais. Imple
 
 ### 11.5 Funcionalidades de Gestão do Pipeline
 
-- Visualização kanban com cards distribuídos pelas cinco etapas
+- Visualização kanban com cards distribuídos pelas seis etapas
 - Movimentação por arrastar-e-soltar entre etapas (Livewire + Alpine.js + SortableJS)
 - Filtros por tipo, ente devedor, período
 - Indicadores no topo do kanban: total em valor de face por etapa, total investido em aberto, total recebido no período
@@ -582,7 +583,7 @@ Módulo dedicado à operação de aquisição de requisitórios judiciais. Imple
 
 ```
 writs (
-  id, type [rpv|precatorio], stage [negotiation|pending|paid|petitioning|finalized],
+  id, type [rpv|precatorio], stage [negotiation|pending|paid|petitioning|awaiting_receipt|finalized],
   process_number, court, debtor_entity, credit_nature,
   assignor_name, assignor_document, assignor_contact, assignor_bank_data,
   assignor_lawyer,

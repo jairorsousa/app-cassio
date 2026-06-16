@@ -247,7 +247,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function usesPaymentFields(): bool
     {
-        return in_array($this->stage, ['paid', 'petitioning', 'finalized'], true);
+        return in_array($this->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true);
     }
 
     public function usesReceiptFields(): bool
@@ -306,7 +306,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function dispatchStageEvents(Writ $writ): void
     {
-        if (in_array($writ->stage, ['paid', 'petitioning', 'finalized'], true)) {
+        if (in_array($writ->stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true)) {
             WritMovedToPaid::dispatch($writ);
         }
 

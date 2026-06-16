@@ -95,7 +95,7 @@ class DashboardSnapshotBuilder
         }
 
         // ---- Writs ----
-        $writsActive = Writ::whereIn('stage', ['paid', 'petitioning'])->get();
+        $writsActive = Writ::whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt'])->get();
         $writsCapitalAtRisk = (float) $writsActive->sum('paid_amount');
         $writsExpectedNet = $writsActive->sum(fn ($w) => max(0.0, (float) $w->estimated_receipt_amount - (float) $w->paid_amount));
         $writsByStage = collect(Writ::STAGES)->map(function (string $stage) {

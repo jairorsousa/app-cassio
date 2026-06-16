@@ -95,12 +95,12 @@ class ConsolidatedSnapshotTest extends TestCase
         $this->assertNotContains('Requisitórios em aberto', $labels);
     }
 
-    public function test_writs_by_stage_returns_all_five_stages(): void
+    public function test_writs_by_stage_returns_all_six_stages(): void
     {
         $payload = app(DashboardSnapshotBuilder::class)->build();
 
         $stages = collect($payload['writs']['by_stage'])->pluck('stage')->all();
-        $this->assertEquals(['negotiation', 'pending', 'paid', 'petitioning', 'finalized'], $stages);
+        $this->assertEquals(['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized'], $stages);
     }
 
     public function test_future_contributions_lists_pending(): void

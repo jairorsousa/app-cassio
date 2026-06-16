@@ -265,7 +265,7 @@
 
 ### 5.4 Componentes Volt
 
-- [ ] `writs.kanban` — 5 colunas com drag-and-drop (Alpine.js + SortableJS via CDN ou npm)
+- [ ] `writs.kanban` — 6 colunas com drag-and-drop (Alpine.js + SortableJS via CDN ou npm)
   - Indicadores no topo: total por etapa, total investido, total recebido período
   - Filtros: tipo, ente devedor, período
 - [ ] `writs.form` — criação/edição (com seção de partes, valores, deságio calculado)
@@ -274,7 +274,7 @@
 
 ### 5.5 Testes Feature
 
-- [ ] Card percorre as 5 etapas e gera transactions corretas em "Pago" e "Finalizar"
+- [ ] Card percorre as 6 etapas e gera transactions corretas em "Pago" e "Finalizar"
 - [ ] Rentabilidade real é calculada corretamente
 - [ ] Histórico de transições é persistido
 
