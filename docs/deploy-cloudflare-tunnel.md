@@ -54,7 +54,7 @@ CLOUDFLARED_TOKEN=cole_o_token_do_tunnel_aqui
 
 ```bash
 docker compose build
-docker compose --profile tunnel up -d
+docker compose up -d
 ```
 
 Depois prepare a aplicação:
@@ -83,6 +83,8 @@ docker compose logs --tail 80 cloudflared
 curl -I http://127.0.0.1:8085/up
 ```
 
+O `docker compose ps` precisa listar também o container `cassio_cloudflared`. Se ele não aparecer, o conector do tunnel não subiu e a Cloudflare continuará mostrando "No connection detected yet".
+
 No navegador, acesse:
 
 ```text
@@ -98,7 +100,7 @@ docker compose exec app php artisan optimize
 
 ## 5. Alternativa: cloudflared instalado no host
 
-Se preferir instalar o `cloudflared` diretamente no Ubuntu, mantenha o compose sem o profile `tunnel`:
+Se preferir instalar o `cloudflared` diretamente no Ubuntu, remova ou comente o serviço `cloudflared` no `docker-compose.yml` e suba somente a aplicação:
 
 ```bash
 docker compose up -d

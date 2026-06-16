@@ -57,8 +57,6 @@ services:
     container_name: cassio_cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN:-}
-    profiles:
-      - tunnel
     depends_on:
       - nginx
     networks:
