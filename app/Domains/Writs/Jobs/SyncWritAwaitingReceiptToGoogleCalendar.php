@@ -32,7 +32,7 @@ class SyncWritAwaitingReceiptToGoogleCalendar implements ShouldQueue
     {
         $writ = Writ::find($this->writId);
 
-        if (! $writ || $writ->stage !== 'awaiting_receipt' || ! $writ->awaiting_receipt_at) {
+        if (! $writ || ! $writ->awaiting_receipt_at) {
             return;
         }
 

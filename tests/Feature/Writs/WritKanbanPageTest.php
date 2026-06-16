@@ -8,7 +8,7 @@ use App\Domains\Writs\Services\WritService;
 use App\Domains\Writs\Models\Writ;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -30,7 +30,7 @@ class WritKanbanPageTest extends TestCase
 
     public function test_creating_petitioning_writ_dispatches_google_calendar_sync(): void
     {
-        Queue::fake();
+        Bus::fake();
 
         $this->actingAs(User::factory()->create());
         Livewire::withoutLazyLoading();
@@ -55,14 +55,14 @@ class WritKanbanPageTest extends TestCase
         $this->assertSame('petitioning', $writ->stage);
         $this->assertNotNull($writ->petitioned_at);
 
-        Queue::assertPushed(SyncWritPetitionToGoogleCalendar::class, function (SyncWritPetitionToGoogleCalendar $job) use ($writ): bool {
+        Bus::assertDispatchedSync(SyncWritPetitionToGoogleCalendar::class, function (SyncWritPetitionToGoogleCalendar $job) use ($writ): bool {
             return $job->writId === $writ->id;
         });
     }
 
     public function test_transition_to_petitioning_dispatches_google_calendar_sync(): void
     {
-        Queue::fake();
+        Bus::fake();
 
         $writ = Writ::create([
             'type' => 'rpv',
@@ -83,14 +83,14 @@ class WritKanbanPageTest extends TestCase
             'petitioned_at' => '2026-06-22 15:00:00',
         ]);
 
-        Queue::assertPushed(SyncWritPetitionToGoogleCalendar::class, function (SyncWritPetitionToGoogleCalendar $job) use ($writ): bool {
+        Bus::assertDispatchedSync(SyncWritPetitionToGoogleCalendar::class, function (SyncWritPetitionToGoogleCalendar $job) use ($writ): bool {
             return $job->writId === $writ->id;
         });
     }
 
     public function test_creating_awaiting_receipt_writ_dispatches_google_calendar_sync(): void
     {
-        Queue::fake();
+        Bus::fake();
 
         $this->actingAs(User::factory()->create());
         Livewire::withoutLazyLoading();
@@ -115,7 +115,7 @@ class WritKanbanPageTest extends TestCase
         $this->assertSame('awaiting_receipt', $writ->stage);
         $this->assertNotNull($writ->awaiting_receipt_at);
 
-        Queue::assertPushed(SyncWritAwaitingReceiptToGoogleCalendar::class, function (SyncWritAwaitingReceiptToGoogleCalendar $job) use ($writ): bool {
+        Bus::assertDispatchedSync(SyncWritAwaitingReceiptToGoogleCalendar::class, function (SyncWritAwaitingReceiptToGoogleCalendar $job) use ($writ): bool {
             return $job->writId === $writ->id;
         });
     }

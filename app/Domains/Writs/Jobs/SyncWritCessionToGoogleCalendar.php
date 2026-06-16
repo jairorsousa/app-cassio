@@ -32,7 +32,7 @@ class SyncWritCessionToGoogleCalendar implements ShouldQueue
     {
         $writ = Writ::find($this->writId);
 
-        if (! $writ || $writ->stage !== 'pending' || ! $writ->cession_at) {
+        if (! $writ || ! $writ->cession_at) {
             return;
         }
 

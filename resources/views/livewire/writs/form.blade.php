@@ -4,12 +4,10 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
-use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
-use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
-use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
+use App\Domains\Writs\Services\WritGoogleCalendarSyncDispatcher;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -372,17 +370,7 @@ new #[Layout('layouts.app')] class extends Component {
             WritMovedToFinalized::dispatch($writ);
         }
 
-        if ($writ->stage === 'pending' && $writ->cession_at) {
-            SyncWritCessionToGoogleCalendar::dispatch($writ->id)->afterCommit();
-        }
-
-        if ($writ->stage === 'petitioning' && $writ->petitioned_at) {
-            SyncWritPetitionToGoogleCalendar::dispatch($writ->id)->afterCommit();
-        }
-
-        if ($writ->stage === 'awaiting_receipt' && $writ->awaiting_receipt_at) {
-            SyncWritAwaitingReceiptToGoogleCalendar::dispatch($writ->id)->afterCommit();
-        }
+        app(WritGoogleCalendarSyncDispatcher::class)->sync($writ);
     }
 
     public function with(): array

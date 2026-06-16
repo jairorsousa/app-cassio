@@ -87,7 +87,7 @@ class GoogleCalendarService
             return null;
         }
 
-        if ($writ->stage !== 'pending' || ! $writ->cession_at) {
+        if (! $writ->cession_at) {
             return null;
         }
 
@@ -114,7 +114,7 @@ class GoogleCalendarService
             return null;
         }
 
-        if ($writ->stage !== 'petitioning' || ! $writ->petitioned_at) {
+        if (! $writ->petitioned_at) {
             return null;
         }
 
@@ -141,7 +141,7 @@ class GoogleCalendarService
             return null;
         }
 
-        if ($writ->stage !== 'awaiting_receipt' || ! $writ->awaiting_receipt_at) {
+        if (! $writ->awaiting_receipt_at) {
             return null;
         }
 

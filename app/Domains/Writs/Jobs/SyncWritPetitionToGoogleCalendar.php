@@ -32,7 +32,7 @@ class SyncWritPetitionToGoogleCalendar implements ShouldQueue
     {
         $writ = Writ::find($this->writId);
 
-        if (! $writ || $writ->stage !== 'petitioning' || ! $writ->petitioned_at) {
+        if (! $writ || ! $writ->petitioned_at) {
             return;
         }
 
