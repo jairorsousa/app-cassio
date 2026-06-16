@@ -199,6 +199,10 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
+        $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
+        $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
+
         $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
         unset($data['assignors']);

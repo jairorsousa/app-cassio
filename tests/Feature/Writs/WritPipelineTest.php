@@ -62,11 +62,15 @@ class WritPipelineTest extends TestCase
         $this->assertEquals('2026-04-01', $writ->paid_at->format('Y-m-d'));
 
         // paid → petitioning
-        $writ = $service->transitionTo($writ, 'petitioning');
+        $writ = $service->transitionTo($writ, 'petitioning', [
+            'petitioned_at' => '2026-05-01 10:00:00',
+        ]);
         $this->assertEquals('petitioning', $writ->stage);
 
         // petitioning → awaiting_receipt
-        $writ = $service->transitionTo($writ, 'awaiting_receipt');
+        $writ = $service->transitionTo($writ, 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-01 10:00:00',
+        ]);
         $this->assertEquals('awaiting_receipt', $writ->stage);
 
         // awaiting_receipt → finalized
@@ -167,8 +171,12 @@ class WritPipelineTest extends TestCase
             'paid_amount' => 60000.00,
             'source_bank_account_id' => $account->id,
         ]);
-        $service->transitionTo($writ->fresh(), 'petitioning');
-        $service->transitionTo($writ->fresh(), 'awaiting_receipt');
+        $service->transitionTo($writ->fresh(), 'petitioning', [
+            'petitioned_at' => '2026-05-01 10:00:00',
+        ]);
+        $service->transitionTo($writ->fresh(), 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-01 10:00:00',
+        ]);
         $service->transitionTo($writ->fresh(), 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
@@ -203,8 +211,12 @@ class WritPipelineTest extends TestCase
             'paid_amount' => 60000.00,
             'source_bank_account_id' => $account->id,
         ]);
-        $writ = $service->transitionTo($writ, 'petitioning');
-        $writ = $service->transitionTo($writ, 'awaiting_receipt');
+        $writ = $service->transitionTo($writ, 'petitioning', [
+            'petitioned_at' => '2026-05-01 10:00:00',
+        ]);
+        $writ = $service->transitionTo($writ, 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-01 10:00:00',
+        ]);
         $writ = $service->transitionTo($writ, 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,
@@ -377,8 +389,12 @@ class WritPipelineTest extends TestCase
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
         ]);
-        $writ = $service->transitionTo($writ, 'petitioning');
-        $writ = $service->transitionTo($writ, 'awaiting_receipt');
+        $writ = $service->transitionTo($writ, 'petitioning', [
+            'petitioned_at' => '2026-05-01 10:00:00',
+        ]);
+        $writ = $service->transitionTo($writ, 'awaiting_receipt', [
+            'awaiting_receipt_at' => '2026-06-01 10:00:00',
+        ]);
         $writ = $service->transitionTo($writ, 'finalized', [
             'finalized_at' => '2026-10-01',
             'actual_receipt_amount' => 98000.00,

@@ -53,6 +53,14 @@ class WritService
             throw new \DomainException('Informe o motivo para marcar o requisitório como perdido.');
         }
 
+        if ($newStage === 'petitioning' && blank($context['petitioned_at'] ?? null) && blank($writ->petitioned_at)) {
+            throw new \DomainException('Informe a data e hora do peticionamento.');
+        }
+
+        if ($newStage === 'awaiting_receipt' && blank($context['awaiting_receipt_at'] ?? null) && blank($writ->awaiting_receipt_at)) {
+            throw new \DomainException('Informe a data e hora para aguardar recebimento.');
+        }
+
         $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
             $patch = ['stage' => $newStage];
 

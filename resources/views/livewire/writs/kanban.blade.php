@@ -141,6 +141,21 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         ];
     }
 
+    public function updatedStage(string $stage): void
+    {
+        if ($stage === 'pending' && blank($this->cession_at)) {
+            $this->cession_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'petitioning' && blank($this->petitioned_at)) {
+            $this->petitioned_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
+            $this->awaiting_receipt_at = now()->format('Y-m-d\TH:i');
+        }
+    }
+
     public function create(?string $stage = null): void
     {
         $this->resetForm();
@@ -250,6 +265,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
             return;
         }
+
+        $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
+        $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
+        $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
 
         $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
@@ -981,6 +1000,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
                                     @endif
 
+                                    @if ($stage['key'] === 'petitioning' && $w->petitioned_at)
+                                        <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
+                                            <span class="material-icons-outlined text-[16px]">gavel</span>
+                                            <span>Peticionar: {{ $w->petitioned_at->format('d/m/Y \à\s H:i') }}</span>
+                                        </div>
+                                    @endif
+
                                     @if ($stage['key'] === 'awaiting_receipt' && $w->awaiting_receipt_at)
                                         <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
                                             <span class="material-icons-outlined text-[16px]">hourglass_top</span>
@@ -1517,7 +1543,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         } else if (oldStage === 'pending' && newStage === 'paid') {
                             evt.from.appendChild(evt.item);
                             $wire.promptPaidDate(id);
-                        } else if (oldStage === 'paid' && newStage === 'petitioning') {
+                        } else if (newStage === 'petitioning') {
                             evt.from.appendChild(evt.item);
                             $wire.promptPetitionDate(id);
                         } else if (newStage === 'awaiting_receipt') {
