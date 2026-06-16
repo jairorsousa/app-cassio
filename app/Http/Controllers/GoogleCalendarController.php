@@ -6,20 +6,32 @@ use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 class GoogleCalendarController extends Controller
 {
     public function connect(GoogleCalendarService $googleCalendar): RedirectResponse
     {
-        $client = $googleCalendar->makeOAuthClient();
-        $state = Str::random(40);
+        try {
+            $client = $googleCalendar->makeOAuthClient();
+            $state = Str::random(40);
 
-        session(['google_calendar_oauth_state' => $state]);
-        $client->setState($state);
+            session(['google_calendar_oauth_state' => $state]);
+            $client->setState($state);
 
-        return redirect()->away($client->createAuthUrl());
+            return redirect()->away($client->createAuthUrl());
+        } catch (Throwable $exception) {
+            Log::error('Falha ao iniciar OAuth do Google Calendar.', [
+                'exception' => $exception,
+            ]);
+
+            return redirect()
+                ->route('dashboard')
+                ->with('error', 'Falha ao iniciar conexao com Google Calendar. Verifique as credenciais, o cache de configuracao e as dependencias do Composer.');
+        }
     }
 
     public function callback(Request $request, GoogleCalendarService $googleCalendar): RedirectResponse
@@ -53,6 +65,14 @@ class GoogleCalendarController extends Controller
             return redirect()
                 ->route('dashboard')
                 ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            Log::error('Falha ao concluir OAuth do Google Calendar.', [
+                'exception' => $exception,
+            ]);
+
+            return redirect()
+                ->route('dashboard')
+                ->with('error', 'Falha ao concluir conexao com Google Calendar. Verifique os logs do Laravel.');
         }
 
         return redirect()
