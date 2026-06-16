@@ -225,7 +225,7 @@ new #[Layout('layouts.app')] class extends Component {
         $paid = (float) $data['paid_amount'];
         $proposed = (float) $data['proposed_amount'];
         $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
-        $data['discount_percentage'] = $face > 0 ? round((1 - $amount / $face) * 100, 3) : 0;
+        $data['discount_percentage'] = Writ::calculateDiscountPercentage($face, $amount);
 
         if ($this->writ) {
             $previousStage = $this->writ->stage;

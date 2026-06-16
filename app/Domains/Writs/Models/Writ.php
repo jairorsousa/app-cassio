@@ -233,4 +233,15 @@ class Writ extends Model
 
         return round($this->actualProfitPercentage() / $months, 2);
     }
+
+    public static function calculateDiscountPercentage(float $base, float $amount): float
+    {
+        if ($base <= 0) {
+            return 0;
+        }
+
+        $percentage = round((1 - $amount / $base) * 100, 3);
+
+        return max(-999.999, min(999.999, $percentage));
+    }
 }
