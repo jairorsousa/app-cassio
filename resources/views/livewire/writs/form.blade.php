@@ -207,7 +207,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         if ($this->stage === 'awaiting_receipt' && blank($this->awaiting_receipt_at)) {
-            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar pagamento.');
+            $this->addError('awaiting_receipt_at', 'Informe a data e hora para aguardar recebimento.');
 
             return;
         }
@@ -524,7 +524,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @endif
 
                     @if ($this->usesAwaitingReceiptDate())
-                        <x-fx.input label="Data e hora para aguardar pagamento" type="datetime-local" wire:model="awaiting_receipt_at" required />
+                        <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="awaiting_receipt_at" required />
                         @error('awaiting_receipt_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
                     @endif
 

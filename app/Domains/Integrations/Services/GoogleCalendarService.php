@@ -337,7 +337,7 @@ class GoogleCalendarService
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ, 'Aguardando Pagamento'),
+            'summary' => $this->eventSummary($writ, 'Aguardando Recebimento'),
             'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['awaiting_receipt']),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),
