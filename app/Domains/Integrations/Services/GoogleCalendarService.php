@@ -185,7 +185,7 @@ class GoogleCalendarService
     {
         $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
         $start = $writ->cession_at->copy()->timezone($timezone);
-        $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 60)));
+        $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
             'summary' => $this->eventSummary($writ),
@@ -223,9 +223,7 @@ class GoogleCalendarService
 
     private function eventSummary(Writ $writ): string
     {
-        $identifier = $writ->process_number ?: '#'.$writ->id;
-
-        return 'Cessao - Requisitorio '.$identifier;
+        return 'Cessao - '.$this->assignorName($writ);
     }
 
     private function eventDescription(Writ $writ): string
@@ -234,7 +232,7 @@ class GoogleCalendarService
             'Requisitorio: '.($writ->process_number ?: '#'.$writ->id),
             'Etapa: '.$writ->stageLabel(),
             'Ente devedor: '.($writ->debtor_entity ?: '-'),
-            'Cedente: '.($writ->assignor_name ?: '-'),
+            'Cedente: '.$this->assignorName($writ),
             'Valor do requisitorio: R$ '.number_format((float) $writ->face_value, 2, ',', '.'),
         ];
 
@@ -247,6 +245,27 @@ class GoogleCalendarService
         $lines[] = 'Link no sistema: '.URL::route('writs.show', $writ);
 
         return implode("\n", $lines);
+    }
+
+    private function assignorName(Writ $writ): string
+    {
+        $legacyAssignorName = trim((string) $writ->assignor_name);
+
+        if ($legacyAssignorName !== '') {
+            return $legacyAssignorName;
+        }
+
+        $assignor = $writ->relationLoaded('assignors')
+            ? $writ->assignors->first()
+            : $writ->assignors()->first();
+
+        $contactName = trim((string) $assignor?->contact?->name);
+
+        if ($contactName !== '') {
+            return $contactName;
+        }
+
+        return $writ->process_number ?: '#'.$writ->id;
     }
 
     /**

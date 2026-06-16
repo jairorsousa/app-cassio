@@ -14,7 +14,7 @@ return [
 
     'calendar_id' => env('GOOGLE_CALENDAR_ID', 'primary'),
     'timezone' => env('GOOGLE_CALENDAR_TIMEZONE', env('APP_TIMEZONE', 'America/Sao_Paulo')),
-    'default_duration_minutes' => (int) env('GOOGLE_CALENDAR_DEFAULT_DURATION_MINUTES', 60),
+    'default_duration_minutes' => (int) env('GOOGLE_CALENDAR_DEFAULT_DURATION_MINUTES', 30),
     'send_updates' => env('GOOGLE_CALENDAR_SEND_UPDATES', 'all'),
     'create_meet' => env('GOOGLE_CALENDAR_CREATE_MEET', false),
     'fixed_attendees' => array_values($fixedAttendees),

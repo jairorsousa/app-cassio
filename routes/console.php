@@ -51,13 +51,17 @@ Artisan::command('google-calendar:status', function () {
     return Command::SUCCESS;
 })->purpose('Show Google Calendar integration status');
 
-Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue jobs instead of syncing immediately}', function (GoogleCalendarService $googleCalendar) {
-    $writs = Writ::query()
+Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google events and update them}', function (GoogleCalendarService $googleCalendar) {
+    $query = Writ::query()
         ->where('stage', 'pending')
         ->whereNotNull('cession_at')
-        ->whereNull('google_calendar_event_id')
-        ->orderBy('cession_at')
-        ->get();
+        ->orderBy('cession_at');
+
+    if (! $this->option('all')) {
+        $query->whereNull('google_calendar_event_id');
+    }
+
+    $writs = $query->get();
 
     if ($writs->isEmpty()) {
         $this->info('Nenhum requisitorio pendente de sincronizacao com Google Agenda.');
