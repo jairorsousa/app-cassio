@@ -23,9 +23,27 @@ services:
     container_name: cassio_worker
     restart: unless-stopped
     working_dir: /var/www/html
-    command: >
-      sh -c "php artisan queue:work --tries=3 --sleep=3 --max-time=3600 &
-             php artisan schedule:work"
+    command: php artisan queue:work --tries=3 --sleep=3 --timeout=120
+    volumes:
+      - .:/var/www/html
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      app:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - cassio_net
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: cassio_scheduler
+    restart: unless-stopped
+    working_dir: /var/www/html
+    command: php artisan schedule:work
     volumes:
       - .:/var/www/html
     extra_hosts:

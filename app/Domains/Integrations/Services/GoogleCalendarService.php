@@ -80,6 +80,10 @@ class GoogleCalendarService
     public function syncWritCession(Writ $writ): ?Event
     {
         if (! config('google-calendar.enabled')) {
+            $writ->forceFill([
+                'google_calendar_sync_error' => 'Google Calendar esta desativado no ambiente.',
+            ])->save();
+
             return null;
         }
 
