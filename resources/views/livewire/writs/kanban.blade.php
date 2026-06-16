@@ -5,6 +5,7 @@ use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
@@ -338,6 +339,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         if ($writ->stage === 'pending' && $writ->cession_at) {
             SyncWritCessionToGoogleCalendar::dispatch($writ->id)->afterCommit();
+        }
+
+        if ($writ->stage === 'petitioning' && $writ->petitioned_at) {
+            SyncWritPetitionToGoogleCalendar::dispatch($writ->id)->afterCommit();
         }
     }
 

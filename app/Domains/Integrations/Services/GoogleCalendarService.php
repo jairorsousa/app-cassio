@@ -91,12 +91,57 @@ class GoogleCalendarService
             return null;
         }
 
+        return $this->syncCalendarEvent(
+            writ: $writ,
+            event: $this->buildCessionEvent($writ),
+            existingEventId: $writ->google_calendar_event_id,
+            columns: [
+                'event_id' => 'google_calendar_event_id',
+                'event_link' => 'google_calendar_event_link',
+                'synced_at' => 'google_calendar_synced_at',
+                'sync_error' => 'google_calendar_sync_error',
+            ],
+        );
+    }
+
+    public function syncWritPetition(Writ $writ): ?Event
+    {
+        if (! config('google-calendar.enabled')) {
+            $writ->forceFill([
+                'google_calendar_petition_sync_error' => 'Google Calendar esta desativado no ambiente.',
+            ])->save();
+
+            return null;
+        }
+
+        if ($writ->stage !== 'petitioning' || ! $writ->petitioned_at) {
+            return null;
+        }
+
+        return $this->syncCalendarEvent(
+            writ: $writ,
+            event: $this->buildPetitionEvent($writ),
+            existingEventId: $writ->google_calendar_petition_event_id,
+            columns: [
+                'event_id' => 'google_calendar_petition_event_id',
+                'event_link' => 'google_calendar_petition_event_link',
+                'synced_at' => 'google_calendar_petition_synced_at',
+                'sync_error' => 'google_calendar_petition_sync_error',
+            ],
+        );
+    }
+
+    /**
+     * @param  array{event_id: string, event_link: string, synced_at: string, sync_error: string}  $columns
+     */
+    private function syncCalendarEvent(Writ $writ, Event $event, ?string $existingEventId, array $columns): ?Event
+    {
         try {
             $token = GoogleCalendarToken::central();
 
             if (! $token) {
                 $writ->forceFill([
-                    'google_calendar_sync_error' => 'Google Calendar ainda nao foi conectado.',
+                    $columns['sync_error'] => 'Google Calendar ainda nao foi conectado.',
                 ])->save();
 
                 return null;
@@ -104,14 +149,13 @@ class GoogleCalendarService
 
             $calendar = new GoogleCalendar($this->authorizedClient($token));
             $calendarId = $token->calendar_id ?: config('google-calendar.calendar_id', 'primary');
-            $event = $this->buildCessionEvent($writ);
             $params = $this->eventRequestParams();
 
-            if ($writ->google_calendar_event_id) {
+            if ($existingEventId) {
                 try {
                     $syncedEvent = $calendar->events->update(
                         $calendarId,
-                        $writ->google_calendar_event_id,
+                        $existingEventId,
                         $event,
                         $params,
                     );
@@ -127,16 +171,16 @@ class GoogleCalendarService
             }
 
             $writ->forceFill([
-                'google_calendar_event_id' => $syncedEvent->getId(),
-                'google_calendar_event_link' => $syncedEvent->getHtmlLink(),
-                'google_calendar_synced_at' => now(),
-                'google_calendar_sync_error' => null,
+                $columns['event_id'] => $syncedEvent->getId(),
+                $columns['event_link'] => $syncedEvent->getHtmlLink(),
+                $columns['synced_at'] => now(),
+                $columns['sync_error'] => null,
             ])->save();
 
             return $syncedEvent;
         } catch (Throwable $exception) {
             $writ->forceFill([
-                'google_calendar_sync_error' => Str::limit($exception->getMessage(), 2000, ''),
+                $columns['sync_error'] => Str::limit($exception->getMessage(), 2000, ''),
             ])->save();
 
             throw $exception;
@@ -184,12 +228,12 @@ class GoogleCalendarService
     private function buildCessionEvent(Writ $writ): Event
     {
         $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
-        $start = $this->localCessionDateTime($writ, $timezone);
+        $start = $this->localWritDateTime($writ->cession_at, $timezone);
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ),
-            'description' => $this->eventDescription($writ),
+            'summary' => $this->eventSummary($writ, 'Cessao'),
+            'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['pending']),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),
             'attendees' => $this->eventAttendees(),
@@ -213,9 +257,41 @@ class GoogleCalendarService
         return $event;
     }
 
-    private function localCessionDateTime(Writ $writ, string $timezone): CarbonInterface
+    private function buildPetitionEvent(Writ $writ): Event
     {
-        return Carbon::parse($writ->cession_at->format('Y-m-d H:i:s'), $timezone);
+        $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
+        $start = $this->localWritDateTime($writ->petitioned_at, $timezone);
+        $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
+
+        $event = new Event([
+            'summary' => $this->eventSummary($writ, 'Peticionar'),
+            'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['petitioning']),
+            'start' => $this->eventDateTime($start, $timezone),
+            'end' => $this->eventDateTime($end, $timezone),
+            'attendees' => $this->eventAttendees(),
+            'reminders' => [
+                'useDefault' => false,
+                'overrides' => [
+                    ['method' => 'popup', 'minutes' => 30],
+                    ['method' => 'email', 'minutes' => 1440],
+                ],
+            ],
+        ]);
+
+        if (config('google-calendar.create_meet')) {
+            $event->setConferenceData([
+                'createRequest' => [
+                    'requestId' => 'writ-'.$writ->id.'-petition',
+                ],
+            ]);
+        }
+
+        return $event;
+    }
+
+    private function localWritDateTime(CarbonInterface $dateTime, string $timezone): CarbonInterface
+    {
+        return Carbon::parse($dateTime->format('Y-m-d H:i:s'), $timezone);
     }
 
     private function eventDateTime(CarbonInterface $dateTime, string $timezone): EventDateTime
@@ -226,16 +302,16 @@ class GoogleCalendarService
         ]);
     }
 
-    private function eventSummary(Writ $writ): string
+    private function eventSummary(Writ $writ, string $prefix): string
     {
-        return 'Cessao - '.$this->assignorName($writ);
+        return $prefix.' - '.$this->assignorName($writ);
     }
 
-    private function eventDescription(Writ $writ): string
+    private function eventDescription(Writ $writ, string $stageLabel): string
     {
         $lines = [
             'Requisitorio: '.($writ->process_number ?: '#'.$writ->id),
-            'Etapa: '.$writ->stageLabel(),
+            'Etapa: '.$stageLabel,
             'Ente devedor: '.($writ->debtor_entity ?: '-'),
             'Cedente: '.$this->assignorName($writ),
             'Valor negociado: R$ '.number_format($this->negotiatedAmount($writ), 2, ',', '.'),

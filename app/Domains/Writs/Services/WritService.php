@@ -5,6 +5,7 @@ namespace App\Domains\Writs\Services;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritStageHistory;
 use Illuminate\Support\Facades\Auth;
@@ -101,6 +102,10 @@ class WritService
 
         if ($updatedWrit->stage === 'pending' && $updatedWrit->cession_at) {
             SyncWritCessionToGoogleCalendar::dispatch($updatedWrit->id)->afterCommit();
+        }
+
+        if ($updatedWrit->stage === 'petitioning' && $updatedWrit->petitioned_at) {
+            SyncWritPetitionToGoogleCalendar::dispatch($updatedWrit->id)->afterCommit();
         }
 
         return $updatedWrit;

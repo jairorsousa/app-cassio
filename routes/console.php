@@ -6,6 +6,7 @@ use App\Domains\Dashboard\Jobs\RefreshDashboardSnapshotJob;
 use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -22,6 +23,11 @@ Artisan::command('google-calendar:status', function () {
         ->where('stage', 'pending')
         ->whereNotNull('cession_at')
         ->whereNull('google_calendar_event_id')
+        ->count();
+    $pendingPetitions = Writ::query()
+        ->where('stage', 'petitioning')
+        ->whereNotNull('petitioned_at')
+        ->whereNull('google_calendar_petition_event_id')
         ->count();
 
     $this->components->info('Google Calendar integration status');
@@ -40,7 +46,8 @@ Artisan::command('google-calendar:status', function () {
             ['Token connected at', $token?->connected_at?->toDateTimeString() ?: '-'],
             ['Token expires at', $token?->expires_at?->toDateTimeString() ?: '-'],
             ['Refresh token saved', $token?->refresh_token ? 'yes' : 'no'],
-            ['Pending writs without event', (string) $pendingWrits],
+            ['Pending cessions without event', (string) $pendingWrits],
+            ['Pending petitions without event', (string) $pendingPetitions],
         ],
     );
 
@@ -100,6 +107,56 @@ Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue 
 
     return $skipped === 0 ? Command::SUCCESS : Command::FAILURE;
 })->purpose('Sync pending writ cession dates with Google Agenda');
+
+Artisan::command('writs:sync-google-calendar-petitions {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google petition events and update them}', function (GoogleCalendarService $googleCalendar) {
+    $query = Writ::query()
+        ->where('stage', 'petitioning')
+        ->whereNotNull('petitioned_at')
+        ->orderBy('petitioned_at');
+
+    if (! $this->option('all')) {
+        $query->whereNull('google_calendar_petition_event_id');
+    }
+
+    $writs = $query->get();
+
+    if ($writs->isEmpty()) {
+        $this->info('Nenhum peticionamento pendente de sincronizacao com Google Agenda.');
+
+        return Command::SUCCESS;
+    }
+
+    if ($this->option('queue')) {
+        $writs->each(fn (Writ $writ) => SyncWritPetitionToGoogleCalendar::dispatch($writ->id));
+        $this->info("{$writs->count()} job(s) de peticionamento enviados para a fila.");
+
+        return Command::SUCCESS;
+    }
+
+    $synced = 0;
+    $skipped = 0;
+
+    foreach ($writs as $writ) {
+        try {
+            $event = $googleCalendar->syncWritPetition($writ);
+
+            if ($event) {
+                $synced++;
+                $this->line("Sincronizado peticionamento do requisitorio #{$writ->id}: {$event->getHtmlLink()}");
+            } else {
+                $skipped++;
+                $this->warn("Nao sincronizado peticionamento do requisitorio #{$writ->id}: {$writ->fresh()->google_calendar_petition_sync_error}");
+            }
+        } catch (Throwable $exception) {
+            $skipped++;
+            $this->error("Erro no peticionamento do requisitorio #{$writ->id}: {$exception->getMessage()}");
+        }
+    }
+
+    $this->info("Concluido. Sincronizados: {$synced}. Nao sincronizados: {$skipped}.");
+
+    return $skipped === 0 ? Command::SUCCESS : Command::FAILURE;
+})->purpose('Sync petitioning writ dates with Google Agenda');
 
 Schedule::job(new GenerateRecurringTransactionsJob)->dailyAt('00:05');
 Schedule::job(new CloseInvoiceJob)->dailyAt('00:10');

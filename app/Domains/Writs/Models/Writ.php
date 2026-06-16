@@ -24,7 +24,8 @@ class Writ extends Model
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
                 'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
-                'google_calendar_event_id', 'google_calendar_synced_at'])
+                'google_calendar_event_id', 'google_calendar_synced_at',
+                'google_calendar_petition_event_id', 'google_calendar_petition_synced_at'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges()
             ->useLogName('writs');
@@ -50,6 +51,7 @@ class Writ extends Model
         'estimated_receipt_amount', 'estimated_months',
         'actual_receipt_amount', 'cession_at', 'paid_at', 'petitioned_at', 'finalized_at',
         'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
+        'google_calendar_petition_event_id', 'google_calendar_petition_event_link', 'google_calendar_petition_synced_at', 'google_calendar_petition_sync_error',
         'source_bank_account_id', 'destination_bank_account_id',
         'notes',
     ];
@@ -69,6 +71,7 @@ class Writ extends Model
         'google_calendar_synced_at' => 'datetime',
         'paid_at' => 'date',
         'petitioned_at' => 'datetime',
+        'google_calendar_petition_synced_at' => 'datetime',
         'finalized_at' => 'date',
     ];
 

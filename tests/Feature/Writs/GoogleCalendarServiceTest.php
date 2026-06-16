@@ -13,12 +13,7 @@ class GoogleCalendarServiceTest extends TestCase
 {
     public function test_cession_event_keeps_local_wall_clock_time(): void
     {
-        config([
-            'google-calendar.timezone' => 'America/Sao_Paulo',
-            'google-calendar.default_duration_minutes' => 30,
-            'google-calendar.fixed_attendees' => [],
-            'google-calendar.create_meet' => false,
-        ]);
+        $this->configureGoogleCalendar();
 
         $writ = new Writ([
             'type' => 'rpv',
@@ -44,5 +39,45 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertSame('2026-06-19T14:30:00-03:00', $event->getEnd()->getDateTime());
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
         $this->assertStringNotContainsString('Valor do requisitorio: R$ 35.000,00', $event->getDescription());
+    }
+
+    public function test_petition_event_uses_petition_title_and_local_time(): void
+    {
+        $this->configureGoogleCalendar();
+
+        $writ = new Writ([
+            'type' => 'rpv',
+            'stage' => 'petitioning',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'assignor_name' => 'Maria Clara Santos',
+            'debtor_entity' => 'INSS',
+            'face_value' => 35000,
+            'negotiated_amount' => 20000,
+            'proposed_amount' => 10000,
+        ]);
+        $writ->id = 21;
+        $writ->petitioned_at = Carbon::parse('2026-06-22 15:00:00', 'UTC');
+
+        $method = new ReflectionMethod(GoogleCalendarService::class, 'buildPetitionEvent');
+        $method->setAccessible(true);
+
+        /** @var Event $event */
+        $event = $method->invoke(app(GoogleCalendarService::class), $writ);
+
+        $this->assertSame('Peticionar - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('2026-06-22T15:00:00-03:00', $event->getStart()->getDateTime());
+        $this->assertSame('2026-06-22T15:30:00-03:00', $event->getEnd()->getDateTime());
+        $this->assertStringContainsString('Etapa: Peticionar', $event->getDescription());
+        $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
+    }
+
+    private function configureGoogleCalendar(): void
+    {
+        config([
+            'google-calendar.timezone' => 'America/Sao_Paulo',
+            'google-calendar.default_duration_minutes' => 30,
+            'google-calendar.fixed_attendees' => [],
+            'google-calendar.create_meet' => false,
+        ]);
     }
 }
