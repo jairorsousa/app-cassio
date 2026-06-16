@@ -6,8 +6,8 @@ use Livewire\Volt\Volt;
 
 Route::get('/', function () {
     return auth()->check()
-        ? redirect()->route('dashboard')
-        : redirect()->route('login');
+        ? redirect()->to(route('dashboard', absolute: false))
+        : redirect()->to(route('login', absolute: false));
 });
 
 Volt::route('dashboard', 'dashboard.index')

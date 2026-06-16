@@ -20,6 +20,17 @@ class AuthenticationTest extends TestCase
             ->assertSeeVolt('pages.auth.login');
     }
 
+    public function test_guest_redirects_use_relative_login_path_when_app_url_is_misconfigured(): void
+    {
+        config(['app.url' => 'https:/']);
+
+        $this->get('/')
+            ->assertRedirect('/login');
+
+        $this->get('/dashboard')
+            ->assertRedirect('/login');
+    }
+
     public function test_users_can_authenticate_using_the_login_screen(): void
     {
         $user = User::factory()->create();

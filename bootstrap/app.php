@@ -12,6 +12,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: env('TRUSTED_PROXIES', 'REMOTE_ADDR'));
+        $middleware->redirectGuestsTo(fn () => route('login', absolute: false));
 
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
