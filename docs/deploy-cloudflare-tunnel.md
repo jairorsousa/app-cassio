@@ -98,6 +98,28 @@ docker compose exec app php artisan optimize:clear
 docker compose exec app php artisan optimize
 ```
 
+## 6. Upload de arquivos no Livewire (erro 401 em `/livewire/upload-file`)
+
+A rota de upload do Livewire usa URL assinada. Se o domínio ou o esquema (HTTP/HTTPS) usado no navegador não bater com o `APP_URL`, o upload falha com `401 Unauthorized`.
+
+Checklist:
+
+1. `APP_URL` deve ser exatamente a URL pública, com `https://`, por exemplo `https://app.cassiomota.com`.
+2. Acesse a aplicação pelo mesmo domínio configurado em `APP_URL` (não misture `www`, IP ou porta local).
+3. Depois de alterar domínio ou `APP_URL`, limpe o cache de config:
+
+```bash
+docker compose exec app php artisan optimize:clear
+docker compose exec app php artisan optimize
+```
+
+4. Confirme `TRUSTED_PROXIES=REMOTE_ADDR` (ou `*`) e `SESSION_SECURE_COOKIE=true` em produção.
+5. Reinicie o Nginx após mudanças no proxy:
+
+```bash
+docker compose restart nginx
+```
+
 ## 5. Alternativa: cloudflared instalado no host
 
 Se preferir instalar o `cloudflared` diretamente no Ubuntu, remova ou comente o serviço `cloudflared` no `docker-compose.yml` e suba somente a aplicação:
