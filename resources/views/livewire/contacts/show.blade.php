@@ -20,6 +20,11 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
 
+    @php
+        $phoneList = array_values(array_filter($contact->phones ?: [$contact->phone]));
+        $emailList = array_values(array_filter($contact->emails ?: [$contact->email]));
+    @endphp
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-md">
         {{-- Dados cadastrais --}}
         <x-fx.card>
@@ -34,8 +39,14 @@ new #[Layout('layouts.app')] class extends Component {
                         {{ $contact->status ? 'Ativo' : 'Inativo' }}
                     </x-fx.badge>
                 </div>
-                <div><span class="text-mono-600">Telefone:</span> {{ $contact->phone ?: '—' }}</div>
-                <div><span class="text-mono-600">E-mail:</span> {{ $contact->email ?: '—' }}</div>
+                <div>
+                    <span class="text-mono-600">Telefones:</span>
+                    {{ $phoneList ? implode(' / ', $phoneList) : '—' }}
+                </div>
+                <div>
+                    <span class="text-mono-600">E-mails:</span>
+                    {{ $emailList ? implode(' / ', $emailList) : '—' }}
+                </div>
             </div>
 
             <h3 class="text-md font-semibold mt-md mb-sm">Endereço</h3>
@@ -53,7 +64,8 @@ new #[Layout('layouts.app')] class extends Component {
                 <div><span class="text-mono-600">Agência:</span> {{ $contact->bank_agency ?: '—' }}</div>
                 <div><span class="text-mono-600">Conta:</span> {{ $contact->bank_account ?: '—' }}</div>
                 <div><span class="text-mono-600">Tipo:</span> {{ $contact->bank_account_type ?: '—' }}</div>
-                <div class="col-span-2"><span class="text-mono-600">PIX:</span> {{ $contact->pix_key ?: '—' }}</div>
+                <div><span class="text-mono-600">Tipo PIX:</span> {{ $contact->pixKeyTypeLabel() }}</div>
+                <div><span class="text-mono-600">PIX:</span> {{ $contact->pix_key ?: '—' }}</div>
             </div>
 
             @if ($contact->notes)
@@ -83,23 +95,26 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             </x-fx.card>
 
-            @if ($contact->phone || $contact->email || $contact->pix_key)
+            @if ($phoneList || $emailList || $contact->pix_key)
                 <x-fx.card>
                     <h3 class="text-md font-semibold mb-sm">Contato Rápido</h3>
                     <div class="flex flex-col gap-xs">
-                        @if ($contact->phone)
-                            <a href="tel:{{ $contact->phone }}" class="fx-btn fx-btn--standard fx-btn--sm w-full text-center">
-                                📞 {{ $contact->phone }}
+                        @foreach ($phoneList as $phone)
+                            <a href="tel:{{ $phone }}" class="fx-btn fx-btn--standard fx-btn--sm w-full text-center">
+                                <span class="material-icons-outlined text-[18px]">phone</span>
+                                {{ $phone }}
                             </a>
-                        @endif
-                        @if ($contact->email)
-                            <a href="mailto:{{ $contact->email }}" class="fx-btn fx-btn--standard fx-btn--sm w-full text-center">
-                                ✉️ {{ $contact->email }}
+                        @endforeach
+                        @foreach ($emailList as $email)
+                            <a href="mailto:{{ $email }}" class="fx-btn fx-btn--standard fx-btn--sm w-full text-center">
+                                <span class="material-icons-outlined text-[18px]">mail</span>
+                                {{ $email }}
                             </a>
-                        @endif
+                        @endforeach
                         @if ($contact->pix_key)
                             <div class="fx-btn fx-btn--mono fx-btn--sm w-full text-center cursor-default">
-                                🏦 PIX: {{ $contact->pix_key }}
+                                <span class="material-icons-outlined text-[18px]">key</span>
+                                PIX {{ $contact->pixKeyTypeLabel() }}: {{ $contact->pix_key }}
                             </div>
                         @endif
                     </div>

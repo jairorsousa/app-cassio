@@ -17,9 +17,15 @@ class ContactManagementTest extends TestCase
         $contact = Contact::create([
             'name' => 'Jairo Corretor',
             'type' => 'corretor',
+            'phones' => ['(99) 99999-9999', '(98) 98888-8888'],
+            'emails' => ['jairo@example.com', 'financeiro@example.com'],
+            'pix_key_type' => 'telefone',
         ]);
 
         $this->assertEquals('Corretor', $contact->typeLabel());
+        $this->assertEquals('Telefone', $contact->pixKeyTypeLabel());
+        $this->assertCount(2, $contact->phones);
+        $this->assertCount(2, $contact->emails);
     }
 
     public function test_cep_lookup_returns_normalized_address_data(): void
