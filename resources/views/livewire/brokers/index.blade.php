@@ -1,9 +1,9 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Services\BrokerAdvanceService;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
 use App\Domains\Brokers\Models\CaseType;
@@ -60,7 +60,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetErrorBag();
     }
 
-    public function saveLaunch(BrokerProfileService $profiles, BrokerCommissionService $commissions): void
+    public function saveLaunch(BrokerProfileService $profiles, BrokerAdvanceService $advances, BrokerCommissionService $commissions): void
     {
         $this->normalizeLaunchAmounts();
 
@@ -103,7 +103,7 @@ new #[Layout('layouts.app')] class extends Component {
             $financialBroker = $profiles->forContact($contact);
 
             if ($data['launch_type'] === 'advance') {
-                $advance = BrokerAdvance::create([
+                $result = $advances->register([
                     'broker_id' => $financialBroker->id,
                     'date' => $data['launch_date'],
                     'amount' => $data['launch_amount'],
@@ -112,8 +112,7 @@ new #[Layout('layouts.app')] class extends Component {
                     'notes' => $data['launch_notes'] ?: null,
                 ]);
 
-                BrokerAdvancePaid::dispatch($advance->load('broker'));
-                session()->flash('status', 'Adiantamento registrado.');
+                session()->flash('status', BrokerAdvanceService::statusMessage($result));
             }
 
             if ($data['launch_type'] === 'commission') {

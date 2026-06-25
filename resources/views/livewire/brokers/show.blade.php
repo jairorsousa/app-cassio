@@ -1,9 +1,8 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Models\BrokerAdvance;
+use App\Domains\Brokers\Services\BrokerAdvanceService;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerBalanceCalculator;
@@ -89,7 +88,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetErrorBag();
     }
 
-    public function saveLaunch(BrokerCommissionService $commissions): void
+    public function saveLaunch(BrokerAdvanceService $advances, BrokerCommissionService $commissions): void
     {
         $this->normalizeLaunchAmounts();
 
@@ -125,7 +124,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         try {
             if ($data['launch_type'] === 'advance') {
-                $advance = BrokerAdvance::create([
+                $result = $advances->register([
                     'broker_id' => $this->financialBroker->id,
                     'date' => $data['launch_date'],
                     'amount' => $data['launch_amount'],
@@ -134,8 +133,7 @@ new #[Layout('layouts.app')] class extends Component {
                     'notes' => $data['launch_notes'] ?: null,
                 ]);
 
-                BrokerAdvancePaid::dispatch($advance->load('broker'));
-                session()->flash('status', 'Adiantamento registrado.');
+                session()->flash('status', BrokerAdvanceService::statusMessage($result));
             }
 
             if ($data['launch_type'] === 'commission') {

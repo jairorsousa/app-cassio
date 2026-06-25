@@ -1,9 +1,8 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Models\BrokerAdvance;
+use App\Domains\Brokers\Services\BrokerAdvanceService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -33,16 +32,21 @@ new #[Layout('layouts.app')] class extends Component {
         ];
     }
 
-    public function save()
+    public function save(BrokerAdvanceService $advances)
     {
         $data = $this->validate();
-        $data['broker_id'] = $this->broker->id;
 
-        $advance = BrokerAdvance::create($data);
+        $result = $advances->register([
+            'broker_id' => $this->broker->id,
+            'date' => $data['date'],
+            'amount' => $data['amount'],
+            'payment_method' => $data['payment_method'] ?: null,
+            'bank_account_id' => $data['bank_account_id'] ?? null,
+            'notes' => $data['notes'] ?: null,
+        ]);
 
-        BrokerAdvancePaid::dispatch($advance->load('broker'));
+        session()->flash('status', BrokerAdvanceService::statusMessage($result));
 
-        session()->flash('status', 'Adiantamento registrado.');
         return $this->redirectRoute('brokers.advances.index', $this->broker, navigate: true);
     }
 
