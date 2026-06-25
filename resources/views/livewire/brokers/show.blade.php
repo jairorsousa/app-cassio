@@ -25,6 +25,8 @@ new #[Layout('layouts.app')] class extends Component {
     public string $start_date = '';
     #[Url]
     public string $end_date = '';
+    #[Url]
+    public string $records_tab = 'statement';
 
     public bool $showLaunchModal = false;
     public string $launch_type = 'advance';
@@ -190,9 +192,9 @@ new #[Layout('layouts.app')] class extends Component {
             'total_pending' => 0.0,
             'total_paid' => 0.0,
         ];
-        $recentAdvances = collect();
-        $recentCommissions = collect();
-        $recentPayments = collect();
+        $allAdvances = collect();
+        $allCommissions = collect();
+        $allPayments = collect();
 
         $periodStart = $this->start_date ?: null;
         $periodEnd = $this->end_date ?: null;
@@ -212,13 +214,12 @@ new #[Layout('layouts.app')] class extends Component {
             $advanceBalance = $calc->forBroker($this->financialBroker);
             $commissionSummary = $calc->commissionsForBroker($this->financialBroker);
             $statementSummary = $statementService->summary($this->financialBroker, $periodStart, $periodEnd);
-            $statementEntries = $statementService->entries($this->financialBroker, $periodStart, $periodEnd)->take(20);
-            $recentAdvances = $this->financialBroker->advances()->with('bankAccount')->orderByDesc('date')->limit(5)->get();
-            $recentCommissions = $this->financialBroker->commissions()->with('caseType', 'bankAccount', 'settlements', 'payments')->orderByDesc('reference_date')->limit(5)->get();
-            $recentPayments = $this->financialBroker->commissionPayments()
+            $statementEntries = $statementService->entries($this->financialBroker, $periodStart, $periodEnd);
+            $allAdvances = $this->financialBroker->advances()->with('bankAccount')->orderByDesc('date')->get();
+            $allCommissions = $this->financialBroker->commissions()->with('caseType', 'bankAccount', 'settlements', 'payments')->orderByDesc('reference_date')->get();
+            $allPayments = $this->financialBroker->commissionPayments()
                 ->with('commission.caseType', 'bankAccount')
                 ->orderByDesc('paid_at')
-                ->limit(5)
                 ->get();
             $openCommissions = $this->financialBroker->commissions()
                 ->with('caseType', 'settlements', 'payments')
@@ -229,7 +230,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         return [
-            ...compact('advanceBalance', 'commissionSummary', 'recentAdvances', 'recentCommissions', 'recentPayments'),
+            ...compact('advanceBalance', 'commissionSummary', 'allAdvances', 'allCommissions', 'allPayments'),
             'statementSummary' => $statementSummary,
             'statementEntries' => $statementEntries,
             'openCommissions' => $openCommissions,
@@ -444,14 +445,13 @@ new #[Layout('layouts.app')] class extends Component {
         </x-fx.card>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-md">
-        <x-fx.card>
-            <div class="mb-sm flex items-center gap-xs">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-xl">badge</span>
-                </div>
-                <h3 class="text-base font-semibold text-mono-900">Dados Cadastrais</h3>
+    <x-fx.card>
+        <div class="mb-sm flex items-center gap-xs">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
+                <span class="material-icons-outlined text-xl">badge</span>
             </div>
+            <h3 class="text-base font-semibold text-mono-900">Dados Cadastrais</h3>
+        </div>
             <div class="grid grid-cols-1 gap-xs border-t border-mono-100 pt-sm text-sm sm:grid-cols-2">
                 <div class="flex items-center gap-xs">
                     <span class="material-icons-outlined text-lg text-mono-400">assignment_ind</span>
@@ -544,75 +544,84 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <p class="text-sm leading-6 text-mono-900">{{ $broker->notes }}</p>
             @endif
-        </x-fx.card>
+    </x-fx.card>
 
-        <div class="flex flex-col gap-md">
-            <x-fx.card>
-                <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
-                    <div class="flex items-center gap-xs">
-                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                            <span class="material-icons-outlined text-xl">payments</span>
-                        </div>
-                        <h3 class="text-base font-semibold text-mono-900">Últimos Repasses</h3>
-                    </div>
-                    @if ($financialBroker)
-                        <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
-                            Ver comissões
-                            <span class="material-icons-outlined text-base">arrow_forward</span>
-                        </a>
-                    @endif
+    <x-fx.card>
+        @php
+            $tab = 'inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors -mb-px';
+            $activeTab = 'border-primary-500 text-primary-500';
+            $inactiveTab = 'border-transparent text-mono-600 hover:border-mono-200 hover:text-mono-900';
+        @endphp
+
+        <div class="mb-sm flex flex-col gap-sm sm:flex-row sm:items-end sm:justify-between">
+            <nav class="flex flex-wrap gap-6 border-b border-mono-100">
+                <button type="button" wire:click="$set('records_tab', 'statement')" class="{{ $tab }} {{ $records_tab === 'statement' ? $activeTab : $inactiveTab }}">
+                    <span class="material-icons-outlined text-[18px]">receipt_long</span>
+                    Extrato
+                </button>
+                <button type="button" wire:click="$set('records_tab', 'advances')" class="{{ $tab }} {{ $records_tab === 'advances' ? $activeTab : $inactiveTab }}">
+                    <span class="material-icons-outlined text-[18px]">history</span>
+                    Adiantamentos
+                </button>
+                <button type="button" wire:click="$set('records_tab', 'commissions')" class="{{ $tab }} {{ $records_tab === 'commissions' ? $activeTab : $inactiveTab }}">
+                    <span class="material-icons-outlined text-[18px]">percent</span>
+                    Comissões
+                </button>
+                <button type="button" wire:click="$set('records_tab', 'payments')" class="{{ $tab }} {{ $records_tab === 'payments' ? $activeTab : $inactiveTab }}">
+                    <span class="material-icons-outlined text-[18px]">payments</span>
+                    Repasses
+                </button>
+            </nav>
+
+            @if ($records_tab === 'statement')
+                <div class="text-xs font-medium text-mono-600">
+                    Saída no período: R$ {{ number_format($statementSummary['cash_out_period'], 2, ',', '.') }}
                 </div>
-                @if ($recentPayments->isEmpty())
-                    <div class="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-mono-200 bg-mono-50 px-sm py-lg text-center">
-                        <span class="material-icons-outlined mb-xs text-5xl text-mono-400">payments</span>
-                        <div class="text-sm font-medium text-mono-900">Nenhum repasse registrado.</div>
-                        <div class="mt-xxs text-xs text-mono-600">Os repasses em dinheiro ao corretor aparecerão aqui.</div>
-                    </div>
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="fx-table w-full text-sm">
-                            <thead>
-                                <tr>
-                                    <th class="text-left">Data</th>
-                                    <th class="text-left">Tipo de caso</th>
-                                    <th class="text-left">Conta</th>
-                                    <th class="text-right">Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($recentPayments as $payment)
-                                    <tr>
-                                        <td>{{ $payment->paid_at->format('d/m/Y') }}</td>
-                                        <td>{{ $payment->commission?->caseType?->name ?? '—' }}</td>
-                                        <td>{{ $payment->bankAccount?->name ?? '—' }}</td>
-                                        <td class="text-right font-semibold text-down">R$ {{ number_format($payment->amount, 2, ',', '.') }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            </x-fx.card>
+            @endif
         </div>
-    </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-md">
-        <x-fx.card>
-            <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
-                <div class="flex items-center gap-xs">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                        <span class="material-icons-outlined text-xl">history</span>
+        @if ($records_tab === 'statement')
+            @if ($statementEntries->isEmpty())
+                <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">
+                    <span class="material-icons-outlined text-4xl text-mono-400">inventory_2</span>
+                    <div>
+                        <div class="text-sm font-semibold text-mono-900">Nenhum movimento no período.</div>
+                        <div class="text-xs text-mono-600">Adiantamentos, comissões, compensações e repasses aparecerão aqui.</div>
                     </div>
-                    <h3 class="text-base font-semibold text-mono-900">Últimos Adiantamentos</h3>
                 </div>
-                @if ($financialBroker)
-                    <a href="{{ route('brokers.advances.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
-                        Ver todos
-                        <span class="material-icons-outlined text-base">arrow_forward</span>
-                    </a>
-                @endif
-            </div>
-            @if ($recentAdvances->isEmpty())
+            @else
+                <div class="overflow-x-auto">
+                    <table class="fx-table w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="text-left">Data</th>
+                                <th class="text-left">Movimento</th>
+                                <th class="text-left">Descrição</th>
+                                <th class="text-right">Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($statementEntries as $entry)
+                                <tr>
+                                    <td>{{ $entry['date']->format('d/m/Y') }}</td>
+                                    <td>
+                                        <span class="inline-flex items-center gap-xxs font-semibold text-mono-900">
+                                            <span class="material-icons-outlined text-base {{ $entry['tone'] === 'up' ? 'text-up' : ($entry['tone'] === 'down' ? 'text-down' : 'text-primary-500') }}">{{ $entry['icon'] }}</span>
+                                            {{ $entry['type'] }}
+                                        </span>
+                                    </td>
+                                    <td class="text-mono-600">{{ $entry['description'] }}</td>
+                                    <td class="text-right font-semibold {{ $entry['tone'] === 'up' ? 'text-up' : ($entry['tone'] === 'down' ? 'text-down' : 'text-mono-900') }}">
+                                        R$ {{ number_format($entry['amount'], 2, ',', '.') }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        @elseif ($records_tab === 'advances')
+            @if ($allAdvances->isEmpty())
                 <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">
                     <span class="material-icons-outlined text-4xl text-mono-400">inventory_2</span>
                     <div>
@@ -623,40 +632,37 @@ new #[Layout('layouts.app')] class extends Component {
             @else
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
-                        <thead><tr><th class="text-left">Data</th><th class="text-left">Forma</th><th class="text-right">Valor</th><th class="text-right">Saldo restante</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th class="text-left">Data</th>
+                                <th class="text-right">Valor</th>
+                                <th class="text-left">Forma pgto</th>
+                                <th class="text-left">Conta</th>
+                                <th class="text-right">Compensado</th>
+                                <th class="text-right">Saldo</th>
+                                <th class="text-left">Notas</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            @foreach ($recentAdvances as $adv)
+                            @foreach ($allAdvances as $adv)
                                 <tr>
                                     <td>{{ $adv->date->format('d/m/Y') }}</td>
+                                    <td class="text-right font-semibold">R$ {{ number_format($adv->amount, 2, ',', '.') }}</td>
                                     <td>{{ $adv->payment_method ?: '—' }}</td>
-                                    <td class="text-right">R$ {{ number_format($adv->amount, 2, ',', '.') }}</td>
-                                    <td class="text-right {{ $adv->remainingBalance() > 0 ? 'text-down' : 'text-up' }}">
+                                    <td>{{ $adv->bankAccount?->name ?: '—' }}</td>
+                                    <td class="text-right text-up">R$ {{ number_format($adv->settledAmount(), 2, ',', '.') }}</td>
+                                    <td class="text-right {{ $adv->remainingBalance() > 0 ? 'text-down font-semibold' : 'text-up' }}">
                                         R$ {{ number_format($adv->remainingBalance(), 2, ',', '.') }}
                                     </td>
+                                    <td class="max-w-[200px] truncate text-xxs text-mono-600">{{ $adv->notes ?: '—' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
             @endif
-        </x-fx.card>
-
-        <x-fx.card>
-            <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
-                <div class="flex items-center gap-xs">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                        <span class="material-icons-outlined text-xl">percent</span>
-                    </div>
-                    <h3 class="text-base font-semibold text-mono-900">Últimas Comissões</h3>
-                </div>
-                @if ($financialBroker)
-                    <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
-                        Ver todas
-                        <span class="material-icons-outlined text-base">arrow_forward</span>
-                    </a>
-                @endif
-            </div>
-            @if ($recentCommissions->isEmpty())
+        @elseif ($records_tab === 'commissions')
+            @if ($allCommissions->isEmpty())
                 <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">
                     <span class="material-icons-outlined text-4xl text-mono-400">inventory_2</span>
                     <div>
@@ -667,9 +673,19 @@ new #[Layout('layouts.app')] class extends Component {
             @else
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
-                        <thead><tr><th class="text-left">Data ref.</th><th class="text-left">Tipo de caso</th><th class="text-right">Comissão</th><th class="text-right">Compensado</th><th class="text-right">Repassado</th><th class="text-right">Saldo</th><th class="text-center">Status</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th class="text-left">Data ref.</th>
+                                <th class="text-left">Tipo de caso</th>
+                                <th class="text-right">Comissão</th>
+                                <th class="text-right">Compensado</th>
+                                <th class="text-right">Repassado</th>
+                                <th class="text-right">Saldo</th>
+                                <th class="text-center">Status</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            @foreach ($recentCommissions as $com)
+                            @foreach ($allCommissions as $com)
                                 <tr>
                                     <td>{{ $com->reference_date->format('d/m/Y') }}</td>
                                     <td>{{ $com->caseType->name }}</td>
@@ -688,60 +704,39 @@ new #[Layout('layouts.app')] class extends Component {
                     </table>
                 </div>
             @endif
-        </x-fx.card>
-    </div>
-
-    <x-fx.card>
-        <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
-            <div class="flex items-center gap-xs">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-xl">receipt_long</span>
+        @elseif ($records_tab === 'payments')
+            @if ($allPayments->isEmpty())
+                <div class="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-mono-200 bg-mono-50 px-sm py-lg text-center">
+                    <span class="material-icons-outlined mb-xs text-5xl text-mono-400">payments</span>
+                    <div class="text-sm font-medium text-mono-900">Nenhum repasse registrado.</div>
+                    <div class="mt-xxs text-xs text-mono-600">Os repasses em dinheiro ao corretor aparecerão aqui.</div>
                 </div>
-                <h3 class="text-base font-semibold text-mono-900">Extrato do corretor</h3>
-            </div>
-            <div class="text-xs font-medium text-mono-600">
-                Saída no período: R$ {{ number_format($statementSummary['cash_out_period'], 2, ',', '.') }}
-            </div>
-        </div>
-
-        @if ($statementEntries->isEmpty())
-            <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">
-                <span class="material-icons-outlined text-4xl text-mono-400">inventory_2</span>
-                <div>
-                    <div class="text-sm font-semibold text-mono-900">Nenhum movimento no período.</div>
-                    <div class="text-xs text-mono-600">Adiantamentos, comissões, compensações e repasses aparecerão aqui.</div>
-                </div>
-            </div>
-        @else
-            <div class="overflow-x-auto">
-                <table class="fx-table w-full text-sm">
-                    <thead>
-                        <tr>
-                            <th class="text-left">Data</th>
-                            <th class="text-left">Movimento</th>
-                            <th class="text-left">Descrição</th>
-                            <th class="text-right">Valor</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($statementEntries as $entry)
+            @else
+                <div class="overflow-x-auto">
+                    <table class="fx-table w-full text-sm">
+                        <thead>
                             <tr>
-                                <td>{{ $entry['date']->format('d/m/Y') }}</td>
-                                <td>
-                                    <span class="inline-flex items-center gap-xxs font-semibold text-mono-900">
-                                        <span class="material-icons-outlined text-base {{ $entry['tone'] === 'up' ? 'text-up' : ($entry['tone'] === 'down' ? 'text-down' : 'text-primary-500') }}">{{ $entry['icon'] }}</span>
-                                        {{ $entry['type'] }}
-                                    </span>
-                                </td>
-                                <td class="text-mono-600">{{ $entry['description'] }}</td>
-                                <td class="text-right font-semibold {{ $entry['tone'] === 'up' ? 'text-up' : ($entry['tone'] === 'down' ? 'text-down' : 'text-mono-900') }}">
-                                    R$ {{ number_format($entry['amount'], 2, ',', '.') }}
-                                </td>
+                                <th class="text-left">Data</th>
+                                <th class="text-left">Tipo de caso</th>
+                                <th class="text-left">Conta</th>
+                                <th class="text-right">Valor</th>
+                                <th class="text-left">Notas</th>
                             </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            @foreach ($allPayments as $payment)
+                                <tr>
+                                    <td>{{ $payment->paid_at->format('d/m/Y') }}</td>
+                                    <td>{{ $payment->commission?->caseType?->name ?? '—' }}</td>
+                                    <td>{{ $payment->bankAccount?->name ?? '—' }}</td>
+                                    <td class="text-right font-semibold text-down">R$ {{ number_format($payment->amount, 2, ',', '.') }}</td>
+                                    <td class="max-w-[200px] truncate text-xxs text-mono-600">{{ $payment->notes ?: '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
         @endif
     </x-fx.card>
 
