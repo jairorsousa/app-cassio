@@ -3,6 +3,7 @@
 namespace Tests\Feature\Brokers;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Events\BrokerCommissionPaid;
@@ -14,6 +15,7 @@ use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 class BrokerOperationsTest extends TestCase
@@ -179,5 +181,33 @@ class BrokerOperationsTest extends TestCase
         $this->assertCount(1, $transactions);
         $this->assertEquals(50.00, (float) $transactions->first()->amount);
         $this->assertEquals($this->account->id, $transactions->first()->bank_account_id);
+    }
+
+    public function test_brokers_index_modal_creates_banking_transaction(): void
+    {
+        $category = Category::create([
+            'name' => 'Comissão',
+            'type' => 'expense',
+        ]);
+
+        Volt::test('brokers.index')
+            ->call('openTransactionModal')
+            ->set('transaction_type', 'expense')
+            ->set('transaction_date', Carbon::today()->toDateString())
+            ->set('transaction_amount', '250.50')
+            ->set('transaction_description', 'Lançamento de corretor')
+            ->set('transaction_category_id', $category->id)
+            ->set('transaction_bank_account_id', $this->account->id)
+            ->set('transaction_status', 'settled')
+            ->call('saveTransaction')
+            ->assertHasNoErrors()
+            ->assertSet('showTransactionModal', false);
+
+        $this->assertDatabaseHas('transactions', [
+            'type' => 'expense',
+            'description' => 'Lançamento de corretor',
+            'category_id' => $category->id,
+            'bank_account_id' => $this->account->id,
+        ]);
     }
 }

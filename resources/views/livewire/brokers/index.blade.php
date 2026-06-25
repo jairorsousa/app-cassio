@@ -1,5 +1,8 @@
 <?php
 
+use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Category;
+use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
@@ -16,6 +19,72 @@ new #[Layout('layouts.app')] class extends Component {
     public string $search = '';
     #[Url]
     public string $status = '';
+
+    public bool $showTransactionModal = false;
+    public string $transaction_type = 'expense';
+    public string $transaction_date = '';
+    public string $transaction_amount = '';
+    public string $transaction_description = '';
+    public ?int $transaction_category_id = null;
+    public ?int $transaction_bank_account_id = null;
+    public string $transaction_status = 'settled';
+    public string $transaction_notes = '';
+
+    public function openTransactionModal(): void
+    {
+        $this->resetTransactionForm();
+        $this->showTransactionModal = true;
+    }
+
+    public function cancelTransactionModal(): void
+    {
+        $this->resetTransactionForm();
+    }
+
+    public function saveTransaction(TransactionService $service): void
+    {
+        $data = $this->validate([
+            'transaction_type' => 'required|in:income,expense',
+            'transaction_date' => 'required|date',
+            'transaction_amount' => 'required|numeric|min:0.01',
+            'transaction_description' => 'required|string|max:200',
+            'transaction_category_id' => 'nullable|exists:categories,id',
+            'transaction_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'transaction_status' => 'required|in:pending,settled',
+            'transaction_notes' => 'nullable|string',
+        ]);
+
+        $service->create([
+            'type' => $data['transaction_type'],
+            'date' => $data['transaction_date'],
+            'amount' => $data['transaction_amount'],
+            'description' => $data['transaction_description'],
+            'notes' => $data['transaction_notes'] ?: null,
+            'status' => $data['transaction_status'],
+            'category_id' => $data['transaction_category_id'],
+            'bank_account_id' => $data['transaction_bank_account_id'],
+        ]);
+
+        $this->resetTransactionForm();
+        session()->flash('status', 'Lançamento criado.');
+    }
+
+    private function resetTransactionForm(): void
+    {
+        $this->reset([
+            'showTransactionModal',
+            'transaction_amount',
+            'transaction_description',
+            'transaction_category_id',
+            'transaction_bank_account_id',
+            'transaction_notes',
+        ]);
+
+        $this->transaction_type = 'expense';
+        $this->transaction_date = now()->format('Y-m-d');
+        $this->transaction_status = 'settled';
+        $this->resetErrorBag();
+    }
 
     public function delete(int $id): void
     {
@@ -48,6 +117,11 @@ new #[Layout('layouts.app')] class extends Component {
 
         return [
             'brokers' => $q->orderBy('name')->paginate(25),
+            'categories' => Category::active()
+                ->where('type', $this->transaction_type)
+                ->orderBy('name')
+                ->get(),
+            'accounts' => BankAccount::active()->orderBy('name')->get(),
             'summary' => [
                 'total_brokers' => Contact::where('type', 'corretor')->count(),
                 'active_brokers' => Contact::where('type', 'corretor')->where('status', true)->count(),
@@ -82,7 +156,10 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <x-fx.button href="{{ route('banking.transactions.create', ['type' => 'expense']) }}" variant="primary" size="sm">+ Novo lançamento</x-fx.button>
+            <button type="button" wire:click="openTransactionModal" class="fx-btn fx-btn--primary fx-btn--sm">
+                <span class="material-icons-outlined text-base">add</span>
+                Novo lançamento
+            </button>
         </div>
     </x-fx.card>
 
@@ -183,4 +260,119 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="mt-md">{{ $brokers->links() }}</div>
         @endif
     </x-fx.card>
+
+    @if ($showTransactionModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelTransactionModal" aria-label="Fechar modal"></button>
+
+            <div class="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <div>
+                        <h3 class="text-lg font-bold text-mono-900">Novo lançamento</h3>
+                    </div>
+
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancelTransactionModal" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="saveTransaction" class="flex min-h-0 flex-1 flex-col">
+                    <div class="flex-1 overflow-y-auto px-6 py-5">
+                        <div class="space-y-8">
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">receipt_long</span>
+                                    <h4 class="text-base font-bold text-mono-900">Identificação</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Tipo</label>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <button
+                                                type="button"
+                                                wire:click="$set('transaction_type', 'expense')"
+                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $transaction_type === 'expense' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                            >
+                                                Despesa
+                                            </button>
+                                            <button
+                                                type="button"
+                                                wire:click="$set('transaction_type', 'income')"
+                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $transaction_type === 'income' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                            >
+                                                Receita
+                                            </button>
+                                        </div>
+                                        @error('transaction_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+
+                                    <x-jr.input label="Data" icon="event" type="date" name="transaction_date" wire:model="transaction_date" />
+                                    <x-jr.input label="Valor" icon="attach_money" type="text" name="transaction_amount" x-money wire:model="transaction_amount" />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">notes</span>
+                                    <h4 class="text-base font-bold text-mono-900">Detalhes</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div class="md:col-span-2">
+                                        <x-jr.input label="Descrição" icon="edit_note" name="transaction_description" wire:model="transaction_description" />
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
+                                        <select wire:model="transaction_category_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="">Sem categoria</option>
+                                            @foreach ($categories as $category)
+                                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('transaction_category_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta bancária</label>
+                                        <select wire:model="transaction_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="">Nenhuma conta</option>
+                                            @foreach ($accounts as $account)
+                                                <option value="{{ $account->id }}">{{ $account->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('transaction_bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Status</label>
+                                        <select wire:model="transaction_status" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="settled">Liquidado</option>
+                                            <option value="pending">Pendente</option>
+                                        </select>
+                                        @error('transaction_status') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+
+                                    <div class="md:col-span-2">
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Observações</label>
+                                        <textarea wire:model="transaction_notes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3"></textarea>
+                                        @error('transaction_notes') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelTransactionModal">Cancelar</button>
+                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            <span class="material-icons-outlined text-[18px]">check</span>
+                            Criar lançamento
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>
