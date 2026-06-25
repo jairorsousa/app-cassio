@@ -70,9 +70,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Financeiro · Lançamentos</x-slot>
+<x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-space-5">
+    <x-banking.subnav />
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif

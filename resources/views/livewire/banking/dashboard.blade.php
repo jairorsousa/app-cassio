@@ -65,9 +65,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Financeiro · Dashboard</x-slot>
+<x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-space-5">
+    <x-banking.subnav />
     <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
         <x-fx.card>
             <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Saldo total</div>

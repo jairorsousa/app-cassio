@@ -60,9 +60,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Financeiro · Fluxo de Caixa</x-slot>
+<x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-banking.subnav />
     <x-fx.card>
         <div class="flex items-end gap-sm">
             <x-fx.input label="Mês de referência" type="month" wire:model.live="month" />

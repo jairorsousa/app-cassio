@@ -84,7 +84,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Financeiro · Cartões de Crédito</x-slot>
+<x-slot name="header">Financeiro</x-slot>
+
+<div class="flex flex-col gap-md">
+    <x-banking.subnav />
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
     <x-fx.card class="lg:col-span-2">
@@ -154,4 +157,5 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </form>
     </x-fx.card>
+</div>
 </div>

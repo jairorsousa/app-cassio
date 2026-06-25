@@ -64,9 +64,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Cartão · {{ $card->name }} · Faturas</x-slot>
+<x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-banking.subnav />
     <x-fx.card>
         @if ($invoices->isEmpty())
             <div class="text-sm text-mono-600">Nenhuma fatura gerada ainda. Lance uma compra no cartão para abrir uma fatura.</div>

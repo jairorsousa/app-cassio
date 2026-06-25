@@ -149,7 +149,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">{{ $transaction ? 'Editar' : 'Novo' }} lançamento</x-slot>
+<x-slot name="header">Financeiro</x-slot>
+
+<div class="flex flex-col gap-space-5">
+    <x-banking.subnav />
 
 <x-fx.card class="max-w-2xl">
     <form wire:submit="save" class="flex flex-col gap-space-4">
@@ -248,3 +251,4 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </form>
 </x-fx.card>
+</div>

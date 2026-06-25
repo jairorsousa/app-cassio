@@ -212,9 +212,10 @@ new #[Layout('layouts.app')] class extends Component {
     }
 }; ?>
 
-<x-slot name="header">Financeiro · Categorias</x-slot>
+<x-slot name="header">Financeiro</x-slot>
 
 <div class="space-y-md">
+    <x-banking.subnav />
     <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
             <h2 class="text-xl font-semibold text-mono-900">Categorias</h2>
