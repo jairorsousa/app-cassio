@@ -861,13 +861,76 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @php
         $hasAnyWrit = collect($stages)->sum('count') > 0;
         $stageMeta = [
-            'negotiation' => ['icon' => 'person_add', 'dot' => 'bg-info', 'tint' => 'bg-info-bg text-info', 'bar' => 'bg-primary-500', 'card_accent' => 'bg-primary-500'],
-            'pending' => ['icon' => 'edit_document', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-mono-400', 'card_accent' => 'bg-mono-400'],
-            'paid' => ['icon' => 'payments', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'bg-success', 'card_accent' => 'bg-success'],
-            'petitioning' => ['icon' => 'gavel', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-info', 'card_accent' => 'bg-info'],
-            'awaiting_receipt' => ['icon' => 'hourglass_top', 'dot' => 'bg-primary-500', 'tint' => 'bg-primary-100 text-primary-500', 'bar' => 'bg-primary-500', 'card_accent' => 'bg-primary-500'],
-            'finalized' => ['icon' => 'emoji_events', 'dot' => 'bg-up', 'tint' => 'bg-up-bg text-up', 'bar' => 'border-t-[3px] border-dashed border-mono-300', 'card_accent' => 'bg-success'],
-            'lost' => ['icon' => 'block', 'dot' => 'bg-down', 'tint' => 'bg-down-bg text-down', 'bar' => 'bg-down', 'card_accent' => 'bg-down'],
+            'negotiation' => [
+                'icon' => 'person_add',
+                'dot' => 'bg-info',
+                'tint' => 'bg-info-bg text-info',
+                'bar' => 'bg-primary-500',
+                'card_accent' => 'bg-primary-500',
+                'column' => 'border-orange-100 bg-orange-50/65 dark:border-orange-900/40 dark:bg-orange-950/25',
+                'count' => 'bg-orange-100 text-orange-700 dark:bg-orange-900/45 dark:text-orange-200',
+                'icon_text' => 'text-orange-500 dark:text-orange-300',
+            ],
+            'pending' => [
+                'icon' => 'edit_document',
+                'dot' => 'bg-primary-500',
+                'tint' => 'bg-primary-100 text-primary-500',
+                'bar' => 'bg-mono-400',
+                'card_accent' => 'bg-mono-400',
+                'column' => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/35',
+                'count' => 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+                'icon_text' => 'text-slate-500 dark:text-slate-300',
+            ],
+            'paid' => [
+                'icon' => 'payments',
+                'dot' => 'bg-up',
+                'tint' => 'bg-up-bg text-up',
+                'bar' => 'bg-success',
+                'card_accent' => 'bg-success',
+                'column' => 'border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/25',
+                'count' => 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/45 dark:text-emerald-200',
+                'icon_text' => 'text-emerald-600 dark:text-emerald-300',
+            ],
+            'petitioning' => [
+                'icon' => 'gavel',
+                'dot' => 'bg-down',
+                'tint' => 'bg-down-bg text-down',
+                'bar' => 'bg-info',
+                'card_accent' => 'bg-info',
+                'column' => 'border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/25',
+                'count' => 'bg-sky-100 text-sky-700 dark:bg-sky-900/45 dark:text-sky-200',
+                'icon_text' => 'text-sky-600 dark:text-sky-300',
+            ],
+            'awaiting_receipt' => [
+                'icon' => 'hourglass_top',
+                'dot' => 'bg-primary-500',
+                'tint' => 'bg-primary-100 text-primary-500',
+                'bar' => 'bg-primary-500',
+                'card_accent' => 'bg-primary-500',
+                'column' => 'border-violet-100 bg-violet-50/65 dark:border-violet-900/40 dark:bg-violet-950/25',
+                'count' => 'bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200',
+                'icon_text' => 'text-violet-600 dark:text-violet-300',
+            ],
+            'finalized' => [
+                'icon' => 'emoji_events',
+                'dot' => 'bg-up',
+                'tint' => 'bg-up-bg text-up',
+                'bar' => 'border-t-[3px] border-dashed border-mono-300',
+                'card_accent' => 'bg-success',
+                'column' => 'border-teal-100 bg-teal-50/70 dark:border-teal-900/40 dark:bg-teal-950/25',
+                'count' => 'bg-teal-100 text-teal-700 dark:bg-teal-900/45 dark:text-teal-200',
+                'icon_text' => 'text-teal-600 dark:text-teal-300',
+            ],
+            'lost' => [
+                'icon' => 'block',
+                'dot' => 'bg-down',
+                'tint' => 'bg-down-bg text-down',
+                'bar' => 'bg-down',
+                'card_accent' => 'bg-down',
+                'column' => 'border-rose-100 bg-rose-50/70 dark:border-rose-900/40 dark:bg-rose-950/25',
+                'count' => 'bg-rose-100 text-rose-700 dark:bg-rose-900/45 dark:text-rose-200',
+                'icon_text' => 'text-rose-600 dark:text-rose-300',
+            ],
         ];
     @endphp
 
@@ -885,17 +948,17 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <div class="grid min-w-[2100px] grid-cols-7 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
-                <section class="flex min-h-[520px] flex-col rounded-2xl border border-mono-100 bg-mono-50" data-stage="{{ $stage['key'] }}">
+                <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
                     <div class="h-1 w-full shrink-0 rounded-t-2xl {{ $meta['bar'] }}"></div>
                     <div class="px-3 py-4">
                         <div class="writ-stage-header mb-4">
                             <div class="writ-stage-title">
-                                <span class="material-icons-outlined text-[18px] text-mono-400">{{ $meta['icon'] }}</span>
+                                <span class="material-icons-outlined text-[18px] {{ $meta['icon_text'] }}">{{ $meta['icon'] }}</span>
                                 <h3 class="text-sm font-bold text-mono-900" title="{{ $stage['label'] }}">{{ $stage['label'] }}</h3>
                             </div>
 
                             <div class="writ-stage-actions">
-                                <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-mono-100 px-1.5 text-[11px] font-bold text-mono-600">{{ $stage['count'] }}</span>
+                                <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold {{ $meta['count'] }}">{{ $stage['count'] }}</span>
                                 <button type="button" wire:click="create('{{ $stage['key'] }}')" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-primary-500" title="Novo requisitório">
                                     <span class="material-icons-outlined text-[20px]">add</span>
                                 </button>
