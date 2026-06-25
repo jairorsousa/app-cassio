@@ -55,6 +55,16 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Tipos de Caso</x-slot>
 
+<div class="flex flex-col gap-md">
+    <a href="{{ route('brokers.index') }}" class="inline-flex w-fit items-center gap-xxs text-sm font-medium text-mono-600 transition-colors hover:text-primary-500">
+        <span class="material-icons-outlined text-base">arrow_back</span>
+        Voltar para corretores
+    </a>
+
+    <x-fx.alert variant="info">
+        Cadastre aqui os tipos de caso usados nas comissões dos corretores — por exemplo: Previdenciário, Trabalhista, Cível ou Requisitório.
+    </x-fx.alert>
+
 <div class="flex flex-col md:flex-row gap-md items-start">
     <div class="w-full md:w-1/3">
         <x-fx.card>
@@ -65,7 +75,7 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
 
             <form wire:submit="save" class="flex flex-col gap-sm">
-                <x-fx.input label="Nome *" wire:model="name" />
+                <x-fx.input label="Nome *" wire:model="name" placeholder="Ex.: Previdenciário" />
                 
                 <label class="flex items-center gap-xxs text-sm">
                     <input type="checkbox" wire:model="status" class="rounded border-mono-300 text-primary-500">
@@ -85,7 +95,11 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="w-full md:w-2/3">
         <x-fx.card>
             @if ($caseTypes->isEmpty())
-                <div class="text-sm text-mono-600">Nenhum tipo de caso cadastrado.</div>
+                <div class="flex flex-col items-center gap-sm py-lg text-center">
+                    <span class="material-icons-outlined text-4xl text-mono-300">folder_open</span>
+                    <div class="text-sm font-medium text-mono-900">Nenhum tipo de caso cadastrado</div>
+                    <div class="max-w-sm text-sm text-mono-600">Use o formulário ao lado para cadastrar o primeiro tipo e liberar o registro de comissões.</div>
+                </div>
             @else
                 <table class="fx-table w-full text-sm">
                     <thead>
@@ -112,4 +126,5 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
         </x-fx.card>
     </div>
+</div>
 </div>

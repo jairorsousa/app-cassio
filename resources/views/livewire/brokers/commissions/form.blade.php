@@ -70,6 +70,12 @@ new #[Layout('layouts.app')] class extends Component {
                             <option value="{{ $ct->id }}">{{ $ct->name }}</option>
                         @endforeach
                     </select>
+                    @if ($caseTypes->isEmpty())
+                        <p class="mt-2 text-xs text-mono-600">
+                            Nenhum tipo de caso cadastrado.
+                            <a href="{{ route('brokers.case-types.index') }}" class="font-semibold text-primary-500 hover:text-primary-600">Cadastrar tipos de caso</a>
+                        </p>
+                    @endif
                 </div>
                 <x-fx.input label="Valor base *" type="text" x-money wire:model="base_amount" />
                 <x-fx.input label="Data de referência *" type="date" wire:model="reference_date" />

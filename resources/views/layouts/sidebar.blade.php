@@ -56,10 +56,28 @@
             Requisitórios
         </a>
 
-        <a href="{{ route('brokers.index') }}" class="{{ $topItem }} {{ request()->routeIs('brokers.*') ? $topActive : $topInactive }}">
-            <span class="material-icons-outlined text-[20px]">groups</span>
-            Corretores
-        </a>
+        <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
+            <button type="button" class="{{ $topItem }} {{ request()->routeIs('brokers.*') ? $topActive : $topInactive }}" @click="open = !open">
+                <span class="material-icons-outlined text-[20px]">groups</span>
+                Corretores
+                <span class="material-icons-outlined text-[18px]">expand_more</span>
+            </button>
+
+            <div x-show="open" x-transition class="absolute left-0 top-12 z-dropdown w-64 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
+                <a href="{{ route('brokers.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.index') || request()->routeIs('brokers.show') || request()->routeIs('brokers.edit') || request()->routeIs('brokers.advances.*') || request()->routeIs('brokers.commissions.*') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
+                    <span class="material-icons-outlined text-[18px] text-mono-400">groups</span>
+                    Corretores
+                </a>
+                <a href="{{ route('brokers.case-types.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.case-types.*') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
+                    <span class="material-icons-outlined text-[18px] text-mono-400">folder_open</span>
+                    Tipos de caso
+                </a>
+                <a href="{{ route('brokers.reports') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.reports') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
+                    <span class="material-icons-outlined text-[18px] text-mono-400">query_stats</span>
+                    Relatórios
+                </a>
+            </div>
+        </div>
 
         <a href="{{ route('broadcasts.index') }}" class="{{ $topItem }} {{ request()->routeIs('broadcasts.*') ? $topActive : $topInactive }}">
             <span class="material-icons-outlined text-[20px]">campaign</span>

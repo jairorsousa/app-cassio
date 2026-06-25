@@ -290,6 +290,10 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
+            <a href="{{ route('brokers.case-types.index') }}" class="fx-btn fx-btn--standard fx-btn--sm">
+                <span class="material-icons-outlined text-base">folder_open</span>
+                Tipos de caso
+            </a>
             <button type="button" wire:click="openLaunchModal" class="fx-btn fx-btn--primary fx-btn--sm">
                 <span class="material-icons-outlined text-base">add</span>
                 Novo lançamento
@@ -480,6 +484,12 @@ new #[Layout('layouts.app')] class extends Component {
                                                 @endforeach
                                             </select>
                                             @error('launch_case_type_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                            @if ($caseTypes->isEmpty())
+                                                <p class="mt-2 text-xs text-mono-600">
+                                                    Nenhum tipo de caso cadastrado.
+                                                    <a href="{{ route('brokers.case-types.index') }}" class="font-semibold text-primary-500 hover:text-primary-600">Cadastrar tipos de caso</a>
+                                                </p>
+                                            @endif
                                         </div>
                                         <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
                                     @endif
