@@ -45,7 +45,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->financialBroker = app(BrokerProfileService::class)->forContact($broker);
 
         if ($this->financialBroker) {
-            $this->financialBroker->load('advances', 'commissions.caseType', 'commissionRules.caseType');
+            $this->financialBroker->load('advances', 'commissions.caseType');
         }
 
         $this->launch_date = now()->format('Y-m-d');
@@ -192,6 +192,7 @@ new #[Layout('layouts.app')] class extends Component {
         ];
         $recentAdvances = collect();
         $recentCommissions = collect();
+        $recentPayments = collect();
 
         $periodStart = $this->start_date ?: null;
         $periodEnd = $this->end_date ?: null;
@@ -214,6 +215,11 @@ new #[Layout('layouts.app')] class extends Component {
             $statementEntries = $statementService->entries($this->financialBroker, $periodStart, $periodEnd)->take(20);
             $recentAdvances = $this->financialBroker->advances()->with('bankAccount')->orderByDesc('date')->limit(5)->get();
             $recentCommissions = $this->financialBroker->commissions()->with('caseType', 'bankAccount', 'settlements', 'payments')->orderByDesc('reference_date')->limit(5)->get();
+            $recentPayments = $this->financialBroker->commissionPayments()
+                ->with('commission.caseType', 'bankAccount')
+                ->orderByDesc('paid_at')
+                ->limit(5)
+                ->get();
             $openCommissions = $this->financialBroker->commissions()
                 ->with('caseType', 'settlements', 'payments')
                 ->orderByDesc('reference_date')
@@ -223,7 +229,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         return [
-            ...compact('advanceBalance', 'commissionSummary', 'recentAdvances', 'recentCommissions'),
+            ...compact('advanceBalance', 'commissionSummary', 'recentAdvances', 'recentCommissions', 'recentPayments'),
             'statementSummary' => $statementSummary,
             'statementEntries' => $statementEntries,
             'openCommissions' => $openCommissions,
@@ -556,32 +562,46 @@ new #[Layout('layouts.app')] class extends Component {
             </x-fx.card>
 
             <x-fx.card>
-                <div class="mb-sm flex items-center gap-xs">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                        <span class="material-icons-outlined text-xl">verified_user</span>
+                <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
+                    <div class="flex items-center gap-xs">
+                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
+                            <span class="material-icons-outlined text-xl">payments</span>
+                        </div>
+                        <h3 class="text-base font-semibold text-mono-900">Últimos Repasses</h3>
                     </div>
-                    <h3 class="text-base font-semibold text-mono-900">Regras de Comissão</h3>
+                    @if ($financialBroker)
+                        <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
+                            Ver comissões
+                            <span class="material-icons-outlined text-base">arrow_forward</span>
+                        </a>
+                    @endif
                 </div>
-                @if (! $financialBroker || $financialBroker->commissionRules->isEmpty())
+                @if ($recentPayments->isEmpty())
                     <div class="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-mono-200 bg-mono-50 px-sm py-lg text-center">
-                        <span class="material-icons-outlined mb-xs text-5xl text-mono-400">description</span>
-                        <div class="text-sm font-medium text-mono-900">Nenhuma regra cadastrada.</div>
+                        <span class="material-icons-outlined mb-xs text-5xl text-mono-400">payments</span>
+                        <div class="text-sm font-medium text-mono-900">Nenhum repasse registrado.</div>
+                        <div class="mt-xxs text-xs text-mono-600">Os repasses em dinheiro ao corretor aparecerão aqui.</div>
                     </div>
                 @else
                     <div class="overflow-x-auto">
                         <table class="fx-table w-full text-sm">
-                            <thead><tr><th class="text-left">Tipo de caso</th><th class="text-right">%</th><th class="text-right">Validade</th></tr></thead>
-                            <tbody>
-                            @foreach ($financialBroker->commissionRules as $rule)
+                            <thead>
                                 <tr>
-                                    <td>{{ $rule->caseType->name }}</td>
-                                    <td class="text-right">{{ number_format($rule->percentage, 1, ',', '.') }}%</td>
-                                    <td class="text-right text-xxs text-mono-600">
-                                        {{ $rule->valid_from->format('d/m/Y') }}
-                                        @if ($rule->valid_to) — {{ $rule->valid_to->format('d/m/Y') }} @else — atual @endif
-                                    </td>
+                                    <th class="text-left">Data</th>
+                                    <th class="text-left">Tipo de caso</th>
+                                    <th class="text-left">Conta</th>
+                                    <th class="text-right">Valor</th>
                                 </tr>
-                            @endforeach
+                            </thead>
+                            <tbody>
+                                @foreach ($recentPayments as $payment)
+                                    <tr>
+                                        <td>{{ $payment->paid_at->format('d/m/Y') }}</td>
+                                        <td>{{ $payment->commission?->caseType?->name ?? '—' }}</td>
+                                        <td>{{ $payment->bankAccount?->name ?? '—' }}</td>
+                                        <td class="text-right font-semibold text-down">R$ {{ number_format($payment->amount, 2, ',', '.') }}</td>
+                                    </tr>
+                                @endforeach
                             </tbody>
                         </table>
                     </div>
