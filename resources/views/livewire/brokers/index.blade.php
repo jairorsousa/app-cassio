@@ -1,7 +1,9 @@
 <?php
 
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Services\BrokerBalanceCalculator;
+use App\Domains\Brokers\Models\BrokerAdvance;
+use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Models\BrokerCommissionSettlement;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -23,6 +25,9 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $totalAdvances = (float) BrokerAdvance::sum('amount');
+        $totalSettledAdvances = (float) BrokerCommissionSettlement::sum('amount_offset');
+
         $q = Broker::query();
         if ($this->search) {
             $q->where(function ($query) {
@@ -36,6 +41,14 @@ new #[Layout('layouts.app')] class extends Component {
 
         return [
             'brokers' => $q->orderBy('name')->paginate(25),
+            'summary' => [
+                'total_brokers' => Broker::count(),
+                'active_brokers' => Broker::where('status', true)->count(),
+                'total_commissions' => (float) BrokerCommission::sum('commission_amount'),
+                'paid_commissions' => (float) BrokerCommission::where('status', 'paid')->sum('commission_amount'),
+                'total_advances' => $totalAdvances,
+                'open_advances' => max($totalAdvances - $totalSettledAdvances, 0),
+            ],
         ];
     }
 }; ?>
@@ -61,6 +74,65 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.button href="{{ route('brokers.create') }}" variant="primary" size="sm">+ Novo corretor</x-fx.button>
         </div>
     </x-fx.card>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-md">
+        <x-fx.card>
+            <div class="flex items-start justify-between gap-xs">
+                <div>
+                    <div class="text-xxs text-mono-600 uppercase">Corretores cadastrados</div>
+                    <div class="mt-xxs text-xl font-bold">{{ number_format($summary['total_brokers'], 0, ',', '.') }}</div>
+                </div>
+                <span class="material-icons-outlined text-primary-500 text-lg">groups</span>
+            </div>
+            <div class="mt-xs text-xs text-mono-600">{{ number_format($summary['active_brokers'], 0, ',', '.') }} ativos</div>
+        </x-fx.card>
+
+        <x-fx.card>
+            <div class="flex items-start justify-between gap-xs">
+                <div>
+                    <div class="text-xxs text-mono-600 uppercase">Comissões cadastradas</div>
+                    <div class="mt-xxs text-xl font-bold">R$ {{ number_format($summary['total_commissions'], 2, ',', '.') }}</div>
+                </div>
+                <span class="material-icons-outlined text-primary-500 text-lg">request_quote</span>
+            </div>
+            <div class="mt-xs text-xs text-mono-600">Total lançado no histórico</div>
+        </x-fx.card>
+
+        <x-fx.card>
+            <div class="flex items-start justify-between gap-xs">
+                <div>
+                    <div class="text-xxs text-mono-600 uppercase">Comissões pagas</div>
+                    <div class="mt-xxs text-xl font-bold text-system-up">R$ {{ number_format($summary['paid_commissions'], 2, ',', '.') }}</div>
+                </div>
+                <span class="material-icons-outlined text-system-up text-lg">paid</span>
+            </div>
+            <div class="mt-xs text-xs text-mono-600">Marcadas como pagas</div>
+        </x-fx.card>
+
+        <x-fx.card>
+            <div class="flex items-start justify-between gap-xs">
+                <div>
+                    <div class="text-xxs text-mono-600 uppercase">Comissão adiantada</div>
+                    <div class="mt-xxs text-xl font-bold">R$ {{ number_format($summary['total_advances'], 2, ',', '.') }}</div>
+                </div>
+                <span class="material-icons-outlined text-primary-500 text-lg">payments</span>
+            </div>
+            <div class="mt-xs text-xs text-mono-600">Total de adiantamentos</div>
+        </x-fx.card>
+
+        <x-fx.card>
+            <div class="flex items-start justify-between gap-xs">
+                <div>
+                    <div class="text-xxs text-mono-600 uppercase">A compensar</div>
+                    <div class="mt-xxs text-xl font-bold {{ $summary['open_advances'] > 0 ? 'text-system-down' : 'text-system-up' }}">
+                        R$ {{ number_format($summary['open_advances'], 2, ',', '.') }}
+                    </div>
+                </div>
+                <span class="material-icons-outlined {{ $summary['open_advances'] > 0 ? 'text-system-down' : 'text-system-up' }} text-lg">account_balance_wallet</span>
+            </div>
+            <div class="mt-xs text-xs text-mono-600">Adiantamentos em aberto</div>
+        </x-fx.card>
+    </div>
 
     <x-fx.card>
         @if ($brokers->isEmpty())
