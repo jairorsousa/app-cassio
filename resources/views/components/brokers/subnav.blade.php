@@ -13,8 +13,8 @@
         Corretores
     </a>
     <a
-        href="{{ route('brokers.case-types.index') }}"
-        class="{{ $tab }} {{ request()->routeIs('brokers.case-types.*') ? $activeTab : $inactiveTab }}"
+        href="{{ route('brokers.tipos-caso.index') }}"
+        class="{{ $tab }} {{ request()->routeIs('brokers.tipos-caso.*') ? $activeTab : $inactiveTab }}"
     >
         <span class="material-icons-outlined text-[18px]">folder_open</span>
         Tipos de caso

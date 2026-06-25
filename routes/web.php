@@ -68,14 +68,15 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('brokers.')->group(function () {
     Volt::route('/', 'brokers.index')->name('index');
     Route::get('/create', fn () => redirect()->route('contacts.create', ['type' => 'corretor']))->name('create');
-    Volt::route('/case-types', 'brokers.case-types.index')->name('case-types.index');
+    Volt::route('/tipos-caso', 'brokers.tipos-caso.index')->name('tipos-caso.index');
+    Route::redirect('/case-types', '/brokers/tipos-caso');
     Volt::route('/reports/overview', 'brokers.reports')->name('reports');
-    Volt::route('/{broker}/edit', 'brokers.form')->name('edit');
-    Volt::route('/{broker}', 'brokers.show')->name('show');
-    Volt::route('/{broker}/advances', 'brokers.advances.index')->name('advances.index');
-    Volt::route('/{broker}/advances/create', 'brokers.advances.form')->name('advances.create');
-    Volt::route('/{broker}/commissions', 'brokers.commissions.index')->name('commissions.index');
-    Volt::route('/{broker}/commissions/register', 'brokers.commissions.form')->name('commissions.create');
+    Volt::route('/{broker}/edit', 'brokers.form')->name('edit')->whereNumber('broker');
+    Volt::route('/{broker}', 'brokers.show')->name('show')->whereNumber('broker');
+    Volt::route('/{broker}/advances', 'brokers.advances.index')->name('advances.index')->whereNumber('broker');
+    Volt::route('/{broker}/advances/create', 'brokers.advances.form')->name('advances.create')->whereNumber('broker');
+    Volt::route('/{broker}/commissions', 'brokers.commissions.index')->name('commissions.index')->whereNumber('broker');
+    Volt::route('/{broker}/commissions/register', 'brokers.commissions.form')->name('commissions.create')->whereNumber('broker');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('contacts')->name('contacts.')->group(function () {

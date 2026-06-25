@@ -73,7 +73,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @if ($caseTypes->isEmpty())
                         <p class="mt-2 text-xs text-mono-600">
                             Nenhum tipo de caso cadastrado.
-                            <a href="{{ route('brokers.case-types.index') }}" class="font-semibold text-primary-500 hover:text-primary-600">Cadastrar tipos de caso</a>
+                            <a href="{{ route('brokers.tipos-caso.index') }}" class="font-semibold text-primary-500 hover:text-primary-600">Cadastrar tipos de caso</a>
                         </p>
                     @endif
                 </div>
