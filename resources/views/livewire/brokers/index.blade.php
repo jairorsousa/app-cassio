@@ -1,9 +1,9 @@
 <?php
 
-use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
+use App\Domains\Contacts\Models\Contact;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -19,8 +19,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Broker::findOrFail($id)->delete();
-        session()->flash('status', 'Corretor removido.');
+        Contact::where('type', 'corretor')->findOrFail($id)->delete();
+        session()->flash('status', 'Contato corretor removido.');
     }
 
     public function with(): array
@@ -28,7 +28,7 @@ new #[Layout('layouts.app')] class extends Component {
         $totalAdvances = (float) BrokerAdvance::sum('amount');
         $totalSettledAdvances = (float) BrokerCommissionSettlement::sum('amount_offset');
 
-        $q = Broker::query();
+        $q = Contact::query()->where('type', 'corretor');
         if ($this->search) {
             $q->where(function ($query) {
                 $query->where('name', 'like', '%'.$this->search.'%')
@@ -42,8 +42,8 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'brokers' => $q->orderBy('name')->paginate(25),
             'summary' => [
-                'total_brokers' => Broker::count(),
-                'active_brokers' => Broker::where('status', true)->count(),
+                'total_brokers' => Contact::where('type', 'corretor')->count(),
+                'active_brokers' => Contact::where('type', 'corretor')->where('status', true)->count(),
                 'total_commissions' => (float) BrokerCommission::sum('commission_amount'),
                 'paid_commissions' => (float) BrokerCommission::where('status', 'paid')->sum('commission_amount'),
                 'total_advances' => $totalAdvances,
@@ -71,7 +71,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <x-fx.button href="{{ route('brokers.create') }}" variant="primary" size="sm">+ Novo corretor</x-fx.button>
+            <x-fx.button href="{{ route('contacts.create', ['type' => 'corretor']) }}" variant="primary" size="sm">+ Novo corretor</x-fx.button>
         </div>
     </x-fx.card>
 
@@ -152,7 +152,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @foreach ($brokers as $broker)
                         <tr>
                             <td>
-                                <a href="{{ route('brokers.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
+                                <a href="{{ route('contacts.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
                             </td>
                             <td>{{ $broker->document ?: '—' }}</td>
                             <td>{{ $broker->phone ?: '—' }}</td>
@@ -161,8 +161,8 @@ new #[Layout('layouts.app')] class extends Component {
                             </td>
                             <td class="text-right">
                                 <div class="flex justify-end gap-xxs">
-                                    <a href="{{ route('brokers.edit', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
-                                    <a href="{{ route('brokers.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Ver</a>
+                                    <a href="{{ route('contacts.edit', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
+                                    <a href="{{ route('contacts.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Ver</a>
                                 </div>
                             </td>
                         </tr>

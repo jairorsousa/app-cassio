@@ -67,7 +67,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('brokers.')->group(function () {
     Volt::route('/', 'brokers.index')->name('index');
-    Volt::route('/create', 'brokers.form')->name('create');
+    Route::get('/create', fn () => redirect()->route('contacts.create', ['type' => 'corretor']))->name('create');
     Volt::route('/{broker}/edit', 'brokers.form')->name('edit');
     Volt::route('/{broker}', 'brokers.show')->name('show');
     Volt::route('/{broker}/advances', 'brokers.advances.index')->name('advances.index');

@@ -10,8 +10,9 @@ class Contact extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'document', 'rg', 'birth_date',
+        'name', 'type', 'document', 'birth_date',
         'phone', 'email', 'address',
+        'zip_code', 'street', 'number', 'complement', 'city', 'state',
         'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key',
         'status', 'notes',
     ];
@@ -24,5 +25,19 @@ class Contact extends Model
     public function scopeActive($query)
     {
         return $query->where('status', true);
+    }
+
+    public function scopeOfType($query, string $type)
+    {
+        return $query->where('type', $type);
+    }
+
+    public function typeLabel(): string
+    {
+        return match ($this->type) {
+            'advogado' => 'Advogado',
+            'corretor' => 'Corretor',
+            default => 'Cedente',
+        };
     }
 }

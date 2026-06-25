@@ -25,8 +25,8 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.card>
             <h3 class="text-md font-semibold mb-sm">Dados Cadastrais</h3>
             <div class="grid grid-cols-2 gap-xs text-sm">
+                <div><span class="text-mono-600">Tipo:</span> {{ $contact->typeLabel() }}</div>
                 <div><span class="text-mono-600">Documento:</span> {{ $contact->document ?: '—' }}</div>
-                <div><span class="text-mono-600">RG:</span> {{ $contact->rg ?: '—' }}</div>
                 <div><span class="text-mono-600">Nascimento:</span> {{ $contact->birth_date?->format('d/m/Y') ?: '—' }}</div>
                 <div>
                     <span class="text-mono-600">Status:</span>
@@ -36,7 +36,15 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div><span class="text-mono-600">Telefone:</span> {{ $contact->phone ?: '—' }}</div>
                 <div><span class="text-mono-600">E-mail:</span> {{ $contact->email ?: '—' }}</div>
-                <div class="col-span-2"><span class="text-mono-600">Endereço:</span> {{ $contact->address ?: '—' }}</div>
+            </div>
+
+            <h3 class="text-md font-semibold mt-md mb-sm">Endereço</h3>
+            <div class="grid grid-cols-2 gap-xs text-sm">
+                <div><span class="text-mono-600">CEP:</span> {{ $contact->zip_code ?: '—' }}</div>
+                <div><span class="text-mono-600">Cidade/UF:</span> {{ $contact->city ? $contact->city.' / '.$contact->state : '—' }}</div>
+                <div class="col-span-2"><span class="text-mono-600">Endereço:</span> {{ $contact->street ?: ($contact->address ?: '—') }}</div>
+                <div><span class="text-mono-600">Número:</span> {{ $contact->number ?: '—' }}</div>
+                <div><span class="text-mono-600">Complemento:</span> {{ $contact->complement ?: '—' }}</div>
             </div>
 
             <h3 class="text-md font-semibold mt-md mb-sm">Dados Bancários</h3>
