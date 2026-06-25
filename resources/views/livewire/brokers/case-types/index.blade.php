@@ -56,10 +56,7 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Tipos de Caso</x-slot>
 
 <div class="flex flex-col gap-md">
-    <a href="{{ route('brokers.index') }}" class="inline-flex w-fit items-center gap-xxs text-sm font-medium text-mono-600 transition-colors hover:text-primary-500">
-        <span class="material-icons-outlined text-base">arrow_back</span>
-        Voltar para corretores
-    </a>
+    <x-brokers.subnav />
 
     <x-fx.alert variant="info">
         Cadastre aqui os tipos de caso usados nas comissões dos corretores — por exemplo: Previdenciário, Trabalhista, Cível ou Requisitório.

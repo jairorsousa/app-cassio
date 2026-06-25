@@ -271,6 +271,8 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Corretores</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-brokers.subnav />
+
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
@@ -290,10 +292,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <a href="{{ route('brokers.case-types.index') }}" class="fx-btn fx-btn--standard fx-btn--sm">
-                <span class="material-icons-outlined text-base">folder_open</span>
-                Tipos de caso
-            </a>
             <button type="button" wire:click="openLaunchModal" class="fx-btn fx-btn--primary fx-btn--sm">
                 <span class="material-icons-outlined text-base">add</span>
                 Novo lançamento

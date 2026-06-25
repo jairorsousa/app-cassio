@@ -66,6 +66,8 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Relatórios de Corretores</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-brokers.subnav />
+
     <x-fx.card>
         <div class="flex gap-sm items-end">
             <div>
