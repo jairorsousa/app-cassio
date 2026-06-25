@@ -42,6 +42,11 @@ class BrokerCommission extends Model
         return $this->hasMany(BrokerCommissionSettlement::class, 'commission_id');
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(BrokerCommissionPayment::class, 'commission_id');
+    }
+
     /**
      * Total já compensado por adiantamentos.
      */
@@ -51,10 +56,18 @@ class BrokerCommission extends Model
     }
 
     /**
+     * Total já repassado em dinheiro ao corretor.
+     */
+    public function paidAmount(): float
+    {
+        return (float) $this->payments()->sum('amount');
+    }
+
+    /**
      * Saldo remanescente da comissão a pagar.
      */
     public function remainingAmount(): float
     {
-        return round((float) $this->commission_amount - $this->settledAmount(), 2);
+        return round(max((float) $this->commission_amount - $this->settledAmount() - $this->paidAmount(), 0), 2);
     }
 }

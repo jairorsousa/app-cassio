@@ -3,7 +3,9 @@
 namespace App\Domains\Brokers\Models;
 
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Contacts\Models\Contact;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -13,7 +15,7 @@ class Broker extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'document', 'rg', 'birth_date',
+        'contact_id', 'name', 'document', 'rg', 'birth_date',
         'phone', 'email', 'address',
         'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key',
         'status', 'notes',
@@ -23,6 +25,11 @@ class Broker extends Model
         'birth_date' => 'date',
         'status' => 'boolean',
     ];
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
+    }
 
     public function advances(): HasMany
     {
@@ -37,6 +44,11 @@ class Broker extends Model
     public function commissions(): HasMany
     {
         return $this->hasMany(BrokerCommission::class);
+    }
+
+    public function commissionPayments(): HasMany
+    {
+        return $this->hasMany(BrokerCommissionPayment::class);
     }
 
     public function transactions(): MorphMany

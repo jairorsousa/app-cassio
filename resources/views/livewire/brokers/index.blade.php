@@ -1,12 +1,16 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Banking\Models\Category;
-use App\Domains\Banking\Services\TransactionService;
+use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
+use App\Domains\Brokers\Models\CaseType;
+use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Domains\Brokers\Services\BrokerProfileService;
 use App\Domains\Contacts\Models\Contact;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -20,69 +24,155 @@ new #[Layout('layouts.app')] class extends Component {
     #[Url]
     public string $status = '';
 
-    public bool $showTransactionModal = false;
-    public string $transaction_type = 'expense';
-    public string $transaction_date = '';
-    public string $transaction_amount = '';
-    public string $transaction_description = '';
-    public ?int $transaction_category_id = null;
-    public ?int $transaction_bank_account_id = null;
-    public string $transaction_status = 'settled';
-    public string $transaction_notes = '';
+    public bool $showLaunchModal = false;
+    public string $launch_type = 'advance';
+    public ?int $launch_contact_id = null;
+    public string $launch_date = '';
+    public string $launch_amount = '';
+    public string $launch_base_amount = '';
+    public ?int $launch_case_type_id = null;
+    public ?int $launch_commission_id = null;
+    public string $launch_payment_method = 'PIX';
+    public ?int $launch_bank_account_id = null;
+    public string $launch_notes = '';
 
-    public function openTransactionModal(): void
+    public function openLaunchModal(?int $contactId = null, string $type = 'advance'): void
     {
-        $this->resetTransactionForm();
-        $this->showTransactionModal = true;
+        $this->resetLaunchForm();
+        $this->launch_contact_id = $contactId;
+        $this->launch_type = $type;
+        $this->showLaunchModal = true;
     }
 
-    public function cancelTransactionModal(): void
+    public function cancelLaunchModal(): void
     {
-        $this->resetTransactionForm();
+        $this->resetLaunchForm();
     }
 
-    public function saveTransaction(TransactionService $service): void
+    public function updatedLaunchContactId(): void
     {
-        $data = $this->validate([
-            'transaction_type' => 'required|in:income,expense',
-            'transaction_date' => 'required|date',
-            'transaction_amount' => 'required|numeric|min:0.01',
-            'transaction_description' => 'required|string|max:200',
-            'transaction_category_id' => 'nullable|exists:categories,id',
-            'transaction_bank_account_id' => 'nullable|exists:bank_accounts,id',
-            'transaction_status' => 'required|in:pending,settled',
-            'transaction_notes' => 'nullable|string',
-        ]);
-
-        $service->create([
-            'type' => $data['transaction_type'],
-            'date' => $data['transaction_date'],
-            'amount' => $data['transaction_amount'],
-            'description' => $data['transaction_description'],
-            'notes' => $data['transaction_notes'] ?: null,
-            'status' => $data['transaction_status'],
-            'category_id' => $data['transaction_category_id'],
-            'bank_account_id' => $data['transaction_bank_account_id'],
-        ]);
-
-        $this->resetTransactionForm();
-        session()->flash('status', 'Lançamento criado.');
+        $this->launch_commission_id = null;
     }
 
-    private function resetTransactionForm(): void
+    public function updatedLaunchType(): void
+    {
+        $this->launch_commission_id = null;
+        $this->resetErrorBag();
+    }
+
+    public function saveLaunch(BrokerProfileService $profiles, BrokerCommissionService $commissions): void
+    {
+        $this->normalizeLaunchAmounts();
+
+        $rules = [
+            'launch_type' => 'required|in:advance,commission,payment',
+            'launch_contact_id' => [
+                'required',
+                Rule::exists('contacts', 'id')->where(fn ($query) => $query->where('type', 'corretor')),
+            ],
+            'launch_date' => 'required|date',
+            'launch_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'launch_notes' => 'nullable|string',
+        ];
+
+        if ($this->launch_type === 'advance') {
+            $rules += [
+                'launch_amount' => 'required|numeric|min:0.01',
+                'launch_payment_method' => 'nullable|string|max:50',
+            ];
+        }
+
+        if ($this->launch_type === 'commission') {
+            $rules += [
+                'launch_case_type_id' => 'required|exists:case_types,id',
+                'launch_amount' => 'required|numeric|min:0.01',
+            ];
+        }
+
+        if ($this->launch_type === 'payment') {
+            $rules += [
+                'launch_commission_id' => 'required|exists:broker_commissions,id',
+                'launch_amount' => 'required|numeric|min:0.01',
+            ];
+        }
+
+        $data = $this->validate($rules);
+        $contact = Contact::where('type', 'corretor')->findOrFail($data['launch_contact_id']);
+
+        try {
+            $financialBroker = $profiles->forContact($contact);
+
+            if ($data['launch_type'] === 'advance') {
+                $advance = BrokerAdvance::create([
+                    'broker_id' => $financialBroker->id,
+                    'date' => $data['launch_date'],
+                    'amount' => $data['launch_amount'],
+                    'payment_method' => $data['launch_payment_method'] ?: null,
+                    'bank_account_id' => $data['launch_bank_account_id'] ?? null,
+                    'notes' => $data['launch_notes'] ?: null,
+                ]);
+
+                BrokerAdvancePaid::dispatch($advance->load('broker'));
+                session()->flash('status', 'Adiantamento registrado.');
+            }
+
+            if ($data['launch_type'] === 'commission') {
+                $commission = $commissions->registerFixedAmount([
+                    'broker_id' => $financialBroker->id,
+                    'case_type_id' => $data['launch_case_type_id'],
+                    'commission_amount' => $data['launch_amount'],
+                    'reference_date' => $data['launch_date'],
+                    'bank_account_id' => $data['launch_bank_account_id'] ?? null,
+                    'notes' => $data['launch_notes'] ?: null,
+                ]);
+
+                $settled = $commissions->settleWithAdvances($commission);
+                $message = 'Comissão registrada.';
+
+                if ($settled > 0) {
+                    $message .= ' Compensado R$ '.number_format($settled, 2, ',', '.').' em adiantamentos.';
+                }
+
+                session()->flash('status', $message);
+            }
+
+            if ($data['launch_type'] === 'payment') {
+                $commission = BrokerCommission::where('broker_id', $financialBroker->id)
+                    ->findOrFail($data['launch_commission_id']);
+
+                $commissions->payAmount(
+                    $commission,
+                    (float) $data['launch_amount'],
+                    $data['launch_date'],
+                    $data['launch_bank_account_id'] ?? null,
+                    $data['launch_notes'] ?: null,
+                );
+
+                session()->flash('status', 'Repasse registrado.');
+            }
+
+            $this->resetLaunchForm();
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    private function resetLaunchForm(): void
     {
         $this->reset([
-            'showTransactionModal',
-            'transaction_amount',
-            'transaction_description',
-            'transaction_category_id',
-            'transaction_bank_account_id',
-            'transaction_notes',
+            'showLaunchModal',
+            'launch_contact_id',
+            'launch_amount',
+            'launch_base_amount',
+            'launch_case_type_id',
+            'launch_commission_id',
+            'launch_bank_account_id',
+            'launch_notes',
         ]);
 
-        $this->transaction_type = 'expense';
-        $this->transaction_date = now()->format('Y-m-d');
-        $this->transaction_status = 'settled';
+        $this->launch_type = 'advance';
+        $this->launch_date = now()->format('Y-m-d');
+        $this->launch_payment_method = 'PIX';
         $this->resetErrorBag();
     }
 
@@ -99,10 +189,13 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Contato corretor removido.');
     }
 
-    public function with(): array
+    public function with(BrokerProfileService $profiles): array
     {
         $totalAdvances = (float) BrokerAdvance::sum('amount');
         $totalSettledAdvances = (float) BrokerCommissionSettlement::sum('amount_offset');
+        $totalCommissions = (float) BrokerCommission::sum('commission_amount');
+        $totalRepassed = (float) BrokerCommissionPayment::sum('amount');
+        $commissionPending = max($totalCommissions - $totalSettledAdvances - $totalRepassed, 0);
 
         $q = Contact::query()->where('type', 'corretor');
         if ($this->search) {
@@ -115,22 +208,63 @@ new #[Layout('layouts.app')] class extends Component {
             $q->where('status', $this->status === '1');
         }
 
+        $selectedContact = $this->launch_contact_id
+            ? Contact::where('type', 'corretor')->find($this->launch_contact_id)
+            : null;
+        $selectedFinancialBroker = $selectedContact ? $profiles->findForContact($selectedContact) : null;
+        $openCommissions = collect();
+
+        if ($selectedFinancialBroker) {
+            $openCommissions = $selectedFinancialBroker->commissions()
+                ->with('caseType', 'settlements', 'payments')
+                ->orderByDesc('reference_date')
+                ->get()
+                ->filter(fn (BrokerCommission $commission) => $commission->remainingAmount() > 0)
+                ->values();
+        }
+
         return [
             'brokers' => $q->orderBy('name')->paginate(25),
-            'categories' => Category::active()
-                ->where('type', $this->transaction_type)
-                ->orderBy('name')
-                ->get(),
+            'brokerOptions' => Contact::where('type', 'corretor')->orderBy('name')->get(['id', 'name', 'document']),
+            'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'openCommissions' => $openCommissions,
             'summary' => [
                 'total_brokers' => Contact::where('type', 'corretor')->count(),
                 'active_brokers' => Contact::where('type', 'corretor')->where('status', true)->count(),
-                'total_commissions' => (float) BrokerCommission::sum('commission_amount'),
-                'paid_commissions' => (float) BrokerCommission::where('status', 'paid')->sum('commission_amount'),
+                'total_commissions' => $totalCommissions,
+                'repassed_commissions' => $totalRepassed,
+                'commission_pending' => $commissionPending,
                 'total_advances' => $totalAdvances,
                 'open_advances' => max($totalAdvances - $totalSettledAdvances, 0),
             ],
         ];
+    }
+
+    private function normalizeLaunchAmounts(): void
+    {
+        $this->launch_amount = $this->normalizeMoney($this->launch_amount);
+        $this->launch_base_amount = $this->normalizeMoney($this->launch_base_amount);
+    }
+
+    private function normalizeMoney(string $value): string
+    {
+        $value = trim($value);
+
+        if ($value === '') {
+            return $value;
+        }
+
+        $value = preg_replace('/[^\d,.-]/', '', $value) ?: '';
+
+        if (str_contains($value, ',') && str_contains($value, '.')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        } elseif (str_contains($value, ',')) {
+            $value = str_replace(',', '.', $value);
+        }
+
+        return (string) (float) $value;
     }
 }; ?>
 
@@ -156,7 +290,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <button type="button" wire:click="openTransactionModal" class="fx-btn fx-btn--primary fx-btn--sm">
+            <button type="button" wire:click="openLaunchModal" class="fx-btn fx-btn--primary fx-btn--sm">
                 <span class="material-icons-outlined text-base">add</span>
                 Novo lançamento
             </button>
@@ -189,12 +323,12 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.card>
             <div class="flex items-start justify-between gap-xs">
                 <div>
-                    <div class="text-xxs text-mono-600 uppercase">Comissões pagas</div>
-                    <div class="mt-xxs text-xl font-bold text-system-up">R$ {{ number_format($summary['paid_commissions'], 2, ',', '.') }}</div>
+                    <div class="text-xxs text-mono-600 uppercase">Repassado</div>
+                    <div class="mt-xxs text-xl font-bold text-system-up">R$ {{ number_format($summary['repassed_commissions'], 2, ',', '.') }}</div>
                 </div>
                 <span class="material-icons-outlined text-system-up text-lg">paid</span>
             </div>
-            <div class="mt-xs text-xs text-mono-600">Marcadas como pagas</div>
+            <div class="mt-xs text-xs text-mono-600">Dinheiro pago ao corretor</div>
         </x-fx.card>
 
         <x-fx.card>
@@ -211,14 +345,14 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.card>
             <div class="flex items-start justify-between gap-xs">
                 <div>
-                    <div class="text-xxs text-mono-600 uppercase">A compensar</div>
-                    <div class="mt-xxs text-xl font-bold {{ $summary['open_advances'] > 0 ? 'text-system-down' : 'text-system-up' }}">
-                        R$ {{ number_format($summary['open_advances'], 2, ',', '.') }}
+                    <div class="text-xxs text-mono-600 uppercase">Saldo a pagar</div>
+                    <div class="mt-xxs text-xl font-bold {{ $summary['commission_pending'] > 0 ? 'text-system-down' : 'text-system-up' }}">
+                        R$ {{ number_format($summary['commission_pending'], 2, ',', '.') }}
                     </div>
                 </div>
-                <span class="material-icons-outlined {{ $summary['open_advances'] > 0 ? 'text-system-down' : 'text-system-up' }} text-lg">account_balance_wallet</span>
+                <span class="material-icons-outlined {{ $summary['commission_pending'] > 0 ? 'text-system-down' : 'text-system-up' }} text-lg">balance</span>
             </div>
-            <div class="mt-xs text-xs text-mono-600">Adiantamentos em aberto</div>
+            <div class="mt-xs text-xs text-mono-600">Comissões ainda abertas</div>
         </x-fx.card>
     </div>
 
@@ -261,9 +395,9 @@ new #[Layout('layouts.app')] class extends Component {
         @endif
     </x-fx.card>
 
-    @if ($showTransactionModal)
+    @if ($showLaunchModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
-            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelTransactionModal" aria-label="Fechar modal"></button>
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelLaunchModal" aria-label="Fechar modal"></button>
 
             <div class="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
                 <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
@@ -271,12 +405,12 @@ new #[Layout('layouts.app')] class extends Component {
                         <h3 class="text-lg font-bold text-mono-900">Novo lançamento</h3>
                     </div>
 
-                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancelTransactionModal" aria-label="Fechar">
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancelLaunchModal" aria-label="Fechar">
                         <span class="material-icons-outlined text-[22px]">close</span>
                     </button>
                 </div>
 
-                <form wire:submit="saveTransaction" class="flex min-h-0 flex-1 flex-col">
+                <form wire:submit="saveLaunch" class="flex min-h-0 flex-1 flex-col">
                     <div class="flex-1 overflow-y-auto px-6 py-5">
                         <div class="space-y-8">
                             <section>
@@ -286,29 +420,46 @@ new #[Layout('layouts.app')] class extends Component {
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Tipo</label>
-                                        <div class="grid grid-cols-2 gap-3">
+                                    <div class="md:col-span-3">
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Movimento</label>
+                                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                             <button
                                                 type="button"
-                                                wire:click="$set('transaction_type', 'expense')"
-                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $transaction_type === 'expense' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                                wire:click="$set('launch_type', 'advance')"
+                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'advance' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
                                             >
-                                                Despesa
+                                                Adiantamento
                                             </button>
                                             <button
                                                 type="button"
-                                                wire:click="$set('transaction_type', 'income')"
-                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $transaction_type === 'income' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                                wire:click="$set('launch_type', 'commission')"
+                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'commission' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
                                             >
-                                                Receita
+                                                Comissão
+                                            </button>
+                                            <button
+                                                type="button"
+                                                wire:click="$set('launch_type', 'payment')"
+                                                class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'payment' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}"
+                                            >
+                                                Repasse
                                             </button>
                                         </div>
-                                        @error('transaction_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @error('launch_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
 
-                                    <x-jr.input label="Data" icon="event" type="date" name="transaction_date" wire:model="transaction_date" />
-                                    <x-jr.input label="Valor" icon="attach_money" type="text" name="transaction_amount" x-money wire:model="transaction_amount" />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Corretor</label>
+                                        <select wire:model.live="launch_contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                            <option value="">Selecione</option>
+                                            @foreach ($brokerOptions as $option)
+                                                <option value="{{ $option->id }}">{{ $option->name }}{{ $option->document ? ' · '.$option->document : '' }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('launch_contact_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+
+                                    <x-jr.input label="Data" icon="event" type="date" name="launch_date" wire:model="launch_date" />
                                 </div>
                             </section>
 
@@ -319,45 +470,69 @@ new #[Layout('layouts.app')] class extends Component {
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <div class="md:col-span-2">
-                                        <x-jr.input label="Descrição" icon="edit_note" name="transaction_description" wire:model="transaction_description" />
-                                    </div>
+                                    @if ($launch_type === 'commission')
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Tipo de caso</label>
+                                            <select wire:model="launch_case_type_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                <option value="">Selecione</option>
+                                                @foreach ($caseTypes as $caseType)
+                                                    <option value="{{ $caseType->id }}">{{ $caseType->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            @error('launch_case_type_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+                                        <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
+                                    @endif
 
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
-                                        <select wire:model="transaction_category_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
-                                            <option value="">Sem categoria</option>
-                                            @foreach ($categories as $category)
-                                                <option value="{{ $category->id }}">{{ $category->name }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('transaction_category_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
+                                    @if ($launch_type === 'advance')
+                                        <x-jr.input label="Valor adiantado" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Forma de pagamento</label>
+                                            <select wire:model="launch_payment_method" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                <option value="PIX">PIX</option>
+                                                <option value="TED">TED</option>
+                                                <option value="Dinheiro">Dinheiro</option>
+                                                <option value="Cheque">Cheque</option>
+                                                <option value="Outro">Outro</option>
+                                            </select>
+                                            @error('launch_payment_method') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+                                    @endif
+
+                                    @if ($launch_type === 'payment')
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Comissão em aberto</label>
+                                            <select wire:model="launch_commission_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                <option value="">Selecione</option>
+                                                @foreach ($openCommissions as $commission)
+                                                    <option value="{{ $commission->id }}">
+                                                        {{ $commission->reference_date->format('d/m/Y') }} · {{ $commission->caseType->name }} · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            @error('launch_commission_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                            @if ($launch_contact_id && $openCommissions->isEmpty())
+                                                <p class="mt-2 text-xs text-mono-600">Nenhuma comissão com saldo a pagar para este corretor.</p>
+                                            @endif
+                                        </div>
+                                        <x-jr.input label="Valor repassado" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
+                                    @endif
 
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Conta bancária</label>
-                                        <select wire:model="transaction_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                        <select wire:model="launch_bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
                                             <option value="">Nenhuma conta</option>
                                             @foreach ($accounts as $account)
                                                 <option value="{{ $account->id }}">{{ $account->name }}</option>
                                             @endforeach
                                         </select>
-                                        @error('transaction_bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
-
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Status</label>
-                                        <select wire:model="transaction_status" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
-                                            <option value="settled">Liquidado</option>
-                                            <option value="pending">Pendente</option>
-                                        </select>
-                                        @error('transaction_status') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @error('launch_bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
 
                                     <div class="md:col-span-2">
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Observações</label>
-                                        <textarea wire:model="transaction_notes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3"></textarea>
-                                        @error('transaction_notes') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        <textarea wire:model="launch_notes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3"></textarea>
+                                        @error('launch_notes') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
                                 </div>
                             </section>
@@ -365,10 +540,10 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
 
                     <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
-                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelTransactionModal">Cancelar</button>
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelLaunchModal">Cancelar</button>
                         <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
                             <span class="material-icons-outlined text-[18px]">check</span>
-                            Criar lançamento
+                            Salvar lançamento
                         </button>
                     </div>
                 </form>

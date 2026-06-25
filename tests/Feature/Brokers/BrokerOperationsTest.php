@@ -3,16 +3,16 @@
 namespace Tests\Feature\Brokers;
 
 use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Events\BrokerAdvancePaid;
-use App\Domains\Brokers\Events\BrokerCommissionPaid;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionRule;
 use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Domains\Contacts\Models\Contact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Livewire\Volt\Volt;
@@ -181,33 +181,111 @@ class BrokerOperationsTest extends TestCase
         $this->assertCount(1, $transactions);
         $this->assertEquals(50.00, (float) $transactions->first()->amount);
         $this->assertEquals($this->account->id, $transactions->first()->bank_account_id);
+        $this->assertEquals('paid', $commission->fresh()->status);
     }
 
-    public function test_brokers_index_modal_creates_banking_transaction(): void
+    public function test_partial_commission_payment_keeps_remaining_balance(): void
     {
-        $category = Category::create([
-            'name' => 'Comissão',
+        BrokerAdvance::create([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 300.00,
+        ]);
+
+        BrokerCommissionRule::create([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'percentage' => 100.000,
+            'valid_from' => Carbon::today()->subMonth()->toDateString(),
+        ]);
+
+        $service = app(BrokerCommissionService::class);
+        $commission = $service->register([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'base_amount' => 1000.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+
+        $this->assertEquals(300.00, $service->settleWithAdvances($commission));
+
+        $payment = $service->payAmount(
+            $commission->fresh(),
+            350.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+            'Repasse parcial',
+        );
+
+        $this->assertInstanceOf(BrokerCommissionPayment::class, $payment);
+        $this->assertEquals(350.00, (float) $payment->amount);
+        $this->assertEquals(350.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('partially_paid', $commission->fresh()->status);
+
+        $this->assertDatabaseHas('transactions', [
+            'source_type' => Broker::class,
+            'source_id' => $this->broker->id,
             'type' => 'expense',
+            'amount' => 350.00,
+        ]);
+    }
+
+    public function test_fixed_commission_offsets_existing_advance(): void
+    {
+        BrokerAdvance::create([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 300.00,
+        ]);
+
+        $service = app(BrokerCommissionService::class);
+        $commission = $service->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 1000.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+
+        $settled = $service->settleWithAdvances($commission);
+
+        $this->assertEquals(300.00, $settled);
+        $this->assertEquals(700.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('partially_paid', $commission->fresh()->status);
+    }
+
+    public function test_brokers_index_modal_creates_broker_advance_for_contact(): void
+    {
+        $contact = Contact::create([
+            'name' => 'Maria Corretora',
+            'type' => 'corretor',
+            'document' => '12345678900',
+            'status' => true,
         ]);
 
         Volt::test('brokers.index')
-            ->call('openTransactionModal')
-            ->set('transaction_type', 'expense')
-            ->set('transaction_date', Carbon::today()->toDateString())
-            ->set('transaction_amount', '250.50')
-            ->set('transaction_description', 'Lançamento de corretor')
-            ->set('transaction_category_id', $category->id)
-            ->set('transaction_bank_account_id', $this->account->id)
-            ->set('transaction_status', 'settled')
-            ->call('saveTransaction')
+            ->call('openLaunchModal')
+            ->set('launch_contact_id', $contact->id)
+            ->set('launch_type', 'advance')
+            ->set('launch_date', Carbon::today()->toDateString())
+            ->set('launch_amount', '250.50')
+            ->set('launch_bank_account_id', $this->account->id)
+            ->call('saveLaunch')
             ->assertHasNoErrors()
-            ->assertSet('showTransactionModal', false);
+            ->assertSet('showLaunchModal', false);
+
+        $financialBroker = Broker::where('contact_id', $contact->id)->firstOrFail();
+
+        $this->assertDatabaseHas('broker_advances', [
+            'broker_id' => $financialBroker->id,
+            'amount' => 250.50,
+        ]);
 
         $this->assertDatabaseHas('transactions', [
             'type' => 'expense',
-            'description' => 'Lançamento de corretor',
-            'category_id' => $category->id,
+            'source_type' => Broker::class,
+            'source_id' => $financialBroker->id,
             'bank_account_id' => $this->account->id,
+            'amount' => 250.50,
         ]);
     }
 }

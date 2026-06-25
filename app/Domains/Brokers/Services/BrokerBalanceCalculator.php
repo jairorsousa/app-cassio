@@ -43,11 +43,11 @@ class BrokerBalanceCalculator
      */
     public function commissionsForBroker(Broker $broker): array
     {
-        $commissions = $broker->commissions;
+        $commissions = $broker->commissions()->with('payments', 'settlements')->get();
 
         $total = (float) $commissions->sum('commission_amount');
-        $pending = (float) $commissions->where('status', 'pending')->sum('commission_amount');
-        $paid = (float) $commissions->whereIn('status', ['paid', 'partially_paid'])->sum('commission_amount');
+        $pending = (float) $commissions->sum(fn ($commission) => $commission->remainingAmount());
+        $paid = (float) $commissions->sum(fn ($commission) => $commission->paidAmount());
 
         return [
             'total_commissions' => round($total, 2),
