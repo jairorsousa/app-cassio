@@ -2,23 +2,50 @@
 
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Services\BrokerBalanceCalculator;
+use App\Domains\Contacts\Models\Contact;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
-    public Broker $broker;
+    public Contact $broker;
+    public ?Broker $financialBroker = null;
 
-    public function mount(Broker $broker): void
+    public function mount(Contact $broker): void
     {
-        $this->broker = $broker->load('advances', 'commissions.caseType', 'commissionRules.caseType');
+        abort_unless($broker->type === 'corretor', 404);
+
+        $this->broker = $broker;
+        $this->financialBroker = Broker::query()
+            ->when($broker->document, fn ($query) => $query->where('document', $broker->document))
+            ->orWhere('name', $broker->name)
+            ->first();
+
+        if ($this->financialBroker) {
+            $this->financialBroker->load('advances', 'commissions.caseType', 'commissionRules.caseType');
+        }
     }
 
     public function with(BrokerBalanceCalculator $calc): array
     {
-        $advanceBalance = $calc->forBroker($this->broker);
-        $commissionSummary = $calc->commissionsForBroker($this->broker);
-        $recentAdvances = $this->broker->advances()->with('bankAccount')->orderByDesc('date')->limit(5)->get();
-        $recentCommissions = $this->broker->commissions()->with('caseType', 'bankAccount')->orderByDesc('reference_date')->limit(5)->get();
+        $advanceBalance = [
+            'total_advanced' => 0.0,
+            'total_settled' => 0.0,
+            'balance' => 0.0,
+        ];
+        $commissionSummary = [
+            'total_commissions' => 0.0,
+            'total_pending' => 0.0,
+            'total_paid' => 0.0,
+        ];
+        $recentAdvances = collect();
+        $recentCommissions = collect();
+
+        if ($this->financialBroker) {
+            $advanceBalance = $calc->forBroker($this->financialBroker);
+            $commissionSummary = $calc->commissionsForBroker($this->financialBroker);
+            $recentAdvances = $this->financialBroker->advances()->with('bankAccount')->orderByDesc('date')->limit(5)->get();
+            $recentCommissions = $this->financialBroker->commissions()->with('caseType', 'bankAccount')->orderByDesc('reference_date')->limit(5)->get();
+        }
 
         return compact('advanceBalance', 'commissionSummary', 'recentAdvances', 'recentCommissions');
     }
@@ -30,6 +57,12 @@ new #[Layout('layouts.app')] class extends Component {
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
+
+    @php
+        $phoneList = array_values(array_filter($broker->phones ?: [$broker->phone]));
+        $emailList = array_values(array_filter($broker->emails ?: [$broker->email]));
+        $cityState = $broker->city ? trim($broker->city.' / '.$broker->state) : '—';
+    @endphp
 
     <a href="{{ route('brokers.index') }}" class="inline-flex w-fit items-center gap-xxs text-sm font-medium text-mono-600 transition-colors hover:text-primary-500">
         <span class="material-icons-outlined text-base">arrow_back</span>
@@ -55,7 +88,7 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             <div class="flex flex-wrap gap-xs">
-                <a href="{{ route('brokers.edit', $broker) }}" class="fx-btn fx-btn--standard fx-btn--sm">
+                <a href="{{ route('contacts.edit', $broker) }}" class="fx-btn fx-btn--standard fx-btn--sm">
                     <span class="material-icons-outlined text-base">edit</span>
                     Editar
                 </a>
@@ -131,11 +164,6 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->document ?: '—' }}</span>
                 </div>
                 <div class="flex items-center gap-xs">
-                    <span class="material-icons-outlined text-lg text-mono-400">credit_card</span>
-                    <span class="min-w-24 text-mono-600">RG</span>
-                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->rg ?: '—' }}</span>
-                </div>
-                <div class="flex items-center gap-xs">
                     <span class="material-icons-outlined text-lg text-mono-400">calendar_month</span>
                     <span class="min-w-24 text-mono-600">Nascimento</span>
                     <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->birth_date?->format('d/m/Y') ?: '—' }}</span>
@@ -150,18 +178,23 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div class="flex items-center gap-xs">
                     <span class="material-icons-outlined text-lg text-mono-400">call</span>
-                    <span class="min-w-24 text-mono-600">Telefone</span>
-                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->phone ?: '—' }}</span>
+                    <span class="min-w-24 text-mono-600">Telefones</span>
+                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $phoneList ? implode(' / ', $phoneList) : '—' }}</span>
                 </div>
                 <div class="flex items-center gap-xs">
                     <span class="material-icons-outlined text-lg text-mono-400">mail</span>
-                    <span class="min-w-24 text-mono-600">E-mail</span>
-                    <span class="min-w-0 truncate font-medium text-mono-900">{{ $broker->email ?: '—' }}</span>
+                    <span class="min-w-24 text-mono-600">E-mails</span>
+                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $emailList ? implode(' / ', $emailList) : '—' }}</span>
+                </div>
+                <div class="flex items-center gap-xs">
+                    <span class="material-icons-outlined text-lg text-mono-400">location_city</span>
+                    <span class="min-w-24 text-mono-600">Cidade/UF</span>
+                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $cityState }}</span>
                 </div>
                 <div class="flex items-center gap-xs sm:col-span-2">
                     <span class="material-icons-outlined text-lg text-mono-400">location_on</span>
                     <span class="min-w-24 text-mono-600">Endereço</span>
-                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->address ?: '—' }}</span>
+                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->street ?: ($broker->address ?: '—') }}{{ $broker->number ? ', '.$broker->number : '' }}{{ $broker->complement ? ' - '.$broker->complement : '' }}</span>
                 </div>
             </div>
 
@@ -194,7 +227,12 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="min-w-24 text-mono-600">Tipo</span>
                     <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->bank_account_type ?: '—' }}</span>
                 </div>
-                <div class="flex items-center gap-xs sm:col-span-2">
+                <div class="flex items-center gap-xs">
+                    <span class="material-icons-outlined text-lg text-mono-400">key</span>
+                    <span class="min-w-24 text-mono-600">Tipo PIX</span>
+                    <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->pixKeyTypeLabel() }}</span>
+                </div>
+                <div class="flex items-center gap-xs">
                     <span class="material-icons-outlined text-lg text-mono-400">pix</span>
                     <span class="min-w-24 text-mono-600">PIX</span>
                     <span class="min-w-0 break-words font-medium text-mono-900">{{ $broker->pix_key ?: '—' }}</span>
@@ -222,22 +260,32 @@ new #[Layout('layouts.app')] class extends Component {
                     <h3 class="text-base font-semibold text-mono-900">Ações</h3>
                 </div>
                 <div class="flex flex-col gap-xs">
-                    <a href="{{ route('brokers.advances.create', $broker) }}" class="fx-btn fx-btn--primary fx-btn--sm w-full gap-xs text-center">
-                        <span class="material-icons-outlined text-base">add</span>
-                        Novo adiantamento
-                    </a>
-                    <a href="{{ route('brokers.commissions.create', $broker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full gap-xs border-primary-500 text-primary-500 hover:bg-primary-100">
-                        <span class="material-icons-outlined text-base">add</span>
-                        Registrar comissão
-                    </a>
-                    <a href="{{ route('brokers.advances.index', $broker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
-                        <span>Ver adiantamentos</span>
-                        <span class="material-icons-outlined text-base">chevron_right</span>
-                    </a>
-                    <a href="{{ route('brokers.commissions.index', $broker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
-                        <span>Ver comissões</span>
-                        <span class="material-icons-outlined text-base">chevron_right</span>
-                    </a>
+                    @if ($financialBroker)
+                        <a href="{{ route('brokers.advances.create', $financialBroker) }}" class="fx-btn fx-btn--primary fx-btn--sm w-full gap-xs text-center">
+                            <span class="material-icons-outlined text-base">add</span>
+                            Novo adiantamento
+                        </a>
+                        <a href="{{ route('brokers.commissions.create', $financialBroker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full gap-xs border-primary-500 text-primary-500 hover:bg-primary-100">
+                            <span class="material-icons-outlined text-base">add</span>
+                            Registrar comissão
+                        </a>
+                        <a href="{{ route('brokers.advances.index', $financialBroker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
+                            <span>Ver adiantamentos</span>
+                            <span class="material-icons-outlined text-base">chevron_right</span>
+                        </a>
+                        <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
+                            <span>Ver comissões</span>
+                            <span class="material-icons-outlined text-base">chevron_right</span>
+                        </a>
+                    @else
+                        <a href="{{ route('banking.transactions.create', ['type' => 'expense']) }}" class="fx-btn fx-btn--primary fx-btn--sm w-full gap-xs text-center">
+                            <span class="material-icons-outlined text-base">add</span>
+                            Novo lançamento
+                        </a>
+                        <div class="rounded-lg border border-mono-100 bg-mono-50 p-sm text-xs text-mono-600">
+                            Sem vínculo financeiro legado para adiantamentos e comissões.
+                        </div>
+                    @endif
                 </div>
             </x-fx.card>
 
@@ -248,7 +296,7 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                     <h3 class="text-base font-semibold text-mono-900">Regras de Comissão</h3>
                 </div>
-                @if ($broker->commissionRules->isEmpty())
+                @if (! $financialBroker || $financialBroker->commissionRules->isEmpty())
                     <div class="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-mono-200 bg-mono-50 px-sm py-lg text-center">
                         <span class="material-icons-outlined mb-xs text-5xl text-mono-400">description</span>
                         <div class="text-sm font-medium text-mono-900">Nenhuma regra cadastrada.</div>
@@ -258,7 +306,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <table class="fx-table w-full text-sm">
                             <thead><tr><th class="text-left">Tipo de caso</th><th class="text-right">%</th><th class="text-right">Validade</th></tr></thead>
                             <tbody>
-                            @foreach ($broker->commissionRules as $rule)
+                            @foreach ($financialBroker->commissionRules as $rule)
                                 <tr>
                                     <td>{{ $rule->caseType->name }}</td>
                                     <td class="text-right">{{ number_format($rule->percentage, 1, ',', '.') }}%</td>
@@ -285,10 +333,12 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                     <h3 class="text-base font-semibold text-mono-900">Últimos Adiantamentos</h3>
                 </div>
-                <a href="{{ route('brokers.advances.index', $broker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
-                    Ver todos
-                    <span class="material-icons-outlined text-base">arrow_forward</span>
-                </a>
+                @if ($financialBroker)
+                    <a href="{{ route('brokers.advances.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
+                        Ver todos
+                        <span class="material-icons-outlined text-base">arrow_forward</span>
+                    </a>
+                @endif
             </div>
             @if ($recentAdvances->isEmpty())
                 <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">
@@ -327,10 +377,12 @@ new #[Layout('layouts.app')] class extends Component {
                     </div>
                     <h3 class="text-base font-semibold text-mono-900">Últimas Comissões</h3>
                 </div>
-                <a href="{{ route('brokers.commissions.index', $broker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
-                    Ver todas
-                    <span class="material-icons-outlined text-base">arrow_forward</span>
-                </a>
+                @if ($financialBroker)
+                    <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="inline-flex items-center gap-xxs text-xs font-semibold text-primary-500 hover:text-primary-600">
+                        Ver todas
+                        <span class="material-icons-outlined text-base">arrow_forward</span>
+                    </a>
+                @endif
             </div>
             @if ($recentCommissions->isEmpty())
                 <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">

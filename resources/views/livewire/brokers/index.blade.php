@@ -82,7 +82,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <option value="0">Inativos</option>
                 </select>
             </div>
-            <x-fx.button href="{{ route('contacts.create', ['type' => 'corretor']) }}" variant="primary" size="sm">+ Novo corretor</x-fx.button>
+            <x-fx.button href="{{ route('banking.transactions.create', ['type' => 'expense']) }}" variant="primary" size="sm">+ Novo lançamento</x-fx.button>
         </div>
     </x-fx.card>
 
@@ -163,7 +163,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @foreach ($brokers as $broker)
                         <tr>
                             <td>
-                                <a href="{{ route('contacts.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
+                                <a href="{{ route('brokers.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
                             </td>
                             <td>{{ $broker->document ?: '—' }}</td>
                             <td>{{ $broker->phone ?: '—' }}</td>
@@ -173,7 +173,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="text-right">
                                 <div class="flex justify-end gap-xxs">
                                     <a href="{{ route('contacts.edit', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
-                                    <a href="{{ route('contacts.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Ver</a>
+                                    <a href="{{ route('brokers.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">Ver</a>
                                 </div>
                             </td>
                         </tr>

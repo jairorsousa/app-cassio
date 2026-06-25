@@ -68,14 +68,14 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('brokers.')->group(function () {
     Volt::route('/', 'brokers.index')->name('index');
     Route::get('/create', fn () => redirect()->route('contacts.create', ['type' => 'corretor']))->name('create');
+    Volt::route('/case-types', 'brokers.case-types.index')->name('case-types.index');
+    Volt::route('/reports/overview', 'brokers.reports')->name('reports');
     Volt::route('/{broker}/edit', 'brokers.form')->name('edit');
     Volt::route('/{broker}', 'brokers.show')->name('show');
     Volt::route('/{broker}/advances', 'brokers.advances.index')->name('advances.index');
     Volt::route('/{broker}/advances/create', 'brokers.advances.form')->name('advances.create');
     Volt::route('/{broker}/commissions', 'brokers.commissions.index')->name('commissions.index');
     Volt::route('/{broker}/commissions/register', 'brokers.commissions.form')->name('commissions.create');
-    Volt::route('/case-types', 'brokers.case-types.index')->name('case-types.index');
-    Volt::route('/reports/overview', 'brokers.reports')->name('reports');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('contacts')->name('contacts.')->group(function () {

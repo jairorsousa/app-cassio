@@ -7,6 +7,7 @@ use App\Domains\Contacts\Models\Contact;
 use App\Domains\Contacts\Services\CepLookupService;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -85,5 +86,21 @@ class ContactManagementTest extends TestCase
 
         $this->assertFalse($contact->canBeDeleted());
         $this->assertStringContainsString('lançamento', $contact->deletionBlockMessage());
+    }
+
+    public function test_broker_detail_route_renders_for_broker_contact(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $contact = Contact::create([
+            'name' => 'Corretor Centralizado',
+            'type' => 'corretor',
+            'status' => true,
+        ]);
+
+        $this->get(route('brokers.show', $contact))
+            ->assertOk()
+            ->assertSee('Corretor Centralizado')
+            ->assertSee('Corretor');
     }
 }
