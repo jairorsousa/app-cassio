@@ -294,6 +294,23 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>
     @endif
 
+    @if ($financialBroker)
+        <div class="flex flex-wrap justify-end gap-xs">
+            <button type="button" wire:click="openLaunchModal('payment')" class="fx-btn fx-btn--standard fx-btn--sm gap-xs">
+                <span class="material-icons-outlined text-base">payments</span>
+                Registrar repasse
+            </button>
+            <button type="button" wire:click="openLaunchModal('commission')" class="fx-btn fx-btn--standard fx-btn--sm gap-xs border-primary-500 text-primary-500 hover:bg-primary-100">
+                <span class="material-icons-outlined text-base">add</span>
+                Registrar comissão
+            </button>
+            <button type="button" wire:click="openLaunchModal('advance')" class="fx-btn fx-btn--primary fx-btn--sm gap-xs">
+                <span class="material-icons-outlined text-base">add</span>
+                Novo adiantamento
+            </button>
+        </div>
+    @endif
+
     @php
         $phoneList = array_values(array_filter($broker->phones ?: [$broker->phone]));
         $emailList = array_values(array_filter($broker->emails ?: [$broker->email]));
@@ -530,37 +547,6 @@ new #[Layout('layouts.app')] class extends Component {
         </x-fx.card>
 
         <div class="flex flex-col gap-md">
-            <x-fx.card>
-                <div class="mb-sm flex items-center gap-xs">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 text-primary-500">
-                        <span class="material-icons-outlined text-xl">bolt</span>
-                    </div>
-                    <h3 class="text-base font-semibold text-mono-900">Ações</h3>
-                </div>
-                <div class="flex flex-col gap-xs">
-                    <button type="button" wire:click="openLaunchModal('advance')" class="fx-btn fx-btn--primary fx-btn--sm w-full gap-xs text-center">
-                        <span class="material-icons-outlined text-base">add</span>
-                        Novo adiantamento
-                    </button>
-                    <button type="button" wire:click="openLaunchModal('commission')" class="fx-btn fx-btn--standard fx-btn--sm w-full gap-xs border-primary-500 text-primary-500 hover:bg-primary-100">
-                        <span class="material-icons-outlined text-base">add</span>
-                        Registrar comissão
-                    </button>
-                    <button type="button" wire:click="openLaunchModal('payment')" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
-                        <span>Registrar repasse</span>
-                        <span class="material-icons-outlined text-base">chevron_right</span>
-                    </button>
-                    <a href="{{ route('brokers.advances.index', $financialBroker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
-                        <span>Ver adiantamentos</span>
-                        <span class="material-icons-outlined text-base">chevron_right</span>
-                    </a>
-                    <a href="{{ route('brokers.commissions.index', $financialBroker) }}" class="fx-btn fx-btn--standard fx-btn--sm w-full justify-between">
-                        <span>Ver comissões</span>
-                        <span class="material-icons-outlined text-base">chevron_right</span>
-                    </a>
-                </div>
-            </x-fx.card>
-
             <x-fx.card>
                 <div class="mb-sm flex items-center justify-between gap-sm border-b border-mono-100 pb-sm">
                     <div class="flex items-center gap-xs">
