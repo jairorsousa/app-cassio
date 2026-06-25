@@ -248,7 +248,14 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Contact::findOrFail($id)->delete();
+        $contact = Contact::findOrFail($id);
+
+        if (! $contact->canBeDeleted()) {
+            session()->flash('error', $contact->deletionBlockMessage());
+            return;
+        }
+
+        $contact->delete();
         session()->flash('status', 'Contato removido.');
     }
 
@@ -285,6 +292,10 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-6">
     @if (session('status'))
         <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>
+    @endif
+
+    @if (session('error'))
+        <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
     <x-jr.card>

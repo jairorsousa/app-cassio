@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Contacts;
 
+use App\Domains\Banking\Models\Transaction;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Contacts\Services\CepLookupService;
+use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritAssignor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -50,5 +53,37 @@ class ContactManagementTest extends TestCase
             'city' => 'São Paulo',
             'state' => 'SP',
         ], $result);
+    }
+
+    public function test_contact_with_linked_writ_cannot_be_deleted(): void
+    {
+        $contact = Contact::create(['name' => 'Cedente Vinculado']);
+        $writ = Writ::create(['type' => 'rpv']);
+
+        WritAssignor::create([
+            'writ_id' => $writ->id,
+            'contact_id' => $contact->id,
+            'role' => 'parte',
+        ]);
+
+        $this->assertFalse($contact->canBeDeleted());
+        $this->assertStringContainsString('requisitório', $contact->deletionBlockMessage());
+    }
+
+    public function test_contact_with_linked_transaction_cannot_be_deleted(): void
+    {
+        $contact = Contact::create(['name' => 'Contato com Lançamento']);
+
+        Transaction::create([
+            'type' => 'expense',
+            'date' => now()->toDateString(),
+            'amount' => 100,
+            'description' => 'Lançamento vinculado',
+            'source_type' => Contact::class,
+            'source_id' => $contact->id,
+        ]);
+
+        $this->assertFalse($contact->canBeDeleted());
+        $this->assertStringContainsString('lançamento', $contact->deletionBlockMessage());
     }
 }

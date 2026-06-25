@@ -19,7 +19,14 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Contact::where('type', 'corretor')->findOrFail($id)->delete();
+        $contact = Contact::where('type', 'corretor')->findOrFail($id);
+
+        if (! $contact->canBeDeleted()) {
+            session()->flash('error', $contact->deletionBlockMessage());
+            return;
+        }
+
+        $contact->delete();
         session()->flash('status', 'Contato corretor removido.');
     }
 
@@ -58,6 +65,10 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
+    @endif
+
+    @if (session('error'))
+        <x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>
     @endif
 
     <x-fx.card>
