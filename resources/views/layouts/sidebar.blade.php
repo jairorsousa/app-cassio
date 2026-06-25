@@ -5,8 +5,8 @@
     $dropdownItem = 'flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-mono-50';
 @endphp
 
-<nav class="hidden min-w-0 flex-1 lg:block">
-    <div class="flex items-center gap-1.5">
+<nav class="hidden min-w-0 flex-1 overflow-x-auto lg:block">
+    <div class="flex w-max items-center gap-1.5">
         <a href="{{ route('dashboard') }}" class="{{ $topItem }} {{ request()->routeIs('dashboard') ? $topActive : $topInactive }}">
             <span class="material-icons-outlined text-[20px]">dashboard</span>
             Dashboard
@@ -56,9 +56,9 @@
             Requisitórios
         </a>
 
-        <a href="{{ route('contacts.index') }}" class="{{ $topItem }} {{ request()->routeIs('contacts.*') ? $topActive : $topInactive }}">
-            <span class="material-icons-outlined text-[20px]">person</span>
-            Contatos
+        <a href="{{ route('brokers.index') }}" class="{{ $topItem }} {{ request()->routeIs('brokers.*') ? $topActive : $topInactive }}">
+            <span class="material-icons-outlined text-[20px]">groups</span>
+            Corretores
         </a>
 
         <a href="{{ route('broadcasts.index') }}" class="{{ $topItem }} {{ request()->routeIs('broadcasts.*') ? $topActive : $topInactive }}">
@@ -66,27 +66,19 @@
             Transmissão
         </a>
 
-        <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
-            <button type="button" class="{{ $topItem }} {{ request()->routeIs('investments.*') || request()->routeIs('brokers.*') || request()->routeIs('partnership.*') ? $topActive : $topInactive }}" @click="open = !open">
-                <span class="material-icons-outlined text-[20px]">workspaces</span>
-                Operações
-                <span class="material-icons-outlined text-[18px]">expand_more</span>
-            </button>
+        <a href="{{ route('investments.dashboard') }}" class="{{ $topItem }} {{ request()->routeIs('investments.*') ? $topActive : $topInactive }}">
+            <span class="material-icons-outlined text-[20px]">trending_up</span>
+            Investimento
+        </a>
 
-            <div x-show="open" x-transition class="absolute left-0 top-12 z-dropdown w-60 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
-                <a href="{{ route('investments.dashboard') }}" class="{{ $dropdownItem }} {{ request()->routeIs('investments.*') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
-                    <span class="material-icons-outlined text-[18px] text-mono-400">trending_up</span>
-                    Investimentos
-                </a>
-                <a href="{{ route('brokers.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('brokers.*') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
-                    <span class="material-icons-outlined text-[18px] text-mono-400">groups</span>
-                    Corretores
-                </a>
-                <a href="{{ route('partnership.index') }}" class="{{ $dropdownItem }} {{ request()->routeIs('partnership.*') ? 'font-semibold text-primary-500' : 'text-mono-900' }}">
-                    <span class="material-icons-outlined text-[18px] text-mono-400">business</span>
-                    Sociedade
-                </a>
-            </div>
-        </div>
+        <a href="{{ route('partnership.index') }}" class="{{ $topItem }} {{ request()->routeIs('partnership.*') ? $topActive : $topInactive }}">
+            <span class="material-icons-outlined text-[20px]">business</span>
+            Sociedade
+        </a>
+
+        <a href="{{ route('contacts.index') }}" class="{{ $topItem }} {{ request()->routeIs('contacts.*') ? $topActive : $topInactive }}">
+            <span class="material-icons-outlined text-[20px]">person</span>
+            Contatos
+        </a>
     </div>
 </nav>
