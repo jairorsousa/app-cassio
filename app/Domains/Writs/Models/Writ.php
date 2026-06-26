@@ -23,7 +23,8 @@ class Writ extends Model
         return LogOptions::defaults()
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
-                'estimated_receipt_amount', 'actual_receipt_amount', 'cession_at', 'paid_at', 'finalized_at',
+                'estimated_receipt_amount', 'actual_receipt_amount', 'monitoring_at', 'cession_at', 'paid_at', 'finalized_at',
+                'google_calendar_monitoring_event_id', 'google_calendar_monitoring_synced_at',
                 'google_calendar_event_id', 'google_calendar_synced_at',
                 'google_calendar_petition_event_id', 'google_calendar_petition_synced_at',
                 'awaiting_receipt_at', 'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_synced_at',
@@ -33,9 +34,10 @@ class Writ extends Model
             ->useLogName('writs');
     }
 
-    public const STAGES = ['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
+    public const STAGES = ['monitoring', 'negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
 
     public const STAGE_LABELS = [
+        'monitoring' => 'Monitorar Processo',
         'negotiation' => 'Negociação',
         'pending' => 'Cessão Pendente',
         'paid' => 'Pago',
@@ -52,7 +54,8 @@ class Writ extends Model
         'assignor_bank_data', 'assignor_lawyer',
         'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
-        'actual_receipt_amount', 'cession_at', 'paid_at', 'petitioned_at', 'awaiting_receipt_at', 'finalized_at',
+        'actual_receipt_amount', 'monitoring_at', 'cession_at', 'paid_at', 'petitioned_at', 'awaiting_receipt_at', 'finalized_at',
+        'google_calendar_monitoring_event_id', 'google_calendar_monitoring_event_link', 'google_calendar_monitoring_synced_at', 'google_calendar_monitoring_sync_error',
         'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
         'google_calendar_petition_event_id', 'google_calendar_petition_event_link', 'google_calendar_petition_synced_at', 'google_calendar_petition_sync_error',
         'google_calendar_awaiting_receipt_event_id', 'google_calendar_awaiting_receipt_event_link', 'google_calendar_awaiting_receipt_synced_at', 'google_calendar_awaiting_receipt_sync_error',
@@ -72,6 +75,8 @@ class Writ extends Model
         'estimated_receipt_amount' => 'decimal:2',
         'actual_receipt_amount' => 'decimal:2',
         'estimated_months' => 'integer',
+        'monitoring_at' => 'datetime',
+        'google_calendar_monitoring_synced_at' => 'datetime',
         'cession_at' => 'datetime',
         'google_calendar_synced_at' => 'datetime',
         'paid_at' => 'date',

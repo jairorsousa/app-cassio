@@ -101,7 +101,7 @@ class ConsolidatedSnapshotTest extends TestCase
         $payload = app(DashboardSnapshotBuilder::class)->build();
 
         $stages = collect($payload['writs']['by_stage'])->pluck('stage')->all();
-        $this->assertEquals(['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'], $stages);
+        $this->assertEquals(['monitoring', 'negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'], $stages);
     }
 
     public function test_future_contributions_lists_pending(): void

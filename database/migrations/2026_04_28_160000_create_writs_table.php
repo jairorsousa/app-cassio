@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('writs', function (Blueprint $table) {
             $table->id();
             $table->enum('type', ['rpv', 'precatorio']);
-            $table->enum('stage', ['negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'])
+            $table->enum('stage', ['monitoring', 'negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'])
                 ->default('negotiation');
 
             $table->string('process_number')->nullable();

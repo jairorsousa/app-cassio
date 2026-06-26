@@ -22,6 +22,7 @@ class WritObserver
             'face_value',
             'estimated_receipt_amount',
             'actual_receipt_amount',
+            'monitoring_at',
             'cession_at',
             'paid_at',
             'finalized_at',

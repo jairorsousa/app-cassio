@@ -11,6 +11,7 @@ new #[Layout('layouts.app')] class extends Component {
     public Writ $writ;
 
     public string $transitionTo = '';
+    public string $transition_monitoring_at = '';
     public string $transition_cession_at = '';
     public string $transition_paid_at = '';
     public string $transition_paid_amount = '';
@@ -28,6 +29,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(Writ $writ): void
     {
         $this->writ = $writ->load('history.user', 'transactions', 'assignors.contact');
+        $this->transition_monitoring_at = now()->format('Y-m-d\TH:i');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
         $this->transition_paid_at = now()->format('Y-m-d');
         $this->transition_petitioned_at = now()->format('Y-m-d\TH:i');
@@ -63,6 +65,10 @@ new #[Layout('layouts.app')] class extends Component {
         ]);
 
         $context = ['notes' => $this->transition_notes ?: null];
+
+        if ($this->transitionTo === 'monitoring') {
+            $context['monitoring_at'] = $this->transition_monitoring_at ?: null;
+        }
 
         if ($this->transitionTo === 'pending') {
             $context['cession_at'] = $this->transition_cession_at ?: null;
@@ -184,10 +190,10 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div>
                     <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
-                        <span class="material-icons-outlined text-[16px]">calendar_today</span> Vencimento
+                        <span class="material-icons-outlined text-[16px]">calendar_today</span> Data da etapa
                     </div>
                     <div class="font-medium text-sm text-mono-900">
-                        {{ $writ->cession_at ? $writ->cession_at->format('d/m/Y') : '—' }}
+                        {{ ($writ->stage === 'monitoring' ? $writ->monitoring_at : $writ->cession_at)?->format('d/m/Y H:i') ?? '—' }}
                     </div>
                 </div>
                 <div>
@@ -385,6 +391,10 @@ new #[Layout('layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
+
+                @if ($transitionTo === 'monitoring')
+                    <x-fx.input label="Data e hora para monitorar" type="datetime-local" wire:model="transition_monitoring_at" required />
+                @endif
 
                 @if ($transitionTo === 'pending')
                     <x-fx.input label="Data da cessão" type="datetime-local" wire:model="transition_cession_at" />

@@ -7,6 +7,7 @@ use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use Illuminate\Foundation\Inspiring;
@@ -20,6 +21,10 @@ Artisan::command('inspire', function () {
 
 Artisan::command('google-calendar:status', function () {
     $token = GoogleCalendarToken::central();
+    $pendingMonitoring = Writ::query()
+        ->whereNotNull('monitoring_at')
+        ->whereNull('google_calendar_monitoring_event_id')
+        ->count();
     $pendingWrits = Writ::query()
         ->whereNotNull('cession_at')
         ->whereNull('google_calendar_event_id')
@@ -49,6 +54,7 @@ Artisan::command('google-calendar:status', function () {
             ['Token connected at', $token?->connected_at?->toDateTimeString() ?: '-'],
             ['Token expires at', $token?->expires_at?->toDateTimeString() ?: '-'],
             ['Refresh token saved', $token?->refresh_token ? 'yes' : 'no'],
+            ['Pending monitoring without event', (string) $pendingMonitoring],
             ['Pending cessions without event', (string) $pendingWrits],
             ['Pending petitions without event', (string) $pendingPetitions],
             ['Pending awaiting receipts without event', (string) $pendingAwaitingReceipts],
@@ -61,6 +67,55 @@ Artisan::command('google-calendar:status', function () {
 
     return Command::SUCCESS;
 })->purpose('Show Google Calendar integration status');
+
+Artisan::command('writs:sync-google-calendar-monitoring {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google monitoring events and update them}', function (GoogleCalendarService $googleCalendar) {
+    $query = Writ::query()
+        ->whereNotNull('monitoring_at')
+        ->orderBy('monitoring_at');
+
+    if (! $this->option('all')) {
+        $query->whereNull('google_calendar_monitoring_event_id');
+    }
+
+    $writs = $query->get();
+
+    if ($writs->isEmpty()) {
+        $this->info('Nenhum monitoramento pendente de sincronizacao com Google Agenda.');
+
+        return Command::SUCCESS;
+    }
+
+    if ($this->option('queue')) {
+        $writs->each(fn (Writ $writ) => SyncWritMonitoringToGoogleCalendar::dispatch($writ->id));
+        $this->info("{$writs->count()} job(s) de monitoramento enviados para a fila.");
+
+        return Command::SUCCESS;
+    }
+
+    $synced = 0;
+    $skipped = 0;
+
+    foreach ($writs as $writ) {
+        try {
+            $event = $googleCalendar->syncWritMonitoring($writ);
+
+            if ($event) {
+                $synced++;
+                $this->line("Sincronizado monitoramento do requisitorio #{$writ->id}: {$event->getHtmlLink()}");
+            } else {
+                $skipped++;
+                $this->warn("Nao sincronizado monitoramento do requisitorio #{$writ->id}: {$writ->fresh()->google_calendar_monitoring_sync_error}");
+            }
+        } catch (Throwable $exception) {
+            $skipped++;
+            $this->error("Erro no monitoramento do requisitorio #{$writ->id}: {$exception->getMessage()}");
+        }
+    }
+
+    $this->info("Concluido. Sincronizados: {$synced}. Nao sincronizados: {$skipped}.");
+
+    return $skipped === 0 ? Command::SUCCESS : Command::FAILURE;
+})->purpose('Sync monitoring writ dates with Google Agenda');
 
 Artisan::command('writs:sync-google-calendar-cessions {--queue : Dispatch queue jobs instead of syncing immediately} {--all : Include writs that already have Google events and update them}', function (GoogleCalendarService $googleCalendar) {
     $query = Writ::query()
@@ -211,6 +266,11 @@ Artisan::command('writs:sync-google-calendar-awaiting-receipts {--queue : Dispat
 
 Artisan::command('writs:sync-google-calendar {writ}', function (Writ $writ, GoogleCalendarService $googleCalendar) {
     $rows = [];
+
+    if ($writ->monitoring_at) {
+        $event = $googleCalendar->syncWritMonitoring($writ);
+        $rows[] = ['Monitorar processo', $event?->getHtmlLink() ?: ($writ->fresh()->google_calendar_monitoring_sync_error ?: 'falhou')];
+    }
 
     if ($writ->cession_at) {
         $event = $googleCalendar->syncWritCession($writ);

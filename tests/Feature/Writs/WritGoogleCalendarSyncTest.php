@@ -4,6 +4,7 @@ namespace Tests\Feature\Writs;
 
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Services\WritGoogleCalendarSyncDispatcher;
@@ -32,6 +33,7 @@ class WritGoogleCalendarSyncTest extends TestCase
             'other_expenses_amount' => 0,
             'discount_percentage' => 20,
             'estimated_receipt_amount' => 12000,
+            'monitoring_at' => '2026-06-14 09:00:00',
             'cession_at' => '2026-06-15 14:00:00',
             'petitioned_at' => '2026-06-22 15:00:00',
             'awaiting_receipt_at' => '2026-06-23 16:00:00',
@@ -39,9 +41,35 @@ class WritGoogleCalendarSyncTest extends TestCase
 
         app(WritGoogleCalendarSyncDispatcher::class)->sync($writ);
 
+        Bus::assertDispatchedSync(SyncWritMonitoringToGoogleCalendar::class, fn (SyncWritMonitoringToGoogleCalendar $job): bool => $job->writId === $writ->id);
         Bus::assertDispatchedSync(SyncWritCessionToGoogleCalendar::class, fn (SyncWritCessionToGoogleCalendar $job): bool => $job->writId === $writ->id);
         Bus::assertDispatchedSync(SyncWritPetitionToGoogleCalendar::class, fn (SyncWritPetitionToGoogleCalendar $job): bool => $job->writId === $writ->id);
         Bus::assertDispatchedSync(SyncWritAwaitingReceiptToGoogleCalendar::class, fn (SyncWritAwaitingReceiptToGoogleCalendar $job): bool => $job->writId === $writ->id);
+    }
+
+    public function test_transition_to_monitoring_dispatches_monitoring_sync(): void
+    {
+        Bus::fake();
+
+        $writ = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'negotiation',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'face_value' => 0,
+            'negotiated_amount' => 0,
+            'proposed_amount' => 0,
+            'paid_amount' => 0,
+            'notary_expenses_amount' => 0,
+            'other_expenses_amount' => 0,
+            'discount_percentage' => 0,
+            'estimated_receipt_amount' => 0,
+        ]);
+
+        app(WritService::class)->transitionTo($writ, 'monitoring', [
+            'monitoring_at' => '2026-06-25 09:30:00',
+        ]);
+
+        Bus::assertDispatchedSync(SyncWritMonitoringToGoogleCalendar::class, fn (SyncWritMonitoringToGoogleCalendar $job): bool => $job->writId === $writ->id);
     }
 
     public function test_transitioning_past_petitioning_still_dispatches_petition_sync(): void

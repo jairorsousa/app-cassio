@@ -18,17 +18,18 @@ class WritService
      * @var array<string, array<int, string>>
      */
     private const ALLOWED_TRANSITIONS = [
-        'negotiation' => ['pending', 'paid', 'lost'],
+        'monitoring' => ['negotiation', 'lost'],
+        'negotiation' => ['monitoring', 'pending', 'paid', 'lost'],
         'pending' => ['negotiation', 'paid'],
         'paid' => ['pending', 'petitioning', 'awaiting_receipt', 'finalized'],
         'petitioning' => ['paid', 'awaiting_receipt', 'finalized'],
         'awaiting_receipt' => ['petitioning', 'finalized'],
         'finalized' => ['awaiting_receipt', 'petitioning'],
-        'lost' => ['negotiation'],
+        'lost' => ['monitoring', 'negotiation'],
     ];
 
     /**
-     * @param  array<string, mixed>  $context  campos opcionais (cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
+     * @param  array<string, mixed>  $context  campos opcionais (monitoring_at, cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
      */
     public function transitionTo(Writ $writ, string $newStage, array $context = []): Writ
     {
@@ -51,6 +52,10 @@ class WritService
             throw new \DomainException('Informe o motivo para marcar o requisitório como perdido.');
         }
 
+        if ($newStage === 'monitoring' && blank($context['monitoring_at'] ?? null) && blank($writ->monitoring_at)) {
+            throw new \DomainException('Informe a data e hora para monitorar o processo.');
+        }
+
         if ($newStage === 'petitioning' && blank($context['petitioned_at'] ?? null) && blank($writ->petitioned_at)) {
             throw new \DomainException('Informe a data e hora do peticionamento.');
         }
@@ -61,6 +66,10 @@ class WritService
 
         $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
             $patch = ['stage' => $newStage];
+
+            if ($newStage === 'monitoring' && isset($context['monitoring_at'])) {
+                $patch['monitoring_at'] = $context['monitoring_at'];
+            }
 
             if ($newStage === 'pending' && isset($context['cession_at'])) {
                 $patch['cession_at'] = $context['cession_at'];
@@ -137,6 +146,22 @@ class WritService
                 'Data da cessão atualizada de: %s para: %s',
                 $previousCessionAt ? $previousCessionAt->format('d/m/Y H:i') : '—',
                 $newCessionAt->format('d/m/Y H:i'),
+            ),
+            'user_id' => Auth::id(),
+        ]);
+    }
+
+    public function recordMonitoringDateChange(Writ $writ, ?CarbonInterface $previousMonitoringAt, CarbonInterface $newMonitoringAt): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => 'monitoring',
+            'to_stage' => 'monitoring',
+            'transitioned_at' => now(),
+            'notes' => sprintf(
+                'Data do monitoramento atualizada de: %s para: %s',
+                $previousMonitoringAt ? $previousMonitoringAt->format('d/m/Y H:i') : '—',
+                $newMonitoringAt->format('d/m/Y H:i'),
             ),
             'user_id' => Auth::id(),
         ]);

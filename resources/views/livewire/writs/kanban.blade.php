@@ -25,7 +25,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="h-24 bg-mono-100 rounded-2xl"></div>
             </div>
             <div class="h-12 bg-mono-100 rounded-pill"></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-8 gap-4">
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
@@ -48,6 +48,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $to = '';
 
     public bool $showFormModal = false;
+    public bool $showMonitoringModal = false;
+    public ?int $promptMonitoringWritId = null;
+    public string $promptMonitoringAt = '';
+
     public bool $showPetitionModal = false;
     public ?int $promptPetitionWritId = null;
     public string $promptPetitionAt = '';
@@ -82,6 +86,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $other_expenses_amount = '0';
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
+    public string $monitoring_at = '';
     public string $cession_at = '';
     public string $petitioned_at = '';
     public string $awaiting_receipt_at = '';
@@ -126,6 +131,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'other_expenses_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
+            'monitoring_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
@@ -141,6 +147,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function updatedStage(string $stage): void
     {
+        if ($stage === 'monitoring' && blank($this->monitoring_at)) {
+            $this->monitoring_at = now()->format('Y-m-d\TH:i');
+        }
+
         if ($stage === 'pending' && blank($this->cession_at)) {
             $this->cession_at = now()->format('Y-m-d\TH:i');
         }
@@ -159,6 +169,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->resetForm();
         if ($stage !== null && in_array($stage, Writ::STAGES, true)) {
             $this->stage = $stage;
+        }
+
+        if ($this->stage === 'monitoring') {
+            $this->monitoring_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($this->stage === 'pending') {
@@ -252,6 +266,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             return;
         }
 
+        if ($this->stage === 'monitoring' && blank($this->monitoring_at)) {
+            $this->addError('monitoring_at', 'Informe a data e hora para monitorar o processo.');
+
+            return;
+        }
+
         if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
             $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
 
@@ -264,6 +284,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             return;
         }
 
+        $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
         $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
         $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
@@ -344,6 +365,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return $this->stage === 'pending';
     }
 
+    public function usesMonitoringDate(): bool
+    {
+        return $this->stage === 'monitoring';
+    }
+
     public function usesPetitionDate(): bool
     {
         return $this->stage === 'petitioning';
@@ -378,7 +404,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -447,6 +473,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'other_expenses_amount',
             'estimated_receipt_amount',
             'estimated_months',
+            'monitoring_at',
             'cession_at',
             'petitioned_at',
             'awaiting_receipt_at',
@@ -494,6 +521,35 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         } catch (\DomainException|\InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
+    }
+
+    public function promptMonitoringDate(int $id): void
+    {
+        $this->promptMonitoringWritId = $id;
+        $this->promptMonitoringAt = now()->format('Y-m-d\TH:i');
+        $this->showMonitoringModal = true;
+    }
+
+    public function confirmMonitoringDate(WritService $service): void
+    {
+        $this->validate(['promptMonitoringAt' => 'required|date']);
+
+        try {
+            $writ = Writ::findOrFail($this->promptMonitoringWritId);
+            $service->transitionTo($writ, 'monitoring', [
+                'monitoring_at' => $this->promptMonitoringAt,
+            ]);
+            $this->showMonitoringModal = false;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['monitoring'].'.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelMonitoringDate(): void
+    {
+        $this->showMonitoringModal = false;
+        $this->promptMonitoringWritId = null;
     }
 
     public function promptCessionDate(int $id): void
@@ -861,6 +917,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @php
         $hasAnyWrit = collect($stages)->sum('count') > 0;
         $stageMeta = [
+            'monitoring' => [
+                'icon' => 'manage_search',
+                'dot' => 'bg-amber-500',
+                'tint' => 'bg-amber-100 text-amber-700',
+                'bar' => 'bg-amber-500',
+                'card_accent' => 'bg-amber-500',
+                'column' => 'border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/25',
+                'count' => 'bg-amber-100 text-amber-700 dark:bg-amber-900/45 dark:text-amber-200',
+                'icon_text' => 'text-amber-600 dark:text-amber-300',
+            ],
             'negotiation' => [
                 'icon' => 'person_add',
                 'dot' => 'bg-info',
@@ -938,14 +1004,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.empty-state
             icon="gavel"
             title="Nenhum requisitório no pipeline"
-            description="Crie um card e arraste pelas etapas: Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Finalizar e Perdido."
+            description="Crie um card e arraste pelas etapas: Monitorar Processo, Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Finalizar e Perdido."
         >
             <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
         </x-jr.empty-state>
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[2100px] grid-cols-7 gap-4">
+        <div class="grid min-w-[2400px] grid-cols-8 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
@@ -997,7 +1063,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                                     <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
                                                     Editar
                                                 </a>
-                                                @if ($stage['key'] === 'negotiation')
+                                                @if (in_array($stage['key'], ['monitoring', 'negotiation'], true))
                                                     <button
                                                         type="button"
                                                         wire:click="promptLostReason({{ $w->id }})"
@@ -1025,7 +1091,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <span class="truncate">{{ $w->assignor_name ?: ($w->assignors->first()?->contact?->name ?: 'Cedente não informado') }}</span>
                                     </div>
 
-                                    @if ((float) $w->negotiated_amount > 0)
+                                    @if ($stage['key'] === 'monitoring' && (float) $w->face_value <= 0 && (float) $w->negotiated_amount <= 0)
+                                        <div class="text-sm font-semibold text-mono-600">Sem valores cadastrados</div>
+                                    @elseif ((float) $w->negotiated_amount > 0)
                                         <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
                                         <div class="mt-1 text-xs font-medium text-mono-600">Face: R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
                                     @else
@@ -1036,8 +1104,17 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         <span class="truncate rounded-pill bg-mono-100 px-2.5 py-1 text-[10px] font-semibold text-mono-600">
                                             {{ $w->type === 'rpv' ? 'RPV' : 'Precatório' }}
                                         </span>
-                                        <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
+                                        @if ($stage['key'] !== 'monitoring' || (float) $w->totalCost() > 0)
+                                            <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
+                                        @endif
                                     </div>
+
+                                    @if ($stage['key'] === 'monitoring' && $w->monitoring_at)
+                                    <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
+                                        <span class="material-icons-outlined text-[16px]">manage_search</span>
+                                        <span>Monitorar: {{ $w->monitoring_at->format('d/m/Y \à\s H:i') }}</span>
+                                    </div>
+                                    @endif
 
                                     @if ($stage['key'] === 'pending' && $w->cession_at)
                                     <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
@@ -1046,7 +1123,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
                                     @endif
 
-                                    @if ($w->paid_at || !in_array($stage['key'], ['negotiation', 'pending']))
+                                    @if ($w->paid_at || !in_array($stage['key'], ['monitoring', 'negotiation', 'pending']))
                                     <div class="mt-3 flex items-center gap-2 text-xs {{ $w->paid_at ? 'text-mono-600' : 'text-down' }}">
                                         <span class="material-icons-outlined text-[16px]">calendar_today</span>
                                         <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
@@ -1250,7 +1327,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
                             </section>
 
-                            @if ($this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+                            @if ($this->usesMonitoringDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
                                 <section>
                                     <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                         <span class="material-icons-outlined text-[20px] text-primary-500">event</span>
@@ -1258,6 +1335,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
 
                                     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                        @if ($this->usesMonitoringDate())
+                                            <x-jr.input label="Data e hora para monitorar" icon="manage_search" type="datetime-local" wire:model="monitoring_at" required />
+                                            @error('monitoring_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @endif
+
                                         @if ($this->usesCessionDate())
                                             <x-jr.input label="Data da cessão" icon="edit_calendar" type="datetime-local" wire:model="cession_at" />
                                         @endif
@@ -1342,6 +1424,25 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
                             <span class="material-icons-outlined text-[18px]">check</span>
                             Criar Requisitório
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    @if ($showMonitoringModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center bg-black/45 px-4">
+            <div class="w-full max-w-md rounded-2xl bg-mono-white p-6 shadow-elevated" @click.stop>
+                <h3 class="mb-4 text-lg font-bold text-mono-900">Monitorar processo</h3>
+                <p class="mb-4 text-sm text-mono-600">Informe a data e hora para criar o lembrete na agenda antes de iniciar a negociação.</p>
+                <form wire:submit="confirmMonitoringDate">
+                    <x-jr.input label="Data e hora para monitorar" icon="manage_search" type="datetime-local" wire:model="promptMonitoringAt" required />
+                    
+                    <div class="mt-6 flex items-center justify-end gap-3">
+                        <button type="button" class="rounded-pill bg-mono-100 px-4 py-2 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelMonitoringDate">Cancelar</button>
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-pill bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            Confirmar
                         </button>
                     </div>
                 </form>
@@ -1588,7 +1689,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         const newStage = evt.to.dataset.stage;
                         const oldStage = evt.from.dataset.stage;
 
-                        if (oldStage === 'negotiation' && newStage === 'lost') {
+                        if (newStage === 'monitoring') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptMonitoringDate(id);
+                        } else if (['monitoring', 'negotiation'].includes(oldStage) && newStage === 'lost') {
                             evt.from.appendChild(evt.item);
                             $wire.promptLostReason(id);
                         } else if (oldStage === 'negotiation' && newStage === 'pending') {

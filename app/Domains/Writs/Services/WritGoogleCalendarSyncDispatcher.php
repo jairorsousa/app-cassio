@@ -4,6 +4,7 @@ namespace App\Domains\Writs\Services;
 
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
 use Throwable;
@@ -12,6 +13,10 @@ class WritGoogleCalendarSyncDispatcher
 {
     public function sync(Writ $writ): void
     {
+        if ($writ->monitoring_at) {
+            $this->syncMonitoring($writ);
+        }
+
         if ($writ->cession_at) {
             $this->syncCession($writ);
         }
@@ -23,6 +28,19 @@ class WritGoogleCalendarSyncDispatcher
         if ($writ->awaiting_receipt_at) {
             $this->syncAwaitingReceipt($writ);
         }
+    }
+
+    public function syncMonitoring(Writ $writ): bool
+    {
+        if (! $writ->monitoring_at) {
+            return true;
+        }
+
+        if (! $this->dispatchSyncSafely(SyncWritMonitoringToGoogleCalendar::class, $writ->id)) {
+            return false;
+        }
+
+        return blank($writ->fresh()->google_calendar_monitoring_sync_error);
     }
 
     public function syncCession(Writ $writ): bool

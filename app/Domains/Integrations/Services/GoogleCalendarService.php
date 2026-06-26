@@ -105,6 +105,33 @@ class GoogleCalendarService
         );
     }
 
+    public function syncWritMonitoring(Writ $writ): ?Event
+    {
+        if (! config('google-calendar.enabled')) {
+            $writ->forceFill([
+                'google_calendar_monitoring_sync_error' => 'Google Calendar esta desativado no ambiente.',
+            ])->save();
+
+            return null;
+        }
+
+        if (! $writ->monitoring_at) {
+            return null;
+        }
+
+        return $this->syncCalendarEvent(
+            writ: $writ,
+            event: $this->buildMonitoringEvent($writ),
+            existingEventId: $writ->google_calendar_monitoring_event_id,
+            columns: [
+                'event_id' => 'google_calendar_monitoring_event_id',
+                'event_link' => 'google_calendar_monitoring_event_link',
+                'synced_at' => 'google_calendar_monitoring_synced_at',
+                'sync_error' => 'google_calendar_monitoring_sync_error',
+            ],
+        );
+    }
+
     public function syncWritPetition(Writ $writ): ?Event
     {
         if (! config('google-calendar.enabled')) {
@@ -273,6 +300,38 @@ class GoogleCalendarService
         return $client;
     }
 
+    private function buildMonitoringEvent(Writ $writ): Event
+    {
+        $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
+        $start = $this->localWritDateTime($writ->monitoring_at, $timezone);
+        $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
+
+        $event = new Event([
+            'summary' => $this->eventSummary($writ, 'Monitorar Processo'),
+            'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['monitoring'], includeAmount: false),
+            'start' => $this->eventDateTime($start, $timezone),
+            'end' => $this->eventDateTime($end, $timezone),
+            'attendees' => $this->eventAttendees(),
+            'reminders' => [
+                'useDefault' => false,
+                'overrides' => [
+                    ['method' => 'popup', 'minutes' => 30],
+                    ['method' => 'email', 'minutes' => 1440],
+                ],
+            ],
+        ]);
+
+        if (config('google-calendar.create_meet')) {
+            $event->setConferenceData([
+                'createRequest' => [
+                    'requestId' => 'writ-'.$writ->id.'-monitoring',
+                ],
+            ]);
+        }
+
+        return $event;
+    }
+
     private function buildCessionEvent(Writ $writ): Event
     {
         $timezone = config('google-calendar.timezone', 'America/Sao_Paulo');
@@ -387,15 +446,18 @@ class GoogleCalendarService
         return $prefix.' - '.$this->assignorName($writ);
     }
 
-    private function eventDescription(Writ $writ, string $stageLabel): string
+    private function eventDescription(Writ $writ, string $stageLabel, bool $includeAmount = true): string
     {
         $lines = [
             'Requisitorio: '.($writ->process_number ?: '#'.$writ->id),
             'Etapa: '.$stageLabel,
             'Ente devedor: '.($writ->debtor_entity ?: '-'),
             'Cedente: '.$this->assignorName($writ),
-            'Valor negociado: R$ '.number_format($this->negotiatedAmount($writ), 2, ',', '.'),
         ];
+
+        if ($includeAmount) {
+            $lines[] = 'Valor negociado: R$ '.number_format($this->negotiatedAmount($writ), 2, ',', '.');
+        }
 
         if ($writ->notes) {
             $lines[] = '';

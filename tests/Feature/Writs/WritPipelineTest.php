@@ -121,6 +121,36 @@ class WritPipelineTest extends TestCase
         $this->assertEquals('2026-06-15 14:30:00', $updated->cession_at->format('Y-m-d H:i:s'));
     }
 
+    public function test_monitoring_stage_stores_datetime_without_values(): void
+    {
+        $writ = $this->makeWrit([
+            'face_value' => 0,
+            'negotiated_amount' => 0,
+            'proposed_amount' => 0,
+            'paid_amount' => 0,
+            'estimated_receipt_amount' => 0,
+        ]);
+
+        $updated = app(WritService::class)->transitionTo($writ, 'monitoring', [
+            'monitoring_at' => '2026-06-25 09:30:00',
+        ]);
+
+        $this->assertEquals('monitoring', $updated->stage);
+        $this->assertEquals('2026-06-25 09:30:00', $updated->monitoring_at->format('Y-m-d H:i:s'));
+        $this->assertEquals(0.0, (float) $updated->face_value);
+        $this->assertEquals(0.0, (float) $updated->paid_amount);
+    }
+
+    public function test_monitoring_stage_requires_datetime(): void
+    {
+        $writ = $this->makeWrit();
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('Informe a data e hora para monitorar o processo.');
+
+        app(WritService::class)->transitionTo($writ, 'monitoring');
+    }
+
     public function test_awaiting_receipt_stage_stores_datetime(): void
     {
         $writ = $this->makeWrit(['stage' => 'petitioning']);

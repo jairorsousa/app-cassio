@@ -42,6 +42,36 @@ class GoogleCalendarServiceTest extends TestCase
         $this->assertStringNotContainsString('Valor do requisitorio: R$ 35.000,00', $event->getDescription());
     }
 
+    public function test_monitoring_event_uses_stage_title_local_time_and_omits_amount(): void
+    {
+        $this->configureGoogleCalendar();
+
+        $writ = new Writ([
+            'type' => 'rpv',
+            'stage' => 'monitoring',
+            'process_number' => '0001234-56.2026.8.13.0001',
+            'assignor_name' => 'Maria Clara Santos',
+            'debtor_entity' => 'INSS',
+            'face_value' => 0,
+            'negotiated_amount' => 0,
+            'proposed_amount' => 0,
+        ]);
+        $writ->id = 20;
+        $writ->monitoring_at = Carbon::parse('2026-06-25 09:30:00', 'UTC');
+
+        $method = new ReflectionMethod(GoogleCalendarService::class, 'buildMonitoringEvent');
+        $method->setAccessible(true);
+
+        /** @var Event $event */
+        $event = $method->invoke(app(GoogleCalendarService::class), $writ);
+
+        $this->assertSame('Monitorar Processo - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('2026-06-25T09:30:00-03:00', $event->getStart()->getDateTime());
+        $this->assertSame('2026-06-25T10:00:00-03:00', $event->getEnd()->getDateTime());
+        $this->assertStringContainsString('Etapa: Monitorar Processo', $event->getDescription());
+        $this->assertStringNotContainsString('Valor negociado', $event->getDescription());
+    }
+
     public function test_petition_event_uses_petition_title_and_local_time(): void
     {
         $this->configureGoogleCalendar();

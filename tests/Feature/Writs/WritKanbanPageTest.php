@@ -3,6 +3,7 @@
 namespace Tests\Feature\Writs;
 
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
+use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Services\WritService;
 use App\Domains\Writs\Models\Writ;
@@ -40,9 +41,38 @@ class WritKanbanPageTest extends TestCase
         Volt::test('writs.kanban')
             ->assertSee('Aguardando Recebimento')
             ->assertSee('Perdido')
-            ->assertSeeHtml('grid-cols-7')
+            ->assertSee('Monitorar Processo')
+            ->assertSeeHtml('grid-cols-8')
             ->assertSeeHtml('kanban-card flex')
             ->assertSeeHtml('w-1 shrink-0 bg-info');
+    }
+
+    public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void
+    {
+        Bus::fake();
+
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Volt::test('writs.kanban')
+            ->set('stage', 'monitoring')
+            ->set('formType', 'rpv')
+            ->set('process_number', '0001234-56.2026.8.13.0001')
+            ->set('monitoring_at', '2026-06-25T09:30')
+            ->call('saveWrit')
+            ->assertHasNoErrors();
+
+        $writ = Writ::query()->first();
+
+        $this->assertNotNull($writ);
+        $this->assertSame('monitoring', $writ->stage);
+        $this->assertEquals(0.0, (float) $writ->face_value);
+        $this->assertEquals(0.0, (float) $writ->paid_amount);
+        $this->assertSame('2026-06-25 09:30:00', $writ->monitoring_at->format('Y-m-d H:i:s'));
+
+        Bus::assertDispatchedSync(SyncWritMonitoringToGoogleCalendar::class, function (SyncWritMonitoringToGoogleCalendar $job) use ($writ): bool {
+            return $job->writId === $writ->id;
+        });
     }
 
     public function test_creating_petitioning_writ_dispatches_google_calendar_sync(): void

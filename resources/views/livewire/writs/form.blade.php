@@ -32,6 +32,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $other_expenses_amount = '0';
     public string $estimated_receipt_amount = '0';
     public ?int $estimated_months = null;
+    public string $monitoring_at = '';
     public string $cession_at = '';
     public string $petitioned_at = '';
     public string $awaiting_receipt_at = '';
@@ -47,6 +48,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function updatedStage(string $stage): void
     {
+        if ($stage === 'monitoring' && blank($this->monitoring_at)) {
+            $this->monitoring_at = now()->format('Y-m-d\TH:i');
+        }
+
         if ($stage === 'pending' && blank($this->cession_at)) {
             $this->cession_at = now()->format('Y-m-d\TH:i');
         }
@@ -75,6 +80,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->other_expenses_amount = (string) $writ->other_expenses_amount;
             $this->estimated_receipt_amount = (string) $writ->estimated_receipt_amount;
             $this->estimated_months = $writ->estimated_months;
+            $this->monitoring_at = $writ->monitoring_at?->format('Y-m-d\TH:i') ?? '';
             $this->cession_at = $writ->cession_at?->format('Y-m-d\TH:i') ?? '';
             $this->petitioned_at = $writ->petitioned_at?->format('Y-m-d\TH:i') ?? '';
             $this->awaiting_receipt_at = $writ->awaiting_receipt_at?->format('Y-m-d\TH:i') ?? '';
@@ -126,6 +132,7 @@ new #[Layout('layouts.app')] class extends Component {
             'other_expenses_amount' => 'required|numeric|min:0',
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
+            'monitoring_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
@@ -201,6 +208,12 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        if ($this->stage === 'monitoring' && blank($this->monitoring_at)) {
+            $this->addError('monitoring_at', 'Informe a data e hora para monitorar o processo.');
+
+            return;
+        }
+
         if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
             $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
 
@@ -213,6 +226,7 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
         $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
         $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
@@ -229,6 +243,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($this->writ) {
             $previousStage = $this->writ->stage;
+            $previousMonitoringAt = $this->writ->monitoring_at;
             $previousCessionAt = $this->writ->cession_at;
             $previousPetitionedAt = $this->writ->petitioned_at;
             $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at;
@@ -238,6 +253,15 @@ new #[Layout('layouts.app')] class extends Component {
             if ($previousStage !== $writ->stage) {
                 $this->recordStageHistory($writ, $previousStage, $writ->stage);
                 $this->dispatchStageEvents($writ);
+            } elseif (
+                $writ->stage === 'monitoring'
+                && $writ->monitoring_at
+                && $previousMonitoringAt?->getTimestamp() !== $writ->monitoring_at->getTimestamp()
+            ) {
+                app(WritService::class)->recordMonitoringDateChange($writ, $previousMonitoringAt, $writ->monitoring_at);
+                if (! app(WritGoogleCalendarSyncDispatcher::class)->syncMonitoring($writ)) {
+                    $this->flashCalendarSyncWarning($writ, 'google_calendar_monitoring_sync_error');
+                }
             } elseif (
                 $writ->stage === 'pending'
                 && $writ->cession_at
@@ -324,6 +348,11 @@ new #[Layout('layouts.app')] class extends Component {
         return $this->stage === 'pending';
     }
 
+    public function usesMonitoringDate(): bool
+    {
+        return $this->stage === 'monitoring';
+    }
+
     public function usesPetitionDate(): bool
     {
         return $this->stage === 'petitioning';
@@ -358,7 +387,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -562,10 +591,15 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </section>
 
-        @if ($this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+        @if ($this->usesMonitoringDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
             <section>
                 <h3 class="text-md font-semibold mb-xs">Datas da etapa</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
+                    @if ($this->usesMonitoringDate())
+                        <x-fx.input label="Data e hora para monitorar" type="datetime-local" wire:model="monitoring_at" required />
+                        @error('monitoring_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
+                    @endif
+
                     @if ($this->usesCessionDate())
                         <x-fx.input label="Data da cessão" type="datetime-local" wire:model="cession_at" />
                     @endif
