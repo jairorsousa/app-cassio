@@ -1045,8 +1045,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     <div class="mb-3 flex items-start justify-between gap-3">
                                         <div class="flex min-w-0 items-center gap-2">
                                             <span class="h-2.5 w-2.5 shrink-0 rounded-full {{ $meta['dot'] }}"></span>
-                                            <a href="{{ route('writs.show', $w) }}" class="truncate text-sm font-bold text-mono-900 transition-colors hover:text-primary-500" title="{{ $w->process_number }}">
-                                                {{ $w->process_number ?: 'Requisitório #'.$w->id }}
+                                            @php
+                                                $clientName = $w->assignor_name ?: ($w->assignors->first()?->contact?->name ?: 'Cedente não informado');
+                                            @endphp
+                                            <a href="{{ route('writs.show', $w) }}" class="truncate text-sm font-bold text-mono-900 transition-colors hover:text-primary-500" title="{{ $clientName }}">
+                                                {{ $clientName }}
                                             </a>
                                         </div>
 
@@ -1087,8 +1090,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     </div>
 
                                     <div class="mb-3 flex items-center gap-2 text-xs text-mono-600">
-                                        <span class="material-icons-outlined text-[16px]">person</span>
-                                        <span class="truncate">{{ $w->assignor_name ?: ($w->assignors->first()?->contact?->name ?: 'Cedente não informado') }}</span>
+                                        <span class="material-icons-outlined text-[16px]">tag</span>
+                                        <span class="truncate" title="{{ $w->process_number }}">{{ $w->process_number ?: 'Requisitório #'.$w->id }}</span>
                                     </div>
 
                                     @if ($stage['key'] === 'monitoring' && (float) $w->face_value <= 0 && (float) $w->negotiated_amount <= 0)
