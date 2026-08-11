@@ -43,7 +43,7 @@ class WritKanbanPageTest extends TestCase
             ->assertSee('Perdido')
             ->assertSee('Monitorar Processo')
             ->assertSeeHtml('grid-cols-8')
-            ->assertSeeHtml('min-w-[3680px]')
+            ->assertSeeHtml('min-w-[4640px]')
             ->assertSeeHtml('kanban-card flex')
             ->assertSeeHtml('w-1.5 shrink-0 bg-info');
     }
@@ -108,15 +108,17 @@ class WritKanbanPageTest extends TestCase
         }
 
         Volt::test('writs.kanban')
+            ->assertSeeHtml('lg:grid-cols-5')
             ->assertSeeInOrder([
-                'Total investido',
+                'Total Negociado',
                 'R$ 2.200,00',
                 'Total Investido em aberto',
                 'Total recebimento estimado',
                 'R$ 29.000,00',
                 'Total recebido (finalizados)',
                 'Lucro líquido',
-            ]);
+            ])
+            ->assertDontSee('Total investido');
     }
 
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void

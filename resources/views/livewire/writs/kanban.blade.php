@@ -800,7 +800,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ];
         }
 
-        $totalInvested = Writ::whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
+        $totalNegotiated = Writ::whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
             ->sum('negotiated_amount');
         $totalOpenInvested = Writ::where('stage', '!=', 'finalized')->sum('paid_amount');
         $totalEstimatedReceipt = Writ::where('stage', '!=', 'finalized')->sum('estimated_receipt_amount');
@@ -812,7 +812,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
             : 0.0;
 
-        return compact('stages', 'totalInvested', 'totalOpenInvested', 'totalEstimatedReceipt', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+        return compact('stages', 'totalNegotiated', 'totalOpenInvested', 'totalEstimatedReceipt', 'totalReceived', 'profitAmount', 'profitPercentage') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -829,64 +829,64 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        <x-jr.card>
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
-                    <span class="material-icons-outlined text-[22px]">account_balance_wallet</span>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
+                    <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
                 </div>
-                <div>
-                    <p class="text-xs font-medium text-mono-600">Total investido</p>
-                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card>
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-[22px]">payments</span>
-                </div>
-                <div>
-                    <p class="text-xs font-medium text-mono-600">Total Investido em aberto</p>
-                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total Negociado</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalNegotiated, 2, ',', '.') }}</p>
                 </div>
             </div>
         </x-jr.card>
 
-        <x-jr.card>
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200">
-                    <span class="material-icons-outlined text-[22px]">track_changes</span>
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
+                    <span class="material-icons-outlined text-[20px]">payments</span>
                 </div>
-                <div>
-                    <p class="text-xs font-medium text-mono-600">Total recebimento estimado</p>
-                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card>
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
-                    <span class="material-icons-outlined text-[22px]">account_balance_wallet</span>
-                </div>
-                <div>
-                    <p class="text-xs font-medium text-mono-600">Total recebido (finalizados)</p>
-                    <p class="mt-1 text-2xl font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</p>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total Investido em aberto</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
                 </div>
             </div>
         </x-jr.card>
 
-        <x-jr.card>
-            <div class="flex items-center gap-3">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">
-                    <span class="material-icons-outlined text-[22px]">trending_up</span>
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200">
+                    <span class="material-icons-outlined text-[20px]">track_changes</span>
                 </div>
-                <div>
-                    <p class="text-xs font-medium text-mono-600">Lucro líquido</p>
-                    <p class="mt-1 text-2xl font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</p>
-                    <p class="mt-1 text-xs font-semibold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</p>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total recebimento estimado</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
+                    <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total recebido (finalizados)</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">
+                    <span class="material-icons-outlined text-[20px]">trending_up</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Lucro líquido</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</p>
+                    <p class="mt-1 text-[11px] font-semibold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</p>
                 </div>
             </div>
         </x-jr.card>
@@ -1049,7 +1049,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[3680px] grid-cols-8 gap-4">
+        <div class="grid min-w-[4640px] grid-cols-8 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
