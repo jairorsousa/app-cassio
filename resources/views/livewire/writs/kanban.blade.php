@@ -926,6 +926,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-amber-100 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/25',
                 'count' => 'bg-amber-100 text-amber-700 dark:bg-amber-900/45 dark:text-amber-200',
                 'icon_text' => 'text-amber-600 dark:text-amber-300',
+                'metric_text' => 'text-amber-700 dark:text-amber-300',
+                'date_icon' => 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200',
+                'status' => 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-200',
             ],
             'negotiation' => [
                 'icon' => 'person_add',
@@ -936,6 +939,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-orange-100 bg-orange-50/65 dark:border-orange-900/40 dark:bg-orange-950/25',
                 'count' => 'bg-orange-100 text-orange-700 dark:bg-orange-900/45 dark:text-orange-200',
                 'icon_text' => 'text-orange-500 dark:text-orange-300',
+                'metric_text' => 'text-orange-600 dark:text-orange-300',
+                'date_icon' => 'bg-orange-50 text-orange-600 dark:bg-orange-950/50 dark:text-orange-200',
+                'status' => 'bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-200',
             ],
             'pending' => [
                 'icon' => 'edit_document',
@@ -946,6 +952,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/35',
                 'count' => 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
                 'icon_text' => 'text-slate-500 dark:text-slate-300',
+                'metric_text' => 'text-slate-700 dark:text-slate-200',
+                'date_icon' => 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200',
+                'status' => 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
             ],
             'paid' => [
                 'icon' => 'payments',
@@ -956,6 +965,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-emerald-100 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/25',
                 'count' => 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/45 dark:text-emerald-200',
                 'icon_text' => 'text-emerald-600 dark:text-emerald-300',
+                'metric_text' => 'text-up',
+                'date_icon' => 'bg-up-bg text-up',
+                'status' => 'bg-up-bg text-up',
             ],
             'petitioning' => [
                 'icon' => 'gavel',
@@ -966,6 +978,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/25',
                 'count' => 'bg-sky-100 text-sky-700 dark:bg-sky-900/45 dark:text-sky-200',
                 'icon_text' => 'text-sky-600 dark:text-sky-300',
+                'metric_text' => 'text-sky-700 dark:text-sky-300',
+                'date_icon' => 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200',
+                'status' => 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200',
             ],
             'awaiting_receipt' => [
                 'icon' => 'hourglass_top',
@@ -976,6 +991,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-violet-100 bg-violet-50/65 dark:border-violet-900/40 dark:bg-violet-950/25',
                 'count' => 'bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200',
                 'icon_text' => 'text-violet-600 dark:text-violet-300',
+                'metric_text' => 'text-violet-700 dark:text-violet-300',
+                'date_icon' => 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-200',
+                'status' => 'bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-200',
             ],
             'finalized' => [
                 'icon' => 'emoji_events',
@@ -986,6 +1004,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-teal-100 bg-teal-50/70 dark:border-teal-900/40 dark:bg-teal-950/25',
                 'count' => 'bg-teal-100 text-teal-700 dark:bg-teal-900/45 dark:text-teal-200',
                 'icon_text' => 'text-teal-600 dark:text-teal-300',
+                'metric_text' => 'text-up',
+                'date_icon' => 'bg-up-bg text-up',
+                'status' => 'bg-up-bg text-up',
             ],
             'lost' => [
                 'icon' => 'block',
@@ -996,6 +1017,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'column' => 'border-rose-100 bg-rose-50/70 dark:border-rose-900/40 dark:bg-rose-950/25',
                 'count' => 'bg-rose-100 text-rose-700 dark:bg-rose-900/45 dark:text-rose-200',
                 'icon_text' => 'text-rose-600 dark:text-rose-300',
+                'metric_text' => 'text-down',
+                'date_icon' => 'bg-down-bg text-down',
+                'status' => 'bg-down-bg text-down',
             ],
         ];
     @endphp
@@ -1011,7 +1035,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[2400px] grid-cols-8 gap-4">
+        <div class="grid min-w-[2880px] grid-cols-8 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
@@ -1035,140 +1059,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
                         <div class="kanban-list flex flex-1 flex-col gap-3" data-stage="{{ $stage['key'] }}">
                             @foreach ($stage['cards'] as $w)
-                                <article
-                                    class="kanban-card flex cursor-grab overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
-                                    data-id="{{ $w->id }}"
-                                    wire:key="writ-{{ $w->id }}"
-                                >
-                                    <div class="w-1 shrink-0 {{ $meta['card_accent'] }}" aria-hidden="true"></div>
-                                    <div class="flex min-w-0 flex-1 flex-col p-4">
-                                    <div class="mb-3 flex items-start justify-between gap-3">
-                                        <div class="flex min-w-0 items-center gap-2">
-                                            <span class="h-2.5 w-2.5 shrink-0 rounded-full {{ $meta['dot'] }}"></span>
-                                            @php
-                                                $clientName = $w->assignor_name ?: ($w->assignors->first()?->contact?->name ?: 'Cedente não informado');
-                                            @endphp
-                                            <a href="{{ route('writs.show', $w) }}" class="truncate text-sm font-bold text-mono-900 transition-colors hover:text-primary-500" title="{{ $clientName }}">
-                                                {{ $clientName }}
-                                            </a>
-                                        </div>
-
-                                        <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
-                                            <button type="button" class="flex h-8 w-8 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" @click="open = !open">
-                                                <span class="material-icons-outlined text-[20px]">more_vert</span>
-                                            </button>
-                                            <div x-show="open" x-transition class="absolute right-0 top-9 z-dropdown w-40 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
-                                                <a href="{{ route('writs.show', $w) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
-                                                    <span class="material-icons-outlined text-[18px] text-mono-400">visibility</span>
-                                                    Abrir
-                                                </a>
-                                                <a href="{{ route('writs.edit', $w) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
-                                                    <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
-                                                    Editar
-                                                </a>
-                                                @if (in_array($stage['key'], ['monitoring', 'negotiation'], true))
-                                                    <button
-                                                        type="button"
-                                                        wire:click="promptLostReason({{ $w->id }})"
-                                                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-down hover:bg-down-bg"
-                                                    >
-                                                        <span class="material-icons-outlined text-[18px]">block</span>
-                                                        Marcar como perdido
-                                                    </button>
-                                                @endif
-                                                <button
-                                                    type="button"
-                                                    wire:click="delete({{ $w->id }})"
-                                                    wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
-                                                    class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-error hover:bg-down-bg"
-                                                >
-                                                    <span class="material-icons-outlined text-[18px]">delete_outline</span>
-                                                    Excluir
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3 flex items-center gap-2 text-xs text-mono-600">
-                                        <span class="material-icons-outlined text-[16px]">tag</span>
-                                        <span class="truncate" title="{{ $w->process_number }}">{{ $w->process_number ?: 'Requisitório #'.$w->id }}</span>
-                                    </div>
-
-                                    @if ($stage['key'] === 'monitoring' && (float) $w->face_value <= 0 && (float) $w->negotiated_amount <= 0)
-                                        <div class="text-sm font-semibold text-mono-600">Sem valores cadastrados</div>
-                                    @elseif ((float) $w->negotiated_amount > 0)
-                                        <div class="text-xs font-medium text-mono-600">Face: R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
-                                        <div class="mt-1 text-lg font-bold text-mono-900">R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
-                                    @else
-                                        <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
-                                    @endif
-
-                                    <div class="mt-2 flex items-center justify-between gap-2 border-t border-mono-100 pt-2">
-                                        <span @class([
-                                            'truncate rounded-pill px-2.5 py-1 text-[10px] font-semibold',
-                                            'bg-primary-100 text-primary-500' => $w->type === 'rpv',
-                                            'bg-info-bg text-info' => $w->type !== 'rpv',
-                                        ])>
-                                            {{ $w->type === 'rpv' ? 'RPV' : 'Precatório' }}
-                                        </span>
-                                        @if ($stage['key'] !== 'monitoring' || (float) $w->totalCost() > 0)
-                                            <span class="text-xs font-medium text-mono-600">Custo: R$ {{ number_format($w->totalCost(), 2, ',', '.') }}</span>
-                                        @endif
-                                    </div>
-
-                                    @if ($stage['key'] === 'monitoring' && $w->monitoring_at)
-                                    <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
-                                        <span class="material-icons-outlined text-[16px]">manage_search</span>
-                                        <span>Monitorar: {{ $w->monitoring_at->format('d/m/Y \à\s H:i') }}</span>
-                                    </div>
-                                    @endif
-
-                                    @if ($stage['key'] === 'pending' && $w->cession_at)
-                                    <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
-                                        <span class="material-icons-outlined text-[16px]">edit_calendar</span>
-                                        <span>Cessão: {{ $w->cession_at->format('d/m/Y \à\s H:i') }}</span>
-                                    </div>
-                                    @endif
-
-                                    @if ($w->paid_at || !in_array($stage['key'], ['monitoring', 'negotiation', 'pending']))
-                                    <div class="mt-3 flex items-center gap-2 text-xs {{ $w->paid_at ? 'text-mono-600' : 'text-down' }}">
-                                        <span class="material-icons-outlined text-[16px]">calendar_today</span>
-                                        <span>{{ $w->paid_at ? $w->paid_at->format('d/m/Y') : 'Sem data de pagamento' }}</span>
-                                    </div>
-                                    @endif
-
-                                    @if ($stage['key'] === 'petitioning' && $w->petitioned_at)
-                                        <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
-                                            <span class="material-icons-outlined text-[16px]">gavel</span>
-                                            <span>Peticionar: {{ $w->petitioned_at->format('d/m/Y \à\s H:i') }}</span>
-                                        </div>
-                                    @endif
-
-                                    @if ($stage['key'] === 'awaiting_receipt' && $w->awaiting_receipt_at)
-                                        <div class="mt-3 flex items-center gap-2 text-xs text-mono-600">
-                                            <span class="material-icons-outlined text-[16px]">hourglass_top</span>
-                                            <span>Aguardando: {{ $w->awaiting_receipt_at->format('d/m/Y \à\s H:i') }}</span>
-                                        </div>
-                                    @endif
-
-                                    @if ($stage['key'] === 'finalized' && $w->actual_receipt_amount)
-                                        <div class="mt-2 flex items-center justify-between rounded-xl bg-up-bg px-3 py-2 text-xs font-semibold text-up">
-                                            <span>Recebido</span>
-                                            <span>R$ {{ number_format($w->actual_receipt_amount, 2, ',', '.') }}</span>
-                                        </div>
-                                    @endif
-
-                                    @if ($stage['key'] === 'lost' && $w->lost_reason)
-                                        <div class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-xs text-down">
-                                            <div class="mb-1 flex items-center gap-1 font-semibold">
-                                                <span class="material-icons-outlined text-[15px]">block</span>
-                                                Motivo
-                                            </div>
-                                            <p class="line-clamp-3">{{ $w->lost_reason }}</p>
-                                        </div>
-                                    @endif
-                                    </div>
-                                </article>
+                                <x-writs.kanban-card :writ="$w" :stage="$stage['key']" :meta="$meta" />
                             @endforeach
                         </div>
                     </div>

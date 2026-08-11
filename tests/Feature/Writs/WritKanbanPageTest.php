@@ -5,8 +5,8 @@ namespace Tests\Feature\Writs;
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
-use App\Domains\Writs\Services\WritService;
 use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Services\WritService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
@@ -44,7 +44,41 @@ class WritKanbanPageTest extends TestCase
             ->assertSee('Monitorar Processo')
             ->assertSeeHtml('grid-cols-8')
             ->assertSeeHtml('kanban-card flex')
-            ->assertSeeHtml('w-1 shrink-0 bg-info');
+            ->assertSeeHtml('w-1.5 shrink-0 bg-info');
+    }
+
+    public function test_finalized_card_uses_detailed_financial_and_date_layout(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'finalized',
+            'assignor_name' => 'Rosineide Souza da Silva',
+            'process_number' => '0901037-10.2019.8.10.0131',
+            'face_value' => 81832.82,
+            'negotiated_amount' => 57282.97,
+            'proposed_amount' => 33174.73,
+            'paid_amount' => 33174.73,
+            'notary_expenses_amount' => 0,
+            'other_expenses_amount' => 0,
+            'estimated_receipt_amount' => 68449.18,
+            'actual_receipt_amount' => 68449.18,
+            'paid_at' => '2023-09-26',
+            'finalized_at' => '2026-07-01',
+        ]);
+
+        Volt::test('writs.kanban')
+            ->assertSee('Rosineide Souza da Silva')
+            ->assertSee('Parte negociada')
+            ->assertSee('Custo')
+            ->assertSee('Pagamento')
+            ->assertSee('26/09/2023')
+            ->assertSee('Recebimento')
+            ->assertSee('01/07/2026')
+            ->assertSee('Recebido')
+            ->assertSee('R$ 68.449,18');
     }
 
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void
