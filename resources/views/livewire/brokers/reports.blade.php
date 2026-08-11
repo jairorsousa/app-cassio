@@ -3,37 +3,76 @@
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
-    public string $period = 'all';
+new #[Layout('layouts.app')] class extends Component
+{
+    public string $month;
+
+    public string $year;
+
+    public string $broker_id = 'all';
+
+    public ?string $start_date = null;
+
+    public ?string $end_date = null;
+
+    public function mount(): void
+    {
+        $this->month = (string) now()->month;
+        $this->year = (string) now()->year;
+    }
+
+    public function clearCustomPeriod(): void
+    {
+        $this->start_date = null;
+        $this->end_date = null;
+    }
+
+    private function selectedDateRange(): array
+    {
+        if ($this->start_date || $this->end_date) {
+            return [$this->start_date, $this->end_date];
+        }
+
+        $year = (int) $this->year;
+
+        if ($this->month === 'all') {
+            return [
+                Carbon::create($year, 1, 1)->startOfYear()->toDateString(),
+                Carbon::create($year, 12, 1)->endOfYear()->toDateString(),
+            ];
+        }
+
+        $date = Carbon::create($year, (int) $this->month, 1);
+
+        return [$date->copy()->startOfMonth()->toDateString(), $date->copy()->endOfMonth()->toDateString()];
+    }
+
+    private function applyFilters(Builder|Relation $query, string $dateColumn): Builder|Relation
+    {
+        [$startDate, $endDate] = $this->selectedDateRange();
+
+        return $query
+            ->when($startDate, fn ($query) => $query->whereDate($dateColumn, '>=', $startDate))
+            ->when($endDate, fn ($query) => $query->whereDate($dateColumn, '<=', $endDate))
+            ->when($this->broker_id !== 'all', fn ($query) => $query->where('broker_id', $this->broker_id));
+    }
 
     public function with(): array
     {
-        $queryCommissions = BrokerCommission::query();
-        $queryAdvances = BrokerAdvance::query();
-
-        if ($this->period === 'this_month') {
-            $queryCommissions->whereMonth('reference_date', now()->month)
-                ->whereYear('reference_date', now()->year);
-            $queryAdvances->whereMonth('date', now()->month)
-                ->whereYear('date', now()->year);
-        } elseif ($this->period === 'last_month') {
-            $queryCommissions->whereMonth('reference_date', now()->subMonth()->month)
-                ->whereYear('reference_date', now()->subMonth()->year);
-            $queryAdvances->whereMonth('date', now()->subMonth()->month)
-                ->whereYear('date', now()->subMonth()->year);
-        } elseif ($this->period === 'this_year') {
-            $queryCommissions->whereYear('reference_date', now()->year);
-            $queryAdvances->whereYear('date', now()->year);
-        }
+        $queryCommissions = $this->applyFilters(BrokerCommission::query(), 'reference_date');
+        $queryAdvances = $this->applyFilters(BrokerAdvance::query(), 'date');
 
         // Resumo geral
         $totalCommissions = (clone $queryCommissions)->sum('commission_amount');
         $totalPendingCommissions = (clone $queryCommissions)->where('status', 'pending')->sum('commission_amount');
         $totalAdvances = (clone $queryAdvances)->sum('amount');
-        
+
         // Comissões pagas no período
         $paidCommissions = (clone $queryCommissions)->whereIn('status', ['paid', 'partially_paid'])
             ->with('broker', 'caseType')
@@ -42,23 +81,24 @@ new #[Layout('layouts.app')] class extends Component {
 
         // Adiantamentos no período
         $advances = (clone $queryAdvances)->with('broker')->orderByDesc('date')->get();
-        $openAdvancesBalance = $advances->sum(fn($a) => $a->remainingBalance());
+        $openAdvancesBalance = $advances->sum(fn ($a) => $a->remainingBalance());
 
         // Por corretor (apenas comissões no período)
-        $brokers = Broker::with(['commissions' => function($q) {
-            if ($this->period === 'this_month') {
-                $q->whereMonth('reference_date', now()->month)->whereYear('reference_date', now()->year);
-            } elseif ($this->period === 'last_month') {
-                $q->whereMonth('reference_date', now()->subMonth()->month)->whereYear('reference_date', now()->subMonth()->year);
-            } elseif ($this->period === 'this_year') {
-                $q->whereYear('reference_date', now()->year);
-            }
-        }])->get()->filter(fn($b) => $b->commissions->isNotEmpty());
+        $brokers = Broker::query()
+            ->when($this->broker_id !== 'all', fn (Builder $query) => $query->whereKey($this->broker_id))
+            ->with(['commissions' => fn ($query) => $this->applyFilters($query, 'reference_date')])
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Broker $broker) => $broker->commissions->isNotEmpty());
+
+        $brokerOptions = Broker::query()->orderBy('name')->get(['id', 'name']);
+        $years = range(now()->year - 3, now()->year + 2);
 
         return compact(
-            'totalCommissions', 'totalPendingCommissions', 
-            'totalAdvances', 'openAdvancesBalance', 
-            'paidCommissions', 'advances', 'brokers'
+            'totalCommissions', 'totalPendingCommissions',
+            'totalAdvances', 'openAdvancesBalance',
+            'paidCommissions', 'advances', 'brokers',
+            'brokerOptions', 'years'
         );
     }
 }; ?>
@@ -69,15 +109,69 @@ new #[Layout('layouts.app')] class extends Component {
     <x-brokers.subnav />
 
     <x-fx.card>
-        <div class="flex gap-sm items-end">
+        <div class="flex flex-col gap-md">
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Período</label>
-                <select wire:model.live="period" class="fx-form-field">
-                    <option value="all">Todo o histórico</option>
-                    <option value="this_month">Este mês</option>
-                    <option value="last_month">Mês passado</option>
-                    <option value="this_year">Este ano</option>
-                </select>
+                <div class="text-sm font-semibold text-mono-900">Filtros do relatório</div>
+                <div class="mt-xxs text-xs text-mono-600">Selecione mês, ano e corretor ou informe um período personalizado.</div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-sm sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Mês</label>
+                    <select wire:model.live="month" class="fx-form-field">
+                        <option value="all">Todos os meses</option>
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Ano</label>
+                    <select wire:model.live="year" class="fx-form-field">
+                        @foreach ($years as $availableYear)
+                            <option value="{{ $availableYear }}">{{ $availableYear }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="sm:col-span-2 lg:col-span-1">
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Corretor</label>
+                    <select wire:model.live="broker_id" class="fx-form-field">
+                        <option value="all">Todos os corretores</option>
+                        @foreach ($brokerOptions as $brokerOption)
+                            <option value="{{ $brokerOption->id }}">{{ $brokerOption->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+
+            <div class="border-t border-mono-200 pt-md">
+                <div class="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
+                    <div class="grid flex-1 grid-cols-1 gap-sm sm:grid-cols-2 lg:max-w-[640px]">
+                        <x-fx.input label="Data inicial" type="date" wire:model.live="start_date" />
+                        <x-fx.input label="Data final" type="date" wire:model.live="end_date" />
+                    </div>
+
+                    @if ($start_date || $end_date)
+                        <button type="button" wire:click="clearCustomPeriod" class="fx-btn fx-btn--text fx-btn--sm self-start lg:self-auto">
+                            <span class="material-icons-outlined text-base">restart_alt</span>
+                            Usar mês e ano
+                        </button>
+                    @endif
+                </div>
+                <div class="mt-xs text-xs text-mono-600">
+                    Ao preencher uma das datas, o período personalizado substitui o filtro de mês e ano.
+                </div>
             </div>
         </div>
     </x-fx.card>
