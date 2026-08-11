@@ -36,6 +36,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $launch_amount = '';
     public string $launch_base_amount = '';
     public ?int $launch_case_type_id = null;
+    public string $launch_name = '';
     public ?int $launch_commission_id = null;
     public string $launch_payment_method = 'PIX';
     public ?int $launch_bank_account_id = null;
@@ -112,6 +113,7 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->launch_type === 'commission') {
             $rules += [
                 'launch_case_type_id' => 'required|exists:case_types,id',
+                'launch_name' => 'required|string|max:160',
                 'launch_amount' => 'required|numeric|min:0.01',
             ];
         }
@@ -143,6 +145,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $commission = $commissions->registerFixedAmount([
                     'broker_id' => $this->financialBroker->id,
                     'case_type_id' => $data['launch_case_type_id'],
+                    'name' => $data['launch_name'],
                     'commission_amount' => $data['launch_amount'],
                     'reference_date' => $data['launch_date'],
                     'bank_account_id' => $data['launch_bank_account_id'] ?? null,
@@ -297,6 +300,7 @@ new #[Layout('layouts.app')] class extends Component {
             'launch_amount',
             'launch_base_amount',
             'launch_case_type_id',
+            'launch_name',
             'launch_commission_id',
             'launch_bank_account_id',
             'launch_notes',
@@ -740,6 +744,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <tr>
                                 <th class="text-left">Data ref.</th>
                                 <th class="text-left">Tipo de caso</th>
+                                <th class="text-left">Nome</th>
                                 <th class="text-right">Comissão</th>
                                 <th class="text-right">Compensado</th>
                                 <th class="text-right">Repassado</th>
@@ -753,6 +758,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <tr>
                                     <td>{{ $com->reference_date->format('d/m/Y') }}</td>
                                     <td>{{ $com->caseType->name }}</td>
+                                    <td class="max-w-[180px] truncate" title="{{ $com->name }}">{{ $com->name ?: '—' }}</td>
                                     <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
                                     <td class="text-right text-up">R$ {{ number_format($com->settledAmount(), 2, ',', '.') }}</td>
                                     <td class="text-right">R$ {{ number_format($com->paidAmount(), 2, ',', '.') }}</td>
@@ -793,6 +799,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <tr>
                                 <th class="text-left">Data</th>
                                 <th class="text-left">Tipo de caso</th>
+                                <th class="text-left">Nome</th>
                                 <th class="text-left">Conta</th>
                                 <th class="text-right">Valor</th>
                                 <th class="text-left">Notas</th>
@@ -804,6 +811,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <tr>
                                     <td>{{ $payment->paid_at->format('d/m/Y') }}</td>
                                     <td>{{ $payment->commission?->caseType?->name ?? '—' }}</td>
+                                    <td class="max-w-[180px] truncate" title="{{ $payment->commission?->name }}">{{ $payment->commission?->name ?: '—' }}</td>
                                     <td>{{ $payment->bankAccount?->name ?? '—' }}</td>
                                     <td class="text-right font-semibold text-down">R$ {{ number_format($payment->amount, 2, ',', '.') }}</td>
                                     <td class="max-w-[200px] truncate text-xxs text-mono-600">{{ $payment->notes ?: '—' }}</td>
@@ -891,6 +899,7 @@ new #[Layout('layouts.app')] class extends Component {
                                                 </p>
                                             @endif
                                         </div>
+                                        <x-jr.input label="Nome" icon="badge" type="text" name="launch_name" wire:model="launch_name" placeholder="Ex.: cliente ou processo" />
                                         <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
                                     @endif
 
@@ -916,7 +925,10 @@ new #[Layout('layouts.app')] class extends Component {
                                                 <option value="">Selecione</option>
                                                 @foreach ($openCommissions as $commission)
                                                     <option value="{{ $commission->id }}">
-                                                        {{ $commission->reference_date->format('d/m/Y') }} · {{ $commission->caseType->name }} · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
+                                                        {{ $commission->reference_date->format('d/m/Y') }}
+                                                        · {{ $commission->caseType->name }}
+                                                        @if ($commission->name) · {{ $commission->name }} @endif
+                                                        · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
                                                     </option>
                                                 @endforeach
                                             </select>

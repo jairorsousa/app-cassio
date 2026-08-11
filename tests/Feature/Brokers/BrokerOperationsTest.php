@@ -244,6 +244,7 @@ class BrokerOperationsTest extends TestCase
         $commission = $service->registerFixedAmount([
             'broker_id' => $this->broker->id,
             'case_type_id' => $this->caseType->id,
+            'name' => 'Cliente Silva',
             'commission_amount' => 1000.00,
             'reference_date' => Carbon::today()->toDateString(),
         ]);
@@ -253,6 +254,7 @@ class BrokerOperationsTest extends TestCase
         $this->assertEquals(300.00, $settled);
         $this->assertEquals(700.00, $commission->fresh()->remainingAmount());
         $this->assertEquals('partially_paid', $commission->fresh()->status);
+        $this->assertEquals('Cliente Silva', $commission->fresh()->name);
     }
 
     public function test_advance_auto_settles_pending_commission_and_keeps_remaining_balance(): void

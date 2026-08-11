@@ -94,7 +94,7 @@ class BrokerStatementService
         )->get()->map(fn (BrokerCommission $commission) => [
             'date' => $commission->reference_date,
             'type' => 'Comissão gerada',
-            'description' => $commission->caseType->name,
+            'description' => trim($commission->caseType->name.($commission->name ? ' · '.$commission->name : '')),
             'amount' => (float) $commission->commission_amount,
             'tone' => 'neutral',
             'icon' => 'percent',
@@ -111,7 +111,8 @@ class BrokerStatementService
         )->get()->map(fn (BrokerCommissionSettlement $settlement) => [
             'date' => Carbon::parse($settlement->settled_at),
             'type' => 'Compensação',
-            'description' => 'Abatido em '.$settlement->commission->caseType->name,
+            'description' => 'Abatido em '.$settlement->commission->caseType->name
+                .($settlement->commission->name ? ' · '.$settlement->commission->name : ''),
             'amount' => (float) $settlement->amount_offset,
             'tone' => 'up',
             'icon' => 'sync',

@@ -31,6 +31,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $launch_amount = '';
     public string $launch_base_amount = '';
     public ?int $launch_case_type_id = null;
+    public string $launch_name = '';
     public ?int $launch_commission_id = null;
     public string $launch_payment_method = 'PIX';
     public ?int $launch_bank_account_id = null;
@@ -85,6 +86,7 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->launch_type === 'commission') {
             $rules += [
                 'launch_case_type_id' => 'required|exists:case_types,id',
+                'launch_name' => 'required|string|max:160',
                 'launch_amount' => 'required|numeric|min:0.01',
             ];
         }
@@ -119,6 +121,7 @@ new #[Layout('layouts.app')] class extends Component {
                 $commission = $commissions->registerFixedAmount([
                     'broker_id' => $financialBroker->id,
                     'case_type_id' => $data['launch_case_type_id'],
+                    'name' => $data['launch_name'],
                     'commission_amount' => $data['launch_amount'],
                     'reference_date' => $data['launch_date'],
                     'bank_account_id' => $data['launch_bank_account_id'] ?? null,
@@ -164,6 +167,7 @@ new #[Layout('layouts.app')] class extends Component {
             'launch_amount',
             'launch_base_amount',
             'launch_case_type_id',
+            'launch_name',
             'launch_commission_id',
             'launch_bank_account_id',
             'launch_notes',
@@ -488,6 +492,7 @@ new #[Layout('layouts.app')] class extends Component {
                                                 </p>
                                             @endif
                                         </div>
+                                        <x-jr.input label="Nome" icon="badge" type="text" name="launch_name" wire:model="launch_name" placeholder="Ex.: cliente ou processo" />
                                         <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
                                     @endif
 
@@ -513,7 +518,10 @@ new #[Layout('layouts.app')] class extends Component {
                                                 <option value="">Selecione</option>
                                                 @foreach ($openCommissions as $commission)
                                                     <option value="{{ $commission->id }}">
-                                                        {{ $commission->reference_date->format('d/m/Y') }} · {{ $commission->caseType->name }} · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
+                                                        {{ $commission->reference_date->format('d/m/Y') }}
+                                                        · {{ $commission->caseType->name }}
+                                                        @if ($commission->name) · {{ $commission->name }} @endif
+                                                        · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
                                                     </option>
                                                 @endforeach
                                             </select>

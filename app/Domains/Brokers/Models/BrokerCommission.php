@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class BrokerCommission extends Model
 {
     protected $fillable = [
-        'broker_id', 'case_type_id', 'base_amount',
+        'broker_id', 'case_type_id', 'name', 'base_amount',
         'percentage_applied', 'commission_amount',
         'status', 'reference_date', 'bank_account_id', 'notes',
     ];

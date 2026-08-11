@@ -20,7 +20,7 @@ class BrokerCommissionService
     /**
      * Registra uma comissão calculando automaticamente o valor baseado na regra vigente.
      *
-     * @param  array{broker_id: int, case_type_id: int, base_amount: float, reference_date: string, bank_account_id?: int, notes?: string}  $data
+     * @param  array{broker_id: int, case_type_id: int, name?: ?string, base_amount: float, reference_date: string, bank_account_id?: int, notes?: string}  $data
      */
     public function register(array $data): BrokerCommission
     {
@@ -41,6 +41,7 @@ class BrokerCommissionService
         return BrokerCommission::create([
             'broker_id' => $data['broker_id'],
             'case_type_id' => $data['case_type_id'],
+            'name' => $this->normalizeName($data['name'] ?? null),
             'base_amount' => $baseAmount,
             'percentage_applied' => $percentage,
             'commission_amount' => $commissionAmount,
@@ -54,7 +55,7 @@ class BrokerCommissionService
     /**
      * Registra uma comissão pelo valor final informado.
      *
-     * @param  array{broker_id: int, case_type_id: int, commission_amount: float, reference_date: string, bank_account_id?: int, notes?: string}  $data
+     * @param  array{broker_id: int, case_type_id: int, name?: ?string, commission_amount: float, reference_date: string, bank_account_id?: int, notes?: string}  $data
      */
     public function registerFixedAmount(array $data): BrokerCommission
     {
@@ -63,6 +64,7 @@ class BrokerCommissionService
         return BrokerCommission::create([
             'broker_id' => $data['broker_id'],
             'case_type_id' => $data['case_type_id'],
+            'name' => $this->normalizeName($data['name'] ?? null),
             'base_amount' => $commissionAmount,
             'percentage_applied' => 0,
             'commission_amount' => $commissionAmount,
@@ -71,6 +73,13 @@ class BrokerCommissionService
             'bank_account_id' => $data['bank_account_id'] ?? null,
             'notes' => $data['notes'] ?? null,
         ]);
+    }
+
+    private function normalizeName(?string $name): ?string
+    {
+        $name = trim((string) $name);
+
+        return $name !== '' ? $name : null;
     }
 
     /**

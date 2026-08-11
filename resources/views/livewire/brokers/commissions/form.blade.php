@@ -10,6 +10,7 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component {
     public Broker $broker;
     public ?int $case_type_id = null;
+    public string $name = '';
     public string $base_amount = '';
     public string $reference_date = '';
     public ?int $bank_account_id = null;
@@ -25,6 +26,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         return [
             'case_type_id' => 'required|exists:case_types,id',
+            'name' => 'required|string|max:160',
             'base_amount' => 'required|numeric|min:0.01',
             'reference_date' => 'required|date',
             'bank_account_id' => 'nullable|exists:bank_accounts,id',
@@ -77,6 +79,7 @@ new #[Layout('layouts.app')] class extends Component {
                         </p>
                     @endif
                 </div>
+                <x-fx.input label="Nome *" wire:model="name" placeholder="Ex.: cliente ou processo" />
                 <x-fx.input label="Valor base *" type="text" x-money wire:model="base_amount" />
                 <x-fx.input label="Data de referência *" type="date" wire:model="reference_date" />
                 <div>

@@ -83,6 +83,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <tr>
                         <th class="text-left">Data ref.</th>
                         <th class="text-left">Tipo de caso</th>
+                        <th class="text-left">Nome</th>
                         <th class="text-right">Base</th>
                         <th class="text-right">%</th>
                         <th class="text-right">Comissão</th>
@@ -97,6 +98,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <tr>
                             <td>{{ $com->reference_date->format('d/m/Y') }}</td>
                             <td>{{ $com->caseType->name }}</td>
+                            <td class="max-w-[180px] truncate" title="{{ $com->name }}">{{ $com->name ?: '—' }}</td>
                             <td class="text-right">R$ {{ number_format($com->base_amount, 2, ',', '.') }}</td>
                             <td class="text-right">{{ number_format($com->percentage_applied, 1, ',', '.') }}%</td>
                             <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
