@@ -130,7 +130,7 @@ new #[Layout('layouts.app')] class extends Component
                     </select>
                 </div>
 
-                <div class="w-[96px]">
+                <div class="w-[116px]">
                     <label class="mb-1 block text-xxs text-mono-600">Ano</label>
                     <select wire:model.live="year" class="fx-form-field h-10 text-sm">
                         @foreach ($years as $availableYear)
@@ -139,7 +139,7 @@ new #[Layout('layouts.app')] class extends Component
                     </select>
                 </div>
 
-                <div class="w-[180px]">
+                <div class="w-[230px]">
                     <label class="mb-1 block text-xxs text-mono-600">Corretor</label>
                     <select wire:model.live="broker_id" class="fx-form-field h-10 text-sm">
                         <option value="all">Todos</option>
