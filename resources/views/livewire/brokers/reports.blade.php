@@ -92,7 +92,7 @@ new #[Layout('layouts.app')] class extends Component
             ->filter(fn (Broker $broker) => $broker->commissions->isNotEmpty());
 
         $brokerOptions = Broker::query()->orderBy('name')->get(['id', 'name']);
-        $years = range(now()->year - 3, now()->year + 2);
+        $years = range(now()->year + 2, now()->year - 3);
 
         return compact(
             'totalCommissions', 'totalPendingCommissions',
@@ -109,17 +109,12 @@ new #[Layout('layouts.app')] class extends Component
     <x-brokers.subnav />
 
     <x-fx.card>
-        <div class="flex flex-col gap-md">
-            <div>
-                <div class="text-sm font-semibold text-mono-900">Filtros do relatório</div>
-                <div class="mt-xxs text-xs text-mono-600">Selecione mês, ano e corretor ou informe um período personalizado.</div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-sm sm:grid-cols-2 lg:grid-cols-3">
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Mês</label>
-                    <select wire:model.live="month" class="fx-form-field">
-                        <option value="all">Todos os meses</option>
+        <div class="flex flex-col gap-sm">
+            <div class="flex flex-wrap items-end gap-2">
+                <div class="w-[140px]">
+                    <label class="mb-1 block text-xxs text-mono-600">Mês</label>
+                    <select wire:model.live="month" class="fx-form-field h-10 text-sm">
+                        <option value="all">Todos</option>
                         <option value="1">Janeiro</option>
                         <option value="2">Fevereiro</option>
                         <option value="3">Março</option>
@@ -135,43 +130,44 @@ new #[Layout('layouts.app')] class extends Component
                     </select>
                 </div>
 
-                <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Ano</label>
-                    <select wire:model.live="year" class="fx-form-field">
+                <div class="w-[96px]">
+                    <label class="mb-1 block text-xxs text-mono-600">Ano</label>
+                    <select wire:model.live="year" class="fx-form-field h-10 text-sm">
                         @foreach ($years as $availableYear)
                             <option value="{{ $availableYear }}">{{ $availableYear }}</option>
                         @endforeach
                     </select>
                 </div>
 
-                <div class="sm:col-span-2 lg:col-span-1">
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Corretor</label>
-                    <select wire:model.live="broker_id" class="fx-form-field">
-                        <option value="all">Todos os corretores</option>
+                <div class="w-[180px]">
+                    <label class="mb-1 block text-xxs text-mono-600">Corretor</label>
+                    <select wire:model.live="broker_id" class="fx-form-field h-10 text-sm">
+                        <option value="all">Todos</option>
                         @foreach ($brokerOptions as $brokerOption)
                             <option value="{{ $brokerOption->id }}">{{ $brokerOption->name }}</option>
                         @endforeach
                     </select>
                 </div>
+
+                <div class="w-[150px]">
+                    <label class="mb-1 block text-xxs text-mono-600">Data inicial</label>
+                    <input type="date" wire:model.live="start_date" class="fx-form-field h-10 text-sm" />
+                </div>
+
+                <div class="w-[150px]">
+                    <label class="mb-1 block text-xxs text-mono-600">Data final</label>
+                    <input type="date" wire:model.live="end_date" class="fx-form-field h-10 text-sm" />
+                </div>
+
+                @if ($start_date || $end_date)
+                    <button type="button" wire:click="clearCustomPeriod" class="fx-btn fx-btn--text fx-btn--sm mb-0.5" title="Usar mês e ano">
+                        <span class="material-icons-outlined text-base">restart_alt</span>
+                        Limpar datas
+                    </button>
+                @endif
             </div>
-
-            <div class="border-t border-mono-200 pt-md">
-                <div class="flex flex-col gap-sm lg:flex-row lg:items-end lg:justify-between">
-                    <div class="grid flex-1 grid-cols-1 gap-sm sm:grid-cols-2 lg:max-w-[640px]">
-                        <x-fx.input label="Data inicial" type="date" wire:model.live="start_date" />
-                        <x-fx.input label="Data final" type="date" wire:model.live="end_date" />
-                    </div>
-
-                    @if ($start_date || $end_date)
-                        <button type="button" wire:click="clearCustomPeriod" class="fx-btn fx-btn--text fx-btn--sm self-start lg:self-auto">
-                            <span class="material-icons-outlined text-base">restart_alt</span>
-                            Usar mês e ano
-                        </button>
-                    @endif
-                </div>
-                <div class="mt-xs text-xs text-mono-600">
-                    Ao preencher uma das datas, o período personalizado substitui o filtro de mês e ano.
-                </div>
+            <div class="text-xs text-mono-600">
+                Datas personalizadas substituem o filtro de mês e ano.
             </div>
         </div>
     </x-fx.card>
