@@ -192,7 +192,7 @@
             </span>
 
             <div class="min-w-0 text-right">
-                <p class="text-[11px] font-medium text-mono-600">Custo</p>
+                <p class="text-[11px] font-medium text-mono-600">Investimento</p>
                 <p class="truncate text-sm font-bold text-mono-900" title="{{ $totalCost > 0 ? 'R$ '.number_format($totalCost, 2, ',', '.') : 'Não informado' }}">
                     {{ $totalCost > 0 ? 'R$ '.number_format($totalCost, 2, ',', '.') : '—' }}
                 </p>

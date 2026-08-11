@@ -73,7 +73,7 @@ class WritKanbanPageTest extends TestCase
         Volt::test('writs.kanban')
             ->assertSee('Rosineide Souza da Silva')
             ->assertSee('Parte negociada')
-            ->assertSee('Custo')
+            ->assertSee('Investimento')
             ->assertSee('Pagamento')
             ->assertSee('26/09/2023')
             ->assertSee('Recebimento')
