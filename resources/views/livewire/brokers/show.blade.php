@@ -2,11 +2,14 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Services\BrokerAdvanceService;
+use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\CaseType;
+use App\Domains\Brokers\Services\BrokerAdvanceService;
 use App\Domains\Brokers\Services\BrokerBalanceCalculator;
 use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
 use App\Domains\Brokers\Services\BrokerProfileService;
 use App\Domains\Brokers\Services\BrokerStatementService;
 use App\Domains\Contacts\Models\Contact;
@@ -178,6 +181,51 @@ new #[Layout('layouts.app')] class extends Component {
         }
     }
 
+    public function deleteAdvance(int $advanceId, BrokerLedgerDeletionService $deletion): void
+    {
+        $this->assertFinancialBroker();
+
+        $advance = BrokerAdvance::where('broker_id', $this->financialBroker->id)->findOrFail($advanceId);
+
+        try {
+            $deletion->deleteAdvance($advance);
+            $this->financialBroker->refresh();
+            session()->flash('status', 'Adiantamento excluído. Despesa e compensações vinculadas foram desfeitas.');
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function deleteCommission(int $commissionId, BrokerLedgerDeletionService $deletion): void
+    {
+        $this->assertFinancialBroker();
+
+        $commission = BrokerCommission::where('broker_id', $this->financialBroker->id)->findOrFail($commissionId);
+
+        try {
+            $deletion->deleteCommission($commission);
+            $this->financialBroker->refresh();
+            session()->flash('status', 'Comissão excluída. Repasses, despesas e compensações vinculadas foram desfeitos.');
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function deletePayment(int $paymentId, BrokerLedgerDeletionService $deletion): void
+    {
+        $this->assertFinancialBroker();
+
+        $payment = BrokerCommissionPayment::where('broker_id', $this->financialBroker->id)->findOrFail($paymentId);
+
+        try {
+            $deletion->deletePayment($payment);
+            $this->financialBroker->refresh();
+            session()->flash('status', 'Repasse excluído. A despesa no caixa foi removida e o saldo da comissão foi recalculado.');
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
     public function with(BrokerBalanceCalculator $calc, BrokerStatementService $statementService): array
     {
         $advanceBalance = [
@@ -235,6 +283,11 @@ new #[Layout('layouts.app')] class extends Component {
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
+    }
+
+    private function assertFinancialBroker(): void
+    {
+        abort_unless($this->financialBroker, 404);
     }
 
     private function resetLaunchForm(): void
@@ -639,6 +692,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <th class="text-right">Compensado</th>
                                 <th class="text-right">Saldo</th>
                                 <th class="text-left">Notas</th>
+                                <th class="text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -653,6 +707,17 @@ new #[Layout('layouts.app')] class extends Component {
                                         R$ {{ number_format($adv->remainingBalance(), 2, ',', '.') }}
                                     </td>
                                     <td class="max-w-[200px] truncate text-xxs text-mono-600">{{ $adv->notes ?: '—' }}</td>
+                                    <td class="text-right">
+                                        <button
+                                            type="button"
+                                            wire:click="deleteAdvance({{ $adv->id }})"
+                                            wire:confirm="Excluir este adiantamento? A despesa no caixa será removida e as compensações com comissões serão desfeitas."
+                                            class="fx-btn fx-btn--text fx-btn--sm text-error"
+                                            title="Excluir adiantamento"
+                                        >
+                                            <span class="material-icons-outlined text-base">delete_outline</span>
+                                        </button>
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -680,6 +745,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <th class="text-right">Repassado</th>
                                 <th class="text-right">Saldo</th>
                                 <th class="text-center">Status</th>
+                                <th class="text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -695,6 +761,17 @@ new #[Layout('layouts.app')] class extends Component {
                                         <span class="inline-flex items-center rounded-pill px-2.5 py-1 text-xs font-semibold {{ $com->status === 'paid' ? 'bg-up-bg text-up' : ($com->status === 'partially_paid' ? 'bg-mono-100 text-mono-600' : 'bg-down-bg text-down') }}">
                                             {{ ['pending' => 'Pendente', 'paid' => 'Pago', 'partially_paid' => 'Parcial'][$com->status] }}
                                         </span>
+                                    </td>
+                                    <td class="text-right">
+                                        <button
+                                            type="button"
+                                            wire:click="deleteCommission({{ $com->id }})"
+                                            wire:confirm="Excluir esta comissão? Repasses, despesas no caixa e compensações com adiantamentos serão desfeitos."
+                                            class="fx-btn fx-btn--text fx-btn--sm text-error"
+                                            title="Excluir comissão"
+                                        >
+                                            <span class="material-icons-outlined text-base">delete_outline</span>
+                                        </button>
                                     </td>
                                 </tr>
                             @endforeach
@@ -719,6 +796,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 <th class="text-left">Conta</th>
                                 <th class="text-right">Valor</th>
                                 <th class="text-left">Notas</th>
+                                <th class="text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -729,6 +807,17 @@ new #[Layout('layouts.app')] class extends Component {
                                     <td>{{ $payment->bankAccount?->name ?? '—' }}</td>
                                     <td class="text-right font-semibold text-down">R$ {{ number_format($payment->amount, 2, ',', '.') }}</td>
                                     <td class="max-w-[200px] truncate text-xxs text-mono-600">{{ $payment->notes ?: '—' }}</td>
+                                    <td class="text-right">
+                                        <button
+                                            type="button"
+                                            wire:click="deletePayment({{ $payment->id }})"
+                                            wire:confirm="Excluir este repasse? A despesa no caixa será removida e o saldo da comissão será reaberto."
+                                            class="fx-btn fx-btn--text fx-btn--sm text-error"
+                                            title="Excluir repasse"
+                                        >
+                                            <span class="material-icons-outlined text-base">delete_outline</span>
+                                        </button>
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>

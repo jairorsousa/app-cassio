@@ -3,6 +3,7 @@
 namespace App\Domains\Brokers\Models;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Transaction;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,7 +12,7 @@ class BrokerAdvance extends Model
 {
     protected $fillable = [
         'broker_id', 'date', 'amount', 'payment_method',
-        'bank_account_id', 'notes',
+        'bank_account_id', 'transaction_id', 'notes',
     ];
 
     protected $casts = [
@@ -27,6 +28,11 @@ class BrokerAdvance extends Model
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);
+    }
+
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class);
     }
 
     public function settlements(): HasMany

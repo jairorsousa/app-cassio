@@ -19,7 +19,7 @@ class CreateExpenseOnAdvancePaid
             return;
         }
 
-        $this->transactions->create([
+        $transaction = $this->transactions->create([
             'type' => 'expense',
             'date' => $advance->date->toDateString(),
             'amount' => $advance->amount,
@@ -29,5 +29,7 @@ class CreateExpenseOnAdvancePaid
             'source_type' => $advance->broker::class,
             'source_id' => $advance->broker_id,
         ]);
+
+        $advance->update(['transaction_id' => $transaction->id]);
     }
 }

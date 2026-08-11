@@ -49,4 +49,19 @@ class TransactionService
             $transaction->delete();
         });
     }
+
+    /**
+     * Remove um lançamento gerado por outro domínio (ex.: corretores),
+     * quando a exclusão parte do módulo de origem.
+     */
+    public function deleteGenerated(Transaction $transaction): void
+    {
+        if (! $transaction->isReadOnly()) {
+            $this->delete($transaction);
+
+            return;
+        }
+
+        $transaction->delete();
+    }
 }

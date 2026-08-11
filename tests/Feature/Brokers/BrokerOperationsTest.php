@@ -13,6 +13,7 @@ use App\Domains\Brokers\Models\BrokerCommissionRule;
 use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerAdvanceService;
 use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
 use App\Domains\Contacts\Models\Contact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -379,5 +380,107 @@ class BrokerOperationsTest extends TestCase
             'bank_account_id' => $this->account->id,
             'amount' => 250.50,
         ]);
+    }
+
+    public function test_delete_advance_removes_banking_expense_and_settlements(): void
+    {
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->toDateString(),
+            'amount' => 300.00,
+            'bank_account_id' => $this->account->id,
+        ])['advance'];
+
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 200.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+
+        app(BrokerCommissionService::class)->settleWithAdvances($commission);
+
+        $this->assertEquals('paid', $commission->fresh()->status);
+        $this->assertDatabaseCount('broker_commission_settlements', 1);
+        $this->assertNotNull($advance->fresh()->transaction_id);
+
+        app(BrokerLedgerDeletionService::class)->deleteAdvance($advance->fresh());
+
+        $this->assertDatabaseMissing('broker_advances', ['id' => $advance->id]);
+        $this->assertDatabaseCount('broker_commission_settlements', 0);
+        $this->assertSoftDeleted('transactions', [
+            'id' => $advance->transaction_id,
+        ]);
+        $this->assertEquals('pending', $commission->fresh()->status);
+        $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
+    }
+
+    public function test_delete_payment_reopens_commission_and_removes_expense(): void
+    {
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 500.00,
+            'reference_date' => Carbon::today()->toDateString(),
+            'bank_account_id' => $this->account->id,
+        ]);
+
+        $payment = app(BrokerCommissionService::class)->payAmount(
+            $commission,
+            200.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+        );
+
+        $this->assertEquals('partially_paid', $commission->fresh()->status);
+        $this->assertNotNull($payment->transaction_id);
+
+        app(BrokerLedgerDeletionService::class)->deletePayment($payment->fresh());
+
+        $this->assertDatabaseMissing('broker_commission_payments', ['id' => $payment->id]);
+        $this->assertSoftDeleted('transactions', ['id' => $payment->transaction_id]);
+        $this->assertEquals('pending', $commission->fresh()->status);
+        $this->assertEquals(500.00, $commission->fresh()->remainingAmount());
+    }
+
+    public function test_delete_commission_cascades_payments_settlements_and_expenses(): void
+    {
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 150.00,
+            'bank_account_id' => $this->account->id,
+        ])['advance'];
+
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 400.00,
+            'reference_date' => Carbon::today()->toDateString(),
+            'bank_account_id' => $this->account->id,
+        ]);
+
+        app(BrokerCommissionService::class)->settleWithAdvances($commission);
+
+        $payment = app(BrokerCommissionService::class)->payAmount(
+            $commission->fresh(),
+            100.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+        );
+
+        $this->assertEquals(150.00, $advance->fresh()->settledAmount());
+        $this->assertEquals(150.00, $commission->fresh()->remainingAmount());
+
+        app(BrokerLedgerDeletionService::class)->deleteCommission($commission->fresh());
+
+        $this->assertDatabaseMissing('broker_commissions', ['id' => $commission->id]);
+        $this->assertDatabaseMissing('broker_commission_payments', ['id' => $payment->id]);
+        $this->assertDatabaseCount('broker_commission_settlements', 0);
+        $this->assertSoftDeleted('transactions', ['id' => $payment->transaction_id]);
+        // Adiantamento permanece; só a compensação some.
+        $this->assertDatabaseHas('broker_advances', ['id' => $advance->id, 'amount' => 150.00]);
+        $this->assertEquals(0.00, $advance->fresh()->settledAmount());
+        $this->assertEquals(150.00, $advance->fresh()->remainingBalance());
     }
 }

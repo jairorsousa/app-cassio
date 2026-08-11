@@ -193,7 +193,7 @@ class BrokerCommissionService
         );
     }
 
-    private function syncStatus(BrokerCommission $commission): void
+    public function syncStatus(BrokerCommission $commission): void
     {
         $paidOrSettled = $commission->settledAmount() + $commission->paidAmount();
         $remaining = $commission->remainingAmount();
