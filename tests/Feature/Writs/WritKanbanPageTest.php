@@ -43,6 +43,7 @@ class WritKanbanPageTest extends TestCase
             ->assertSee('Perdido')
             ->assertSee('Monitorar Processo')
             ->assertSeeHtml('grid-cols-8')
+            ->assertSeeHtml('min-w-[3680px]')
             ->assertSeeHtml('kanban-card flex')
             ->assertSeeHtml('w-1.5 shrink-0 bg-info');
     }
@@ -79,6 +80,43 @@ class WritKanbanPageTest extends TestCase
             ->assertSee('01/07/2026')
             ->assertSee('Recebido')
             ->assertSee('R$ 68.449,18');
+    }
+
+    public function test_summary_indicators_use_the_expected_stages_and_amounts(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        $amountsByStage = [
+            'monitoring' => [100, 1000],
+            'negotiation' => [200, 2000],
+            'pending' => [300, 3000],
+            'paid' => [400, 4000],
+            'petitioning' => [500, 5000],
+            'awaiting_receipt' => [600, 6000],
+            'finalized' => [700, 7000],
+            'lost' => [800, 8000],
+        ];
+
+        foreach ($amountsByStage as $stage => [$negotiatedAmount, $estimatedReceiptAmount]) {
+            Writ::create([
+                'type' => 'rpv',
+                'stage' => $stage,
+                'negotiated_amount' => $negotiatedAmount,
+                'estimated_receipt_amount' => $estimatedReceiptAmount,
+            ]);
+        }
+
+        Volt::test('writs.kanban')
+            ->assertSeeInOrder([
+                'Total investido',
+                'R$ 2.200,00',
+                'Total Investido em aberto',
+                'Total recebimento estimado',
+                'R$ 29.000,00',
+                'Total recebido (finalizados)',
+                'Lucro líquido',
+            ]);
     }
 
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void

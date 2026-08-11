@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\GoogleCalendarController;
+use App\Http\Controllers\WritPdfController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -47,6 +48,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->na
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('writs')->name('writs.')->group(function () {
     Volt::route('/', 'writs.kanban')->name('kanban');
     Volt::route('/create', 'writs.form')->name('create');
+    Route::get('/{writ}/pdf', WritPdfController::class)->name('pdf')->whereNumber('writ');
     Volt::route('/{writ}/edit', 'writs.form')->name('edit');
     Volt::route('/{writ}', 'writs.show')->name('show');
     Volt::route('/reports/profitability', 'writs.reports')->name('reports');

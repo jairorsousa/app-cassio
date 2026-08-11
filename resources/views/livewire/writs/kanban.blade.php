@@ -800,8 +800,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ];
         }
 
-        $totalFace = Writ::sum('face_value');
+        $totalInvested = Writ::whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
+            ->sum('negotiated_amount');
         $totalOpenInvested = Writ::where('stage', '!=', 'finalized')->sum('paid_amount');
+        $totalEstimatedReceipt = Writ::where('stage', '!=', 'finalized')->sum('estimated_receipt_amount');
         $finalizedWrits = Writ::where('stage', 'finalized')->get();
         $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
         $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
@@ -810,7 +812,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
             : 0.0;
 
-        return compact('stages', 'totalFace', 'totalOpenInvested', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+        return compact('stages', 'totalInvested', 'totalOpenInvested', 'totalEstimatedReceipt', 'totalReceived', 'profitAmount', 'profitPercentage') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -827,15 +829,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <x-jr.card>
             <div class="flex items-center gap-3">
                 <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
-                    <span class="material-icons-outlined text-[22px]">request_quote</span>
+                    <span class="material-icons-outlined text-[22px]">account_balance_wallet</span>
                 </div>
                 <div>
-                    <p class="text-xs font-medium text-mono-600">Total requisitórios</p>
-                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalFace, 2, ',', '.') }}</p>
+                    <p class="text-xs font-medium text-mono-600">Total investido</p>
+                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</p>
                 </div>
             </div>
         </x-jr.card>
@@ -848,6 +850,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div>
                     <p class="text-xs font-medium text-mono-600">Total Investido em aberto</p>
                     <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card>
+            <div class="flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200">
+                    <span class="material-icons-outlined text-[22px]">track_changes</span>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Total recebimento estimado</p>
+                    <p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</p>
                 </div>
             </div>
         </x-jr.card>
@@ -1035,7 +1049,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[2880px] grid-cols-8 gap-4">
+        <div class="grid min-w-[3680px] grid-cols-8 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">

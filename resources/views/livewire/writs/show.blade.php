@@ -349,12 +349,9 @@ new #[Layout('layouts.app')] class extends Component {
                     @endif
                 </div>
 
-                <div class="mt-6 flex items-center justify-between">
-                    <button class="inline-flex items-center gap-2 rounded-lg border border-primary-500 px-4 py-2 text-sm font-semibold text-primary-500 hover:bg-primary-50 transition-colors">
-                        <span class="material-icons-outlined text-[18px]">visibility</span> Ver cálculo
-                    </button>
-                    <a href="#" class="inline-flex items-center gap-2 text-sm font-medium text-mono-500 hover:text-mono-900 transition-colors">
-                        <span class="material-icons-outlined text-[18px]">receipt</span> Exibir requisitório
+                <div class="mt-6 flex justify-end">
+                    <a href="{{ route('writs.pdf', $writ) }}" class="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                        <span class="material-icons-outlined text-[18px]">picture_as_pdf</span> Gerar PDF
                     </a>
                 </div>
             </div>
