@@ -757,7 +757,7 @@ new #[Layout('layouts.app')] class extends Component {
                             @foreach ($allCommissions as $com)
                                 <tr>
                                     <td>{{ $com->reference_date->format('d/m/Y') }}</td>
-                                    <td>{{ $com->caseType->name }}</td>
+                                    <td>{{ $com->caseType?->name ?: '—' }}</td>
                                     <td class="max-w-[180px] truncate" title="{{ $com->name }}">{{ $com->name ?: '—' }}</td>
                                     <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
                                     <td class="text-right text-up">R$ {{ number_format($com->settledAmount(), 2, ',', '.') }}</td>
@@ -899,7 +899,16 @@ new #[Layout('layouts.app')] class extends Component {
                                                 </p>
                                             @endif
                                         </div>
-                                        <x-jr.input label="Nome" icon="badge" type="text" name="launch_name" wire:model="launch_name" placeholder="Ex.: cliente ou processo" />
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Nome</label>
+                                            <input
+                                                type="text"
+                                                wire:model="launch_name"
+                                                placeholder="Ex. cliente ou processo"
+                                                class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 placeholder:text-mono-300 focus:border-primary-500 focus:ring-0"
+                                            />
+                                            @error('launch_name') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
                                         <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
                                     @endif
 
@@ -925,8 +934,8 @@ new #[Layout('layouts.app')] class extends Component {
                                                 <option value="">Selecione</option>
                                                 @foreach ($openCommissions as $commission)
                                                     <option value="{{ $commission->id }}">
-                                                        {{ $commission->reference_date->format('d/m/Y') }}
-                                                        · {{ $commission->caseType->name }}
+                                                        {{ $commission->reference_date?->format('d/m/Y') }}
+                                                        · {{ $commission->caseType?->name ?: 'Sem tipo' }}
                                                         @if ($commission->name) · {{ $commission->name }} @endif
                                                         · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
                                                     </option>

@@ -103,4 +103,34 @@ class ContactManagementTest extends TestCase
             ->assertSee('Corretor Centralizado')
             ->assertSee('Corretor');
     }
+
+    public function test_broker_show_renders_commission_name_field_and_table(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $contact = Contact::create([
+            'name' => 'Corretor Com Nome',
+            'type' => 'corretor',
+            'status' => true,
+        ]);
+
+        $financial = app(\App\Domains\Brokers\Services\BrokerProfileService::class)->forContact($contact);
+        $caseType = \App\Domains\Brokers\Models\CaseType::create(['name' => 'Previdenciário', 'status' => true]);
+
+        \App\Domains\Brokers\Models\BrokerCommission::create([
+            'broker_id' => $financial->id,
+            'case_type_id' => $caseType->id,
+            'name' => 'Cliente Teste',
+            'base_amount' => 100,
+            'percentage_applied' => 0,
+            'commission_amount' => 100,
+            'status' => 'pending',
+            'reference_date' => now()->toDateString(),
+        ]);
+
+        $this->get(route('brokers.show', ['broker' => $contact, 'records_tab' => 'commissions']))
+            ->assertOk()
+            ->assertSee('Cliente Teste')
+            ->assertSee('Previdenciário');
+    }
 }
