@@ -254,7 +254,7 @@ class BrokerOperationsTest extends TestCase
         $this->assertEquals('partially_paid', $commission->fresh()->status);
     }
 
-    public function test_advance_splits_payment_between_repasse_and_remaining_advance(): void
+    public function test_advance_creates_full_amount_even_with_pending_commission(): void
     {
         $service = app(BrokerCommissionService::class);
         $commission = $service->registerFixedAmount([
@@ -273,31 +273,27 @@ class BrokerOperationsTest extends TestCase
             'payment_method' => 'PIX',
         ]);
 
-        $this->assertEquals(200.00, $result['repassed_amount']);
-        $this->assertEquals(100.00, $result['advance_amount']);
+        $this->assertEquals(0.00, $result['repassed_amount']);
+        $this->assertEquals(300.00, $result['advance_amount']);
         $this->assertNotNull($result['advance']);
-        $this->assertEquals(100.00, (float) $result['advance']->amount);
-        $this->assertEquals('paid', $commission->fresh()->status);
-        $this->assertEquals(0.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals(300.00, (float) $result['advance']->amount);
 
-        $this->assertDatabaseHas('broker_commission_payments', [
-            'broker_id' => $this->broker->id,
-            'commission_id' => $commission->id,
-            'amount' => 200.00,
-        ]);
+        // Comissão em aberto permanece intacta; repasse é fluxo separado.
+        $this->assertEquals('pending', $commission->fresh()->status);
+        $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
+        $this->assertDatabaseCount('broker_commission_payments', 0);
 
         $this->assertDatabaseHas('broker_advances', [
             'broker_id' => $this->broker->id,
-            'amount' => 100.00,
+            'amount' => 300.00,
         ]);
 
-        $transactions = Transaction::where('source_type', Broker::class)
-            ->where('source_id', $this->broker->id)
-            ->orderBy('amount')
-            ->get();
-
-        $this->assertCount(2, $transactions);
-        $this->assertEquals([100.00, 200.00], $transactions->pluck('amount')->map(fn ($amount) => (float) $amount)->all());
+        $this->assertDatabaseHas('transactions', [
+            'source_type' => Broker::class,
+            'source_id' => $this->broker->id,
+            'type' => 'expense',
+            'amount' => 300.00,
+        ]);
     }
 
     public function test_advance_without_commission_balance_creates_only_advance(): void
@@ -319,7 +315,7 @@ class BrokerOperationsTest extends TestCase
         ]);
     }
 
-    public function test_advance_smaller_than_commission_balance_registers_only_repasse(): void
+    public function test_advance_does_not_auto_pay_pending_commissions(): void
     {
         $service = app(BrokerCommissionService::class);
         $commission = $service->registerFixedAmount([
@@ -337,12 +333,16 @@ class BrokerOperationsTest extends TestCase
             'bank_account_id' => $this->account->id,
         ]);
 
-        $this->assertEquals(150.00, $result['repassed_amount']);
-        $this->assertEquals(0.00, $result['advance_amount']);
-        $this->assertNull($result['advance']);
-        $this->assertDatabaseCount('broker_advances', 0);
-        $this->assertEquals(50.00, $commission->fresh()->remainingAmount());
-        $this->assertEquals('partially_paid', $commission->fresh()->status);
+        $this->assertEquals(0.00, $result['repassed_amount']);
+        $this->assertEquals(150.00, $result['advance_amount']);
+        $this->assertNotNull($result['advance']);
+        $this->assertDatabaseHas('broker_advances', [
+            'broker_id' => $this->broker->id,
+            'amount' => 150.00,
+        ]);
+        $this->assertDatabaseCount('broker_commission_payments', 0);
+        $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('pending', $commission->fresh()->status);
     }
 
     public function test_brokers_index_modal_creates_broker_advance_for_contact(): void
