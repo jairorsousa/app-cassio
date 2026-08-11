@@ -43,7 +43,7 @@ class WritKanbanPageTest extends TestCase
             ->assertSee('Perdido')
             ->assertSee('Monitorar Processo')
             ->assertSeeHtml('grid-cols-8')
-            ->assertSeeHtml('min-w-[3680px]')
+            ->assertSeeHtml('min-w-[3040px]')
             ->assertSeeHtml('kanban-card flex')
             ->assertSeeHtml('w-1.5 shrink-0 bg-info');
     }

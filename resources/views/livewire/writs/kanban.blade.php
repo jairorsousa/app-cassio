@@ -1049,7 +1049,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[3680px] grid-cols-8 gap-4">
+        <div class="grid min-w-[3040px] grid-cols-8 gap-4">
             @foreach ($stages as $stage)
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
