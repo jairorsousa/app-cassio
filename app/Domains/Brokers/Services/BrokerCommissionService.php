@@ -122,6 +122,58 @@ class BrokerCommissionService
     }
 
     /**
+     * Compensa o saldo de um adiantamento contra comissões em aberto (FIFO).
+     * Não gera repasse em dinheiro — apenas settlement interno.
+     */
+    public function settleAdvanceWithCommissions(BrokerAdvance $advance): float
+    {
+        return DB::transaction(function () use ($advance) {
+            $advance = BrokerAdvance::lockForUpdate()->findOrFail($advance->id);
+            $remaining = $advance->remainingBalance();
+
+            if ($remaining <= 0) {
+                return 0.0;
+            }
+
+            $commissions = BrokerCommission::where('broker_id', $advance->broker_id)
+                ->with('settlements', 'payments')
+                ->orderBy('reference_date')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (BrokerCommission $commission) => $commission->remainingAmount() > 0);
+
+            $totalSettled = 0.0;
+
+            foreach ($commissions as $commission) {
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $offset = round(min($remaining, $commission->remainingAmount()), 2);
+
+                if ($offset <= 0) {
+                    continue;
+                }
+
+                BrokerCommissionSettlement::create([
+                    'commission_id' => $commission->id,
+                    'advance_id' => $advance->id,
+                    'amount_offset' => $offset,
+                    'settled_at' => now(),
+                ]);
+
+                $totalSettled += $offset;
+                $remaining = round($remaining - $offset, 2);
+
+                $this->syncStatus($commission->fresh());
+            }
+
+            return round($totalSettled, 2);
+        });
+    }
+
+    /**
      * Registra um repasse em dinheiro ao corretor.
      */
     public function payAmount(

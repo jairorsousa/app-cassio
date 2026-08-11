@@ -255,7 +255,7 @@ class BrokerOperationsTest extends TestCase
         $this->assertEquals('partially_paid', $commission->fresh()->status);
     }
 
-    public function test_advance_creates_full_amount_even_with_pending_commission(): void
+    public function test_advance_auto_settles_pending_commission_and_keeps_remaining_balance(): void
     {
         $service = app(BrokerCommissionService::class);
         $commission = $service->registerFixedAmount([
@@ -276,13 +276,16 @@ class BrokerOperationsTest extends TestCase
 
         $this->assertEquals(0.00, $result['repassed_amount']);
         $this->assertEquals(300.00, $result['advance_amount']);
+        $this->assertEquals(200.00, $result['settled_amount']);
         $this->assertNotNull($result['advance']);
         $this->assertEquals(300.00, (float) $result['advance']->amount);
+        $this->assertEquals(100.00, $result['advance']->remainingBalance());
 
-        // Comissão em aberto permanece intacta; repasse é fluxo separado.
-        $this->assertEquals('pending', $commission->fresh()->status);
-        $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
+        // Compensação interna (não repasse em dinheiro).
+        $this->assertEquals('paid', $commission->fresh()->status);
+        $this->assertEquals(0.00, $commission->fresh()->remainingAmount());
         $this->assertDatabaseCount('broker_commission_payments', 0);
+        $this->assertDatabaseCount('broker_commission_settlements', 1);
 
         $this->assertDatabaseHas('broker_advances', [
             'broker_id' => $this->broker->id,
@@ -307,16 +310,18 @@ class BrokerOperationsTest extends TestCase
         ]);
 
         $this->assertEquals(0.00, $result['repassed_amount']);
+        $this->assertEquals(0.00, $result['settled_amount']);
         $this->assertEquals(250.50, $result['advance_amount']);
         $this->assertNull($result['payments']->first());
         $this->assertDatabaseCount('broker_commission_payments', 0);
+        $this->assertDatabaseCount('broker_commission_settlements', 0);
         $this->assertDatabaseHas('broker_advances', [
             'broker_id' => $this->broker->id,
             'amount' => 250.50,
         ]);
     }
 
-    public function test_advance_does_not_auto_pay_pending_commissions(): void
+    public function test_advance_partially_settles_pending_commission_without_repasse(): void
     {
         $service = app(BrokerCommissionService::class);
         $commission = $service->registerFixedAmount([
@@ -336,14 +341,17 @@ class BrokerOperationsTest extends TestCase
 
         $this->assertEquals(0.00, $result['repassed_amount']);
         $this->assertEquals(150.00, $result['advance_amount']);
+        $this->assertEquals(150.00, $result['settled_amount']);
         $this->assertNotNull($result['advance']);
+        $this->assertEquals(0.00, $result['advance']->remainingBalance());
         $this->assertDatabaseHas('broker_advances', [
             'broker_id' => $this->broker->id,
             'amount' => 150.00,
         ]);
         $this->assertDatabaseCount('broker_commission_payments', 0);
-        $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
-        $this->assertEquals('pending', $commission->fresh()->status);
+        $this->assertDatabaseCount('broker_commission_settlements', 1);
+        $this->assertEquals(50.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('partially_paid', $commission->fresh()->status);
     }
 
     public function test_brokers_index_modal_creates_broker_advance_for_contact(): void
