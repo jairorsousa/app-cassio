@@ -1097,7 +1097,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     @if ($stage['key'] === 'monitoring' && (float) $w->face_value <= 0 && (float) $w->negotiated_amount <= 0)
                                         <div class="text-sm font-semibold text-mono-600">Sem valores cadastrados</div>
                                     @elseif ((float) $w->negotiated_amount > 0)
-                                        <div class="text-lg font-bold text-mono-900">Face: R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
+                                        <div class="text-xs font-medium text-mono-600">Face: R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
                                         <div class="mt-1 text-lg font-bold text-mono-900">R$ {{ number_format($w->negotiated_amount, 2, ',', '.') }}</div>
                                     @else
                                         <div class="text-lg font-bold text-mono-900">R$ {{ number_format($w->face_value, 2, ',', '.') }}</div>
