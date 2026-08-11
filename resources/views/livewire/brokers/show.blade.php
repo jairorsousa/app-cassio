@@ -295,17 +295,17 @@ new #[Layout('layouts.app')] class extends Component {
 
     @if ($financialBroker)
         <div class="flex flex-wrap justify-end gap-xs">
-            <button type="button" wire:click="openLaunchModal('payment')" class="fx-btn fx-btn--standard fx-btn--sm gap-xs">
-                <span class="material-icons-outlined text-base">payments</span>
-                Registrar repasse
+            <button type="button" wire:click="openLaunchModal('advance')" class="fx-btn fx-btn--primary fx-btn--sm gap-xs">
+                <span class="material-icons-outlined text-base">add</span>
+                Adiantamento
             </button>
             <button type="button" wire:click="openLaunchModal('commission')" class="fx-btn fx-btn--standard fx-btn--sm gap-xs border-primary-500 text-primary-500 hover:bg-primary-100">
                 <span class="material-icons-outlined text-base">add</span>
-                Registrar comissão
+                Comissão
             </button>
-            <button type="button" wire:click="openLaunchModal('advance')" class="fx-btn fx-btn--primary fx-btn--sm gap-xs">
+            <button type="button" wire:click="openLaunchModal('payment')" class="fx-btn fx-btn--standard fx-btn--sm gap-xs">
                 <span class="material-icons-outlined text-base">add</span>
-                Novo adiantamento
+                Repasse
             </button>
         </div>
     @endif
