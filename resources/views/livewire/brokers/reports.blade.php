@@ -201,27 +201,39 @@ new #[Layout('layouts.app')] class extends Component
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-md">
         <x-fx.card>
-            <h3 class="text-md font-semibold mb-sm">Comissões Pagas no Período</h3>
+            <h3 class="text-md font-semibold mb-sm">Comissões</h3>
             @if ($paidCommissions->isEmpty())
-                <div class="text-sm text-mono-600">Nenhuma comissão paga no período selecionado.</div>
+                <div class="text-sm text-mono-600">Nenhuma comissão no período selecionado.</div>
             @else
-                <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Data</th><th class="text-left">Corretor</th><th class="text-right">Comissão</th></tr></thead>
-                    <tbody>
-                        @foreach ($paidCommissions as $com)
+                <div class="overflow-x-auto">
+                    <table class="fx-table w-full text-sm">
+                        <thead>
                             <tr>
-                                <td>{{ $com->reference_date->format('d/m/Y') }}</td>
-                                <td>{{ $com->broker->name }}</td>
-                                <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
+                                <th class="text-left">Data</th>
+                                <th class="text-left">Corretor</th>
+                                <th class="text-left">Tipo de caso</th>
+                                <th class="text-left">Nome</th>
+                                <th class="text-right">Comissão</th>
                             </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            @foreach ($paidCommissions as $com)
+                                <tr>
+                                    <td>{{ $com->reference_date->format('d/m/Y') }}</td>
+                                    <td>{{ $com->broker?->name ?: '—' }}</td>
+                                    <td>{{ $com->caseType?->name ?: '—' }}</td>
+                                    <td class="max-w-[160px] truncate" title="{{ $com->name }}">{{ $com->name ?: '—' }}</td>
+                                    <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @endif
         </x-fx.card>
 
         <x-fx.card>
-            <h3 class="text-md font-semibold mb-sm">Resumo por Corretor (No período)</h3>
+            <h3 class="text-md font-semibold mb-sm">Resumo Corretor</h3>
             @if ($brokers->isEmpty())
                 <div class="text-sm text-mono-600">Nenhum corretor com comissões no período selecionado.</div>
             @else
