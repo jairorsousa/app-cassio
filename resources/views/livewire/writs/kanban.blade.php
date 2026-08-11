@@ -1104,7 +1104,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     @endif
 
                                     <div class="mt-2 flex items-center justify-between gap-2 border-t border-mono-100 pt-2">
-                                        <span class="truncate rounded-pill bg-mono-100 px-2.5 py-1 text-[10px] font-semibold text-mono-600">
+                                        <span @class([
+                                            'truncate rounded-pill px-2.5 py-1 text-[10px] font-semibold',
+                                            'bg-primary-100 text-primary-500' => $w->type === 'rpv',
+                                            'bg-info-bg text-info' => $w->type !== 'rpv',
+                                        ])>
                                             {{ $w->type === 'rpv' ? 'RPV' : 'Precatório' }}
                                         </span>
                                         @if ($stage['key'] !== 'monitoring' || (float) $w->totalCost() > 0)
