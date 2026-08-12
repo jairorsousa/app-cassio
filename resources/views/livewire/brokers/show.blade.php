@@ -472,7 +472,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div class="min-w-0">
                     <div class="text-xxs text-mono-600 uppercase">Saldo Adiantamento</div>
-                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['advance_pending'] > 0 ? 'text-down' : 'text-up' }}">R$ {{ number_format($statementSummary['advance_pending'], 2, ',', '.') }}</div>
+                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['advance_pending'] > 0 ? 'text-down' : 'text-mono-900' }}">R$ {{ number_format($statementSummary['advance_pending'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
