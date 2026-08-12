@@ -804,6 +804,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ->sum('negotiated_amount');
         $totalOpenInvested = Writ::where('stage', '!=', 'finalized')->sum('paid_amount');
         $totalEstimatedReceipt = Writ::where('stage', '!=', 'finalized')->sum('estimated_receipt_amount');
+        $expectedProfitAmount = round((float) $totalEstimatedReceipt - (float) $totalOpenInvested, 2);
+        $expectedProfitPercentage = $totalOpenInvested > 0
+            ? round($expectedProfitAmount / (float) $totalOpenInvested * 100, 2)
+            : 0.0;
         $finalizedWrits = Writ::where('stage', 'finalized')->get();
         $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
         $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
@@ -812,7 +816,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
             : 0.0;
 
-        return compact('stages', 'totalNegotiated', 'totalOpenInvested', 'totalEstimatedReceipt', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+        return compact('stages', 'totalNegotiated', 'totalOpenInvested', 'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'totalReceived', 'profitAmount', 'profitPercentage') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -829,7 +833,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <x-jr.card :padding="false" class="min-w-0 p-4">
             <div class="flex items-center gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
@@ -862,6 +866,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="min-w-0">
                     <p class="text-[11px] font-medium leading-tight text-mono-600">Total recebimento estimado</p>
                     <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card :padding="false" class="min-w-0 border-primary-500 bg-primary-100 p-4">
+            <div class="flex items-center gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
+                    <span class="material-icons-outlined text-[20px]">trending_up</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Lucro esperado</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</p>
+                    <p class="mt-1 text-[11px] font-semibold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</p>
                 </div>
             </div>
         </x-jr.card>

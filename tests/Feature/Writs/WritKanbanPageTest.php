@@ -108,17 +108,41 @@ class WritKanbanPageTest extends TestCase
         }
 
         Volt::test('writs.kanban')
-            ->assertSeeHtml('lg:grid-cols-5')
+            ->assertSeeHtml('lg:grid-cols-3')
+            ->assertSeeHtml('2xl:grid-cols-6')
             ->assertSeeInOrder([
                 'Total Negociado',
                 'R$ 2.200,00',
                 'Total Investido em aberto',
                 'Total recebimento estimado',
                 'R$ 29.000,00',
+                'Lucro esperado',
+                'R$ 29.000,00',
+                '0,00%',
                 'Total recebido (finalizados)',
                 'Lucro líquido',
             ])
             ->assertDontSee('Total investido');
+    }
+
+    public function test_expected_profit_indicator_uses_open_investment_as_its_percentage_base(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'awaiting_receipt',
+            'paid_amount' => 137770,
+            'estimated_receipt_amount' => 308000,
+        ]);
+
+        Volt::test('writs.kanban')
+            ->assertSeeInOrder([
+                'Lucro esperado',
+                'R$ 170.230,00',
+                '123,56%',
+            ]);
     }
 
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void
