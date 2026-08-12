@@ -811,12 +811,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $finalizedWrits = Writ::where('stage', 'finalized')->get();
         $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
         $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
+        $totalInvested = round((float) $totalOpenInvested + (float) $totalFinalizedCost, 2);
         $profitAmount = round((float) $totalReceived - (float) $totalFinalizedCost, 2);
         $profitPercentage = $totalFinalizedCost > 0
             ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
             : 0.0;
 
-        return compact('stages', 'totalNegotiated', 'totalOpenInvested', 'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+        return compact('stages', 'totalNegotiated', 'totalInvested', 'totalOpenInvested', 'totalFinalizedCost', 'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'totalReceived', 'profitAmount', 'profitPercentage') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -833,9 +834,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
         <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
                     <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
                 </div>
@@ -847,19 +848,31 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-mono-100 text-mono-600">
+                    <span class="material-icons-outlined text-[20px]">payments</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total investido</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
                     <span class="material-icons-outlined text-[20px]">payments</span>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total Investido em aberto</p>
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Investimento em aberto</p>
                     <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
                 </div>
             </div>
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200">
                     <span class="material-icons-outlined text-[20px]">track_changes</span>
                 </div>
@@ -871,7 +884,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 border-primary-500 bg-primary-100 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
                     <span class="material-icons-outlined text-[20px]">trending_up</span>
                 </div>
@@ -884,7 +897,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
                     <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
                 </div>
@@ -896,7 +909,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-col items-start gap-2.5">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
+                    <span class="material-icons-outlined text-[20px]">price_check</span>
+                </div>
+                <div class="min-w-0">
+                    <p class="text-[11px] font-medium leading-tight text-mono-600">Investimento finalizado</p>
+                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalFinalizedCost, 2, ',', '.') }}</p>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card :padding="false" class="min-w-0 p-4">
+            <div class="flex flex-col items-start gap-2.5">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">
                     <span class="material-icons-outlined text-[20px]">trending_up</span>
                 </div>

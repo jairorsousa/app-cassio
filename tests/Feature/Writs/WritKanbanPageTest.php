@@ -108,21 +108,22 @@ class WritKanbanPageTest extends TestCase
         }
 
         Volt::test('writs.kanban')
-            ->assertSeeHtml('lg:grid-cols-3')
-            ->assertSeeHtml('2xl:grid-cols-6')
+            ->assertSeeHtml('lg:grid-cols-4')
+            ->assertSeeHtml('2xl:grid-cols-8')
             ->assertSeeInOrder([
                 'Total Negociado',
                 'R$ 2.200,00',
-                'Total Investido em aberto',
+                'Total investido',
+                'Investimento em aberto',
                 'Total recebimento estimado',
                 'R$ 29.000,00',
                 'Lucro esperado',
                 'R$ 29.000,00',
                 '0,00%',
                 'Total recebido (finalizados)',
+                'Investimento finalizado',
                 'Lucro líquido',
-            ])
-            ->assertDontSee('Total investido');
+            ]);
     }
 
     public function test_expected_profit_indicator_uses_open_investment_as_its_percentage_base(): void
@@ -142,6 +143,43 @@ class WritKanbanPageTest extends TestCase
                 'Lucro esperado',
                 'R$ 170.230,00',
                 '123,56%',
+            ]);
+    }
+
+    public function test_investment_indicators_separate_open_and_finalized_amounts(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'awaiting_receipt',
+            'paid_amount' => 137770,
+            'estimated_receipt_amount' => 308000,
+        ]);
+
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'finalized',
+            'paid_amount' => 95000,
+            'notary_expenses_amount' => 300,
+            'other_expenses_amount' => 33.22,
+            'actual_receipt_amount' => 152554.85,
+        ]);
+
+        Volt::test('writs.kanban')
+            ->assertSeeInOrder([
+                'Total investido',
+                'R$ 233.103,22',
+                'Investimento em aberto',
+                'R$ 137.770,00',
+                'Total recebido (finalizados)',
+                'R$ 152.554,85',
+                'Investimento finalizado',
+                'R$ 95.333,22',
+                'Lucro líquido',
+                'R$ 57.221,63',
+                '60,02%',
             ]);
     }
 
