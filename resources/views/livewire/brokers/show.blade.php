@@ -417,7 +417,7 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
             <div class="grid grid-cols-1 gap-xs sm:grid-cols-3 lg:w-[640px]">
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Atalho</label>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Período</label>
                     <select wire:model.live="period" class="fx-form-field">
                         <option value="all">Todo histórico</option>
                         <option value="month">Mês atual</option>
@@ -438,19 +438,8 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">account_balance_wallet</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Adiantado no período</div>
+                    <div class="text-xxs text-mono-600 uppercase">Valor Adiantado</div>
                     <div class="mt-xxs truncate text-xl font-bold text-mono-900">R$ {{ number_format($statementSummary['advanced_period'], 2, ',', '.') }}</div>
-                </div>
-            </div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="flex items-center gap-sm">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-down-bg bg-down-bg text-down">
-                    <span class="material-icons-outlined text-2xl">balance</span>
-                </div>
-                <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Adiantado pendente</div>
-                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['advance_pending'] > 0 ? 'text-down' : 'text-up' }}">R$ {{ number_format($statementSummary['advance_pending'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
@@ -460,7 +449,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">percent</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Comissões geradas</div>
+                    <div class="text-xxs text-mono-600 uppercase">Comissão</div>
                     <div class="mt-xxs truncate text-xl font-bold text-mono-900">R$ {{ number_format($statementSummary['commissions_period'], 2, ',', '.') }}</div>
                 </div>
             </div>
@@ -471,8 +460,19 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">sync</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Compensado</div>
+                    <div class="text-xxs text-mono-600 uppercase">Valor Compensado</div>
                     <div class="mt-xxs truncate text-xl font-bold text-up">R$ {{ number_format($statementSummary['settled_period'], 2, ',', '.') }}</div>
+                </div>
+            </div>
+        </x-fx.card>
+        <x-fx.card>
+            <div class="flex items-center gap-sm">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-down-bg bg-down-bg text-down">
+                    <span class="material-icons-outlined text-2xl">balance</span>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-xxs text-mono-600 uppercase">Saldo Adiantamento</div>
+                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['advance_pending'] > 0 ? 'text-down' : 'text-up' }}">R$ {{ number_format($statementSummary['advance_pending'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
@@ -482,7 +482,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">payments</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Repassado</div>
+                    <div class="text-xxs text-mono-600 uppercase">Repasse</div>
                     <div class="mt-xxs truncate text-xl font-bold text-mono-900">R$ {{ number_format($statementSummary['repassed_period'], 2, ',', '.') }}</div>
                 </div>
             </div>
@@ -493,7 +493,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">request_quote</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Saldo a pagar</div>
+                    <div class="text-xxs text-mono-600 uppercase">Saldo</div>
                     <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['commission_pending'] > 0 ? 'text-down' : 'text-up' }}">R$ {{ number_format($statementSummary['commission_pending'], 2, ',', '.') }}</div>
                 </div>
             </div>
