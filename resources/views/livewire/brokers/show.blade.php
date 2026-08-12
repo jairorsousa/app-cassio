@@ -493,8 +493,8 @@ new #[Layout('layouts.app')] class extends Component {
                     <span class="material-icons-outlined text-2xl">request_quote</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Saldo</div>
-                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['commission_pending'] > 0 ? 'text-down' : 'text-up' }}">R$ {{ number_format($statementSummary['commission_pending'], 2, ',', '.') }}</div>
+                    <div class="text-xxs text-mono-600 uppercase">Saldo Corretor</div>
+                    <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['commission_pending'] != 0 ? 'text-up' : 'text-mono-900' }}">R$ {{ number_format($statementSummary['commission_pending'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
