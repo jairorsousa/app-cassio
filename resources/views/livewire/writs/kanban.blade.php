@@ -777,10 +777,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $q = Writ::with('assignors.contact');
         if ($this->type) $q->where('type', $this->type);
         if ($this->debtor) {
-            $q->where(function ($query) {
-                $query->where('debtor_entity', 'like', '%'.$this->debtor.'%')
-                    ->orWhere('assignor_name', 'like', '%'.$this->debtor.'%')
-                    ->orWhere('process_number', 'like', '%'.$this->debtor.'%');
+            $search = trim($this->debtor);
+            $q->where(function ($query) use ($search) {
+                $query->where('debtor_entity', 'like', '%'.$search.'%')
+                    ->orWhere('assignor_name', 'like', '%'.$search.'%')
+                    ->orWhere('process_number', 'like', '%'.$search.'%')
+                    ->orWhereHas('assignors.contact', function ($contactQuery) use ($search) {
+                        $contactQuery->where('name', 'like', '%'.$search.'%');
+                    });
             });
         }
         if ($this->from) $q->where('paid_at', '>=', $this->from);
@@ -878,8 +882,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
                     <dt class="text-xs font-medium text-mono-600">Lucro esperado</dt>
                     <dd class="flex shrink-0 items-center gap-2">
-                        <span class="whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</span>
                         <span class="rounded-pill bg-primary-100 px-2 py-1 text-[11px] font-bold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</span>
+                        <span class="whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</span>
                     </dd>
                 </div>
             </dl>
@@ -905,8 +909,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
                     <dt class="text-xs font-medium text-mono-600">Lucro líquido</dt>
                     <dd class="flex shrink-0 items-center gap-2">
-                        <span class="whitespace-nowrap text-lg font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</span>
                         <span class="rounded-pill px-2 py-1 text-[11px] font-bold {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</span>
+                        <span class="whitespace-nowrap text-lg font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</span>
                     </dd>
                 </div>
             </dl>

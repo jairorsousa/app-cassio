@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Writs;
 
+use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritPetitionToGoogleCalendar;
 use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Services\WritService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -119,8 +121,8 @@ class WritKanbanPageTest extends TestCase
                 'Recebimento estimado',
                 'R$ 29.000,00',
                 'Lucro esperado',
-                'R$ 29.000,00',
                 '0,00%',
+                'R$ 29.000,00',
                 'Finalizado',
                 'Investimento finalizado',
                 'Total recebido',
@@ -143,8 +145,8 @@ class WritKanbanPageTest extends TestCase
         Volt::test('writs.kanban')
             ->assertSeeInOrder([
                 'Lucro esperado',
-                'R$ 170.230,00',
                 '123,56%',
+                'R$ 170.230,00',
             ]);
     }
 
@@ -180,8 +182,8 @@ class WritKanbanPageTest extends TestCase
                 'Total recebido',
                 'R$ 152.554,85',
                 'Lucro líquido',
-                'R$ 57.221,63',
                 '60,02%',
+                'R$ 57.221,63',
             ]);
     }
 
@@ -221,8 +223,8 @@ class WritKanbanPageTest extends TestCase
                 'Recebimento estimado',
                 'R$ 160,00',
                 'Lucro esperado',
-                'R$ 60,00',
                 '60,00%',
+                'R$ 60,00',
             ])
             ->assertDontSee('R$ 300,00');
 
@@ -238,8 +240,8 @@ class WritKanbanPageTest extends TestCase
                 'R$ 210,00',
                 'Total recebido',
                 'R$ 300,00',
-                'R$ 90,00',
                 '42,86%',
+                'R$ 90,00',
             ])
             ->assertDontSee('R$ 160,00');
 
@@ -249,6 +251,50 @@ class WritKanbanPageTest extends TestCase
             ->set('to', '2026-02-28')
             ->assertSee('R$ 300,00')
             ->assertDontSee('R$ 160,00');
+    }
+
+    public function test_search_finds_writ_by_linked_assignor_name(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        $francisco = Contact::create([
+            'name' => 'Francisco de Sousa',
+            'status' => true,
+        ]);
+        $maria = Contact::create([
+            'name' => 'Maria Oliveira',
+            'status' => true,
+        ]);
+
+        $franciscoWrit = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'negotiation',
+            'process_number' => '0001111-11.2026.8.13.0001',
+        ]);
+        $mariaWrit = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'negotiation',
+            'process_number' => '0002222-22.2026.8.13.0001',
+        ]);
+
+        WritAssignor::create([
+            'writ_id' => $franciscoWrit->id,
+            'contact_id' => $francisco->id,
+            'role' => 'parte',
+        ]);
+        WritAssignor::create([
+            'writ_id' => $mariaWrit->id,
+            'contact_id' => $maria->id,
+            'role' => 'parte',
+        ]);
+
+        Volt::test('writs.kanban')
+            ->set('debtor', 'Francisco')
+            ->assertSee('Francisco de Sousa')
+            ->assertSee('0001111-11.2026.8.13.0001')
+            ->assertDontSee('Maria Oliveira')
+            ->assertDontSee('0002222-22.2026.8.13.0001');
     }
 
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void
