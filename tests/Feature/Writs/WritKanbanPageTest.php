@@ -254,6 +254,9 @@ class WritKanbanPageTest extends TestCase
             ->call('clearFilters')
             ->set('from', '2026-02-01')
             ->set('to', '2026-02-28')
+            ->assertSee('R$ 160,00')
+            ->assertSee('R$ 300,00')
+            ->set('dateFilter', 'payment')
             ->assertSee('R$ 300,00')
             ->assertDontSee('R$ 160,00');
 

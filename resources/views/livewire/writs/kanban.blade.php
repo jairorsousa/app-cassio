@@ -47,7 +47,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     #[Url]
     public string $to = '';
     #[Url]
-    public string $dateFilter = 'payment';
+    public string $dateFilter = '';
 
     public bool $showFormModal = false;
     public bool $showMonitoringModal = false;
@@ -774,6 +774,23 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->reset(['type', 'debtor', 'from', 'to', 'dateFilter']);
     }
 
+    public function updatedFrom(): void
+    {
+        $this->resetDateFilterWhenPeriodIsEmpty();
+    }
+
+    public function updatedTo(): void
+    {
+        $this->resetDateFilterWhenPeriodIsEmpty();
+    }
+
+    private function resetDateFilterWhenPeriodIsEmpty(): void
+    {
+        if (blank($this->from) && blank($this->to)) {
+            $this->dateFilter = '';
+        }
+    }
+
     public function with(): array
     {
         $q = Writ::with('assignors.contact');
@@ -789,13 +806,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     });
             });
         }
-        $dateColumn = match ($this->dateFilter) {
-            'awaiting' => 'awaiting_receipt_at',
-            'receipt' => 'finalized_at',
-            default => 'paid_at',
-        };
-        if ($this->from) $q->whereDate($dateColumn, '>=', $this->from);
-        if ($this->to) $q->whereDate($dateColumn, '<=', $this->to);
+        if ($this->dateFilter) {
+            $dateColumn = match ($this->dateFilter) {
+                'awaiting' => 'awaiting_receipt_at',
+                'receipt' => 'finalized_at',
+                default => 'paid_at',
+            };
+            if ($this->from) $q->whereDate($dateColumn, '>=', $this->from);
+            if ($this->to) $q->whereDate($dateColumn, '<=', $this->to);
+        }
 
         $filteredWrits = $q->orderByDesc('id')->get();
         $writs = $filteredWrits->groupBy('stage');
@@ -944,16 +963,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <option value="precatorio">Precatório</option>
             </select>
 
-            <select wire:model.live="dateFilter" aria-label="Tipo de data" title="Tipo de data" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 pr-10 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0">
-                <option value="payment">Pagamento</option>
-                <option value="awaiting">Aguardando</option>
-                <option value="receipt">Recebimento</option>
-            </select>
-
             <input type="date" wire:model.live="from" aria-label="Data inicial" title="Data inicial" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
             <input type="date" wire:model.live="to" aria-label="Data final" title="Data final" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
 
-            @if ($type || $debtor || $from || $to || $dateFilter !== 'payment')
+            @if ($from || $to)
+                <select wire:model.live="dateFilter" aria-label="Tipo de data" title="Tipo de data" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 pr-10 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0">
+                    <option value="">Tipo de data</option>
+                    <option value="payment">Pagamento</option>
+                    <option value="awaiting">Aguardando</option>
+                    <option value="receipt">Recebimento</option>
+                </select>
+            @endif
+
+            @if ($type || $debtor || $from || $to || $dateFilter)
                 <button type="button" class="h-12 rounded-pill px-4 text-sm font-semibold text-mono-600 transition-colors hover:bg-mono-100 hover:text-mono-900" wire:click="clearFilters">
                     Limpar
                 </button>
