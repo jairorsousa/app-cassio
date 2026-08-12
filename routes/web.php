@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BrokerReportPdfController;
 use App\Http\Controllers\GoogleCalendarController;
 use App\Http\Controllers\WritPdfController;
 use Illuminate\Support\Facades\Route;
@@ -73,6 +74,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('
     Volt::route('/tipos-caso', 'brokers.tipos-caso.index')->name('tipos-caso.index');
     Route::redirect('/case-types', '/brokers/tipos-caso');
     Volt::route('/reports/overview', 'brokers.reports')->name('reports');
+    Route::get('/reports/overview/pdf', BrokerReportPdfController::class)->name('reports.pdf');
     Volt::route('/{broker}/edit', 'brokers.form')->name('edit')->whereNumber('broker');
     Volt::route('/{broker}', 'brokers.show')->name('show')->whereNumber('broker');
     Volt::route('/{broker}/advances', 'brokers.advances.index')->name('advances.index')->whereNumber('broker');

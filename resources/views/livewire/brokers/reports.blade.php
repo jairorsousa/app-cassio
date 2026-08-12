@@ -1,11 +1,7 @@
 <?php
 
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Models\BrokerAdvance;
-use App\Domains\Brokers\Models\BrokerCommission;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Carbon;
+use App\Domains\Brokers\Services\BrokerReportService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -33,73 +29,19 @@ new #[Layout('layouts.app')] class extends Component
         $this->end_date = null;
     }
 
-    private function selectedDateRange(): array
-    {
-        if ($this->start_date || $this->end_date) {
-            return [$this->start_date, $this->end_date];
-        }
-
-        $year = (int) $this->year;
-
-        if ($this->month === 'all') {
-            return [
-                Carbon::create($year, 1, 1)->startOfYear()->toDateString(),
-                Carbon::create($year, 12, 1)->endOfYear()->toDateString(),
-            ];
-        }
-
-        $date = Carbon::create($year, (int) $this->month, 1);
-
-        return [$date->copy()->startOfMonth()->toDateString(), $date->copy()->endOfMonth()->toDateString()];
-    }
-
-    private function applyFilters(Builder|Relation $query, string $dateColumn): Builder|Relation
-    {
-        [$startDate, $endDate] = $this->selectedDateRange();
-
-        return $query
-            ->when($startDate, fn ($query) => $query->whereDate($dateColumn, '>=', $startDate))
-            ->when($endDate, fn ($query) => $query->whereDate($dateColumn, '<=', $endDate))
-            ->when($this->broker_id !== 'all', fn ($query) => $query->where('broker_id', $this->broker_id));
-    }
-
     public function with(): array
     {
-        $queryCommissions = $this->applyFilters(BrokerCommission::query(), 'reference_date');
-        $queryAdvances = $this->applyFilters(BrokerAdvance::query(), 'date');
-
-        // Resumo geral
-        $totalCommissions = (clone $queryCommissions)->sum('commission_amount');
-        $totalPendingCommissions = (clone $queryCommissions)->where('status', 'pending')->sum('commission_amount');
-        $totalAdvances = (clone $queryAdvances)->sum('amount');
-
-        // Comissões pagas no período
-        $paidCommissions = (clone $queryCommissions)->whereIn('status', ['paid', 'partially_paid'])
-            ->with('broker', 'caseType')
-            ->orderByDesc('reference_date')
-            ->get();
-
-        // Adiantamentos no período
-        $advances = (clone $queryAdvances)->with('broker')->orderByDesc('date')->get();
-        $openAdvancesBalance = $advances->sum(fn ($a) => $a->remainingBalance());
-
-        // Por corretor (apenas comissões no período)
-        $brokers = Broker::query()
-            ->when($this->broker_id !== 'all', fn (Builder $query) => $query->whereKey($this->broker_id))
-            ->with(['commissions' => fn ($query) => $this->applyFilters($query, 'reference_date')])
-            ->orderBy('name')
-            ->get()
-            ->filter(fn (Broker $broker) => $broker->commissions->isNotEmpty());
-
+        $report = app(BrokerReportService::class)->generate(
+            $this->month,
+            (int) $this->year,
+            $this->broker_id !== 'all' ? (int) $this->broker_id : null,
+            $this->start_date,
+            $this->end_date,
+        );
         $brokerOptions = Broker::query()->orderBy('name')->get(['id', 'name']);
         $years = range(now()->year + 2, now()->year - 3);
 
-        return compact(
-            'totalCommissions', 'totalPendingCommissions',
-            'totalAdvances', 'openAdvancesBalance',
-            'paidCommissions', 'advances', 'brokers',
-            'brokerOptions', 'years'
-        );
+        return $report + compact('brokerOptions', 'years');
     }
 }; ?>
 
@@ -165,6 +107,20 @@ new #[Layout('layouts.app')] class extends Component
                         Limpar datas
                     </button>
                 @endif
+
+                <a
+                    href="{{ route('brokers.reports.pdf', array_filter([
+                        'month' => $month,
+                        'year' => $year,
+                        'broker_id' => $broker_id !== 'all' ? $broker_id : null,
+                        'start_date' => $start_date,
+                        'end_date' => $end_date,
+                    ], fn ($value) => $value !== null && $value !== '')) }}"
+                    class="fx-btn fx-btn--primary fx-btn--sm mb-0.5 ml-auto"
+                >
+                    <span class="material-icons-outlined text-base">picture_as_pdf</span>
+                    Gerar PDF
+                </a>
             </div>
             <div class="text-xs text-mono-600">
                 Datas personalizadas substituem o filtro de mês e ano.
