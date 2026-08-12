@@ -108,20 +108,22 @@ class WritKanbanPageTest extends TestCase
         }
 
         Volt::test('writs.kanban')
-            ->assertSeeHtml('lg:grid-cols-4')
-            ->assertSeeHtml('2xl:grid-cols-8')
+            ->assertSeeHtml('lg:grid-cols-3')
             ->assertSeeInOrder([
-                'Total Negociado',
+                'Totais',
+                'Total negociado',
                 'R$ 2.200,00',
                 'Total investido',
+                'Em aberto',
                 'Investimento em aberto',
-                'Total recebimento estimado',
+                'Recebimento estimado',
                 'R$ 29.000,00',
                 'Lucro esperado',
                 'R$ 29.000,00',
                 '0,00%',
-                'Total recebido (finalizados)',
+                'Finalizado',
                 'Investimento finalizado',
+                'Total recebido',
                 'Lucro líquido',
             ]);
     }
@@ -173,10 +175,10 @@ class WritKanbanPageTest extends TestCase
                 'R$ 233.103,22',
                 'Investimento em aberto',
                 'R$ 137.770,00',
-                'Total recebido (finalizados)',
-                'R$ 152.554,85',
                 'Investimento finalizado',
                 'R$ 95.333,22',
+                'Total recebido',
+                'R$ 152.554,85',
                 'Lucro líquido',
                 'R$ 57.221,63',
                 '60,02%',
@@ -216,7 +218,7 @@ class WritKanbanPageTest extends TestCase
                 'R$ 100,00',
                 'Investimento em aberto',
                 'R$ 100,00',
-                'Total recebimento estimado',
+                'Recebimento estimado',
                 'R$ 160,00',
                 'Lucro esperado',
                 'R$ 60,00',
@@ -232,10 +234,10 @@ class WritKanbanPageTest extends TestCase
                 'R$ 210,00',
                 'Investimento em aberto',
                 'R$ 0,00',
-                'Total recebido (finalizados)',
-                'R$ 300,00',
                 'Investimento finalizado',
                 'R$ 210,00',
+                'Total recebido',
+                'R$ 300,00',
                 'R$ 90,00',
                 '42,86%',
             ])

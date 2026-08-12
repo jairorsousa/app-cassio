@@ -837,103 +837,79 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
-                    <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total Negociado</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalNegotiated, 2, ',', '.') }}</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
+            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-mono-100 text-mono-600">
-                    <span class="material-icons-outlined text-[20px]">payments</span>
+                    <span class="material-icons-outlined text-[20px]">pie_chart_outline</span>
                 </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total investido</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</p>
-                </div>
+                <h2 class="text-base font-bold text-mono-900">Totais</h2>
             </div>
+
+            <dl class="divide-y divide-mono-100">
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Total negociado</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalNegotiated, 2, ',', '.') }}</dd>
+                </div>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Total investido</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</dd>
+                </div>
+            </dl>
         </x-jr.card>
 
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
+        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
+            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-[20px]">payments</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Investimento em aberto</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/45 dark:text-violet-200">
-                    <span class="material-icons-outlined text-[20px]">track_changes</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total recebimento estimado</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 border-primary-500 bg-primary-100 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-[20px]">trending_up</span>
-                </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Lucro esperado</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</p>
-                    <p class="mt-1 text-[11px] font-semibold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</p>
-                </div>
-            </div>
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
                     <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
                 </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Total recebido (finalizados)</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</p>
-                </div>
+                <h2 class="text-base font-bold text-mono-900">Em aberto</h2>
             </div>
+
+            <dl class="divide-y divide-mono-100">
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Investimento em aberto</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</dd>
+                </div>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Recebimento estimado</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</dd>
+                </div>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Lucro esperado</dt>
+                    <dd class="flex shrink-0 items-center gap-2">
+                        <span class="whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</span>
+                        <span class="rounded-pill bg-primary-100 px-2 py-1 text-[11px] font-bold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</span>
+                    </dd>
+                </div>
+            </dl>
         </x-jr.card>
 
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-info-bg text-info">
-                    <span class="material-icons-outlined text-[20px]">price_check</span>
+        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
+            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
+                    <span class="material-icons-outlined text-[20px]">check_circle</span>
                 </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Investimento finalizado</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold text-mono-900">R$ {{ number_format($totalFinalizedCost, 2, ',', '.') }}</p>
-                </div>
+                <h2 class="text-base font-bold text-mono-900">Finalizado</h2>
             </div>
-        </x-jr.card>
 
-        <x-jr.card :padding="false" class="min-w-0 p-4">
-            <div class="flex flex-col items-start gap-2.5">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">
-                    <span class="material-icons-outlined text-[20px]">trending_up</span>
+            <dl class="divide-y divide-mono-100">
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Investimento finalizado</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalFinalizedCost, 2, ',', '.') }}</dd>
                 </div>
-                <div class="min-w-0">
-                    <p class="text-[11px] font-medium leading-tight text-mono-600">Lucro líquido</p>
-                    <p class="mt-1 whitespace-nowrap text-xl font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</p>
-                    <p class="mt-1 text-[11px] font-semibold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</p>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Total recebido</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</dd>
                 </div>
-            </div>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Lucro líquido</dt>
+                    <dd class="flex shrink-0 items-center gap-2">
+                        <span class="whitespace-nowrap text-lg font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</span>
+                        <span class="rounded-pill px-2 py-1 text-[11px] font-bold {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</span>
+                    </dd>
+                </div>
+            </dl>
         </x-jr.card>
     </div>
 
