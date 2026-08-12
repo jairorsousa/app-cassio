@@ -225,6 +225,21 @@ class Writ extends Model
         return round(($this->actualProfit() / $cost) * 100, 2);
     }
 
+    public function actualProfitPerMonth(): ?float
+    {
+        $profit = $this->actualProfit();
+        if ($profit === null) {
+            return null;
+        }
+
+        $months = $this->actualMonths();
+        if (! $months || $months <= 0) {
+            return 0.0;
+        }
+
+        return round($profit / $months, 2);
+    }
+
     public function actualProfitPercentagePerMonth(): ?float
     {
         if ($this->actualProfitPercentage() === null) {

@@ -322,8 +322,14 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="font-bold text-sm text-mono-900">{{ $writ->actualMonths() ?? '—' }} meses</div>
                         </div>
                         <div class="col-span-2 lg:col-span-1 border-t border-mono-100 pt-3 mt-1 lg:border-t-0 lg:pt-0 lg:mt-0">
-                            <div class="text-xs text-mono-500 mb-1">Lucro real / Mês</div>
-                            <div class="font-bold text-sm text-up">{{ number_format($writ->actualProfitPercentagePerMonth(), 2, ',', '.') }}%</div>
+                            <div>
+                                <div class="text-xs text-mono-500 mb-1">Lucro real / Mês (R$)</div>
+                                <div class="font-bold text-sm text-up">R$ {{ number_format($writ->actualProfitPerMonth(), 2, ',', '.') }}</div>
+                            </div>
+                            <div class="mt-3">
+                                <div class="text-xs text-mono-500 mb-1">Lucro real / Mês (%)</div>
+                                <div class="font-bold text-sm text-up">{{ number_format($writ->actualProfitPercentagePerMonth(), 2, ',', '.') }}%</div>
+                            </div>
                         </div>
                     @else
                         <div>

@@ -27,6 +27,29 @@ class WritPdfTest extends TestCase
             ->assertDontSee('Exibir requisitório');
     }
 
+    public function test_details_page_displays_monthly_actual_profit_in_amount_above_percentage(): void
+    {
+        $user = User::factory()->create();
+        $writ = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'finalized',
+            'paid_amount' => 800,
+            'actual_receipt_amount' => 1100,
+            'paid_at' => '2026-01-15',
+            'finalized_at' => '2026-04-15',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('writs.show', $writ))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Lucro real / Mês (R$)',
+                'R$ 100,00',
+                'Lucro real / Mês (%)',
+                '12,50%',
+            ]);
+    }
+
     public function test_authenticated_user_can_download_the_writ_pdf(): void
     {
         $user = User::factory()->create();

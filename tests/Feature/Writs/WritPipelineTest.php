@@ -555,6 +555,31 @@ class WritPipelineTest extends TestCase
         $this->assertNull($writ->actualProfit());
     }
 
+    public function test_writ_model_actual_profit_per_month(): void
+    {
+        $writ = $this->makeWrit([
+            'paid_amount' => 800.00,
+            'actual_receipt_amount' => 1100.00,
+            'paid_at' => '2026-01-15',
+            'finalized_at' => '2026-04-15',
+        ]);
+
+        $this->assertEquals(3, $writ->actualMonths());
+        $this->assertEquals(100.00, $writ->actualProfitPerMonth());
+    }
+
+    public function test_writ_model_actual_profit_per_month_returns_null_without_receipt(): void
+    {
+        $writ = $this->makeWrit([
+            'paid_amount' => 800.00,
+            'actual_receipt_amount' => null,
+            'paid_at' => '2026-01-15',
+            'finalized_at' => '2026-04-15',
+        ]);
+
+        $this->assertNull($writ->actualProfitPerMonth());
+    }
+
     public function test_transactions_are_linked_polymorphically(): void
     {
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 100000, 'status' => true]);
