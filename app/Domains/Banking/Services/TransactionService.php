@@ -51,6 +51,23 @@ class TransactionService
     }
 
     /**
+     * Atualiza um lançamento gerado por outro domínio,
+     * quando a edição parte do módulo de origem.
+     */
+    public function updateGenerated(Transaction $transaction, array $data): Transaction
+    {
+        if (! $transaction->isReadOnly()) {
+            return $this->update($transaction, $data);
+        }
+
+        return DB::transaction(function () use ($transaction, $data) {
+            $transaction->update($data);
+
+            return $transaction->fresh();
+        });
+    }
+
+    /**
      * Remove um lançamento gerado por outro domínio (ex.: corretores),
      * quando a exclusão parte do módulo de origem.
      */

@@ -34,8 +34,15 @@ new #[Layout('layouts.app')] class extends Component {
             'applied_percentage' => 'required|numeric|min:0|max:100',
             'description' => 'required|string|max:200',
             'category_id' => 'nullable|exists:categories,id',
-            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'bank_account_id' => 'required|exists:bank_accounts,id',
             'expenseNotes' => 'nullable|string',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'bank_account_id.required' => 'Informe a conta para a despesa entrar no caixa.',
         ];
     }
 
@@ -141,7 +148,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="text-right font-semibold text-system-down">R$ {{ number_format((float) $e->proportional_amount, 2, ',', '.') }}</td>
                             <td class="text-right whitespace-nowrap">
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $e->id }})">Editar</button>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $e->id }})" wire:confirm="Excluir despesa?">Excluir</button>
+                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $e->id }})" wire:confirm="Excluir despesa? O lançamento no caixa também será removido.">Excluir</button>
                             </td>
                         </tr>
                     @endforeach
@@ -172,13 +179,16 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta (registro do débito)</label>
-                <select wire:model="bank_account_id" class="fx-form-field">
+                <label class="block text-xxs text-mono-600 mb-xxxs">Conta (registro do débito) <span class="text-system-down">*</span></label>
+                <select wire:model="bank_account_id" class="fx-form-field" required>
                     <option value="">—</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}</option>
                     @endforeach
                 </select>
+                @error('bank_account_id')
+                    <div class="text-xxs text-system-down mt-xxxs">{{ $message }}</div>
+                @enderror
             </div>
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Notas</label>

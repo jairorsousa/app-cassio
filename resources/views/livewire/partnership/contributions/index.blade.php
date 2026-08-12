@@ -29,9 +29,18 @@ new #[Layout('layouts.app')] class extends Component {
             'contribDate' => 'required|date',
             'amount' => 'required|numeric|min:0.01',
             'contribStatus' => 'required|in:pending,done',
-            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'bank_account_id' => $this->contribStatus === 'done'
+                ? 'required|exists:bank_accounts,id'
+                : 'nullable|exists:bank_accounts,id',
             'purpose' => 'nullable|string|max:200',
             'contribNotes' => 'nullable|string',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'bank_account_id.required' => 'Informe a conta de origem para o aporte entrar no caixa.',
         ];
     }
 
@@ -49,7 +58,19 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function markDone(int $id): void
     {
-        PartnershipContribution::find($id)?->update(['status' => 'done']);
+        $contribution = PartnershipContribution::find($id);
+        if (! $contribution) {
+            return;
+        }
+
+        if (! $contribution->bank_account_id) {
+            $this->edit($id);
+            session()->flash('error', 'Informe a conta de origem antes de realizar o aporte.');
+
+            return;
+        }
+
+        $contribution->update(['status' => 'done']);
         session()->flash('status', 'Aporte realizado.');
     }
 
@@ -105,6 +126,7 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
     <x-fx.card class="lg:col-span-2">
         @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
+        @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
         @if ($contributions->isEmpty())
             <div class="text-sm text-mono-600">Nenhum aporte.</div>
@@ -133,7 +155,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="markDone({{ $c->id }})">Realizar</button>
                                 @endif
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $c->id }})">Editar</button>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $c->id }})" wire:confirm="Excluir aporte?">Excluir</button>
+                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $c->id }})" wire:confirm="Excluir aporte? O lançamento no caixa também será removido.">Excluir</button>
                             </td>
                         </tr>
                     @endforeach
@@ -149,19 +171,24 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
             <div>
                 <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
-                <select wire:model="contribStatus" class="fx-form-field">
+                <select wire:model.live="contribStatus" class="fx-form-field">
                     <option value="done">Realizado</option>
                     <option value="pending">Pendente</option>
                 </select>
             </div>
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta de origem</label>
-                <select wire:model="bank_account_id" class="fx-form-field">
+                <label class="block text-xxs text-mono-600 mb-xxxs">
+                    Conta de origem @if ($contribStatus === 'done')<span class="text-system-down">*</span>@endif
+                </label>
+                <select wire:model="bank_account_id" class="fx-form-field" @if ($contribStatus === 'done') required @endif>
                     <option value="">—</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}</option>
                     @endforeach
                 </select>
+                @error('bank_account_id')
+                    <div class="text-xxs text-system-down mt-xxxs">{{ $message }}</div>
+                @enderror
             </div>
             <x-fx.input label="Finalidade" wire:model="purpose" />
             <div>

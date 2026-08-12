@@ -28,12 +28,14 @@ use App\Domains\Partnership\Events\PartnershipExpenseRecorded;
 use App\Domains\Partnership\Listeners\CreateExpenseOnContribution;
 use App\Domains\Partnership\Listeners\CreateExpenseOnPartnershipExpense;
 use App\Domains\Partnership\Listeners\CreateIncomeOnDistribution;
+use App\Domains\Partnership\Models\Partnership;
 use App\Domains\Partnership\Models\PartnershipContribution;
 use App\Domains\Partnership\Models\PartnershipDistribution;
 use App\Domains\Partnership\Models\PartnershipExpense;
 use App\Domains\Partnership\Observers\PartnershipContributionObserver;
 use App\Domains\Partnership\Observers\PartnershipDistributionObserver;
 use App\Domains\Partnership\Observers\PartnershipExpenseObserver;
+use App\Domains\Partnership\Observers\PartnershipObserver;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Listeners\CreateExpenseOnPaid;
@@ -86,6 +88,7 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(AssetOperationRegistered::class, CreateTransactionOnOperation::class);
         Event::listen(DividendReceived::class, CreateIncomeOnDividend::class);
 
+        Partnership::observe(PartnershipObserver::class);
         PartnershipContribution::observe(PartnershipContributionObserver::class);
         PartnershipExpense::observe(PartnershipExpenseObserver::class);
         PartnershipDistribution::observe(PartnershipDistributionObserver::class);

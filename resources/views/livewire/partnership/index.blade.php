@@ -1,13 +1,19 @@
 <?php
 
 use App\Domains\Partnership\Models\Partnership;
+use App\Domains\Partnership\Services\PartnershipLedgerService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
-    public function delete(int $id): void
+    public function delete(int $id, PartnershipLedgerService $ledger): void
     {
-        Partnership::find($id)?->delete();
+        $partnership = Partnership::find($id);
+        if (! $partnership) {
+            return;
+        }
+
+        $ledger->deletePartnership($partnership);
         session()->flash('status', 'Sociedade excluída.');
     }
 
@@ -63,7 +69,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="text-right whitespace-nowrap">
                                 <a href="{{ route('partnership.show', $p) }}" class="fx-btn fx-btn--text fx-btn--sm">Abrir</a>
                                 <a href="{{ route('partnership.edit', $p) }}" class="fx-btn fx-btn--text fx-btn--sm">Editar</a>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $p->id }})" wire:confirm="Excluir sociedade?">Excluir</button>
+                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $p->id }})" wire:confirm="Excluir sociedade? Aportes, despesas, distribuições e lançamentos no caixa também serão excluídos.">Excluir</button>
                             </td>
                         </tr>
                     @endforeach

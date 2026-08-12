@@ -27,9 +27,16 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'distDate' => 'required|date',
             'amount' => 'required|numeric|min:0.01',
-            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'bank_account_id' => 'required|exists:bank_accounts,id',
             'source' => 'nullable|string|max:200',
             'distNotes' => 'nullable|string',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'bank_account_id.required' => 'Informe a conta de destino para a distribuição entrar no caixa.',
         ];
     }
 
@@ -117,7 +124,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="text-right font-semibold text-system-up">R$ {{ number_format((float) $d->amount, 2, ',', '.') }}</td>
                             <td class="text-right whitespace-nowrap">
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $d->id }})">Editar</button>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $d->id }})" wire:confirm="Excluir distribuição?">Excluir</button>
+                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $d->id }})" wire:confirm="Excluir distribuição? O lançamento no caixa também será removido.">Excluir</button>
                             </td>
                         </tr>
                     @endforeach
@@ -132,13 +139,16 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.input label="Data" type="date" wire:model="distDate" />
             <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta de destino</label>
-                <select wire:model="bank_account_id" class="fx-form-field">
+                <label class="block text-xxs text-mono-600 mb-xxxs">Conta de destino <span class="text-system-down">*</span></label>
+                <select wire:model="bank_account_id" class="fx-form-field" required>
                     <option value="">—</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}</option>
                     @endforeach
                 </select>
+                @error('bank_account_id')
+                    <div class="text-xxs text-system-down mt-xxxs">{{ $message }}</div>
+                @enderror
             </div>
             <x-fx.input label="Origem (ex: lucro Q1)" wire:model="source" />
             <div>
