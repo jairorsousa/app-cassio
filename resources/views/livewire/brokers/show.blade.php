@@ -439,7 +439,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div class="min-w-0">
                     <div class="text-xxs text-mono-600 uppercase">Valor Adiantado</div>
-                    <div class="mt-xxs truncate text-xl font-bold text-mono-900">R$ {{ number_format($statementSummary['advanced_period'], 2, ',', '.') }}</div>
+                    <div class="mt-xxs truncate text-xl font-bold text-down">R$ {{ number_format($statementSummary['advanced_period'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
@@ -450,7 +450,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div class="min-w-0">
                     <div class="text-xxs text-mono-600 uppercase">Comissão</div>
-                    <div class="mt-xxs truncate text-xl font-bold text-mono-900">R$ {{ number_format($statementSummary['commissions_period'], 2, ',', '.') }}</div>
+                    <div class="mt-xxs truncate text-xl font-bold text-up">R$ {{ number_format($statementSummary['commissions_period'], 2, ',', '.') }}</div>
                 </div>
             </div>
         </x-fx.card>
