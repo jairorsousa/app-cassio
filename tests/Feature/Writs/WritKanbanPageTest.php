@@ -42,6 +42,8 @@ class WritKanbanPageTest extends TestCase
 
         Volt::test('writs.kanban')
             ->assertSee('Aguardando Recebimento')
+            ->assertSee('Recebido')
+            ->assertDontSee('Finalizar')
             ->assertSee('Perdido')
             ->assertSee('Monitorar Processo')
             ->assertSeeHtml('grid-cols-8')
@@ -123,7 +125,7 @@ class WritKanbanPageTest extends TestCase
                 'Lucro esperado',
                 '0,00%',
                 'R$ 29.000,00',
-                'Finalizado',
+                'Recebido',
                 'Investimento finalizado',
                 'Total recebido',
                 'Lucro líquido',
@@ -200,6 +202,7 @@ class WritKanbanPageTest extends TestCase
             'paid_amount' => 100,
             'estimated_receipt_amount' => 160,
             'paid_at' => '2026-01-15',
+            'awaiting_receipt_at' => '2026-03-15 10:00:00',
         ]);
 
         Writ::create([
@@ -211,6 +214,8 @@ class WritKanbanPageTest extends TestCase
             'notary_expenses_amount' => 10,
             'actual_receipt_amount' => 300,
             'paid_at' => '2026-02-15',
+            'awaiting_receipt_at' => '2026-04-15 10:00:00',
+            'finalized_at' => '2026-05-15',
         ]);
 
         $component = Volt::test('writs.kanban')
@@ -249,6 +254,22 @@ class WritKanbanPageTest extends TestCase
             ->call('clearFilters')
             ->set('from', '2026-02-01')
             ->set('to', '2026-02-28')
+            ->assertSee('R$ 300,00')
+            ->assertDontSee('R$ 160,00');
+
+        $component
+            ->call('clearFilters')
+            ->set('dateFilter', 'awaiting')
+            ->set('from', '2026-03-01')
+            ->set('to', '2026-03-31')
+            ->assertSee('R$ 160,00')
+            ->assertDontSee('R$ 300,00');
+
+        $component
+            ->call('clearFilters')
+            ->set('dateFilter', 'receipt')
+            ->set('from', '2026-05-01')
+            ->set('to', '2026-05-31')
             ->assertSee('R$ 300,00')
             ->assertDontSee('R$ 160,00');
     }

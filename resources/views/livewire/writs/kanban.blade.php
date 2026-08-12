@@ -46,6 +46,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public string $from = '';
     #[Url]
     public string $to = '';
+    #[Url]
+    public string $dateFilter = 'payment';
 
     public bool $showFormModal = false;
     public bool $showMonitoringModal = false;
@@ -769,7 +771,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function clearFilters(): void
     {
-        $this->reset(['type', 'debtor', 'from', 'to']);
+        $this->reset(['type', 'debtor', 'from', 'to', 'dateFilter']);
     }
 
     public function with(): array
@@ -787,8 +789,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     });
             });
         }
-        if ($this->from) $q->where('paid_at', '>=', $this->from);
-        if ($this->to) $q->where('paid_at', '<=', $this->to);
+        $dateColumn = match ($this->dateFilter) {
+            'awaiting' => 'awaiting_receipt_at',
+            'receipt' => 'finalized_at',
+            default => 'paid_at',
+        };
+        if ($this->from) $q->whereDate($dateColumn, '>=', $this->from);
+        if ($this->to) $q->whereDate($dateColumn, '<=', $this->to);
 
         $filteredWrits = $q->orderByDesc('id')->get();
         $writs = $filteredWrits->groupBy('stage');
@@ -894,7 +901,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
                     <span class="material-icons-outlined text-[20px]">check_circle</span>
                 </div>
-                <h2 class="text-base font-bold text-mono-900">Finalizado</h2>
+                <h2 class="text-base font-bold text-mono-900">Recebido</h2>
             </div>
 
             <dl class="divide-y divide-mono-100">
@@ -937,10 +944,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 <option value="precatorio">Precatório</option>
             </select>
 
-            <input type="date" wire:model.live="from" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
-            <input type="date" wire:model.live="to" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
+            <select wire:model.live="dateFilter" aria-label="Tipo de data" title="Tipo de data" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 pr-10 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0">
+                <option value="payment">Pagamento</option>
+                <option value="awaiting">Aguardando</option>
+                <option value="receipt">Recebimento</option>
+            </select>
 
-            @if ($type || $debtor || $from || $to)
+            <input type="date" wire:model.live="from" aria-label="Data inicial" title="Data inicial" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
+            <input type="date" wire:model.live="to" aria-label="Data final" title="Data final" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
+
+            @if ($type || $debtor || $from || $to || $dateFilter !== 'payment')
                 <button type="button" class="h-12 rounded-pill px-4 text-sm font-semibold text-mono-600 transition-colors hover:bg-mono-100 hover:text-mono-900" wire:click="clearFilters">
                     Limpar
                 </button>
@@ -1067,7 +1080,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-jr.empty-state
             icon="gavel"
             title="Nenhum requisitório no pipeline"
-            description="Crie um card e arraste pelas etapas: Monitorar Processo, Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Finalizar e Perdido."
+            description="Crie um card e arraste pelas etapas: Monitorar Processo, Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Recebido e Perdido."
         >
             <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
         </x-jr.empty-state>

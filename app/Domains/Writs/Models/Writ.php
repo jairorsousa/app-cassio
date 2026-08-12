@@ -43,7 +43,7 @@ class Writ extends Model
         'paid' => 'Pago',
         'petitioning' => 'Peticionar',
         'awaiting_receipt' => 'Aguardando Recebimento',
-        'finalized' => 'Finalizar',
+        'finalized' => 'Recebido',
         'lost' => 'Perdido',
     ];
 
