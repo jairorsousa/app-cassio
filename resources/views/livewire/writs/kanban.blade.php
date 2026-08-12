@@ -786,7 +786,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         if ($this->from) $q->where('paid_at', '>=', $this->from);
         if ($this->to) $q->where('paid_at', '<=', $this->to);
 
-        $writs = $q->orderByDesc('id')->get()->groupBy('stage');
+        $filteredWrits = $q->orderByDesc('id')->get();
+        $writs = $filteredWrits->groupBy('stage');
 
         $stages = [];
         foreach (Writ::STAGES as $stage) {
@@ -800,15 +801,17 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ];
         }
 
-        $totalNegotiated = Writ::whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
+        $totalNegotiated = $filteredWrits
+            ->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
             ->sum('negotiated_amount');
-        $totalOpenInvested = Writ::where('stage', '!=', 'finalized')->sum('paid_amount');
-        $totalEstimatedReceipt = Writ::where('stage', '!=', 'finalized')->sum('estimated_receipt_amount');
+        $openWrits = $filteredWrits->where('stage', '!=', 'finalized');
+        $totalOpenInvested = $openWrits->sum('paid_amount');
+        $totalEstimatedReceipt = $openWrits->sum('estimated_receipt_amount');
         $expectedProfitAmount = round((float) $totalEstimatedReceipt - (float) $totalOpenInvested, 2);
         $expectedProfitPercentage = $totalOpenInvested > 0
             ? round($expectedProfitAmount / (float) $totalOpenInvested * 100, 2)
             : 0.0;
-        $finalizedWrits = Writ::where('stage', 'finalized')->get();
+        $finalizedWrits = $filteredWrits->where('stage', 'finalized');
         $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
         $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
         $totalInvested = round((float) $totalOpenInvested + (float) $totalFinalizedCost, 2);

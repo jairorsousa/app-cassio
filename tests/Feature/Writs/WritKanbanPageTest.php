@@ -183,6 +183,72 @@ class WritKanbanPageTest extends TestCase
             ]);
     }
 
+    public function test_summary_indicators_follow_the_kanban_filters(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Writ::create([
+            'type' => 'rpv',
+            'stage' => 'awaiting_receipt',
+            'debtor_entity' => 'Município Alfa',
+            'negotiated_amount' => 140,
+            'paid_amount' => 100,
+            'estimated_receipt_amount' => 160,
+            'paid_at' => '2026-01-15',
+        ]);
+
+        Writ::create([
+            'type' => 'precatorio',
+            'stage' => 'finalized',
+            'debtor_entity' => 'Estado Beta',
+            'negotiated_amount' => 250,
+            'paid_amount' => 200,
+            'notary_expenses_amount' => 10,
+            'actual_receipt_amount' => 300,
+            'paid_at' => '2026-02-15',
+        ]);
+
+        $component = Volt::test('writs.kanban')
+            ->set('type', 'rpv')
+            ->assertSeeInOrder([
+                'Total investido',
+                'R$ 100,00',
+                'Investimento em aberto',
+                'R$ 100,00',
+                'Total recebimento estimado',
+                'R$ 160,00',
+                'Lucro esperado',
+                'R$ 60,00',
+                '60,00%',
+            ])
+            ->assertDontSee('R$ 300,00');
+
+        $component
+            ->call('clearFilters')
+            ->set('debtor', 'Estado Beta')
+            ->assertSeeInOrder([
+                'Total investido',
+                'R$ 210,00',
+                'Investimento em aberto',
+                'R$ 0,00',
+                'Total recebido (finalizados)',
+                'R$ 300,00',
+                'Investimento finalizado',
+                'R$ 210,00',
+                'R$ 90,00',
+                '42,86%',
+            ])
+            ->assertDontSee('R$ 160,00');
+
+        $component
+            ->call('clearFilters')
+            ->set('from', '2026-02-01')
+            ->set('to', '2026-02-28')
+            ->assertSee('R$ 300,00')
+            ->assertDontSee('R$ 160,00');
+    }
+
     public function test_creating_monitoring_writ_dispatches_google_calendar_sync_without_values(): void
     {
         Bus::fake();
