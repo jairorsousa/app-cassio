@@ -410,11 +410,15 @@ new #[Layout('layouts.app')] class extends Component {
                             </td>
                             <td>{{ $broker->document ?: '—' }}</td>
                             <td>{{ $broker->phone ?: '—' }}</td>
-                            <td class="text-right tabular-nums font-semibold {{ $advancePending > 0 ? 'text-down' : 'text-mono-900' }}">
-                                R$ {{ number_format($advancePending, 2, ',', '.') }}
+                            <td class="text-right tabular-nums font-semibold">
+                                <span class="{{ $advancePending > 0 ? 'text-down' : 'text-mono-900' }}">
+                                    R$ {{ number_format($advancePending, 2, ',', '.') }}
+                                </span>
                             </td>
-                            <td class="text-right tabular-nums font-semibold {{ $commissionPending > 0 ? 'text-up' : 'text-mono-900' }}">
-                                R$ {{ number_format($commissionPending, 2, ',', '.') }}
+                            <td class="text-right tabular-nums font-semibold">
+                                <span class="{{ $commissionPending > 0 ? 'text-up' : 'text-mono-900' }}">
+                                    R$ {{ number_format($commissionPending, 2, ',', '.') }}
+                                </span>
                             </td>
                             <td class="text-center">
                                 <x-fx.badge :variant="$broker->status ? 'up' : 'neutral'">{{ $broker->status ? 'Ativo' : 'Inativo' }}</x-fx.badge>
