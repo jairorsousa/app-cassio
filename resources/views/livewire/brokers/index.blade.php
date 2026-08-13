@@ -4,6 +4,7 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Services\BrokerAdvanceService;
+use App\Domains\Brokers\Services\BrokerBalanceCalculator;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
 use App\Domains\Brokers\Models\CaseType;
@@ -192,7 +193,7 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Contato corretor removido.');
     }
 
-    public function with(BrokerProfileService $profiles): array
+    public function with(BrokerProfileService $profiles, BrokerBalanceCalculator $balances): array
     {
         $totalAdvances = (float) BrokerAdvance::sum('amount');
         $totalSettledAdvances = (float) BrokerCommissionSettlement::sum('amount_offset');
@@ -226,8 +227,27 @@ new #[Layout('layouts.app')] class extends Component {
                 ->values();
         }
 
+        $brokers = $q->with('brokerProfile')->orderBy('name')->paginate(25);
+        $pendingByFinancialBroker = $balances->pendingBalancesFor(
+            $brokers->getCollection()
+                ->pluck('brokerProfile.id')
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->all()
+        );
+
+        $brokerBalances = [];
+        foreach ($brokers as $broker) {
+            $financialId = $broker->brokerProfile?->id;
+            $brokerBalances[$broker->id] = $pendingByFinancialBroker[$financialId] ?? [
+                'advance_pending' => 0.0,
+                'commission_pending' => 0.0,
+            ];
+        }
+
         return [
-            'brokers' => $q->orderBy('name')->paginate(25),
+            'brokers' => $brokers,
+            'brokerBalances' => $brokerBalances,
             'brokerOptions' => Contact::where('type', 'corretor')->orderBy('name')->get(['id', 'name', 'document']),
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
@@ -365,24 +385,37 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($brokers->isEmpty())
             <div class="text-sm text-mono-600">Nenhum corretor encontrado.</div>
         @else
+            <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm">
                 <thead>
                     <tr>
                         <th class="text-left">Nome</th>
                         <th class="text-left">Documento</th>
                         <th class="text-left">Telefone</th>
+                        <th class="text-right">Saldo Adiantamento</th>
+                        <th class="text-right">Saldo Corretor</th>
                         <th class="text-center">Status</th>
                         <th class="text-right">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($brokers as $broker)
+                        @php
+                            $advancePending = (float) ($brokerBalances[$broker->id]['advance_pending'] ?? 0);
+                            $commissionPending = (float) ($brokerBalances[$broker->id]['commission_pending'] ?? 0);
+                        @endphp
                         <tr>
                             <td>
                                 <a href="{{ route('brokers.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
                             </td>
                             <td>{{ $broker->document ?: '—' }}</td>
                             <td>{{ $broker->phone ?: '—' }}</td>
+                            <td class="text-right tabular-nums font-semibold {{ $advancePending > 0 ? 'text-down' : 'text-mono-900' }}">
+                                R$ {{ number_format($advancePending, 2, ',', '.') }}
+                            </td>
+                            <td class="text-right tabular-nums font-semibold {{ $commissionPending > 0 ? 'text-up' : 'text-mono-900' }}">
+                                R$ {{ number_format($commissionPending, 2, ',', '.') }}
+                            </td>
                             <td class="text-center">
                                 <x-fx.badge :variant="$broker->status ? 'up' : 'neutral'">{{ $broker->status ? 'Ativo' : 'Inativo' }}</x-fx.badge>
                             </td>
@@ -396,6 +429,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @endforeach
                 </tbody>
             </table>
+            </div>
             <div class="mt-md">{{ $brokers->links() }}</div>
         @endif
     </x-fx.card>

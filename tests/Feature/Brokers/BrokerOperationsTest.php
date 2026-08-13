@@ -392,6 +392,43 @@ class BrokerOperationsTest extends TestCase
         ]);
     }
 
+    public function test_brokers_index_shows_advance_and_commission_balances(): void
+    {
+        $contact = Contact::create([
+            'name' => 'Ana Corretora',
+            'type' => 'corretor',
+            'document' => '98765432100',
+            'phone' => '11999999999',
+            'status' => true,
+        ]);
+
+        $financial = app(\App\Domains\Brokers\Services\BrokerProfileService::class)->forContact($contact);
+
+        app(BrokerAdvanceService::class)->register([
+            'broker_id' => $financial->id,
+            'date' => Carbon::today()->toDateString(),
+            'amount' => 300.00,
+            'bank_account_id' => $this->account->id,
+        ]);
+
+        app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $financial->id,
+            'case_type_id' => $this->caseType->id,
+            'name' => 'Cliente X',
+            'commission_amount' => 750.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+
+        Volt::test('brokers.index')
+            ->assertSee('Ana Corretora')
+            ->assertSee('Saldo Adiantamento')
+            ->assertSee('Saldo Corretor')
+            ->assertSee('R$ 300,00')
+            ->assertSee('R$ 750,00')
+            ->assertSeeHtml('text-down')
+            ->assertSeeHtml('text-up');
+    }
+
     public function test_delete_advance_removes_banking_expense_and_settlements(): void
     {
         $advance = app(BrokerAdvanceService::class)->register([
