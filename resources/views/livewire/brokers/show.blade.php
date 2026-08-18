@@ -17,29 +17,46 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public Contact $broker;
+
     public ?Broker $financialBroker = null;
 
     #[Url]
     public string $period = 'all';
+
     #[Url]
     public string $start_date = '';
+
     #[Url]
     public string $end_date = '';
+
     #[Url]
     public string $records_tab = 'statement';
 
     public bool $showLaunchModal = false;
+
+    public ?int $editingAdvanceId = null;
+
     public string $launch_type = 'advance';
+
     public string $launch_date = '';
+
     public string $launch_amount = '';
+
     public string $launch_base_amount = '';
+
     public ?int $launch_case_type_id = null;
+
     public string $launch_name = '';
+
     public ?int $launch_commission_id = null;
+
     public string $launch_payment_method = 'PIX';
+
     public ?int $launch_bank_account_id = null;
+
     public string $launch_notes = '';
 
     public function mount(Contact $broker): void
@@ -86,6 +103,23 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetLaunchForm();
     }
 
+    public function openEditAdvance(int $advanceId): void
+    {
+        $this->assertFinancialBroker();
+
+        $advance = BrokerAdvance::where('broker_id', $this->financialBroker->id)->findOrFail($advanceId);
+
+        $this->resetLaunchForm();
+        $this->editingAdvanceId = $advance->id;
+        $this->launch_type = 'advance';
+        $this->launch_date = $advance->date->toDateString();
+        $this->launch_amount = number_format((float) $advance->amount, 2, '.', '');
+        $this->launch_payment_method = $advance->payment_method ?: 'PIX';
+        $this->launch_bank_account_id = $advance->bank_account_id;
+        $this->launch_notes = $advance->notes ?: '';
+        $this->showLaunchModal = true;
+    }
+
     public function updatedLaunchType(): void
     {
         $this->launch_commission_id = null;
@@ -94,6 +128,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function saveLaunch(BrokerAdvanceService $advances, BrokerCommissionService $commissions): void
     {
+        if ($this->editingAdvanceId) {
+            $this->launch_type = 'advance';
+        }
+
         $this->normalizeLaunchAmounts();
 
         $rules = [
@@ -129,16 +167,27 @@ new #[Layout('layouts.app')] class extends Component {
 
         try {
             if ($data['launch_type'] === 'advance') {
-                $result = $advances->register([
-                    'broker_id' => $this->financialBroker->id,
+                $advanceData = [
                     'date' => $data['launch_date'],
                     'amount' => $data['launch_amount'],
                     'payment_method' => $data['launch_payment_method'] ?: null,
                     'bank_account_id' => $data['launch_bank_account_id'] ?? null,
                     'notes' => $data['launch_notes'] ?: null,
-                ]);
+                ];
 
-                session()->flash('status', BrokerAdvanceService::statusMessage($result));
+                if ($this->editingAdvanceId) {
+                    $advance = BrokerAdvance::where('broker_id', $this->financialBroker->id)
+                        ->findOrFail($this->editingAdvanceId);
+                    $advances->update($advance, $advanceData);
+                    session()->flash('status', 'Adiantamento atualizado. A despesa e as compensações vinculadas foram recalculadas.');
+                } else {
+                    $result = $advances->register([
+                        'broker_id' => $this->financialBroker->id,
+                        ...$advanceData,
+                    ]);
+
+                    session()->flash('status', BrokerAdvanceService::statusMessage($result));
+                }
             }
 
             if ($data['launch_type'] === 'commission') {
@@ -179,7 +228,7 @@ new #[Layout('layouts.app')] class extends Component {
 
             $this->financialBroker->refresh();
             $this->resetLaunchForm();
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -194,7 +243,7 @@ new #[Layout('layouts.app')] class extends Component {
             $deletion->deleteAdvance($advance);
             $this->financialBroker->refresh();
             session()->flash('status', 'Adiantamento excluído. Despesa e compensações vinculadas foram desfeitas.');
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -209,7 +258,7 @@ new #[Layout('layouts.app')] class extends Component {
             $deletion->deleteCommission($commission);
             $this->financialBroker->refresh();
             session()->flash('status', 'Comissão excluída. Repasses, despesas e compensações vinculadas foram desfeitos.');
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -224,7 +273,7 @@ new #[Layout('layouts.app')] class extends Component {
             $deletion->deletePayment($payment);
             $this->financialBroker->refresh();
             session()->flash('status', 'Repasse excluído. A despesa no caixa foi removida e o saldo da comissão foi recalculado.');
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -297,6 +346,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->reset([
             'showLaunchModal',
+            'editingAdvanceId',
             'launch_amount',
             'launch_base_amount',
             'launch_case_type_id',
@@ -714,6 +764,14 @@ new #[Layout('layouts.app')] class extends Component {
                                     <td class="text-right">
                                         <button
                                             type="button"
+                                            wire:click="openEditAdvance({{ $adv->id }})"
+                                            class="fx-btn fx-btn--text fx-btn--sm text-primary-500"
+                                            title="Editar adiantamento"
+                                        >
+                                            <span class="material-icons-outlined text-base">edit</span>
+                                        </button>
+                                        <button
+                                            type="button"
                                             wire:click="deleteAdvance({{ $adv->id }})"
                                             wire:confirm="Excluir este adiantamento? A despesa no caixa será removida e as compensações com comissões serão desfeitas."
                                             class="fx-btn fx-btn--text fx-btn--sm text-error"
@@ -842,7 +900,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
                 <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
                     <div>
-                        <h3 class="text-lg font-bold text-mono-900">Novo lançamento</h3>
+                        <h3 class="text-lg font-bold text-mono-900">{{ $editingAdvanceId ? 'Editar adiantamento' : 'Novo lançamento' }}</h3>
                         <p class="text-xs text-mono-600">{{ $broker->name }}</p>
                     </div>
 
@@ -863,11 +921,15 @@ new #[Layout('layouts.app')] class extends Component {
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                     <div class="md:col-span-2">
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Movimento</label>
-                                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                            <button type="button" wire:click="$set('launch_type', 'advance')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'advance' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Adiantamento</button>
-                                            <button type="button" wire:click="$set('launch_type', 'commission')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'commission' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Comissão</button>
-                                            <button type="button" wire:click="$set('launch_type', 'payment')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'payment' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Repasse</button>
-                                        </div>
+                                        @if ($editingAdvanceId)
+                                            <div class="flex h-11 items-center justify-center rounded-pill border border-primary-500 bg-primary-100 text-sm font-semibold text-primary-500">Adiantamento</div>
+                                        @else
+                                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                                <button type="button" wire:click="$set('launch_type', 'advance')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'advance' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Adiantamento</button>
+                                                <button type="button" wire:click="$set('launch_type', 'commission')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'commission' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Comissão</button>
+                                                <button type="button" wire:click="$set('launch_type', 'payment')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'payment' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Repasse</button>
+                                            </div>
+                                        @endif
                                         @error('launch_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
 
@@ -974,7 +1036,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelLaunchModal">Cancelar</button>
                         <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
                             <span class="material-icons-outlined text-[18px]">check</span>
-                            Salvar lançamento
+                            {{ $editingAdvanceId ? 'Salvar alterações' : 'Salvar lançamento' }}
                         </button>
                     </div>
                 </form>

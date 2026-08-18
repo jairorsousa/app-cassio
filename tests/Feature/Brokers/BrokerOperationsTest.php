@@ -7,13 +7,13 @@ use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Events\BrokerAdvancePaid;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
-use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionRule;
 use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerAdvanceService;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
+use App\Domains\Brokers\Services\BrokerProfileService;
 use App\Domains\Contacts\Models\Contact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -25,7 +25,9 @@ class BrokerOperationsTest extends TestCase
     use RefreshDatabase;
 
     private Broker $broker;
+
     private BankAccount $account;
+
     private CaseType $caseType;
 
     protected function setUp(): void
@@ -108,7 +110,7 @@ class BrokerOperationsTest extends TestCase
             'date' => Carbon::today()->subDays(2)->toDateString(),
             'amount' => 100.00,
         ]);
-        
+
         $advance2 = BrokerAdvance::create([
             'broker_id' => $this->broker->id,
             'date' => Carbon::today()->subDays(1)->toDateString(),
@@ -133,7 +135,7 @@ class BrokerOperationsTest extends TestCase
         $settledAmount = $service->settleWithAdvances($commission);
 
         $this->assertEquals(200.00, $settledAmount);
-        
+
         // Verifica status da comissão (foi 100% compensada, então está 'paid')
         $this->assertEquals('paid', $commission->fresh()->status);
         $this->assertEquals(0.00, $commission->fresh()->remainingAmount());
@@ -178,7 +180,7 @@ class BrokerOperationsTest extends TestCase
             ->where('source_id', $this->broker->id)
             ->get();
 
-        // Só terá 1 gerada aqui porque eu não disparei o evento de adiantamento, 
+        // Só terá 1 gerada aqui porque eu não disparei o evento de adiantamento,
         // e o pagamento da comissão dispara o dela.
         $this->assertCount(1, $transactions);
         $this->assertEquals(50.00, (float) $transactions->first()->amount);
@@ -402,7 +404,7 @@ class BrokerOperationsTest extends TestCase
             'status' => true,
         ]);
 
-        $financial = app(\App\Domains\Brokers\Services\BrokerProfileService::class)->forContact($contact);
+        $financial = app(BrokerProfileService::class)->forContact($contact);
 
         app(BrokerAdvanceService::class)->register([
             'broker_id' => $financial->id,
@@ -460,6 +462,82 @@ class BrokerOperationsTest extends TestCase
         ]);
         $this->assertEquals('pending', $commission->fresh()->status);
         $this->assertEquals(200.00, $commission->fresh()->remainingAmount());
+    }
+
+    public function test_update_advance_updates_banking_expense_and_recalculates_settlements(): void
+    {
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 300.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->toDateString(),
+            'amount' => 300.00,
+            'bank_account_id' => $this->account->id,
+        ])['advance'];
+
+        app(BrokerAdvanceService::class)->update($advance, [
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 120.00,
+            'payment_method' => 'TED',
+            'bank_account_id' => null,
+            'notes' => 'Valor corrigido',
+        ]);
+
+        $advance->refresh();
+        $transaction = Transaction::findOrFail($advance->transaction_id);
+
+        $this->assertEquals(120.00, (float) $advance->amount);
+        $this->assertEquals('TED', $advance->payment_method);
+        $this->assertEquals('Valor corrigido', $advance->notes);
+        $this->assertNull($advance->bank_account_id);
+        $this->assertEquals(120.00, $advance->settledAmount());
+        $this->assertEquals(180.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('partially_paid', $commission->fresh()->status);
+        $this->assertEquals(120.00, (float) $transaction->amount);
+        $this->assertTrue($transaction->date->isSameDay(Carbon::today()->subDay()));
+        $this->assertNull($transaction->bank_account_id);
+    }
+
+    public function test_broker_show_can_edit_an_advance_from_actions(): void
+    {
+        $contact = Contact::create([
+            'name' => 'Corretora Editável',
+            'type' => 'corretor',
+            'status' => true,
+        ]);
+        $financialBroker = app(BrokerProfileService::class)->forContact($contact);
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $financialBroker->id,
+            'date' => Carbon::today()->toDateString(),
+            'amount' => 250.00,
+            'payment_method' => 'PIX',
+            'bank_account_id' => $this->account->id,
+            'notes' => 'Lançamento original',
+        ])['advance'];
+
+        Volt::test('brokers.show', ['broker' => $contact])
+            ->set('records_tab', 'advances')
+            ->assertSee('Editar adiantamento')
+            ->call('openEditAdvance', $advance->id)
+            ->assertSet('editingAdvanceId', $advance->id)
+            ->assertSet('launch_amount', '250.00')
+            ->set('launch_amount', '175,50')
+            ->set('launch_notes', 'Valor corrigido')
+            ->call('saveLaunch')
+            ->assertHasNoErrors()
+            ->assertSet('showLaunchModal', false)
+            ->assertSet('editingAdvanceId', null);
+
+        $this->assertDatabaseHas('broker_advances', [
+            'id' => $advance->id,
+            'amount' => 175.50,
+            'notes' => 'Valor corrigido',
+        ]);
     }
 
     public function test_delete_payment_reopens_commission_and_removes_expense(): void
