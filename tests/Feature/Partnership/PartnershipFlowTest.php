@@ -11,6 +11,7 @@ use App\Domains\Partnership\Services\PartnershipLedgerService;
 use App\Domains\Partnership\Services\PartnershipProfitabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 class PartnershipFlowTest extends TestCase
@@ -444,5 +445,74 @@ class PartnershipFlowTest extends TestCase
             'Novo Escritório',
             (string) $c->fresh()->transactions()->first()?->description
         );
+    }
+
+    public function test_contribution_form_opens_in_modal_for_create_and_edit(): void
+    {
+        $partnership = $this->makePartnership();
+        $contribution = PartnershipContribution::create([
+            'partnership_id' => $partnership->id,
+            'date' => '2026-08-20',
+            'amount' => 1500,
+            'status' => 'pending',
+            'purpose' => 'Capital de giro',
+        ]);
+
+        Volt::test('partnership.contributions.index', ['partnership' => $partnership])
+            ->assertSet('showFormModal', false)
+            ->call('create')
+            ->assertSet('showFormModal', true)
+            ->call('cancel')
+            ->assertSet('showFormModal', false)
+            ->call('edit', $contribution->id)
+            ->assertSet('showFormModal', true)
+            ->assertSet('editingId', $contribution->id)
+            ->assertSet('purpose', 'Capital de giro');
+    }
+
+    public function test_expense_form_opens_in_modal_for_create_and_edit(): void
+    {
+        $partnership = $this->makePartnership();
+        $expense = PartnershipExpense::create([
+            'partnership_id' => $partnership->id,
+            'date' => '2026-08-20',
+            'total_amount' => 1000,
+            'applied_percentage' => 30,
+            'proportional_amount' => 300,
+            'description' => 'Aluguel',
+        ]);
+
+        Volt::test('partnership.expenses.index', ['partnership' => $partnership])
+            ->assertSet('showFormModal', false)
+            ->call('create')
+            ->assertSet('showFormModal', true)
+            ->call('cancel')
+            ->assertSet('showFormModal', false)
+            ->call('edit', $expense->id)
+            ->assertSet('showFormModal', true)
+            ->assertSet('editingId', $expense->id)
+            ->assertSet('description', 'Aluguel');
+    }
+
+    public function test_distribution_form_opens_in_modal_for_create_and_edit(): void
+    {
+        $partnership = $this->makePartnership();
+        $distribution = PartnershipDistribution::create([
+            'partnership_id' => $partnership->id,
+            'date' => '2026-08-20',
+            'amount' => 2500,
+            'source' => 'Lucro do trimestre',
+        ]);
+
+        Volt::test('partnership.distributions.index', ['partnership' => $partnership])
+            ->assertSet('showFormModal', false)
+            ->call('create')
+            ->assertSet('showFormModal', true)
+            ->call('cancel')
+            ->assertSet('showFormModal', false)
+            ->call('edit', $distribution->id)
+            ->assertSet('showFormModal', true)
+            ->assertSet('editingId', $distribution->id)
+            ->assertSet('source', 'Lucro do trimestre');
     }
 }
