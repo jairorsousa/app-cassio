@@ -540,6 +540,151 @@ class BrokerOperationsTest extends TestCase
         ]);
     }
 
+    public function test_update_commission_recalculates_settlements_and_linked_payment_description(): void
+    {
+        $newCaseType = CaseType::create(['name' => 'Trabalhista']);
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 150.00,
+        ])['advance'];
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'name' => 'Cliente original',
+            'commission_amount' => 400.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+        app(BrokerCommissionService::class)->settleWithAdvances($commission);
+        $payment = app(BrokerCommissionService::class)->payAmount(
+            $commission->fresh(),
+            100.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+        );
+
+        app(BrokerCommissionService::class)->updateFixedAmount($commission, [
+            'case_type_id' => $newCaseType->id,
+            'name' => 'Cliente corrigido',
+            'commission_amount' => 250.00,
+            'reference_date' => Carbon::today()->subDays(2)->toDateString(),
+            'bank_account_id' => null,
+            'notes' => 'Comissão corrigida',
+        ]);
+
+        $commission->refresh();
+
+        $this->assertEquals(250.00, (float) $commission->commission_amount);
+        $this->assertEquals(250.00, (float) $commission->base_amount);
+        $this->assertEquals($newCaseType->id, $commission->case_type_id);
+        $this->assertEquals('Cliente corrigido', $commission->name);
+        $this->assertEquals(150.00, $advance->fresh()->settledAmount());
+        $this->assertEquals(0.00, $commission->remainingAmount());
+        $this->assertEquals('paid', $commission->status);
+        $this->assertStringContainsString('Trabalhista', $payment->transaction->fresh()->description);
+    }
+
+    public function test_update_payment_updates_expense_and_reallocates_advance_settlement(): void
+    {
+        $advance = app(BrokerAdvanceService::class)->register([
+            'broker_id' => $this->broker->id,
+            'date' => Carbon::today()->subDay()->toDateString(),
+            'amount' => 150.00,
+        ])['advance'];
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $this->broker->id,
+            'case_type_id' => $this->caseType->id,
+            'commission_amount' => 300.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+        app(BrokerCommissionService::class)->settleWithAdvances($commission);
+        $payment = app(BrokerCommissionService::class)->payAmount(
+            $commission->fresh(),
+            150.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+        );
+
+        app(BrokerCommissionService::class)->updatePayment(
+            $payment,
+            200.00,
+            Carbon::today()->addDay()->toDateString(),
+            null,
+            'Repasse corrigido',
+        );
+
+        $payment->refresh();
+        $transaction = $payment->transaction;
+
+        $this->assertEquals(200.00, (float) $payment->amount);
+        $this->assertEquals('Repasse corrigido', $payment->notes);
+        $this->assertNull($payment->bank_account_id);
+        $this->assertEquals(100.00, $advance->fresh()->settledAmount());
+        $this->assertEquals(0.00, $commission->fresh()->remainingAmount());
+        $this->assertEquals('paid', $commission->fresh()->status);
+        $this->assertEquals(200.00, (float) $transaction->amount);
+        $this->assertTrue($transaction->date->isSameDay(Carbon::today()->addDay()));
+        $this->assertNull($transaction->bank_account_id);
+    }
+
+    public function test_broker_show_can_edit_commission_and_payment_from_actions(): void
+    {
+        $contact = Contact::create([
+            'name' => 'Corretor com edições',
+            'type' => 'corretor',
+            'status' => true,
+        ]);
+        $financialBroker = app(BrokerProfileService::class)->forContact($contact);
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount([
+            'broker_id' => $financialBroker->id,
+            'case_type_id' => $this->caseType->id,
+            'name' => 'Cliente inicial',
+            'commission_amount' => 300.00,
+            'reference_date' => Carbon::today()->toDateString(),
+        ]);
+        $payment = app(BrokerCommissionService::class)->payAmount(
+            $commission,
+            100.00,
+            Carbon::today()->toDateString(),
+            $this->account->id,
+        );
+
+        Volt::test('brokers.show', ['broker' => $contact])
+            ->set('records_tab', 'commissions')
+            ->assertSee('Editar comissão')
+            ->call('openEditCommission', $commission->id)
+            ->assertSet('editingCommissionId', $commission->id)
+            ->assertSet('launch_amount', '300.00')
+            ->set('launch_amount', '250,00')
+            ->set('launch_name', 'Cliente corrigido')
+            ->call('saveLaunch')
+            ->assertHasNoErrors()
+            ->assertSet('editingCommissionId', null);
+
+        Volt::test('brokers.show', ['broker' => $contact])
+            ->set('records_tab', 'payments')
+            ->assertSee('Editar repasse')
+            ->call('openEditPayment', $payment->id)
+            ->assertSet('editingPaymentId', $payment->id)
+            ->assertSet('launch_amount', '100.00')
+            ->set('launch_amount', '75,50')
+            ->set('launch_notes', 'Repasse corrigido')
+            ->call('saveLaunch')
+            ->assertHasNoErrors()
+            ->assertSet('editingPaymentId', null);
+
+        $this->assertDatabaseHas('broker_commissions', [
+            'id' => $commission->id,
+            'commission_amount' => 250.00,
+            'name' => 'Cliente corrigido',
+        ]);
+        $this->assertDatabaseHas('broker_commission_payments', [
+            'id' => $payment->id,
+            'amount' => 75.50,
+            'notes' => 'Repasse corrigido',
+        ]);
+    }
+
     public function test_delete_payment_reopens_commission_and_removes_expense(): void
     {
         $commission = app(BrokerCommissionService::class)->registerFixedAmount([

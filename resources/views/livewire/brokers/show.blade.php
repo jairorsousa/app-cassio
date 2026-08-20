@@ -39,6 +39,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $editingAdvanceId = null;
 
+    public ?int $editingCommissionId = null;
+
+    public ?int $editingPaymentId = null;
+
     public string $launch_type = 'advance';
 
     public string $launch_date = '';
@@ -120,6 +124,41 @@ new #[Layout('layouts.app')] class extends Component
         $this->showLaunchModal = true;
     }
 
+    public function openEditCommission(int $commissionId): void
+    {
+        $this->assertFinancialBroker();
+
+        $commission = BrokerCommission::where('broker_id', $this->financialBroker->id)->findOrFail($commissionId);
+
+        $this->resetLaunchForm();
+        $this->editingCommissionId = $commission->id;
+        $this->launch_type = 'commission';
+        $this->launch_date = $commission->reference_date->toDateString();
+        $this->launch_amount = number_format((float) $commission->commission_amount, 2, '.', '');
+        $this->launch_case_type_id = $commission->case_type_id;
+        $this->launch_name = $commission->name ?: '';
+        $this->launch_bank_account_id = $commission->bank_account_id;
+        $this->launch_notes = $commission->notes ?: '';
+        $this->showLaunchModal = true;
+    }
+
+    public function openEditPayment(int $paymentId): void
+    {
+        $this->assertFinancialBroker();
+
+        $payment = BrokerCommissionPayment::where('broker_id', $this->financialBroker->id)->findOrFail($paymentId);
+
+        $this->resetLaunchForm();
+        $this->editingPaymentId = $payment->id;
+        $this->launch_type = 'payment';
+        $this->launch_date = $payment->paid_at->toDateString();
+        $this->launch_amount = number_format((float) $payment->amount, 2, '.', '');
+        $this->launch_commission_id = $payment->commission_id;
+        $this->launch_bank_account_id = $payment->bank_account_id;
+        $this->launch_notes = $payment->notes ?: '';
+        $this->showLaunchModal = true;
+    }
+
     public function updatedLaunchType(): void
     {
         $this->launch_commission_id = null;
@@ -130,6 +169,10 @@ new #[Layout('layouts.app')] class extends Component
     {
         if ($this->editingAdvanceId) {
             $this->launch_type = 'advance';
+        } elseif ($this->editingCommissionId) {
+            $this->launch_type = 'commission';
+        } elseif ($this->editingPaymentId) {
+            $this->launch_type = 'payment';
         }
 
         $this->normalizeLaunchAmounts();
@@ -191,39 +234,64 @@ new #[Layout('layouts.app')] class extends Component
             }
 
             if ($data['launch_type'] === 'commission') {
-                $commission = $commissions->registerFixedAmount([
-                    'broker_id' => $this->financialBroker->id,
+                $commissionData = [
                     'case_type_id' => $data['launch_case_type_id'],
                     'name' => $data['launch_name'],
                     'commission_amount' => $data['launch_amount'],
                     'reference_date' => $data['launch_date'],
                     'bank_account_id' => $data['launch_bank_account_id'] ?? null,
                     'notes' => $data['launch_notes'] ?: null,
-                ]);
+                ];
 
-                $settled = $commissions->settleWithAdvances($commission);
-                $message = 'Comissão registrada.';
+                if ($this->editingCommissionId) {
+                    $commission = BrokerCommission::where('broker_id', $this->financialBroker->id)
+                        ->findOrFail($this->editingCommissionId);
+                    $commissions->updateFixedAmount($commission, $commissionData);
+                    session()->flash('status', 'Comissão atualizada. Saldos e compensações vinculadas foram recalculados.');
+                } else {
+                    $commission = $commissions->registerFixedAmount([
+                        'broker_id' => $this->financialBroker->id,
+                        ...$commissionData,
+                    ]);
 
-                if ($settled > 0) {
-                    $message .= ' Compensado R$ '.number_format($settled, 2, ',', '.').' em adiantamentos.';
+                    $settled = $commissions->settleWithAdvances($commission);
+                    $message = 'Comissão registrada.';
+
+                    if ($settled > 0) {
+                        $message .= ' Compensado R$ '.number_format($settled, 2, ',', '.').' em adiantamentos.';
+                    }
+
+                    session()->flash('status', $message);
                 }
-
-                session()->flash('status', $message);
             }
 
             if ($data['launch_type'] === 'payment') {
                 $commission = BrokerCommission::where('broker_id', $this->financialBroker->id)
                     ->findOrFail($data['launch_commission_id']);
 
-                $commissions->payAmount(
-                    $commission,
-                    (float) $data['launch_amount'],
-                    $data['launch_date'],
-                    $data['launch_bank_account_id'] ?? null,
-                    $data['launch_notes'] ?: null,
-                );
+                if ($this->editingPaymentId) {
+                    $payment = BrokerCommissionPayment::where('broker_id', $this->financialBroker->id)
+                        ->where('commission_id', $commission->id)
+                        ->findOrFail($this->editingPaymentId);
+                    $commissions->updatePayment(
+                        $payment,
+                        (float) $data['launch_amount'],
+                        $data['launch_date'],
+                        $data['launch_bank_account_id'] ?? null,
+                        $data['launch_notes'] ?: null,
+                    );
+                    session()->flash('status', 'Repasse atualizado. A despesa e o saldo da comissão foram recalculados.');
+                } else {
+                    $commissions->payAmount(
+                        $commission,
+                        (float) $data['launch_amount'],
+                        $data['launch_date'],
+                        $data['launch_bank_account_id'] ?? null,
+                        $data['launch_notes'] ?: null,
+                    );
 
-                session()->flash('status', 'Repasse registrado.');
+                    session()->flash('status', 'Repasse registrado.');
+                }
             }
 
             $this->financialBroker->refresh();
@@ -307,6 +375,7 @@ new #[Layout('layouts.app')] class extends Component
         ];
         $statementEntries = collect();
         $openCommissions = collect();
+        $paymentCommissions = collect();
 
         if ($this->financialBroker) {
             $advanceBalance = $calc->forBroker($this->financialBroker);
@@ -325,6 +394,17 @@ new #[Layout('layouts.app')] class extends Component
                 ->get()
                 ->filter(fn (BrokerCommission $commission) => $commission->remainingAmount() > 0)
                 ->values();
+            $paymentCommissions = $openCommissions;
+
+            if ($this->editingPaymentId) {
+                $editedPaymentCommission = $allPayments
+                    ->firstWhere('id', $this->editingPaymentId)
+                    ?->commission;
+
+                if ($editedPaymentCommission && ! $paymentCommissions->contains('id', $editedPaymentCommission->id)) {
+                    $paymentCommissions = $paymentCommissions->prepend($editedPaymentCommission);
+                }
+            }
         }
 
         return [
@@ -332,6 +412,7 @@ new #[Layout('layouts.app')] class extends Component
             'statementSummary' => $statementSummary,
             'statementEntries' => $statementEntries,
             'openCommissions' => $openCommissions,
+            'paymentCommissions' => $paymentCommissions,
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
@@ -347,6 +428,8 @@ new #[Layout('layouts.app')] class extends Component
         $this->reset([
             'showLaunchModal',
             'editingAdvanceId',
+            'editingCommissionId',
+            'editingPaymentId',
             'launch_amount',
             'launch_base_amount',
             'launch_case_type_id',
@@ -829,6 +912,14 @@ new #[Layout('layouts.app')] class extends Component
                                     <td class="text-right">
                                         <button
                                             type="button"
+                                            wire:click="openEditCommission({{ $com->id }})"
+                                            class="fx-btn fx-btn--text fx-btn--sm text-primary-500"
+                                            title="Editar comissão"
+                                        >
+                                            <span class="material-icons-outlined text-base">edit</span>
+                                        </button>
+                                        <button
+                                            type="button"
                                             wire:click="deleteCommission({{ $com->id }})"
                                             wire:confirm="Excluir esta comissão? Repasses, despesas no caixa e compensações com adiantamentos serão desfeitos."
                                             class="fx-btn fx-btn--text fx-btn--sm text-error"
@@ -876,6 +967,14 @@ new #[Layout('layouts.app')] class extends Component
                                     <td class="text-right">
                                         <button
                                             type="button"
+                                            wire:click="openEditPayment({{ $payment->id }})"
+                                            class="fx-btn fx-btn--text fx-btn--sm text-primary-500"
+                                            title="Editar repasse"
+                                        >
+                                            <span class="material-icons-outlined text-base">edit</span>
+                                        </button>
+                                        <button
+                                            type="button"
                                             wire:click="deletePayment({{ $payment->id }})"
                                             wire:confirm="Excluir este repasse? A despesa no caixa será removida e o saldo da comissão será reaberto."
                                             class="fx-btn fx-btn--text fx-btn--sm text-error"
@@ -900,7 +999,9 @@ new #[Layout('layouts.app')] class extends Component
             <div class="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
                 <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
                     <div>
-                        <h3 class="text-lg font-bold text-mono-900">{{ $editingAdvanceId ? 'Editar adiantamento' : 'Novo lançamento' }}</h3>
+                        <h3 class="text-lg font-bold text-mono-900">
+                            {{ $editingAdvanceId ? 'Editar adiantamento' : ($editingCommissionId ? 'Editar comissão' : ($editingPaymentId ? 'Editar repasse' : 'Novo lançamento')) }}
+                        </h3>
                         <p class="text-xs text-mono-600">{{ $broker->name }}</p>
                     </div>
 
@@ -921,8 +1022,10 @@ new #[Layout('layouts.app')] class extends Component
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                                     <div class="md:col-span-2">
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Movimento</label>
-                                        @if ($editingAdvanceId)
-                                            <div class="flex h-11 items-center justify-center rounded-pill border border-primary-500 bg-primary-100 text-sm font-semibold text-primary-500">Adiantamento</div>
+                                        @if ($editingAdvanceId || $editingCommissionId || $editingPaymentId)
+                                            <div class="flex h-11 items-center justify-center rounded-pill border border-primary-500 bg-primary-100 text-sm font-semibold text-primary-500">
+                                                {{ ['advance' => 'Adiantamento', 'commission' => 'Comissão', 'payment' => 'Repasse'][$launch_type] }}
+                                            </div>
                                         @else
                                             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                                 <button type="button" wire:click="$set('launch_type', 'advance')" class="flex h-11 items-center justify-center gap-2 rounded-pill border text-sm font-semibold transition-all {{ $launch_type === 'advance' ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 bg-mono-50 text-mono-600 hover:bg-mono-100' }}">Adiantamento</button>
@@ -991,20 +1094,29 @@ new #[Layout('layouts.app')] class extends Component
 
                                     @if ($launch_type === 'payment')
                                         <div>
-                                            <label class="mb-2 block text-sm font-medium text-mono-600">Comissão em aberto</label>
-                                            <select wire:model="launch_commission_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
-                                                <option value="">Selecione</option>
-                                                @foreach ($openCommissions as $commission)
-                                                    <option value="{{ $commission->id }}">
-                                                        {{ $commission->reference_date?->format('d/m/Y') }}
-                                                        · {{ $commission->caseType?->name ?: 'Sem tipo' }}
-                                                        @if ($commission->name) · {{ $commission->name }} @endif
-                                                        · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">{{ $editingPaymentId ? 'Comissão vinculada' : 'Comissão em aberto' }}</label>
+                                            @if ($editingPaymentId)
+                                                @php($editedPaymentCommission = $paymentCommissions->firstWhere('id', $launch_commission_id))
+                                                <div class="flex min-h-12 items-center rounded-pill border border-mono-200 bg-mono-50 px-4 text-sm text-mono-900">
+                                                    {{ $editedPaymentCommission?->reference_date?->format('d/m/Y') }}
+                                                    · {{ $editedPaymentCommission?->caseType?->name ?: 'Sem tipo' }}
+                                                    @if ($editedPaymentCommission?->name) · {{ $editedPaymentCommission->name }} @endif
+                                                </div>
+                                            @else
+                                                <select wire:model="launch_commission_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                    <option value="">Selecione</option>
+                                                    @foreach ($paymentCommissions as $commission)
+                                                        <option value="{{ $commission->id }}">
+                                                            {{ $commission->reference_date?->format('d/m/Y') }}
+                                                            · {{ $commission->caseType?->name ?: 'Sem tipo' }}
+                                                            @if ($commission->name) · {{ $commission->name }} @endif
+                                                            · saldo R$ {{ number_format($commission->remainingAmount(), 2, ',', '.') }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                            @endif
                                             @error('launch_commission_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                            @if ($openCommissions->isEmpty())
+                                            @if (! $editingPaymentId && $paymentCommissions->isEmpty())
                                                 <p class="mt-2 text-xs text-mono-600">Nenhuma comissão com saldo a pagar.</p>
                                             @endif
                                         </div>
@@ -1036,7 +1148,7 @@ new #[Layout('layouts.app')] class extends Component
                         <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancelLaunchModal">Cancelar</button>
                         <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
                             <span class="material-icons-outlined text-[18px]">check</span>
-                            {{ $editingAdvanceId ? 'Salvar alterações' : 'Salvar lançamento' }}
+                            {{ $editingAdvanceId || $editingCommissionId || $editingPaymentId ? 'Salvar alterações' : 'Salvar lançamento' }}
                         </button>
                     </div>
                 </form>

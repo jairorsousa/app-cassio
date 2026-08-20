@@ -13,9 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 class BrokerCommissionService
 {
-    public function __construct(private TransactionService $transactions)
-    {
-    }
+    public function __construct(private TransactionService $transactions) {}
 
     /**
      * Registra uma comissão calculando automaticamente o valor baseado na regra vigente.
@@ -73,6 +71,54 @@ class BrokerCommissionService
             'bank_account_id' => $data['bank_account_id'] ?? null,
             'notes' => $data['notes'] ?? null,
         ]);
+    }
+
+    /**
+     * Atualiza uma comissão de valor fixo e redistribui suas compensações.
+     *
+     * @param  array{case_type_id: int, name?: ?string, commission_amount: float, reference_date: string, bank_account_id?: ?int, notes?: ?string}  $data
+     */
+    public function updateFixedAmount(BrokerCommission $commission, array $data): BrokerCommission
+    {
+        return DB::transaction(function () use ($commission, $data) {
+            $commission = BrokerCommission::with('broker', 'settlements', 'payments.transaction')
+                ->lockForUpdate()
+                ->findOrFail($commission->id);
+            $commissionAmount = round((float) $data['commission_amount'], 2);
+            $paidAmount = $commission->paidAmount();
+
+            if ($commissionAmount <= 0) {
+                throw new \DomainException('O valor da comissão deve ser maior que zero.');
+            }
+
+            if ($commissionAmount < $paidAmount) {
+                throw new \DomainException(
+                    'O valor da comissão não pode ser menor que o total já repassado de R$ '
+                    .number_format($paidAmount, 2, ',', '.').'.'
+                );
+            }
+
+            $affectedAdvanceIds = $commission->settlements()->pluck('advance_id')->unique()->all();
+            $commission->settlements()->delete();
+
+            $commission->update([
+                'case_type_id' => $data['case_type_id'],
+                'name' => $this->normalizeName($data['name'] ?? null),
+                'base_amount' => $commissionAmount,
+                'percentage_applied' => 0,
+                'commission_amount' => $commissionAmount,
+                'reference_date' => $data['reference_date'],
+                'bank_account_id' => $data['bank_account_id'] ?? null,
+                'notes' => $data['notes'] ?? null,
+            ]);
+
+            $this->syncStatus($commission->fresh());
+            $this->settleWithAdvances($commission->fresh());
+            $this->settleFreedAdvances($affectedAdvanceIds);
+            $this->syncPaymentTransactionDescriptions($commission->fresh(['broker', 'caseType', 'payments.transaction']));
+
+            return $commission->fresh(['caseType', 'bankAccount', 'settlements', 'payments']);
+        });
     }
 
     private function normalizeName(?string $name): ?string
@@ -241,6 +287,74 @@ class BrokerCommissionService
     }
 
     /**
+     * Atualiza um repasse e sua despesa, redistribuindo compensações da comissão.
+     */
+    public function updatePayment(
+        BrokerCommissionPayment $payment,
+        float $amount,
+        ?string $paidAt = null,
+        ?int $bankAccountId = null,
+        ?string $notes = null,
+    ): BrokerCommissionPayment {
+        return DB::transaction(function () use ($payment, $amount, $paidAt, $bankAccountId, $notes) {
+            $payment = BrokerCommissionPayment::with('transaction')
+                ->lockForUpdate()
+                ->findOrFail($payment->id);
+            $commission = BrokerCommission::with('broker', 'caseType', 'settlements', 'payments')
+                ->lockForUpdate()
+                ->findOrFail($payment->commission_id);
+            $amount = round($amount, 2);
+            $otherPayments = round($commission->paidAmount() - (float) $payment->amount, 2);
+            $maximumAmount = round((float) $commission->commission_amount - $otherPayments, 2);
+
+            if ($amount <= 0) {
+                throw new \DomainException('O valor do repasse deve ser maior que zero.');
+            }
+
+            if ($amount > $maximumAmount) {
+                throw new \DomainException(
+                    'O valor do repasse não pode ultrapassar R$ '
+                    .number_format($maximumAmount, 2, ',', '.').' para esta comissão.'
+                );
+            }
+
+            $affectedAdvanceIds = $commission->settlements()->pluck('advance_id')->unique()->all();
+            $commission->settlements()->delete();
+
+            $payment->update([
+                'paid_at' => $paidAt ?: now()->toDateString(),
+                'amount' => $amount,
+                'bank_account_id' => $bankAccountId,
+                'notes' => $notes,
+            ]);
+
+            $transactionData = [
+                'type' => 'expense',
+                'date' => $payment->paid_at->toDateString(),
+                'amount' => $payment->amount,
+                'description' => $this->paymentDescription($commission),
+                'status' => 'settled',
+                'bank_account_id' => $payment->bank_account_id,
+                'source_type' => Broker::class,
+                'source_id' => $commission->broker_id,
+            ];
+
+            if ($payment->transaction) {
+                $this->transactions->updateGenerated($payment->transaction, $transactionData);
+            } else {
+                $transaction = $this->transactions->create($transactionData);
+                $payment->update(['transaction_id' => $transaction->id]);
+            }
+
+            $this->syncStatus($commission->fresh());
+            $this->settleWithAdvances($commission->fresh());
+            $this->settleFreedAdvances($affectedAdvanceIds);
+
+            return $payment->fresh(['transaction', 'commission']);
+        });
+    }
+
+    /**
      * Quita o saldo restante da comissão.
      */
     public function pay(BrokerCommission $commission): void
@@ -264,5 +378,31 @@ class BrokerCommissionService
                 ? 'paid'
                 : ($paidOrSettled > 0 ? 'partially_paid' : 'pending'),
         ]);
+    }
+
+    /** @param  array<int, int|string|null>  $advanceIds */
+    private function settleFreedAdvances(array $advanceIds): void
+    {
+        BrokerAdvance::whereIn('id', array_values(array_unique(array_filter($advanceIds))))
+            ->orderBy('date')
+            ->get()
+            ->each(fn (BrokerAdvance $advance) => $this->settleAdvanceWithCommissions($advance));
+    }
+
+    private function syncPaymentTransactionDescriptions(BrokerCommission $commission): void
+    {
+        foreach ($commission->payments as $payment) {
+            if ($payment->transaction) {
+                $this->transactions->updateGenerated($payment->transaction, [
+                    'description' => $this->paymentDescription($commission),
+                ]);
+            }
+        }
+    }
+
+    private function paymentDescription(BrokerCommission $commission): string
+    {
+        return 'Repasse comissão corretor · '.$commission->broker->name
+            .' · '.$commission->caseType->name;
     }
 }
