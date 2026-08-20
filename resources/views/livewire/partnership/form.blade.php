@@ -66,24 +66,30 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">{{ $partnership ? 'Editar' : 'Nova' }} sociedade</x-slot>
 
-<x-fx.card class="max-w-2xl">
-    <form wire:submit="save" class="flex flex-col gap-sm">
-        <x-fx.input label="Nome" wire:model="name" required />
-        <div class="grid grid-cols-2 gap-sm">
-            <x-fx.input label="CNPJ" wire:model="cnpj" />
-            <x-fx.input label="Participação (%)" type="number" step="0.001" min="0" max="100" wire:model="participation_percentage" />
-        </div>
-        <x-fx.input label="Data de entrada" type="date" wire:model="joined_at" />
-        <label class="flex items-center gap-xs text-sm">
-            <input type="checkbox" wire:model="partnershipStatus" /> Ativa
-        </label>
-        <div>
-            <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>
-            <textarea wire:model="notes" class="fx-form-field" rows="3"></textarea>
-        </div>
-        <div class="flex gap-xs">
-            <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
-            <a href="{{ route('partnership.index') }}" class="fx-btn fx-btn--text">Cancelar</a>
-        </div>
-    </form>
-</x-fx.card>
+<div class="flex flex-col gap-md">
+    @if ($partnership)
+        <x-partnership.subnav :partnership="$partnership" />
+    @endif
+
+    <x-fx.card class="max-w-2xl">
+        <form wire:submit="save" class="flex flex-col gap-sm">
+            <x-fx.input label="Nome" wire:model="name" required />
+            <div class="grid grid-cols-2 gap-sm">
+                <x-fx.input label="CNPJ" wire:model="cnpj" />
+                <x-fx.input label="Participação (%)" type="number" step="0.001" min="0" max="100" wire:model="participation_percentage" />
+            </div>
+            <x-fx.input label="Data de entrada" type="date" wire:model="joined_at" />
+            <label class="flex items-center gap-xs text-sm">
+                <input type="checkbox" wire:model="partnershipStatus" /> Ativa
+            </label>
+            <div>
+                <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>
+                <textarea wire:model="notes" class="fx-form-field" rows="3"></textarea>
+            </div>
+            <div class="flex gap-xs">
+                <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
+                <a href="{{ $partnership ? route('partnership.show', $partnership) : route('partnership.index') }}" class="fx-btn fx-btn--text">Cancelar</a>
+            </div>
+        </form>
+    </x-fx.card>
+</div>

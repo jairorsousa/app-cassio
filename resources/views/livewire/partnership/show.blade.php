@@ -24,6 +24,8 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">{{ $partnership->name }}</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-partnership.subnav :partnership="$partnership" />
+
     <div class="grid grid-cols-2 md:grid-cols-4 gap-md">
         <x-fx.card>
             <div class="text-xxs text-mono-600 uppercase">Aportado</div>
@@ -54,13 +56,5 @@ new #[Layout('layouts.app')] class extends Component {
             <div><span class="text-mono-600">Status:</span> {{ $partnership->status ? 'Ativa' : 'Inativa' }}</div>
         </div>
 
-        <div class="mt-md flex flex-wrap gap-xs">
-            <x-fx.button href="{{ route('partnership.contributions.index', $partnership) }}" variant="standard">Aportes</x-fx.button>
-            <x-fx.button href="{{ route('partnership.expenses.index', $partnership) }}" variant="standard">Despesas</x-fx.button>
-            <x-fx.button href="{{ route('partnership.distributions.index', $partnership) }}" variant="standard">Distribuições</x-fx.button>
-            <x-fx.button href="{{ route('partnership.reports', $partnership) }}" variant="standard">Rentabilidade</x-fx.button>
-            <a href="{{ route('partnership.edit', $partnership) }}" class="fx-btn fx-btn--text">Editar dados</a>
-            <a href="{{ route('partnership.index') }}" class="fx-btn fx-btn--text">← Lista</a>
-        </div>
     </x-fx.card>
 </div>

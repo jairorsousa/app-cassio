@@ -123,8 +123,11 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">{{ $partnership->name }} · Aportes</x-slot>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
-    <x-fx.card class="lg:col-span-2">
+<div class="flex flex-col gap-md">
+    <x-partnership.subnav :partnership="$partnership" />
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
+        <x-fx.card class="lg:col-span-2">
         @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
         @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
@@ -162,9 +165,9 @@ new #[Layout('layouts.app')] class extends Component {
                 </tbody>
             </table>
         @endif
-    </x-fx.card>
+        </x-fx.card>
 
-    <x-fx.card>
+        <x-fx.card>
         <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Novo' }} aporte</h3>
         <form wire:submit="save" class="flex flex-col gap-sm">
             <x-fx.input label="Data" type="date" wire:model="contribDate" />
@@ -202,6 +205,6 @@ new #[Layout('layouts.app')] class extends Component {
                 @endif
             </div>
         </form>
-        <a href="{{ route('partnership.show', $partnership) }}" class="fx-btn fx-btn--text fx-btn--sm mt-sm">← Voltar à sociedade</a>
-    </x-fx.card>
+        </x-fx.card>
+    </div>
 </div>

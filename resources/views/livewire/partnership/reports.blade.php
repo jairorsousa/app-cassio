@@ -35,6 +35,8 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">{{ $partnership->name }} · Rentabilidade</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-partnership.subnav :partnership="$partnership" />
+
     <x-fx.card>
         <div class="grid grid-cols-2 gap-xs items-end">
             <x-fx.input label="De" type="date" wire:model.live="from" />
@@ -85,6 +87,4 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
     </x-fx.card>
-
-    <a href="{{ route('partnership.show', $partnership) }}" class="fx-btn fx-btn--text fx-btn--sm self-start">← Voltar</a>
 </div>
