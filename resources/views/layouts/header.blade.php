@@ -1,5 +1,16 @@
 <header class="sticky top-0 z-30 border-b border-mono-100 bg-mono-white px-4 md:px-6">
     <div class="flex h-16 min-w-0 items-center gap-4">
+        <button
+            type="button"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-mono-600 transition-colors hover:bg-mono-50 lg:hidden"
+            @click="sidebarOpen = !sidebarOpen"
+            :aria-expanded="sidebarOpen.toString()"
+            aria-controls="app-mobile-nav"
+            aria-label="Abrir menu"
+        >
+            <span class="material-icons-outlined text-[22px]" x-text="sidebarOpen ? 'close' : 'menu'">menu</span>
+        </button>
+
         <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-3">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
             <span class="hidden text-sm font-bold text-mono-900 sm:block">Cassio Finance</span>
@@ -55,3 +66,51 @@
     </div>
     </div>
 </header>
+
+<template x-teleport="body">
+    <div
+        class="lg:hidden"
+        x-show="sidebarOpen"
+        x-cloak
+        @keydown.escape.window="sidebarOpen = false"
+    >
+        <div
+            class="fixed inset-0 z-40 bg-mono-black/40"
+            @click="sidebarOpen = false"
+            x-transition.opacity
+        ></div>
+
+        <aside
+            id="app-mobile-nav"
+            class="fixed inset-y-0 left-0 z-50 flex w-[min(18rem,calc(100vw-3rem))] flex-col bg-mono-white shadow-elevated"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            x-show="sidebarOpen"
+            x-transition:enter="transform transition ease-out duration-200"
+            x-transition:enter-start="-translate-x-full"
+            x-transition:enter-end="translate-x-0"
+            x-transition:leave="transform transition ease-in duration-150"
+            x-transition:leave-start="translate-x-0"
+            x-transition:leave-end="-translate-x-full"
+        >
+            <div class="flex h-16 shrink-0 items-center justify-between border-b border-mono-100 px-4">
+                <span class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
+                    <span class="text-sm font-bold text-mono-900">Cassio Finance</span>
+                </span>
+                <button
+                    type="button"
+                    class="flex h-10 w-10 items-center justify-center rounded-full text-mono-600 hover:bg-mono-50"
+                    @click="sidebarOpen = false"
+                    aria-label="Fechar menu"
+                >
+                    <span class="material-icons-outlined text-[22px]">close</span>
+                </button>
+            </div>
+            <nav class="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Principal">
+                <x-app-nav layout="mobile" />
+            </nav>
+        </aside>
+    </div>
+</template>

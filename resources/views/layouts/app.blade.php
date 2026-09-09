@@ -17,6 +17,7 @@
     </head>
     <body
         class="bg-mono-50 font-sans text-mono-900 antialiased"
+        :class="{ 'overflow-hidden': sidebarOpen }"
         x-data="appShell({
             newIncome: '{{ route('banking.transactions.create', ['type' => 'income']) }}',
             newExpense: '{{ route('banking.transactions.create', ['type' => 'expense']) }}',
