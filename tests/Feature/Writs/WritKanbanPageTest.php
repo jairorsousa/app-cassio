@@ -46,10 +46,52 @@ class WritKanbanPageTest extends TestCase
             ->assertDontSee('Finalizar')
             ->assertSee('Perdido')
             ->assertSee('Monitorar Processo')
-            ->assertSeeHtml('grid-cols-8')
-            ->assertSeeHtml('min-w-[3040px]')
+            ->assertSeeHtml('grid-template-columns: repeat(8, minmax(360px, 1fr))')
+            ->assertSeeHtml('min-width: 3008px')
             ->assertSeeHtml('kanban-card flex')
             ->assertSeeHtml('w-1.5 shrink-0 bg-info');
+    }
+
+    public function test_user_can_choose_which_kanban_stages_are_visible(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Volt::test('writs.kanban')
+            ->assertSet('visibleStages', Writ::STAGES)
+            ->set('visibleStages', ['monitoring', 'negotiation', 'pending'])
+            ->assertSet('visibleStages', ['monitoring', 'negotiation', 'pending'])
+            ->assertSeeHtml('grid-template-columns: repeat(3, minmax(360px, 1fr))')
+            ->assertSeeHtml('data-stage="monitoring"')
+            ->assertSeeHtml('data-stage="negotiation"')
+            ->assertSeeHtml('data-stage="pending"')
+            ->assertDontSeeHtml('data-stage="paid"')
+            ->call('hideAllStages')
+            ->assertSet('visibleStages', [])
+            ->assertSee('Nenhuma etapa visível')
+            ->call('showAllStages')
+            ->assertSet('visibleStages', Writ::STAGES);
+    }
+
+    public function test_kanban_cards_are_collapsed_by_default_and_can_expand(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        $writ = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'negotiation',
+            'assignor_name' => 'João Batista Pereira de Sousa',
+            'process_number' => '50007452620138272712',
+        ]);
+
+        Volt::test('writs.kanban')
+            ->assertSee('João Batista Pereira de Sousa')
+            ->assertSeeHtml('x-data="{ expanded: false, actions: false }"')
+            ->assertSeeHtml('x-show="expanded"')
+            ->assertSeeHtml('style="display: none;"')
+            ->assertSeeHtml('aria-controls="writ-details-'.$writ->id.'"')
+            ->assertSeeHtml('keyboard_arrow_down');
     }
 
     public function test_finalized_card_uses_detailed_financial_and_date_layout(): void

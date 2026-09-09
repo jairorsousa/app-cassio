@@ -11,6 +11,7 @@ use App\Domains\Writs\Services\WritGoogleCalendarSyncDispatcher;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
+use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Spatie\Activitylog\Models\Activity;
@@ -54,6 +55,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
     #[Url]
     public string $dateFilter = '';
+
+    #[Session(key: 'writs-visible-stages')]
+    public array $visibleStages = Writ::STAGES;
 
     public bool $showFormModal = false;
 
@@ -861,6 +865,21 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         $this->reset(['type', 'debtor', 'from', 'to', 'dateFilter']);
     }
 
+    public function updatedVisibleStages(): void
+    {
+        $this->visibleStages = array_values(array_intersect(Writ::STAGES, $this->visibleStages));
+    }
+
+    public function showAllStages(): void
+    {
+        $this->visibleStages = Writ::STAGES;
+    }
+
+    public function hideAllStages(): void
+    {
+        $this->visibleStages = [];
+    }
+
     public function updatedFrom(): void
     {
         $this->resetDateFilterWhenPeriodIsEmpty();
@@ -1074,6 +1093,47 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 </button>
             @endif
 
+            <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+                <button
+                    type="button"
+                    class="flex h-12 items-center gap-2 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm font-semibold text-mono-700 transition-colors hover:border-mono-300 hover:bg-mono-50"
+                    @click="open = !open"
+                    :aria-expanded="open"
+                    aria-label="Selecionar etapas visíveis"
+                >
+                    <span class="material-icons-outlined text-[19px] text-primary-500">view_week</span>
+                    Etapas
+                    <span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-100 px-1.5 text-[11px] font-bold text-primary-600">{{ count($visibleStages) }}/{{ count(Writ::STAGES) }}</span>
+                    <span class="material-icons-outlined text-[18px] text-mono-400 transition-transform" :class="open && 'rotate-180'">keyboard_arrow_down</span>
+                </button>
+
+                <div x-show="open" x-transition class="absolute right-0 top-14 z-dropdown w-72 overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-dropdown" style="display: none;">
+                    <div class="border-b border-mono-100 px-4 py-3">
+                        <p class="text-sm font-bold text-mono-900">Etapas visíveis</p>
+                        <p class="mt-0.5 text-xs text-mono-500">Escolha as colunas que deseja acompanhar.</p>
+                    </div>
+
+                    <div class="max-h-80 space-y-1 overflow-y-auto p-2">
+                        @foreach (Writ::STAGES as $stageKey)
+                            <label class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-mono-700 transition-colors hover:bg-mono-50">
+                                <input
+                                    type="checkbox"
+                                    value="{{ $stageKey }}"
+                                    wire:model.live="visibleStages"
+                                    class="h-4 w-4 rounded border-mono-300 text-primary-500 focus:ring-primary-500"
+                                />
+                                <span class="flex-1">{{ Writ::STAGE_LABELS[$stageKey] }}</span>
+                            </label>
+                        @endforeach
+                    </div>
+
+                    <div class="flex items-center justify-between border-t border-mono-100 bg-mono-50 px-4 py-3">
+                        <button type="button" wire:click="hideAllStages" class="text-xs font-semibold text-mono-500 transition-colors hover:text-mono-900">Ocultar todas</button>
+                        <button type="button" wire:click="showAllStages" class="text-xs font-semibold text-primary-500 transition-colors hover:text-primary-600">Mostrar todas</button>
+                    </div>
+                </div>
+            </div>
+
             <x-jr.button type="button" wire:click="create">
                 <span class="material-icons-outlined text-[18px]">add</span>
                 Novo Requisitório
@@ -1083,6 +1143,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
     @php
         $hasAnyWrit = collect($stages)->sum('count') > 0;
+        $visibleStageCount = count($visibleStages);
         $stageMeta = [
             'monitoring' => [
                 'icon' => 'manage_search',
@@ -1201,9 +1262,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         </x-jr.empty-state>
     @endif
 
+    @if ($visibleStageCount === 0)
+        <div class="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-mono-200 bg-mono-50 px-6 text-center">
+            <span class="material-icons-outlined text-[36px] text-mono-300">view_week</span>
+            <h3 class="mt-3 text-base font-bold text-mono-900">Nenhuma etapa visível</h3>
+            <p class="mt-1 text-sm text-mono-500">Selecione as etapas que deseja acompanhar no botão “Etapas”.</p>
+            <button type="button" wire:click="showAllStages" class="mt-4 text-sm font-semibold text-primary-500 hover:text-primary-600">Mostrar todas as etapas</button>
+        </div>
+    @else
     <div class="overflow-x-auto pb-2">
-        <div class="grid min-w-[3040px] grid-cols-8 gap-4">
+        <div class="grid gap-4" style="grid-template-columns: repeat({{ $visibleStageCount }}, minmax(360px, 1fr)); min-width: {{ $visibleStageCount * 376 }}px;">
             @foreach ($stages as $stage)
+                @continue(! in_array($stage['key'], $visibleStages, true))
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
                 <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
                     <div class="h-1 w-full shrink-0 rounded-t-2xl {{ $meta['bar'] }}"></div>
@@ -1234,6 +1304,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             @endforeach
         </div>
     </div>
+    @endif
 
     @if ($showFormModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">

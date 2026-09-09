@@ -97,13 +97,14 @@
     class="kanban-card flex cursor-grab overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
     data-id="{{ $writ->id }}"
     wire:key="writ-{{ $writ->id }}"
+    x-data="{ expanded: false, actions: false }"
+    @click.outside="actions = false"
 >
     <div class="w-1.5 shrink-0 {{ $meta['card_accent'] }}" aria-hidden="true"></div>
 
     <div class="flex min-w-0 flex-1 flex-col p-4">
-        <div class="flex items-start justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-2.5 pt-1">
-                <span class="h-3 w-3 shrink-0 rounded-full {{ $meta['dot'] }}" aria-hidden="true"></span>
+        <div class="flex items-center justify-between gap-3">
+            <div class="flex min-w-0 items-center">
                 <a
                     href="{{ route('writs.show', $writ) }}"
                     class="truncate text-[15px] font-bold text-mono-900 transition-colors hover:text-primary-500"
@@ -113,49 +114,20 @@
                 </a>
             </div>
 
-            <div class="relative shrink-0" x-data="{ open: false }" @click.outside="open = false">
-                <button
-                    type="button"
-                    class="flex h-8 w-8 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600"
-                    @click="open = !open"
-                    :aria-expanded="open"
-                    aria-label="Ações de {{ $clientName }}"
-                >
-                    <span class="material-icons-outlined text-[20px]">more_vert</span>
-                </button>
-
-                <div x-show="open" x-transition class="absolute right-0 top-9 z-dropdown w-40 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
-                    <a href="{{ route('writs.show', $writ) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
-                        <span class="material-icons-outlined text-[18px] text-mono-400">visibility</span>
-                        Abrir
-                    </a>
-                    <a href="{{ route('writs.edit', $writ) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
-                        <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
-                        Editar
-                    </a>
-                    @if (in_array($stage, ['monitoring', 'negotiation'], true))
-                        <button
-                            type="button"
-                            wire:click="promptLostReason({{ $writ->id }})"
-                            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-down hover:bg-down-bg"
-                        >
-                            <span class="material-icons-outlined text-[18px]">block</span>
-                            Marcar como perdido
-                        </button>
-                    @endif
-                    <button
-                        type="button"
-                        wire:click="delete({{ $writ->id }})"
-                        wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
-                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-error hover:bg-down-bg"
-                    >
-                        <span class="material-icons-outlined text-[18px]">delete_outline</span>
-                        Excluir
-                    </button>
-                </div>
-            </div>
+            <button
+                type="button"
+                class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-xl text-mono-400 transition-colors hover:bg-mono-100 hover:text-mono-700"
+                @mousedown.stop
+                @click.stop="expanded = !expanded; actions = false"
+                :aria-expanded="expanded"
+                aria-controls="writ-details-{{ $writ->id }}"
+                aria-label="Exibir detalhes de {{ $clientName }}"
+            >
+                <span class="material-icons-outlined text-[22px] transition-transform duration-200" :class="expanded && 'rotate-180'">keyboard_arrow_down</span>
+            </button>
         </div>
 
+        <div id="writ-details-{{ $writ->id }}" x-show="expanded" x-transition.opacity style="display: none;">
         <div class="mt-4 flex items-center gap-2 text-sm text-mono-600">
             <span class="material-icons-outlined text-[18px]">tag</span>
             <span class="truncate" title="{{ $writ->process_number }}">{{ $writ->process_number ?: 'Requisitório #'.$writ->id }}</span>
@@ -241,5 +213,52 @@
                 <p class="line-clamp-3">{{ $writ->lost_reason }}</p>
             </div>
         @endif
+
+        <div class="mt-3 flex items-center justify-between border-t border-mono-100 pt-3">
+            <a href="{{ route('writs.show', $writ) }}" class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-500 transition-colors hover:text-primary-600">
+                Ver detalhes
+                <span class="material-icons-outlined text-[16px]">arrow_forward</span>
+            </a>
+
+            <div class="relative shrink-0">
+                <button
+                    type="button"
+                    class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-xl text-mono-400 transition-colors hover:bg-mono-100 hover:text-mono-700"
+                    @mousedown.stop
+                    @click.stop="actions = !actions"
+                    :aria-expanded="actions"
+                    aria-label="Ações de {{ $clientName }}"
+                >
+                    <span class="material-icons-outlined text-[20px]">more_vert</span>
+                </button>
+
+                <div x-show="actions" x-transition class="absolute bottom-9 right-0 z-dropdown w-44 rounded-xl border border-mono-100 bg-mono-white py-2 shadow-dropdown" style="display: none;">
+                    <a href="{{ route('writs.edit', $writ) }}" class="flex items-center gap-2 px-3 py-2 text-sm text-mono-900 hover:bg-mono-50">
+                        <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
+                        Editar
+                    </a>
+                    @if (in_array($stage, ['monitoring', 'negotiation'], true))
+                        <button
+                            type="button"
+                            wire:click="promptLostReason({{ $writ->id }})"
+                            class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-down hover:bg-down-bg"
+                        >
+                            <span class="material-icons-outlined text-[18px]">block</span>
+                            Marcar como perdido
+                        </button>
+                    @endif
+                    <button
+                        type="button"
+                        wire:click="delete({{ $writ->id }})"
+                        wire:confirm="Excluir este requisitório e todas as transações vinculadas?"
+                        class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-error hover:bg-down-bg"
+                    >
+                        <span class="material-icons-outlined text-[18px]">delete_outline</span>
+                        Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+        </div>
     </div>
 </article>
