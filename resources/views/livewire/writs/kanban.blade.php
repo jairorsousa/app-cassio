@@ -13,8 +13,10 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
+use Spatie\Activitylog\Models\Activity;
 
-new #[Layout('layouts.app')] #[Lazy] class extends Component {
+new #[Layout('layouts.app')] #[Lazy] class extends Component
+{
     public function placeholder(): string
     {
         return <<<'HTML'
@@ -40,77 +42,131 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     #[Url]
     public string $type = '';
+
     #[Url]
     public string $debtor = '';
+
     #[Url]
     public string $from = '';
+
     #[Url]
     public string $to = '';
+
     #[Url]
     public string $dateFilter = '';
 
     public bool $showFormModal = false;
+
     public bool $showMonitoringModal = false;
+
     public ?int $promptMonitoringWritId = null;
+
     public string $promptMonitoringAt = '';
 
     public bool $showPetitionModal = false;
+
     public ?int $promptPetitionWritId = null;
+
     public string $promptPetitionAt = '';
 
     public bool $showAwaitingReceiptModal = false;
+
     public ?int $promptAwaitingReceiptWritId = null;
+
     public string $promptAwaitingReceiptAt = '';
-    
+
     public bool $showFinalizedModal = false;
+
     public ?int $promptFinalizedWritId = null;
+
     public string $promptFinalizedAt = '';
+
     public string $promptActualReceiptAmount = '';
+
     public ?int $promptDestinationBankAccountId = null;
 
     public bool $showLostModal = false;
+
     public ?int $promptLostWritId = null;
+
     public string $promptLostReason = '';
 
     public bool $showFilters = false;
+
     public string $formType = 'rpv';
+
     public string $stage = 'negotiation';
+
     public string $process_number = '';
+
     public string $court = '';
+
     public string $debtor_entity = '';
+
     public string $credit_nature = '';
+
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
+
     public string $face_value = '0';
+
     public string $negotiated_amount = '0';
+
     public string $proposed_amount = '0';
+
     public string $paid_amount = '0';
+
     public string $notary_expenses_amount = '0';
+
     public string $other_expenses_amount = '0';
+
     public string $estimated_receipt_amount = '0';
+
     public ?int $estimated_months = null;
+
     public string $monitoring_at = '';
+
+    public string $negotiation_at = '';
+
     public string $cession_at = '';
+
     public string $petitioned_at = '';
+
     public string $awaiting_receipt_at = '';
+
     public string $paid_at = '';
+
     public string $finalized_at = '';
+
     public string $actual_receipt_amount = '0';
+
     public string $lost_reason = '';
+
     public ?int $source_bank_account_id = null;
+
     public ?int $destination_bank_account_id = null;
+
     public string $notes = '';
 
     public bool $showCessionModal = false;
+
     public ?int $cessionWritId = null;
+
     public string $promptCessionAt = '';
 
     public bool $showPaidModal = false;
+
     public ?int $promptPaidWritId = null;
+
     public string $promptPaidAmount = '';
+
     public string $promptNotaryExpenses = '';
+
     public string $promptOtherExpenses = '';
+
     public string $promptPaidAt = '';
+
     public ?int $promptSourceBankAccountId = null;
+
     public string $promptTransactionNote = '';
 
     public function rules(): array
@@ -134,6 +190,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
             'monitoring_at' => 'nullable|date',
+            'negotiation_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
@@ -151,6 +208,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         if ($stage === 'monitoring' && blank($this->monitoring_at)) {
             $this->monitoring_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'negotiation' && blank($this->negotiation_at)) {
+            $this->negotiation_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($stage === 'pending' && blank($this->cession_at)) {
@@ -175,6 +236,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         if ($this->stage === 'monitoring') {
             $this->monitoring_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($this->stage === 'negotiation') {
+            $this->negotiation_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($this->stage === 'pending') {
@@ -230,6 +295,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $other = $this->moneyValue($this->other_expenses_amount);
 
         $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+
         return round($amount + $notary + $other, 2);
     }
 
@@ -237,22 +303,29 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $cost = $this->totalCostPreview();
         $receipt = $this->moneyValue($this->estimated_receipt_amount);
+
         return round($receipt - $cost, 2);
     }
 
     public function estimatedProfitPercentagePreview(): float
     {
         $cost = $this->totalCostPreview();
-        if ($cost <= 0) return 0;
-        
+        if ($cost <= 0) {
+            return 0;
+        }
+
         $profit = $this->estimatedProfitPreview();
+
         return round(($profit / $cost) * 100, 2);
     }
 
     public function estimatedProfitPerMonthPreview(): float
     {
         $months = (int) $this->estimated_months;
-        if ($months <= 0) return 0.0;
+        if ($months <= 0) {
+            return 0.0;
+        }
+
         return round($this->estimatedProfitPreview() / $months, 2);
     }
 
@@ -274,6 +347,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             return;
         }
 
+        if ($this->stage === 'negotiation' && blank($this->negotiation_at)) {
+            $this->addError('negotiation_at', 'Informe a data e hora da negociação.');
+
+            return;
+        }
+
         if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
             $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
 
@@ -287,6 +366,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         }
 
         $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
+        $data['negotiation_at'] = blank($this->negotiation_at) ? null : $this->negotiation_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
         $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
         $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
@@ -317,7 +397,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->dispatchStageEvents($writ->fresh());
 
         foreach ($assignorsData as $assignor) {
-            if (!empty($assignor['contact_id'])) {
+            if (! empty($assignor['contact_id'])) {
                 WritAssignor::create([
                     'writ_id' => $writ->id,
                     'contact_id' => $assignor['contact_id'],
@@ -340,6 +420,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
         if (str_contains($value, ',')) {
             $digits = preg_replace('/\D/', '', $value);
+
             return (float) ($digits / 100);
         }
 
@@ -365,6 +446,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public function usesCessionDate(): bool
     {
         return $this->stage === 'pending';
+    }
+
+    public function usesNegotiationDate(): bool
+    {
+        return $this->stage !== 'monitoring';
     }
 
     public function usesMonitoringDate(): bool
@@ -406,7 +492,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['monitoring_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'negotiation_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -476,6 +562,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             'estimated_receipt_amount',
             'estimated_months',
             'monitoring_at',
+            'negotiation_at',
             'cession_at',
             'petitioned_at',
             'awaiting_receipt_at',
@@ -507,7 +594,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $writ = Writ::findOrFail($id);
         $writ->transactions()->delete();
         $writ->history()->delete();
-        \Spatie\Activitylog\Models\Activity::where('subject_type', Writ::class)
+        Activity::where('subject_type', Writ::class)
             ->where('subject_id', $writ->id)
             ->delete();
         $writ->forceDelete();
@@ -520,7 +607,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $writ = Writ::findOrFail($writId);
             $service->transitionTo($writ, $newStage);
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS[$newStage].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -543,7 +630,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ]);
             $this->showMonitoringModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['monitoring'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -571,7 +658,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $service->transitionTo($writ, 'pending');
             $this->showCessionModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['pending'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -586,14 +673,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->promptPaidWritId = $id;
         $writ = Writ::findOrFail($id);
-        
+
         $this->promptPaidAmount = (string) $writ->paid_amount;
         $this->promptNotaryExpenses = (string) $writ->notary_expenses_amount;
         $this->promptOtherExpenses = (string) $writ->other_expenses_amount;
         $this->promptPaidAt = now()->format('Y-m-d');
         $this->promptSourceBankAccountId = $writ->source_bank_account_id;
         $this->promptTransactionNote = '';
-        
+
         $this->showPaidModal = true;
     }
 
@@ -614,7 +701,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'notary_expenses_amount' => $this->moneyValue($this->promptNotaryExpenses),
                 'other_expenses_amount' => $this->moneyValue($this->promptOtherExpenses),
             ]);
-            
+
             $service->transitionTo($writ, 'paid', [
                 'paid_at' => $this->promptPaidAt,
                 'source_bank_account_id' => $this->promptSourceBankAccountId,
@@ -622,7 +709,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ]);
             $this->showPaidModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['paid'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -651,7 +738,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ]);
             $this->showPetitionModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['petitioning'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -680,7 +767,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ]);
             $this->showAwaitingReceiptModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['awaiting_receipt'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -695,12 +782,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $this->promptFinalizedWritId = $id;
         $writ = Writ::findOrFail($id);
-        
+
         $this->promptFinalizedAt = now()->format('Y-m-d');
         $this->promptActualReceiptAmount = (string) $writ->actual_receipt_amount;
         $this->promptDestinationBankAccountId = $writ->destination_bank_account_id;
         $this->promptTransactionNote = '';
-        
+
         $this->showFinalizedModal = true;
     }
 
@@ -722,7 +809,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             ]);
             $this->showFinalizedModal = false;
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['finalized'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -757,7 +844,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $this->promptLostWritId = null;
             $this->promptLostReason = '';
             session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['lost'].'.');
-        } catch (\DomainException|\InvalidArgumentException $e) {
+        } catch (DomainException|InvalidArgumentException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -794,7 +881,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     public function with(): array
     {
         $q = Writ::with('assignors.contact');
-        if ($this->type) $q->where('type', $this->type);
+        if ($this->type) {
+            $q->where('type', $this->type);
+        }
         if ($this->debtor) {
             $search = trim($this->debtor);
             $q->where(function ($query) use ($search) {
@@ -812,8 +901,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'receipt' => 'finalized_at',
                 default => 'paid_at',
             };
-            if ($this->from) $q->whereDate($dateColumn, '>=', $this->from);
-            if ($this->to) $q->whereDate($dateColumn, '<=', $this->to);
+            if ($this->from) {
+                $q->whereDate($dateColumn, '>=', $this->from);
+            }
+            if ($this->to) {
+                $q->whereDate($dateColumn, '<=', $this->to);
+            }
         }
 
         $filteredWrits = $q->orderByDesc('id')->get();
@@ -1299,7 +1392,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 </div>
                             </section>
 
-                            @if ($this->usesMonitoringDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+                            @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
                                 <section>
                                     <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                         <span class="material-icons-outlined text-[20px] text-primary-500">event</span>
@@ -1310,6 +1403,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                         @if ($this->usesMonitoringDate())
                                             <x-jr.input label="Data e hora para monitorar" icon="manage_search" type="datetime-local" wire:model="monitoring_at" required />
                                             @error('monitoring_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @endif
+
+                                        @if ($this->usesNegotiationDate())
+                                            <x-jr.input label="Data e hora da negociação" icon="handshake" type="datetime-local" wire:model="negotiation_at" :required="$stage === 'negotiation'" />
+                                            @error('negotiation_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         @endif
 
                                         @if ($this->usesCessionDate())

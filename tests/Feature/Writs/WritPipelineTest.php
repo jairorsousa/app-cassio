@@ -121,6 +121,20 @@ class WritPipelineTest extends TestCase
         $this->assertEquals('2026-06-15 14:30:00', $updated->cession_at->format('Y-m-d H:i:s'));
     }
 
+    public function test_moving_to_negotiation_records_date_when_it_is_missing(): void
+    {
+        $this->travelTo('2026-09-09 11:45:00');
+        $writ = $this->makeWrit([
+            'stage' => 'monitoring',
+            'monitoring_at' => '2026-09-08 09:00:00',
+            'negotiation_at' => null,
+        ]);
+
+        $updated = app(WritService::class)->transitionTo($writ, 'negotiation');
+
+        $this->assertSame('2026-09-09 11:45:00', $updated->negotiation_at->format('Y-m-d H:i:s'));
+    }
+
     public function test_monitoring_stage_stores_datetime_without_values(): void
     {
         $writ = $this->makeWrit([

@@ -50,6 +50,43 @@ class WritPdfTest extends TestCase
             ]);
     }
 
+    public function test_details_page_displays_the_complete_writ_dates_block(): void
+    {
+        $user = User::factory()->create();
+        $writ = Writ::create([
+            'type' => 'rpv',
+            'stage' => 'finalized',
+            'monitoring_at' => '2025-01-02 09:00:00',
+            'negotiation_at' => '2025-01-03 10:30:00',
+            'cession_at' => '2025-01-04 11:00:00',
+            'paid_at' => '2025-01-05',
+            'petitioned_at' => '2025-01-06 14:00:00',
+            'awaiting_receipt_at' => '2025-02-10 09:30:00',
+            'finalized_at' => '2025-02-11',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('writs.show', $writ))
+            ->assertOk()
+            ->assertSee('Datas do requisitório')
+            ->assertSeeInOrder([
+                'Monitoramento',
+                '02/01/2025 09:00',
+                'Negociação',
+                '03/01/2025 10:30',
+                'Cessão',
+                '04/01/2025 11:00',
+                'Pagamento',
+                '05/01/2025',
+                'Peticionamento',
+                '06/01/2025 14:00',
+                'Previsão de recebimento',
+                '10/02/2025 09:30',
+                'Recebimento',
+                '11/02/2025',
+            ]);
+    }
+
     public function test_authenticated_user_can_download_the_writ_pdf(): void
     {
         $user = User::factory()->create();

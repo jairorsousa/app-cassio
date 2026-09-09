@@ -12,36 +12,60 @@ use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public ?Writ $writ = null;
 
     public string $type = 'rpv';
+
     public string $stage = 'negotiation';
+
     public string $process_number = '';
+
     public string $court = '';
+
     public string $debtor_entity = '';
+
     public string $credit_nature = '';
 
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
 
     public string $face_value = '0';
+
     public string $negotiated_amount = '0';
+
     public string $proposed_amount = '0';
+
     public string $paid_amount = '0';
+
     public string $notary_expenses_amount = '0';
+
     public string $other_expenses_amount = '0';
+
     public string $estimated_receipt_amount = '0';
+
     public ?int $estimated_months = null;
+
     public string $monitoring_at = '';
+
+    public string $negotiation_at = '';
+
     public string $cession_at = '';
+
     public string $petitioned_at = '';
+
     public string $awaiting_receipt_at = '';
+
     public string $paid_at = '';
+
     public string $finalized_at = '';
+
     public string $actual_receipt_amount = '0';
+
     public string $lost_reason = '';
 
     public ?int $source_bank_account_id = null;
+
     public ?int $destination_bank_account_id = null;
 
     public string $notes = '';
@@ -50,6 +74,10 @@ new #[Layout('layouts.app')] class extends Component {
     {
         if ($stage === 'monitoring' && blank($this->monitoring_at)) {
             $this->monitoring_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'negotiation' && blank($this->negotiation_at)) {
+            $this->negotiation_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($stage === 'pending' && blank($this->cession_at)) {
@@ -81,6 +109,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->estimated_receipt_amount = (string) $writ->estimated_receipt_amount;
             $this->estimated_months = $writ->estimated_months;
             $this->monitoring_at = $writ->monitoring_at?->format('Y-m-d\TH:i') ?? '';
+            $this->negotiation_at = $writ->negotiation_at?->format('Y-m-d\TH:i') ?? '';
             $this->cession_at = $writ->cession_at?->format('Y-m-d\TH:i') ?? '';
             $this->petitioned_at = $writ->petitioned_at?->format('Y-m-d\TH:i') ?? '';
             $this->awaiting_receipt_at = $writ->awaiting_receipt_at?->format('Y-m-d\TH:i') ?? '';
@@ -91,11 +120,13 @@ new #[Layout('layouts.app')] class extends Component {
             $this->source_bank_account_id = $writ->source_bank_account_id;
             $this->destination_bank_account_id = $writ->destination_bank_account_id;
 
-            $existing = $writ->assignors->map(fn($a) => [
+            $existing = $writ->assignors->map(fn ($a) => [
                 'contact_id' => (string) $a->contact_id,
                 'role' => $a->role,
             ])->toArray();
-            $this->assignors = !empty($existing) ? $existing : [['contact_id' => '', 'role' => 'parte']];
+            $this->assignors = ! empty($existing) ? $existing : [['contact_id' => '', 'role' => 'parte']];
+        } else {
+            $this->negotiation_at = now()->format('Y-m-d\TH:i');
         }
     }
 
@@ -133,6 +164,7 @@ new #[Layout('layouts.app')] class extends Component {
             'estimated_receipt_amount' => 'required|numeric|min:0',
             'estimated_months' => 'nullable|integer|min:0',
             'monitoring_at' => 'nullable|date',
+            'negotiation_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
@@ -166,6 +198,7 @@ new #[Layout('layouts.app')] class extends Component {
         $other = $this->moneyValue($this->other_expenses_amount);
 
         $amount = ($this->usesPaymentFields() && $paid > 0) ? $paid : $proposed;
+
         return round($amount + $notary + $other, 2);
     }
 
@@ -173,22 +206,29 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $cost = $this->totalCostPreview();
         $receipt = $this->moneyValue($this->estimated_receipt_amount);
+
         return round($receipt - $cost, 2);
     }
 
     public function estimatedProfitPercentagePreview(): float
     {
         $cost = $this->totalCostPreview();
-        if ($cost <= 0) return 0;
-        
+        if ($cost <= 0) {
+            return 0;
+        }
+
         $profit = $this->estimatedProfitPreview();
+
         return round(($profit / $cost) * 100, 2);
     }
 
     public function estimatedProfitPerMonthPreview(): float
     {
         $months = (int) $this->estimated_months;
-        if ($months <= 0) return 0.0;
+        if ($months <= 0) {
+            return 0.0;
+        }
+
         return round($this->estimatedProfitPreview() / $months, 2);
     }
 
@@ -214,6 +254,12 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
+        if ($this->stage === 'negotiation' && blank($this->negotiation_at)) {
+            $this->addError('negotiation_at', 'Informe a data e hora da negociação.');
+
+            return;
+        }
+
         if ($this->stage === 'petitioning' && blank($this->petitioned_at)) {
             $this->addError('petitioned_at', 'Informe a data e hora do peticionamento.');
 
@@ -227,6 +273,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
+        $data['negotiation_at'] = blank($this->negotiation_at) ? null : $this->negotiation_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
         $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
         $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
@@ -298,7 +345,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         $writ->assignors()->delete();
         foreach ($assignorsData as $a) {
-            if (!empty($a['contact_id'])) {
+            if (! empty($a['contact_id'])) {
                 WritAssignor::create([
                     'writ_id' => $writ->id,
                     'contact_id' => $a['contact_id'],
@@ -308,6 +355,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         session()->flash('status', 'Requisitório salvo.');
+
         return $this->redirectRoute('writs.show', $writ, navigate: true);
     }
 
@@ -321,6 +369,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         if (str_contains($value, ',')) {
             $digits = preg_replace('/\D/', '', $value);
+
             return (float) ($digits / 100);
         }
 
@@ -346,6 +395,11 @@ new #[Layout('layouts.app')] class extends Component {
     public function usesCessionDate(): bool
     {
         return $this->stage === 'pending';
+    }
+
+    public function usesNegotiationDate(): bool
+    {
+        return $this->stage !== 'monitoring';
     }
 
     public function usesMonitoringDate(): bool
@@ -387,7 +441,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['monitoring_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'negotiation_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -591,13 +645,18 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </section>
 
-        @if ($this->usesMonitoringDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+        @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
             <section>
                 <h3 class="text-md font-semibold mb-xs">Datas da etapa</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                     @if ($this->usesMonitoringDate())
                         <x-fx.input label="Data e hora para monitorar" type="datetime-local" wire:model="monitoring_at" required />
                         @error('monitoring_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
+                    @endif
+
+                    @if ($this->usesNegotiationDate())
+                        <x-fx.input label="Data e hora da negociação" type="datetime-local" wire:model="negotiation_at" :required="$stage === 'negotiation'" />
+                        @error('negotiation_at') <p class="mt-1 text-xxs text-system-error">{{ $message }}</p> @enderror
                     @endif
 
                     @if ($this->usesCessionDate())

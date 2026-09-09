@@ -199,10 +199,11 @@
     $receiptLabel = $writ->stage === 'finalized' ? 'Valor recebido' : 'Recebimento estimado';
     $dates = array_filter([
         'Monitoramento' => $writ->monitoring_at ? $date($writ->monitoring_at, true) : null,
+        'Negociação' => $writ->negotiation_at ? $date($writ->negotiation_at, true) : null,
         'Cessão' => $writ->cession_at ? $date($writ->cession_at, true) : null,
         'Pagamento' => $writ->paid_at ? $date($writ->paid_at) : null,
         'Peticionamento' => $writ->petitioned_at ? $date($writ->petitioned_at, true) : null,
-        'Aguardando recebimento' => $writ->awaiting_receipt_at ? $date($writ->awaiting_receipt_at, true) : null,
+        'Previsão de recebimento' => $writ->awaiting_receipt_at ? $date($writ->awaiting_receipt_at, true) : null,
         'Recebimento' => $writ->finalized_at ? $date($writ->finalized_at) : null,
         'Perda' => $writ->lost_at ? $date($writ->lost_at, true) : null,
     ]);

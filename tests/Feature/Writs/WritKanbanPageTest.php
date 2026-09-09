@@ -349,6 +349,24 @@ class WritKanbanPageTest extends TestCase
         });
     }
 
+    public function test_creating_negotiation_writ_stores_retroactive_negotiation_date(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Livewire::withoutLazyLoading();
+
+        Volt::test('writs.kanban')
+            ->set('stage', 'negotiation')
+            ->set('formType', 'rpv')
+            ->set('process_number', '0004321-10.2025.8.13.0001')
+            ->set('negotiation_at', '2025-03-12T14:30')
+            ->call('saveWrit')
+            ->assertHasNoErrors();
+
+        $writ = Writ::query()->where('process_number', '0004321-10.2025.8.13.0001')->firstOrFail();
+
+        $this->assertSame('2025-03-12 14:30:00', $writ->negotiation_at->format('Y-m-d H:i:s'));
+    }
+
     public function test_creating_petitioning_writ_dispatches_google_calendar_sync(): void
     {
         Bus::fake();

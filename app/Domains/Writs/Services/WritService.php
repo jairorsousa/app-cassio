@@ -29,7 +29,7 @@ class WritService
     ];
 
     /**
-     * @param  array<string, mixed>  $context  campos opcionais (monitoring_at, cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
+     * @param  array<string, mixed>  $context  campos opcionais (monitoring_at, negotiation_at, cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
      */
     public function transitionTo(Writ $writ, string $newStage, array $context = []): Writ
     {
@@ -69,6 +69,10 @@ class WritService
 
             if ($newStage === 'monitoring' && isset($context['monitoring_at'])) {
                 $patch['monitoring_at'] = $context['monitoring_at'];
+            }
+
+            if ($newStage === 'negotiation') {
+                $patch['negotiation_at'] = $context['negotiation_at'] ?? ($writ->negotiation_at ?? now());
             }
 
             if ($newStage === 'pending' && isset($context['cession_at'])) {

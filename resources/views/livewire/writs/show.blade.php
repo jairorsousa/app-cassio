@@ -6,24 +6,40 @@ use App\Domains\Writs\Services\WritProfitabilityCalculator;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Spatie\Activitylog\Models\Activity;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public Writ $writ;
 
     public string $transitionTo = '';
+
     public string $transition_monitoring_at = '';
+
     public string $transition_cession_at = '';
+
     public string $transition_paid_at = '';
+
     public string $transition_paid_amount = '';
+
     public string $transition_notary_expenses = '';
+
     public string $transition_other_expenses = '';
+
     public ?int $transition_source_account = null;
+
     public string $transition_petitioned_at = '';
+
     public string $transition_awaiting_receipt_at = '';
+
     public string $transition_finalized_at = '';
+
     public string $transition_actual_receipt_amount = '';
+
     public ?int $transition_destination_account = null;
+
     public string $transition_lost_reason = '';
+
     public string $transition_notes = '';
 
     public function mount(Writ $writ): void
@@ -52,6 +68,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         if (str_contains($value, ',')) {
             $digits = preg_replace('/\D/', '', $value);
+
             return (float) ($digits / 100);
         }
 
@@ -106,8 +123,9 @@ new #[Layout('layouts.app')] class extends Component {
         try {
             $service->transitionTo($this->writ, $this->transitionTo, $context);
             session()->flash('status', 'Transição efetivada.');
+
             return $this->redirectRoute('writs.show', $this->writ, navigate: true);
-        } catch (\DomainException $e) {
+        } catch (DomainException $e) {
             session()->flash('error', $e->getMessage());
         }
     }
@@ -121,7 +139,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->writ->history()->delete();
 
         // Remove logs de atividade (Spatie)
-        \Spatie\Activitylog\Models\Activity::where('subject_type', Writ::class)
+        Activity::where('subject_type', Writ::class)
             ->where('subject_id', $this->writ->id)
             ->delete();
 
@@ -190,10 +208,24 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div>
                     <div class="flex items-center gap-1 text-xs text-mono-500 mb-1">
-                        <span class="material-icons-outlined text-[16px]">calendar_today</span> Data da etapa
+                        <span class="material-icons-outlined text-[16px]">calendar_today</span> Data da etapa atual
                     </div>
                     <div class="font-medium text-sm text-mono-900">
-                        {{ ($writ->stage === 'monitoring' ? $writ->monitoring_at : $writ->cession_at)?->format('d/m/Y H:i') ?? '—' }}
+                        @php
+                            $currentStageDate = match ($writ->stage) {
+                                'monitoring' => $writ->monitoring_at,
+                                'negotiation' => $writ->negotiation_at,
+                                'pending' => $writ->cession_at,
+                                'paid' => $writ->paid_at,
+                                'petitioning' => $writ->petitioned_at,
+                                'awaiting_receipt' => $writ->awaiting_receipt_at,
+                                'finalized' => $writ->finalized_at,
+                                'lost' => $writ->lost_at,
+                                default => null,
+                            };
+                            $currentStageHasTime = ! in_array($writ->stage, ['paid', 'finalized'], true);
+                        @endphp
+                        {{ $currentStageDate?->format($currentStageHasTime ? 'd/m/Y H:i' : 'd/m/Y') ?? '—' }}
                     </div>
                 </div>
                 <div>
@@ -259,6 +291,49 @@ new #[Layout('layouts.app')] class extends Component {
                         @endforeach
                     </div>
                 @endif
+            </div>
+
+            <!-- Datas -->
+            <div class="rounded-xl border border-mono-100 bg-mono-50 p-6">
+                <div class="mb-6 flex items-center gap-2">
+                    <span class="material-icons-outlined text-primary-500">event_note</span>
+                    <h3 class="text-base font-bold text-mono-900">Datas do requisitório</h3>
+                </div>
+                <div class="grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+                    @foreach ([
+                        ['label' => 'Monitoramento', 'date' => $writ->monitoring_at, 'time' => true, 'icon' => 'manage_search'],
+                        ['label' => 'Negociação', 'date' => $writ->negotiation_at, 'time' => true, 'icon' => 'handshake'],
+                        ['label' => 'Cessão', 'date' => $writ->cession_at, 'time' => true, 'icon' => 'edit_calendar'],
+                        ['label' => 'Pagamento', 'date' => $writ->paid_at, 'time' => false, 'icon' => 'payments'],
+                        ['label' => 'Peticionamento', 'date' => $writ->petitioned_at, 'time' => true, 'icon' => 'gavel'],
+                        ['label' => 'Previsão de recebimento', 'date' => $writ->awaiting_receipt_at, 'time' => true, 'icon' => 'hourglass_top'],
+                        ['label' => 'Recebimento', 'date' => $writ->finalized_at, 'time' => false, 'icon' => 'task_alt'],
+                    ] as $dateItem)
+                        <div class="flex items-start gap-3">
+                            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ $dateItem['date'] ? 'bg-primary-100 text-primary-500' : 'bg-mono-100 text-mono-400' }}">
+                                <span class="material-icons-outlined text-[18px]">{{ $dateItem['icon'] }}</span>
+                            </div>
+                            <div>
+                                <div class="text-xs text-mono-500">{{ $dateItem['label'] }}</div>
+                                <div class="mt-1 font-mono text-sm font-semibold {{ $dateItem['date'] ? 'text-mono-900' : 'text-mono-400' }}">
+                                    {{ $dateItem['date']?->format($dateItem['time'] ? 'd/m/Y H:i' : 'd/m/Y') ?? 'Não informada' }}
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    @if ($writ->lost_at)
+                        <div class="flex items-start gap-3">
+                            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-500">
+                                <span class="material-icons-outlined text-[18px]">event_busy</span>
+                            </div>
+                            <div>
+                                <div class="text-xs text-mono-500">Perda</div>
+                                <div class="mt-1 font-mono text-sm font-semibold text-mono-900">{{ $writ->lost_at->format('d/m/Y H:i') }}</div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
             </div>
 
             <!-- Valores -->
