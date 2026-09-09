@@ -4,7 +4,7 @@ A área utiliza o padrão do Financeiro: navegação por abas, filtros acima das
 
 ## Primeiro uso
 
-1. Em **Ativos**, cadastre o código, nome e classe. É possível criar uma classe no mesmo formulário. Instituição, vencimento, liquidez e observações são opcionais.
+1. Em **Ativos**, informe o código. Tickers da B3 (`PETR4`, `HGLG11`) preenchem nome, classe e setor automaticamente. CDB e demais códigos continuam manuais. É possível criar uma classe no mesmo formulário. Instituição, vencimento, liquidez e observações são opcionais.
 2. Em **Movimentações**, registre compras/aplicações e vendas/resgates com data, quantidade, preço por unidade e taxas. As datas podem ser retroativas, até o dia atual.
 3. Selecione uma conta para gerar a saída ou entrada correspondente no Financeiro. Sem conta, a operação afeta somente a carteira. Edições e exclusões também atualizam o lançamento vinculado.
 4. Em **Carteira**, as cotações de tickers da B3 (padrão `PETR4`, `HGLG11`) são buscadas automaticamente após o fechamento em dias úteis, via [brapi.dev](https://brapi.dev). O botão **Atualizar cotações** dispara a mesma busca na hora. Clique no preço para registrar uma cotação manual com data. A cotação mais recente por data determina o valor da posição; sem cotação, utiliza-se o preço médio. CDB, Tesouro e demais códigos que não sejam ticker de bolsa continuam manuais.

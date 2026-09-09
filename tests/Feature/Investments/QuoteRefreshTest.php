@@ -36,6 +36,11 @@ class QuoteRefreshTest extends TestCase
         $this->assertFalse(MarketTicker::isListed('TESOURO'));
         $this->assertFalse(MarketTicker::isListed('PETR4F'));
         $this->assertFalse(MarketTicker::isListed(''));
+        $this->assertSame('acoes', MarketTicker::classSlug('stock', 'stock'));
+        $this->assertSame('acoes', MarketTicker::classSlug('stock', 'unit'));
+        $this->assertSame('fiis', MarketTicker::classSlug('fund', 'fii'));
+        $this->assertSame('etfs', MarketTicker::classSlug('fund', 'etf'));
+        $this->assertSame('bdrs', MarketTicker::classSlug('bdr', 'bdr'));
     }
 
     public function test_refresh_updates_listed_open_positions_and_skips_the_rest(): void
@@ -153,6 +158,99 @@ class QuoteRefreshTest extends TestCase
             ->assertSuccessful();
 
         $this->assertEquals(23.0, (float) $asset->fresh()->position->current_price);
+    }
+
+    public function test_asset_form_fills_name_class_and_sector_from_ticker(): void
+    {
+        Http::fake([
+            'brapi.dev/api/quote/list*' => Http::response([
+                'stocks' => [
+                    [
+                        'stock' => 'PETR4',
+                        'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+                        'sector' => 'Energy Minerals',
+                        'subsector' => 'Petróleo e Gás Integrado',
+                        'type' => 'stock',
+                        'subType' => 'stock',
+                    ],
+                    [
+                        'stock' => 'PETR4F',
+                        'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+                        'type' => 'stock',
+                        'subType' => 'stock',
+                    ],
+                ],
+            ]),
+        ]);
+
+        Volt::test('investments.assets.index')
+            ->call('create')
+            ->set('ticker', 'petr4')
+            ->assertSet('ticker', 'PETR4')
+            ->assertSet('name', 'PETROLEO BRASILEIRO S.A. PETROBRAS')
+            ->assertSet('sector', 'Petróleo e Gás Integrado')
+            ->assertSet('lookupStatus', 'Nome, classe e setor preenchidos a partir da B3.')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('assets', [
+            'ticker' => 'PETR4',
+            'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+            'sector' => 'Petróleo e Gás Integrado',
+        ]);
+        $this->assertDatabaseHas('asset_classes', ['slug' => 'acoes', 'name' => 'Ações']);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/api/quote/list') && str_contains($request->url(), 'search=PETR4'));
+    }
+
+    public function test_asset_form_maps_fii_class_from_ticker(): void
+    {
+        Http::fake([
+            'brapi.dev/api/quote/list*' => Http::response([
+                'stocks' => [[
+                    'stock' => 'HGLG11',
+                    'name' => 'CSHG LOGÍSTICA',
+                    'sector' => 'Finance',
+                    'subsector' => 'Multicategoria',
+                    'type' => 'fund',
+                    'subType' => 'fii',
+                ]],
+            ]),
+        ]);
+
+        Volt::test('investments.assets.index')
+            ->call('create')
+            ->set('ticker', 'HGLG11')
+            ->assertSet('name', 'CSHG LOGÍSTICA')
+            ->assertSet('sector', 'Multicategoria');
+
+        $this->assertDatabaseHas('asset_classes', ['slug' => 'fiis']);
+    }
+
+    public function test_unlisted_ticker_does_not_call_the_market_api(): void
+    {
+        Http::fake();
+
+        Volt::test('investments.assets.index')
+            ->call('create')
+            ->set('ticker', 'CDB-2027')
+            ->set('name', 'CDB Banco')
+            ->set('newClass', 'Renda fixa')
+            ->assertSet('lookupStatus', '');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_unknown_listed_ticker_asks_for_manual_data(): void
+    {
+        Http::fake([
+            'brapi.dev/api/quote/list*' => Http::response(['stocks' => []]),
+        ]);
+
+        Volt::test('investments.assets.index')
+            ->call('create')
+            ->set('ticker', 'XXXX4')
+            ->assertHasErrors('ticker')
+            ->assertSet('name', '');
     }
 
     public function test_token_is_sent_when_configured(): void

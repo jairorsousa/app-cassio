@@ -2,6 +2,8 @@
 
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetClass;
+use App\Domains\Investments\Services\BrapiQuoteProvider;
+use App\Domains\Investments\Support\MarketTicker;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -27,6 +29,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $sector = '';
     public string $notes = '';
     public bool $assetStatus = true;
+    public string $lookupStatus = '';
 
     public function rules(): array
     {
@@ -61,9 +64,45 @@ new #[Layout('layouts.app')] class extends Component {
         $this->liquidity = (string) $a->liquidity;
     }
 
+    public function updatedTicker(): void
+    {
+        $this->lookupFromMarket();
+    }
+
+    public function lookupFromMarket(): void
+    {
+        $this->ticker = strtoupper(trim($this->ticker));
+        $this->lookupStatus = '';
+
+        if (! MarketTicker::isListed($this->ticker)) {
+            return;
+        }
+
+        $result = app(BrapiQuoteProvider::class)->lookup($this->ticker);
+        if ($result === null) {
+            $this->addError('ticker', 'Não encontramos esse código na B3. Preencha os dados manualmente.');
+
+            return;
+        }
+
+        $this->resetErrorBag('ticker');
+        $this->ticker = $result['ticker'];
+        $this->name = $result['name'];
+        $this->sector = (string) ($result['sector'] ?? '');
+        $this->asset_class_id = AssetClass::firstOrCreate(
+            ['slug' => $result['class_slug']],
+            ['name' => MarketTicker::className($result['class_slug']), 'status' => true]
+        )->id;
+        $this->newClass = '';
+        $this->lookupStatus = 'Nome, classe e setor preenchidos a partir da B3.';
+    }
+
     public function save(): void
     {
         $this->ticker = strtoupper(trim($this->ticker));
+        if (MarketTicker::isListed($this->ticker) && trim($this->name) === '') {
+            $this->lookupFromMarket();
+        }
         $this->newClass = trim($this->newClass);
         $data = $this->validate();
         if (trim($this->newClass) !== '') {
@@ -108,7 +147,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->showFormModal = false;
         $this->resetValidation();
-        $this->reset(['editingId', 'ticker', 'name', 'asset_class_id', 'sector', 'notes']);
+        $this->reset(['editingId', 'ticker', 'name', 'asset_class_id', 'sector', 'notes', 'lookupStatus']);
         $this->assetStatus = true;
         $this->newClass = '';
         $this->reset(['institution', 'maturity_date', 'liquidity']);
@@ -174,7 +213,7 @@ new #[Layout('layouts.app')] class extends Component {
     <x-investments.modal :title="$editingId ? 'Editar registro' : 'Novo ativo'">
 @if ($errors->any())<div class="md:col-span-2"><x-jr.alert variant="error"><ul>@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul></x-jr.alert></div>@endif
             <div class="md:col-span-2 border-b border-mono-100 pb-3 font-bold"><span class="material-icons-outlined align-middle text-primary-500">category</span> Identificação do investimento</div>
-            <x-jr.input label="Código / ticker *" name="ticker" icon="tag" wire:model="ticker" placeholder="PETR4, CDB-BANCO-2027..." required />
+            <x-jr.input label="Código / ticker *" name="ticker" icon="tag" wire:model.blur="ticker" placeholder="PETR4, CDB-BANCO-2027..." :helper="filled($lookupStatus) ? $lookupStatus : 'Tickers da B3 preenchem nome, classe e setor automaticamente.'" :success="filled($lookupStatus)" required />
             <x-jr.input label="Nome" name="name" icon="edit_note" wire:model="name" required />
             <div>
                 <label class="mb-2 block">Classe</label>
