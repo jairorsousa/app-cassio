@@ -5,15 +5,26 @@ use App\Domains\Banking\Models\CreditCard;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
+    public bool $showFormModal = false;
+
     public ?int $editingId = null;
+
     public string $name = '';
+
     public string $brand = '';
+
     public string $bank = '';
+
     public string $limit = '0';
+
     public int $closing_day = 1;
+
     public int $due_day = 10;
+
     public ?int $default_payment_account_id = null;
+
     public bool $status = true;
 
     public function rules(): array
@@ -42,6 +53,14 @@ new #[Layout('layouts.app')] class extends Component {
         $this->due_day = $c->due_day;
         $this->default_payment_account_id = $c->default_payment_account_id;
         $this->status = (bool) $c->status;
+        $this->showFormModal = true;
+        $this->resetValidation();
+    }
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->showFormModal = true;
     }
 
     public function save(): void
@@ -58,7 +77,10 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Cartão salvo.');
     }
 
-    public function cancel(): void { $this->resetForm(); }
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
 
     public function delete(int $id): void
     {
@@ -68,11 +90,12 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
-        $this->reset(['editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status']);
+        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status']);
         $this->closing_day = 1;
         $this->due_day = 10;
         $this->status = true;
         $this->limit = '0';
+        $this->resetValidation();
     }
 
     public function with(): array
@@ -89,13 +112,25 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     <x-banking.subnav />
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
-    <x-fx.card class="lg:col-span-2">
+    <x-fx.card>
+        <div class="mb-space-4 flex items-center justify-between">
+            <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Cartões de crédito</h3>
+            <x-jr.button type="button" size="sm" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Novo cartão
+            </x-jr.button>
+        </div>
+
         @if ($cards->isEmpty())
             <x-fx.empty-state
                 icon="💳"
                 title="Nenhum cartão de crédito cadastrado"
-                description="Cadastre seus cartões para que faturas e parcelas sejam controladas automaticamente." />
+                description="Cadastre seus cartões para que faturas e parcelas sejam controladas automaticamente.">
+                <x-jr.button type="button" class="mt-space-4" wire:click="create">
+                    <span class="material-icons-outlined text-[18px]">add</span>
+                    Novo cartão
+                </x-jr.button>
+            </x-fx.empty-state>
         @else
             <table class="fx-table w-full text-sm">
                 <thead>
@@ -126,36 +161,79 @@ new #[Layout('layouts.app')] class extends Component {
         @endif
     </x-fx.card>
 
-    <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Novo' }} cartão</h3>
-        <form wire:submit="save" class="flex flex-col gap-sm">
-            <x-fx.input label="Nome" wire:model="name" required />
-            <x-fx.input label="Bandeira" wire:model="brand" />
-            <x-fx.input label="Banco emissor" wire:model="bank" />
-            <x-fx.input label="Limite" type="text" x-money wire:model="limit" />
-            <div class="grid grid-cols-2 gap-xs">
-                <x-fx.input label="Dia fechamento" type="number" min="1" max="31" wire:model="closing_day" />
-                <x-fx.input label="Dia vencimento" type="number" min="1" max="31" wire:model="due_day" />
+    @if ($showFormModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
+
+            <div class="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <h3 class="text-lg font-bold text-mono-900">{{ $editingId ? 'Editar Cartão' : 'Novo Cartão' }}</h3>
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancel" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="save" class="flex min-h-0 flex-1 flex-col">
+                    <div class="flex-1 overflow-y-auto px-6 py-5">
+                        <div class="space-y-8">
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">credit_card</span>
+                                    <h4 class="text-base font-bold text-mono-900">Dados do cartão</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />
+                                    <x-jr.input label="Bandeira" icon="sell" name="brand" wire:model="brand" />
+                                    <x-jr.input label="Banco emissor" icon="account_balance" name="bank" wire:model="bank" />
+                                    <x-jr.input label="Limite *" icon="payments" name="limit" wire:model="limit" x-money required />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">event_repeat</span>
+                                    <h4 class="text-base font-bold text-mono-900">Fechamento e pagamento</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <x-jr.input label="Dia do fechamento *" icon="event" name="closing_day" type="number" min="1" max="31" wire:model="closing_day" required />
+                                    <x-jr.input label="Dia do vencimento *" icon="event_available" name="due_day" type="number" min="1" max="31" wire:model="due_day" required />
+                                    <div class="md:col-span-2">
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta de pagamento padrão</label>
+                                        <select wire:model="default_payment_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                            <option value="">Nenhuma</option>
+                                            @foreach ($accounts as $accountOption)
+                                                <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('default_payment_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">tune</span>
+                                    <h4 class="text-base font-bold text-mono-900">Status</h4>
+                                </div>
+                                <label class="flex w-fit cursor-pointer items-center gap-3 text-sm">
+                                    <input type="checkbox" wire:model="status" class="h-5 w-5 rounded border-mono-300 text-primary-500 focus:ring-primary-500">
+                                    <span class="font-medium text-mono-900">Cartão ativo</span>
+                                </label>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
+                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            <span class="material-icons-outlined text-[18px]">check</span>
+                            {{ $editingId ? 'Salvar Cartão' : 'Criar Cartão' }}
+                        </button>
+                    </div>
+                </form>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta de pagamento padrão</label>
-                <select wire:model="default_payment_account_id" class="fx-form-field">
-                    <option value="">— nenhuma —</option>
-                    @foreach ($accounts as $a)
-                        <option value="{{ $a->id }}">{{ $a->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <label class="flex items-center gap-xs text-sm">
-                <input type="checkbox" wire:model="status" /> Ativo
-            </label>
-            <div class="flex gap-xs">
-                <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
-                @if ($editingId)
-                    <button type="button" class="fx-btn fx-btn--text" wire:click="cancel">Cancelar</button>
-                @endif
-            </div>
-        </form>
-    </x-fx.card>
-</div>
+        </div>
+    @endif
 </div>

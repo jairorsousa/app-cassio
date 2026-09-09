@@ -6,17 +6,30 @@ use App\Domains\Banking\Models\RecurringTransaction;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
+    public bool $showFormModal = false;
+
     public ?int $editingId = null;
+
     public string $type = 'expense';
+
     public string $description = '';
+
     public string $amount = '';
+
     public ?int $category_id = null;
+
     public ?int $bank_account_id = null;
+
     public string $frequency = 'monthly';
+
     public ?int $day_of_month = null;
+
     public string $start_date = '';
+
     public string $end_date = '';
+
     public string $rec_status = 'active';
 
     public function mount(): void
@@ -54,6 +67,14 @@ new #[Layout('layouts.app')] class extends Component {
         $this->start_date = $r->start_date->format('Y-m-d');
         $this->end_date = $r->end_date?->format('Y-m-d') ?? '';
         $this->rec_status = $r->status;
+        $this->showFormModal = true;
+        $this->resetValidation();
+    }
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->showFormModal = true;
     }
 
     public function save(): void
@@ -97,15 +118,19 @@ new #[Layout('layouts.app')] class extends Component {
         RecurringTransaction::find($id)?->update(['status' => 'finished']);
     }
 
-    public function cancel(): void { $this->resetForm(); }
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
 
     private function resetForm(): void
     {
-        $this->reset(['editingId', 'description', 'amount', 'category_id', 'bank_account_id', 'day_of_month', 'end_date']);
+        $this->reset(['showFormModal', 'editingId', 'description', 'amount', 'category_id', 'bank_account_id', 'day_of_month', 'end_date']);
         $this->type = 'expense';
         $this->frequency = 'monthly';
         $this->rec_status = 'active';
         $this->start_date = now()->format('Y-m-d');
+        $this->resetValidation();
     }
 
     public function with(): array
@@ -123,10 +148,25 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     <x-banking.subnav />
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
-    <x-fx.card class="lg:col-span-2">
+    <x-fx.card>
+        <div class="mb-space-4 flex items-center justify-between">
+            <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Recorrências</h3>
+            <x-jr.button type="button" size="sm" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Nova recorrência
+            </x-jr.button>
+        </div>
+
         @if ($recurrings->isEmpty())
-            <div class="text-sm text-mono-600">Nenhuma recorrência configurada.</div>
+            <x-fx.empty-state
+                icon="🔄"
+                title="Nenhuma recorrência configurada"
+                description="Cadastre receitas ou despesas recorrentes para automatizar seus lançamentos.">
+                <x-jr.button type="button" class="mt-space-4" wire:click="create">
+                    <span class="material-icons-outlined text-[18px]">add</span>
+                    Nova recorrência
+                </x-jr.button>
+            </x-fx.empty-state>
         @else
             <table class="fx-table w-full text-sm">
                 <thead>
@@ -165,65 +205,115 @@ new #[Layout('layouts.app')] class extends Component {
         @endif
     </x-fx.card>
 
-    <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Nova' }} recorrência</h3>
-        <form wire:submit="save" class="flex flex-col gap-sm">
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model="type" class="fx-form-field">
-                    <option value="expense">Despesa</option>
-                    <option value="income">Receita</option>
-                </select>
+    @if ($showFormModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
+
+            <div class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <h3 class="text-lg font-bold text-mono-900">{{ $editingId ? 'Editar Recorrência' : 'Nova Recorrência' }}</h3>
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancel" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="save" class="flex min-h-0 flex-1 flex-col">
+                    <div class="flex-1 overflow-y-auto px-6 py-5">
+                        <div class="space-y-8">
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">autorenew</span>
+                                    <h4 class="text-base font-bold text-mono-900">Dados da recorrência</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Tipo *</label>
+                                        <select wire:model="type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                            <option value="expense">Despesa</option>
+                                            <option value="income">Receita</option>
+                                        </select>
+                                        @error('type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                    <div class="md:col-span-2">
+                                        <x-jr.input label="Descrição *" icon="description" name="description" wire:model="description" required />
+                                    </div>
+                                    <x-jr.input label="Valor *" icon="payments" name="amount" wire:model="amount" x-money required />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
+                                        <select wire:model="category_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                            <option value="">Sem categoria</option>
+                                            @foreach ($categories as $categoryOption)
+                                                <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('category_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta</label>
+                                        <select wire:model="bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                            <option value="">Nenhuma</option>
+                                            @foreach ($accounts as $accountOption)
+                                                <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        @error('bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">calendar_month</span>
+                                    <h4 class="text-base font-bold text-mono-900">Periodicidade</h4>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Frequência *</label>
+                                        <select wire:model.live="frequency" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                            <option value="daily">Diária</option>
+                                            <option value="weekly">Semanal</option>
+                                            <option value="monthly">Mensal</option>
+                                            <option value="yearly">Anual</option>
+                                        </select>
+                                        @error('frequency') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                    @if ($frequency === 'monthly')
+                                        <x-jr.input label="Dia do mês" icon="today" name="day_of_month" type="number" min="1" max="31" wire:model="day_of_month" />
+                                    @endif
+                                    <x-jr.input label="Início *" icon="event" name="start_date" type="date" wire:model="start_date" required />
+                                    <x-jr.input label="Fim" icon="event_busy" name="end_date" type="date" wire:model="end_date" />
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">tune</span>
+                                    <h4 class="text-base font-bold text-mono-900">Status</h4>
+                                </div>
+                                <div class="max-w-sm">
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Situação *</label>
+                                    <select wire:model="rec_status" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                        <option value="active">Ativa</option>
+                                        <option value="paused">Pausada</option>
+                                        <option value="finished">Encerrada</option>
+                                    </select>
+                                    @error('rec_status') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
+                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                            <span class="material-icons-outlined text-[18px]">check</span>
+                            {{ $editingId ? 'Salvar Recorrência' : 'Criar Recorrência' }}
+                        </button>
+                    </div>
+                </form>
             </div>
-            <x-fx.input label="Descrição" wire:model="description" required />
-            <x-fx.input label="Valor" type="text" x-money wire:model="amount" />
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Frequência</label>
-                <select wire:model="frequency" class="fx-form-field">
-                    <option value="daily">Diária</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensal</option>
-                    <option value="yearly">Anual</option>
-                </select>
-            </div>
-            <x-fx.input label="Dia do mês (mensal)" type="number" min="1" max="31" wire:model="day_of_month" />
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Categoria</label>
-                <select wire:model="category_id" class="fx-form-field">
-                    <option value="">—</option>
-                    @foreach ($categories as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta</label>
-                <select wire:model="bank_account_id" class="fx-form-field">
-                    <option value="">—</option>
-                    @foreach ($accounts as $a)
-                        <option value="{{ $a->id }}">{{ $a->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="grid grid-cols-2 gap-xs">
-                <x-fx.input label="Início" type="date" wire:model="start_date" />
-                <x-fx.input label="Fim" type="date" wire:model="end_date" />
-            </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Status</label>
-                <select wire:model="rec_status" class="fx-form-field">
-                    <option value="active">Ativa</option>
-                    <option value="paused">Pausada</option>
-                    <option value="finished">Encerrada</option>
-                </select>
-            </div>
-            <div class="flex gap-xs">
-                <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
-                @if ($editingId)
-                    <button type="button" class="fx-btn fx-btn--text" wire:click="cancel">Cancelar</button>
-                @endif
-            </div>
-        </form>
-    </x-fx.card>
-</div>
+        </div>
+    @endif
 </div>
