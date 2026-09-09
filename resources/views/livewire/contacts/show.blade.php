@@ -4,7 +4,8 @@ use App\Domains\Contacts\Models\Contact;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public Contact $contact;
 
     public function mount(Contact $contact): void
@@ -16,12 +17,14 @@ new #[Layout('layouts.app')] class extends Component {
     {
         if (! $this->contact->canBeDeleted()) {
             session()->flash('error', $this->contact->deletionBlockMessage());
+
             return null;
         }
 
         $this->contact->delete();
 
         session()->flash('status', 'Contato removido.');
+
         return $this->redirectRoute('contacts.index', navigate: true);
     }
 }; ?>
@@ -171,6 +174,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <div><span class="text-mono-600">CEP:</span> <span class="ml-2 font-medium text-mono-900">{{ $contact->zip_code ?: '—' }}</span></div>
                     <div><span class="text-mono-600">Cidade/UF:</span> <span class="ml-2 font-medium text-mono-900">{{ $cityState }}</span></div>
                     <div><span class="text-mono-600">Endereço:</span> <span class="ml-2 font-medium text-mono-900">{{ $contact->street ?: ($contact->address ?: '—') }}</span></div>
+                    <div><span class="text-mono-600">Bairro:</span> <span class="ml-2 font-medium text-mono-900">{{ $contact->neighborhood ?: '—' }}</span></div>
                     <div><span class="text-mono-600">Complemento:</span> <span class="ml-2 font-medium text-mono-900">{{ $contact->complement ?: '—' }}</span></div>
                     <div><span class="text-mono-600">Número:</span> <span class="ml-2 font-medium text-mono-900">{{ $contact->number ?: '—' }}</span></div>
                 </div>

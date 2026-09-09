@@ -2,8 +2,8 @@
 
 namespace App\Domains\Contacts\Models;
 
-use App\Domains\Brokers\Models\Broker;
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Brokers\Models\Broker;
 use App\Domains\Writs\Models\WritAssignor;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,16 +18,16 @@ class Contact extends Model
     protected $fillable = [
         'name', 'type', 'document', 'birth_date',
         'phone', 'phones', 'email', 'emails', 'address',
-        'zip_code', 'street', 'number', 'complement', 'city', 'state',
+        'zip_code', 'street', 'neighborhood', 'number', 'complement', 'city', 'state',
         'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key', 'pix_key_type',
         'status', 'notes',
     ];
 
     protected $casts = [
         'birth_date' => 'date',
-        'phones'     => 'array',
-        'emails'     => 'array',
-        'status'     => 'boolean',
+        'phones' => 'array',
+        'emails' => 'array',
+        'status' => 'boolean',
     ];
 
     public function scopeActive($query)

@@ -6,33 +6,57 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public ?Contact $contact = null;
 
     #[Url]
     public string $type = 'cedente';
 
     public string $name = '';
+
     public string $document = '';
+
     public ?string $birth_date = null;
+
     public string $phone = '';
+
     public array $phones = [''];
+
     public string $email = '';
+
     public array $emails = [''];
+
     public string $address = '';
+
     public string $zip_code = '';
+
     public string $street = '';
+
+    public string $neighborhood = '';
+
     public string $number = '';
+
     public string $complement = '';
+
     public string $city = '';
+
     public string $state = '';
+
     public string $bank_name = '';
+
     public string $bank_agency = '';
+
     public string $bank_account = '';
+
     public string $bank_account_type = '';
+
     public string $pix_key = '';
+
     public string $pix_key_type = '';
+
     public bool $status = true;
+
     public string $notes = '';
 
     public function mount(?Contact $contact = null): void
@@ -40,7 +64,7 @@ new #[Layout('layouts.app')] class extends Component {
         if ($contact && $contact->exists) {
             $this->contact = $contact;
             foreach (['type', 'name', 'document', 'phone', 'email', 'address',
-                'zip_code', 'street', 'number', 'complement', 'city', 'state',
+                'zip_code', 'street', 'neighborhood', 'number', 'complement', 'city', 'state',
                 'bank_name', 'bank_agency', 'bank_account', 'bank_account_type',
                 'pix_key', 'pix_key_type', 'notes'] as $f) {
                 $this->{$f} = (string) ($contact->{$f} ?? '');
@@ -55,31 +79,32 @@ new #[Layout('layouts.app')] class extends Component {
     public function rules(): array
     {
         return [
-            'type'              => 'required|in:cedente,advogado,corretor',
-            'name'              => 'required|string|max:200',
-            'document'          => 'nullable|string|max:30',
-            'birth_date'        => 'nullable|date',
-            'phone'             => 'nullable|string|max:30',
-            'phones'            => 'array',
-            'phones.*'          => 'nullable|string|max:30',
-            'email'             => 'nullable|email|max:200',
-            'emails'            => 'array',
-            'emails.*'          => 'nullable|email|max:200',
-            'address'           => 'nullable|string',
-            'zip_code'          => 'nullable|string|max:20',
-            'street'            => 'nullable|string|max:255',
-            'number'            => 'nullable|string|max:30',
-            'complement'        => 'nullable|string|max:255',
-            'city'              => 'nullable|string|max:120',
-            'state'             => 'nullable|string|size:2',
-            'bank_name'         => 'nullable|string|max:100',
-            'bank_agency'       => 'nullable|string|max:20',
-            'bank_account'      => 'nullable|string|max:30',
+            'type' => 'required|in:cedente,advogado,corretor',
+            'name' => 'required|string|max:200',
+            'document' => 'nullable|string|max:30',
+            'birth_date' => 'nullable|date',
+            'phone' => 'nullable|string|max:30',
+            'phones' => 'array',
+            'phones.*' => 'nullable|string|max:30',
+            'email' => 'nullable|email|max:200',
+            'emails' => 'array',
+            'emails.*' => 'nullable|email|max:200',
+            'address' => 'nullable|string',
+            'zip_code' => 'nullable|string|max:20',
+            'street' => 'nullable|string|max:255',
+            'neighborhood' => 'nullable|string|max:120',
+            'number' => 'nullable|string|max:30',
+            'complement' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:120',
+            'state' => 'nullable|string|size:2',
+            'bank_name' => 'nullable|string|max:100',
+            'bank_agency' => 'nullable|string|max:20',
+            'bank_account' => 'nullable|string|max:30',
             'bank_account_type' => 'nullable|string|max:20',
-            'pix_key'           => 'nullable|string|max:200',
-            'pix_key_type'      => 'nullable|in:email,cpf,telefone,aleatoria',
-            'status'            => 'boolean',
-            'notes'             => 'nullable|string',
+            'pix_key' => 'nullable|string|max:200',
+            'pix_key_type' => 'nullable|in:email,cpf,telefone,aleatoria',
+            'status' => 'boolean',
+            'notes' => 'nullable|string',
         ];
     }
 
@@ -119,11 +144,13 @@ new #[Layout('layouts.app')] class extends Component {
 
         if (! $result) {
             $this->addError('zip_code', 'CEP não encontrado.');
+
             return;
         }
 
         $this->zip_code = $result['zip_code'];
         $this->street = $result['street'];
+        $this->neighborhood = $result['neighborhood'];
         $this->city = $result['city'];
         $this->state = $result['state'];
 
@@ -144,7 +171,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['street', 'number', 'complement', 'city', 'state', 'zip_code'], true)) {
+        if (in_array($property, ['street', 'neighborhood', 'number', 'complement', 'city', 'state', 'zip_code'], true)) {
             $this->syncAddress();
         }
     }
@@ -167,13 +194,14 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         session()->flash('status', 'Contato salvo.');
+
         return $this->redirectRoute('contacts.show', $contact, navigate: true);
     }
 
     private function syncAddress(): void
     {
         $line = trim(collect([$this->street, $this->number])->filter()->implode(', '));
-        $details = trim(collect([$this->complement, $this->city, $this->state, $this->zip_code])->filter()->implode(' - '));
+        $details = trim(collect([$this->neighborhood, $this->complement, $this->city, $this->state, $this->zip_code])->filter()->implode(' - '));
         $this->address = collect([$line, $details])->filter()->implode(' | ');
     }
 
@@ -301,7 +329,10 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <x-jr.input label="Número" icon="tag" name="number" wire:model.live="number" />
                 <x-jr.input label="Estado" icon="map" name="state" wire:model.live="state" maxlength="2" />
-                <div class="md:col-span-6">
+                <div class="md:col-span-3">
+                    <x-jr.input label="Bairro" icon="holiday_village" name="neighborhood" wire:model.live="neighborhood" />
+                </div>
+                <div class="md:col-span-3">
                     <x-jr.input label="Complemento" icon="add_home" name="complement" wire:model.live="complement" />
                 </div>
             </div>

@@ -6,6 +6,7 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Models\CreditCardInvoice;
+use App\Domains\Banking\Models\RecurringTransaction;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\InstallmentService;
 use App\Domains\Banking\Services\InvoicePaymentService;
@@ -13,13 +14,88 @@ use App\Domains\Banking\Services\InvoiceService;
 use App\Domains\Banking\Services\RecurringTransactionService;
 use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Banking\Services\TransferService;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 class TransactionFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_transaction_index_opens_and_closes_creation_modal(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        Volt::test('banking.transactions.index')
+            ->assertSet('showFormModal', false)
+            ->call('create')
+            ->assertSet('showFormModal', true)
+            ->assertSet('formType', 'expense')
+            ->assertSet('formDate', now()->format('Y-m-d'))
+            ->call('cancel')
+            ->assertSet('showFormModal', false);
+    }
+
+    public function test_transaction_modal_creates_a_manual_transaction(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $account = BankAccount::create(['name' => 'Conta principal', 'initial_balance' => 0]);
+        $category = Category::create(['name' => 'Honorários', 'type' => 'income', 'status' => true]);
+
+        Volt::test('banking.transactions.index')
+            ->call('create')
+            ->set('formType', 'income')
+            ->set('formDate', '2026-09-09')
+            ->set('formAmount', '1250.50')
+            ->set('formDescription', 'Recebimento de honorários')
+            ->set('formStatus', 'settled')
+            ->set('formCategoryId', $category->id)
+            ->set('formBankAccountId', $account->id)
+            ->call('saveTransaction')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', false);
+
+        $this->assertDatabaseHas('transactions', [
+            'type' => 'income',
+            'date' => '2026-09-09 00:00:00',
+            'amount' => 1250.50,
+            'description' => 'Recebimento de honorários',
+            'category_id' => $category->id,
+            'bank_account_id' => $account->id,
+        ]);
+    }
+
+    public function test_transaction_modal_edits_a_manual_transaction(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $transaction = Transaction::create([
+            'type' => 'expense',
+            'date' => '2026-09-08',
+            'amount' => 100,
+            'description' => 'Despesa antiga',
+            'status' => 'pending',
+        ]);
+
+        Volt::test('banking.transactions.index')
+            ->call('edit', $transaction->id)
+            ->assertSet('showFormModal', true)
+            ->assertSet('editingId', $transaction->id)
+            ->set('formAmount', '175.90')
+            ->set('formDescription', 'Despesa atualizada')
+            ->set('formStatus', 'settled')
+            ->call('saveTransaction')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', false);
+
+        $this->assertDatabaseHas('transactions', [
+            'id' => $transaction->id,
+            'amount' => 175.90,
+            'description' => 'Despesa atualizada',
+            'status' => 'settled',
+        ]);
+    }
 
     public function test_creates_simple_income_and_expense(): void
     {
@@ -103,7 +179,7 @@ class TransactionFlowTest extends TestCase
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 0]);
         $today = Carbon::today();
 
-        \App\Domains\Banking\Models\RecurringTransaction::create([
+        RecurringTransaction::create([
             'type' => 'income',
             'description' => 'Aluguel',
             'amount' => 500,
