@@ -7,17 +7,34 @@ use App\Domains\Partnership\Models\PartnershipExpense;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public Partnership $partnership;
 
+    public string $filterFrom = '';
+
+    public string $filterTo = '';
+
+    public string $filterCategory = '';
+
+    public string $filterAccount = '';
+
     public ?int $editingId = null;
+
     public bool $showFormModal = false;
+
     public string $expenseDate = '';
+
     public string $total_amount = '';
+
     public string $applied_percentage = '';
+
     public string $description = '';
+
     public ?int $category_id = null;
+
     public ?int $bank_account_id = null;
+
     public string $expenseNotes = '';
 
     public function mount(Partnership $partnership): void
@@ -25,6 +42,8 @@ new #[Layout('layouts.app')] class extends Component {
         $this->partnership = $partnership;
         $this->expenseDate = now()->format('Y-m-d');
         $this->applied_percentage = (string) $partnership->participation_percentage;
+        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
     }
 
     public function rules(): array
@@ -71,6 +90,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $total = (float) $this->total_amount;
         $pct = (float) $this->applied_percentage;
+
         return round($total * $pct / 100, 2);
     }
 
@@ -107,7 +127,18 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Despesa excluída.');
     }
 
-    public function cancel(): void { $this->resetForm(); }
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->filterCategory = '';
+        $this->filterAccount = '';
+    }
 
     private function resetForm(): void
     {
@@ -119,8 +150,23 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $expenses = $this->partnership->expenses()->with('category', 'bankAccount');
+
+        if ($this->filterFrom !== '') {
+            $expenses->whereDate('date', '>=', $this->filterFrom);
+        }
+        if ($this->filterTo !== '') {
+            $expenses->whereDate('date', '<=', $this->filterTo);
+        }
+        if ($this->filterCategory !== '') {
+            $expenses->where('category_id', $this->filterCategory);
+        }
+        if ($this->filterAccount !== '') {
+            $expenses->where('bank_account_id', $this->filterAccount);
+        }
+
         return [
-            'expenses' => $this->partnership->expenses()->with('category', 'bankAccount')->orderByDesc('date')->get(),
+            'expenses' => $expenses->orderByDesc('date')->orderByDesc('id')->get(),
             'categories' => Category::active()->where('type', 'expense')->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
@@ -132,23 +178,49 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     <x-partnership.subnav :partnership="$partnership" />
 
-    <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-            <h2 class="text-xl font-semibold text-mono-900">Despesas</h2>
-            <p class="mt-1 text-sm text-mono-600">Controle os custos da sociedade suportados proporcionalmente.</p>
+    <x-fx.card>
+        <div class="mb-space-4 flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h2 class="text-fs-16 font-semibold text-cryptex-text-primary">Filtros</h2>
+                <p class="mt-1 text-sm text-mono-600">Consulte os custos da sociedade suportados proporcionalmente.</p>
+            </div>
+            <button type="button" class="fx-btn fx-btn--primary self-start sm:self-auto" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Nova despesa
+            </button>
         </div>
-        <button type="button" class="fx-btn fx-btn--primary self-start sm:self-auto" wire:click="create">
-            <span class="material-icons-outlined text-[18px]">add</span>
-            Nova despesa
-        </button>
-    </div>
+
+        <div class="grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4">
+            <x-fx.input label="De" type="date" wire:model.live="filterFrom" />
+            <x-fx.input label="Até" type="date" wire:model.live="filterTo" />
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium uppercase tracking-[0.05em] text-cryptex-text-tertiary">Categoria</label>
+                <select wire:model.live="filterCategory" class="h-[48px] rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-space-4 text-fs-14 text-cryptex-text-primary transition-colors focus:border-cryptex-brand-400 focus:outline-none">
+                    <option value="">Todas</option>
+                    @foreach ($categories as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium uppercase tracking-[0.05em] text-cryptex-text-tertiary">Conta</label>
+                <select wire:model.live="filterAccount" class="h-[48px] rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-space-4 text-fs-14 text-cryptex-text-primary transition-colors focus:border-cryptex-brand-400 focus:outline-none">
+                    <option value="">Todas</option>
+                    @foreach ($accounts as $a)
+                        <option value="{{ $a->id }}">{{ $a->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+        <button type="button" class="mt-space-3 text-fs-12 font-medium text-cryptex-brand-400 transition-colors hover:text-cryptex-brand-300" wire:click="clearFilters">Limpar filtros</button>
+    </x-fx.card>
 
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
 
-    @if ($expenses->isEmpty())
-        <x-jr.empty-state icon="receipt_long" title="Nenhuma despesa cadastrada" description="Registre despesas da sociedade e o sistema calculará sua parcela proporcional." />
-    @else
-        <x-fx.card class="p-0 overflow-hidden">
+    <x-fx.card class="p-0 overflow-hidden">
+        @if ($expenses->isEmpty())
+            <x-jr.empty-state icon="receipt_long" title="Nenhuma despesa encontrada" description="Ajuste os filtros acima ou registre uma nova despesa." />
+        @else
             <div class="overflow-x-auto">
                 <table class="fx-table text-sm">
                     <thead>
@@ -188,8 +260,8 @@ new #[Layout('layouts.app')] class extends Component {
                     </tbody>
                 </table>
             </div>
-        </x-fx.card>
-    @endif
+        @endif
+    </x-fx.card>
 
     @if ($showFormModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">

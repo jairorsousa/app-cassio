@@ -6,22 +6,40 @@ use App\Domains\Partnership\Models\PartnershipContribution;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component {
+new #[Layout('layouts.app')] class extends Component
+{
     public Partnership $partnership;
 
+    public string $filterFrom = '';
+
+    public string $filterTo = '';
+
+    public string $filterStatus = '';
+
+    public string $filterAccount = '';
+
     public ?int $editingId = null;
+
     public bool $showFormModal = false;
+
     public string $contribDate = '';
+
     public string $amount = '';
+
     public string $contribStatus = 'done';
+
     public ?int $bank_account_id = null;
+
     public string $purpose = '';
+
     public string $contribNotes = '';
 
     public function mount(Partnership $partnership): void
     {
         $this->partnership = $partnership;
         $this->contribDate = now()->format('Y-m-d');
+        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
     }
 
     public function rules(): array
@@ -111,7 +129,18 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Aporte excluído.');
     }
 
-    public function cancel(): void { $this->resetForm(); }
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->filterStatus = '';
+        $this->filterAccount = '';
+    }
 
     private function resetForm(): void
     {
@@ -123,8 +152,23 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $contributions = $this->partnership->contributions()->with('bankAccount');
+
+        if ($this->filterFrom !== '') {
+            $contributions->whereDate('date', '>=', $this->filterFrom);
+        }
+        if ($this->filterTo !== '') {
+            $contributions->whereDate('date', '<=', $this->filterTo);
+        }
+        if ($this->filterStatus !== '') {
+            $contributions->where('status', $this->filterStatus);
+        }
+        if ($this->filterAccount !== '') {
+            $contributions->where('bank_account_id', $this->filterAccount);
+        }
+
         return [
-            'contributions' => $this->partnership->contributions()->with('bankAccount')->orderByDesc('date')->get(),
+            'contributions' => $contributions->orderByDesc('date')->orderByDesc('id')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -135,24 +179,49 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     <x-partnership.subnav :partnership="$partnership" />
 
-    <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
-            <h2 class="text-xl font-semibold text-mono-900">Aportes</h2>
-            <p class="mt-1 text-sm text-mono-600">Acompanhe aportes realizados e compromissos futuros.</p>
+    <x-fx.card>
+        <div class="mb-space-4 flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h2 class="text-fs-16 font-semibold text-cryptex-text-primary">Filtros</h2>
+                <p class="mt-1 text-sm text-mono-600">Consulte aportes realizados e compromissos futuros.</p>
+            </div>
+            <button type="button" class="fx-btn fx-btn--primary self-start sm:self-auto" wire:click="create">
+                <span class="material-icons-outlined text-[18px]">add</span>
+                Novo aporte
+            </button>
         </div>
-        <button type="button" class="fx-btn fx-btn--primary self-start sm:self-auto" wire:click="create">
-            <span class="material-icons-outlined text-[18px]">add</span>
-            Novo aporte
-        </button>
-    </div>
+
+        <div class="grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-4">
+            <x-fx.input label="De" type="date" wire:model.live="filterFrom" />
+            <x-fx.input label="Até" type="date" wire:model.live="filterTo" />
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium uppercase tracking-[0.05em] text-cryptex-text-tertiary">Status</label>
+                <select wire:model.live="filterStatus" class="h-[48px] rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-space-4 text-fs-14 text-cryptex-text-primary transition-colors focus:border-cryptex-brand-400 focus:outline-none">
+                    <option value="">Todos</option>
+                    <option value="done">Realizado</option>
+                    <option value="pending">Pendente</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-space-1">
+                <label class="block text-fs-12 font-medium uppercase tracking-[0.05em] text-cryptex-text-tertiary">Conta</label>
+                <select wire:model.live="filterAccount" class="h-[48px] rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-space-4 text-fs-14 text-cryptex-text-primary transition-colors focus:border-cryptex-brand-400 focus:outline-none">
+                    <option value="">Todas</option>
+                    @foreach ($accounts as $a)
+                        <option value="{{ $a->id }}">{{ $a->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+        <button type="button" class="mt-space-3 text-fs-12 font-medium text-cryptex-brand-400 transition-colors hover:text-cryptex-brand-300" wire:click="clearFilters">Limpar filtros</button>
+    </x-fx.card>
 
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
-    @if ($contributions->isEmpty())
-        <x-jr.empty-state icon="savings" title="Nenhum aporte cadastrado" description="Registre o primeiro aporte realizado ou previsto para esta sociedade." />
-    @else
-        <x-fx.card class="p-0 overflow-hidden">
+    <x-fx.card class="p-0 overflow-hidden">
+        @if ($contributions->isEmpty())
+            <x-jr.empty-state icon="savings" title="Nenhum aporte encontrado" description="Ajuste os filtros acima ou registre um novo aporte." />
+        @else
             <div class="overflow-x-auto">
                 <table class="fx-table text-sm">
                     <thead>
@@ -191,8 +260,8 @@ new #[Layout('layouts.app')] class extends Component {
                     </tbody>
                 </table>
             </div>
-        </x-fx.card>
-    @endif
+        @endif
+    </x-fx.card>
 
     @if ($showFormModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
