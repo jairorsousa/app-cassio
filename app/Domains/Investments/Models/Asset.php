@@ -12,10 +12,11 @@ class Asset extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['ticker', 'name', 'asset_class_id', 'sector', 'notes', 'status'];
+    protected $fillable = ['ticker', 'name', 'asset_class_id', 'sector', 'notes', 'status', 'institution', 'maturity_date', 'liquidity'];
 
     protected $casts = [
         'status' => 'boolean',
+        'maturity_date' => 'date',
     ];
 
     public function assetClass(): BelongsTo

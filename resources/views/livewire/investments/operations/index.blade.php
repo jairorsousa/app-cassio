@@ -16,7 +16,29 @@ new #[Layout('layouts.app')] class extends Component {
     #[Url]
     public string $typeFilter = '';
 
+    public string $from = '';
+    public string $to = '';
+
+    public function updated($property): void
+    {
+        if (in_array($property, ['from', 'to', 'assetFilter', 'typeFilter'])) $this->resetPage();
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset(['from', 'to', 'assetFilter', 'typeFilter']);
+        $this->resetPage();
+    }
+
+    public bool $showFormModal = false;
     public ?int $editingId = null;
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->showFormModal = true;
+    }
+
     public ?int $asset_id = null;
     public string $opDate = '';
     public string $opType = 'buy';
@@ -35,7 +57,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         return [
             'asset_id' => 'required|exists:assets,id',
-            'opDate' => 'required|date',
+            'opDate' => 'required|date|before_or_equal:today',
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
             'unit_price' => 'required|numeric|min:0',
@@ -47,6 +69,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function edit(int $id): void
     {
+        $this->resetValidation();
+        $this->showFormModal = true;
         $op = AssetOperation::findOrFail($id);
         $this->editingId = $op->id;
         $this->asset_id = $op->asset_id;
@@ -79,11 +103,7 @@ new #[Layout('layouts.app')] class extends Component {
             'notes' => $data['opNotes'],
         ];
 
-        if ($this->editingId) {
-            AssetOperation::find($this->editingId)?->update($payload);
-        } else {
-            AssetOperation::create($payload);
-        }
+        app(\App\Domains\Investments\Services\InvestmentLedgerService::class)->saveOperation($payload, $this->editingId);
 
         $this->resetForm();
         session()->flash('status', 'Operação salva.');
@@ -91,10 +111,11 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        AssetOperation::find($id)?->delete();
-        $asset = Asset::find(AssetOperation::withTrashed()->find($id)?->asset_id);
-        if ($asset) {
-            app(\App\Domains\Investments\Services\AssetPositionService::class)->recalculate($asset);
+        try {
+            app(\App\Domains\Investments\Services\InvestmentLedgerService::class)->deleteOperation($id);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            session()->flash('error', collect($e->errors())->flatten()->first());
+            return;
         }
         session()->flash('status', 'Operação excluída.');
     }
@@ -103,6 +124,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
+        $this->showFormModal = false;
+        $this->resetValidation();
         $this->reset(['editingId', 'asset_id', 'quantity', 'unit_price', 'fees', 'bank_account_id', 'opNotes']);
         $this->opType = 'buy';
         $this->fees = '0';
@@ -116,8 +139,8 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->typeFilter) $q->where('type', $this->typeFilter);
 
         return [
-            'operations' => $q->orderByDesc('date')->orderByDesc('id')->paginate(25),
-            'assets' => Asset::active()->orderBy('ticker')->get(),
+            'operations' => $q->when($this->from, fn ($q) => $q->whereDate('date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('date', '<=', $this->to))->orderByDesc('date')->orderByDesc('id')->paginate(25),
+            'assets' => Asset::orderBy('ticker')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -125,34 +148,24 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Investimentos · Operações</x-slot>
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-md">
-    <x-fx.card class="lg:col-span-2">
+<div class="investment-area">
+    <x-investments.subnav />
+    @if (session('error'))<x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>@endif
+    <div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-xl font-bold">Movimentações</h2><p class="mt-1 text-sm text-mono-600">Compras, aplicações, vendas e resgates com integração ao Financeiro.</p></div><x-jr.button wire:click="create"><span class="material-icons-outlined text-[18px]">add</span>Nova movimentação</x-jr.button></div>
+<x-jr.card>
+<div class="mb-4 flex items-center justify-between"><h3 class="font-semibold">Filtros</h3><button class="text-sm text-primary-500" wire:click="clearFilters">Limpar filtros</button></div>
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+<x-jr.input label="De" type="date" wire:model.live="from" /><x-jr.input label="Até" type="date" wire:model.live="to" />
+<div><label class="mb-2 block">Ativo</label><select wire:model.live="assetFilter"><option value="">Todos</option>@foreach ($assets as $a)<option value="{{ $a->id }}">{{ $a->ticker }}</option>@endforeach</select></div>
+<div><label class="mb-2 block">Tipo</label><select wire:model.live="typeFilter"><option value="">Todos</option><option value="buy">Compra / aplicação</option><option value="sell">Venda / resgate</option></select></div>
+</div></x-jr.card>
+    <x-jr.card>
         @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
 
-        <div class="grid grid-cols-2 gap-xs mb-sm">
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Ativo</label>
-                <select wire:model.live="assetFilter" class="fx-form-field">
-                    <option value="">Todos</option>
-                    @foreach ($assets as $a)
-                        <option value="{{ $a->id }}">{{ $a->ticker }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                <select wire:model.live="typeFilter" class="fx-form-field">
-                    <option value="">Todos</option>
-                    <option value="buy">Compra</option>
-                    <option value="sell">Venda</option>
-                </select>
-            </div>
-        </div>
-
         @if ($operations->isEmpty())
-            <div class="text-sm text-mono-600">Sem operações.</div>
+            <x-fx.empty-state icon="↔" title="Nenhum registro encontrado" description="Ajuste os filtros ou registre sua primeira movimentação." />
         @else
-            <table class="fx-table w-full text-sm">
+            <div class="overflow-x-auto"><table class="investment-table">
                 <thead>
                     <tr>
                         <th class="text-left">Data</th>
@@ -161,7 +174,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <th class="text-right">Qtd</th>
                         <th class="text-right">Preço</th>
                         <th class="text-right">Total</th>
-                        <th class="text-right">PnL realizado</th>
+                        <th class="text-right">Resultado realizado</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -178,67 +191,63 @@ new #[Layout('layouts.app')] class extends Component {
                             <td class="text-right">{{ number_format((float) $op->quantity, 6, ',', '.') }}</td>
                             <td class="text-right">R$ {{ number_format((float) $op->unit_price, 4, ',', '.') }}</td>
                             <td class="text-right">R$ {{ number_format((float) $op->total, 2, ',', '.') }}</td>
-                            <td class="text-right {{ ((float) $op->realized_pnl) >= 0 ? 'text-system-up' : 'text-system-down' }}">
+                            <td class="text-right {{ ((float) $op->realized_pnl) >= 0 ? 'text-up' : 'text-down' }}">
                                 {{ $op->realized_pnl !== null ? 'R$ '.number_format((float) $op->realized_pnl, 2, ',', '.') : '—' }}
                             </td>
                             <td class="text-right whitespace-nowrap">
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $op->id }})">Editar</button>
-                                <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $op->id }})" wire:confirm="Excluir operação?">Excluir</button>
+                                <button class="investment-action" wire:click="edit({{ $op->id }})">Editar</button>
+                                <button class="investment-action" wire:click="delete({{ $op->id }})" wire:confirm="Excluir operação?">Excluir</button>
                             </td>
                         </tr>
                     @endforeach
                 </tbody>
-            </table>
+            </table></div>
             <div class="mt-sm">{{ $operations->links() }}</div>
         @endif
-    </x-fx.card>
+    </x-jr.card>
 
-    <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">{{ $editingId ? 'Editar' : 'Nova' }} operação</h3>
-        <form wire:submit="save" class="flex flex-col gap-sm">
+    @if ($showFormModal)
+    <x-investments.modal :title="$editingId ? 'Editar movimentação' : 'Nova movimentação'">
+@if ($errors->any())<div class="md:col-span-2"><x-jr.alert variant="error"><ul>@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul></x-jr.alert></div>@endif
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Ativo</label>
-                <select wire:model="asset_id" class="fx-form-field" required>
+                <label class="mb-2 block">Ativo</label>
+                <select wire:model="asset_id"  required>
                     <option value="">—</option>
                     @foreach ($assets as $a)
                         <option value="{{ $a->id }}">{{ $a->ticker }} — {{ $a->name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="grid grid-cols-2 gap-xs">
-                <x-fx.input label="Data" type="date" wire:model="opDate" />
+            <div class="grid grid-cols-2 gap-4 md:col-span-2">
+                <x-jr.input label="Data" type="date" name="opDate" icon="event" wire:model="opDate" />
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                    <select wire:model="opType" class="fx-form-field">
+                    <label class="mb-2 block">Tipo</label>
+                    <select wire:model.live.debounce.300ms="opType" >
                         <option value="buy">Compra</option>
                         <option value="sell">Venda</option>
                     </select>
                 </div>
             </div>
-            <div class="grid grid-cols-2 gap-xs">
-                <x-fx.input label="Quantidade" type="number" step="0.000001" wire:model="quantity" />
-                <x-fx.input label="Preço unitário" type="number" step="0.0001" wire:model="unit_price" />
+            <div class="grid grid-cols-2 gap-4 md:col-span-2">
+                <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
+                <x-jr.input label="Preço unitário" type="number" step="0.0001" name="unit_price" icon="payments" wire:model.live.debounce.300ms="unit_price" />
             </div>
-            <x-fx.input label="Taxas/corretagem" type="text" x-money wire:model="fees" />
+            <x-jr.input label="Taxas/corretagem" type="text" x-money name="fees" icon="edit_note" wire:model.live.debounce.300ms="fees" />
             <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Conta liquidação</label>
-                <select wire:model="bank_account_id" class="fx-form-field">
+                <label class="mb-2 block">Conta liquidação</label>
+                <select wire:model="bank_account_id" >
                     <option value="">— nenhuma —</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}</option>
                     @endforeach
                 </select>
             </div>
-            <div>
-                <label class="block text-xxs text-mono-600 mb-xxxs">Notas</label>
-                <textarea wire:model="opNotes" class="fx-form-field" rows="2"></textarea>
+            <div class="md:col-span-2">
+                <label class="mb-2 block">Observações</label>
+                <textarea wire:model="opNotes"  rows="2"></textarea>
             </div>
-            <div class="flex gap-xs">
-                <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
-                @if ($editingId)
-                    <button type="button" class="fx-btn fx-btn--text" wire:click="cancel">Cancelar</button>
-                @endif
-            </div>
-        </form>
-    </x-fx.card>
+<div class="md:col-span-2 flex items-center justify-between border-t border-mono-100 pt-4"><span class="font-medium">Total da movimentação</span><strong class="text-xl">R$ {{ number_format(max(0, (float)$quantity * (float)$unit_price + ($opType === 'buy' ? (float)$fees : -(float)$fees)), 2, ',', '.') }}</strong></div>
+<div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">Informe quantidade, preço unitário e taxas. Para aplicações controladas pelo valor total, utilize quantidade 1. Ao escolher uma conta, a movimentação também será lançada no Financeiro.</div>
+    </x-investments.modal>
+    @endif
 </div>

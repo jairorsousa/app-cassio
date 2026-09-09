@@ -58,7 +58,7 @@ class AverageCostCalculator
                 $realizedTotal += $realized;
             }
 
-            if ($realized !== null && (float) ($op->realized_pnl ?? 0) !== $realized) {
+            if (($realized === null && $op->realized_pnl !== null) || ($realized !== null && ($op->realized_pnl === null || (float) $op->realized_pnl !== $realized))) {
                 $updatedOps[] = ['id' => $op->id, 'realized_pnl' => $realized];
             }
         }

@@ -10,9 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class AssetPositionService
 {
-    public function __construct(private AverageCostCalculator $calculator)
-    {
-    }
+    public function __construct(private AverageCostCalculator $calculator) {}
 
     public function recalculate(Asset $asset): AssetPosition
     {
@@ -52,10 +50,11 @@ class AssetPositionService
                 ['price' => $price]
             );
 
+            $latest = AssetQuote::where('asset_id', $asset->id)->orderByDesc('date')->orderByDesc('id')->first();
             $position = AssetPosition::where('asset_id', $asset->id)->first();
             if ($position) {
                 $position->update([
-                    'current_price' => $price,
+                    'current_price' => $latest->price,
                     'recalculated_at' => now(),
                 ]);
             }

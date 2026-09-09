@@ -1,122 +1,72 @@
 <?php
 
-use App\Domains\Investments\Services\PortfolioProfitabilityService;
-use App\Domains\Investments\Services\RealizedPnLCalculator;
-use Illuminate\Support\Carbon;
+use App\Domains\Investments\Services\InvestmentAnalyticsService;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
-    #[Url]
     public string $from = '';
-    #[Url]
     public string $to = '';
 
-    public function mount(): void
+    public function mount(): void { $this->from = today()->startOfYear()->format('Y-m-d'); $this->to = today()->format('Y-m-d'); }
+
+    public function rules(): array { return ['from' => 'required|date', 'to' => 'required|date|after_or_equal:from|before_or_equal:today']; }
+
+    public function applyFilters(): void { $this->validate(); }
+
+    public function export()
     {
-        if ($this->from === '') {
-            $this->from = now()->subYear()->format('Y-m-d');
-            $this->to = now()->format('Y-m-d');
-        }
+        $this->validate();
+        $report = app(InvestmentAnalyticsService::class)->period($this->from, $this->to);
+        return response()->streamDownload(function () use ($report) {
+            $stream = fopen('php://output', 'w');
+            fwrite($stream, "\xEF\xBB\xBF");
+            fputcsv($stream, ['Ativo', 'Compras (R$)', 'Vendas (R$)', 'Taxas (R$)', 'Resultado realizado (R$)', 'Proventos (R$)', 'Resultado total (R$)'], ';', '"', '');
+            foreach ($report['rows'] as $row) {
+                $ticker = preg_match('/^[=+@\\-]/', $row['ticker']) ? "'".$row['ticker'] : $row['ticker'];
+                fputcsv($stream, [$ticker, ...array_map(fn ($key) => number_format($row[$key], 2, ',', ''), ['buys', 'sales', 'fees', 'realized', 'income', 'result'])], ';', '"', '');
+            }
+            fclose($stream);
+        }, 'investimentos-'.$this->from.'-'.$this->to.'.csv');
     }
 
-    public function with(PortfolioProfitabilityService $portfolio, RealizedPnLCalculator $pnl): array
+    public function with(): array
     {
-        $summary = $portfolio->summary();
-        $realized = $pnl->forPeriod(Carbon::parse($this->from), Carbon::parse($this->to));
-
-        return compact('summary', 'realized');
+        $valid = validator(['from' => $this->from, 'to' => $this->to], $this->rules())->passes();
+        return ['report' => $valid ? app(InvestmentAnalyticsService::class)->period($this->from, $this->to) : null];
     }
 }; ?>
 
-<x-slot name="header">Investimentos · Rentabilidade</x-slot>
-
-<div class="flex flex-col gap-md">
-    <x-fx.card>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-xs items-end">
-            <x-fx.input label="De" type="date" wire:model.live="from" />
-            <x-fx.input label="Até" type="date" wire:model.live="to" />
+<x-slot name="header">Investimentos</x-slot>
+<div class="investment-area">
+    <x-investments.subnav />
+    <div><h2 class="text-2xl font-bold">Rentabilidade e resultados</h2><p class="mt-2 text-sm text-mono-600">Analise o resultado das vendas e os proventos efetivamente recebidos no período.</p></div>
+    <x-jr.card>
+        <form wire:submit="applyFilters" class="flex flex-wrap items-end gap-4">
+            <x-jr.input label="De" name="from" type="date" wire:model="from" />
+            <x-jr.input label="Até" name="to" type="date" wire:model="to" />
+            <x-jr.button type="submit">Aplicar período</x-jr.button>
+            <x-jr.button variant="standard" wire:click="export"><span class="material-icons-outlined text-[18px]">download</span>Exportar CSV</x-jr.button>
+        </form>
+    </x-jr.card>
+    @if ($report)
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <x-investments.metric label="Resultado realizado" :value="'R$ '.number_format($report['realized'], 2, ',', '.')" hint="Vendas menos custo de aquisição e taxas" :positive="$report['realized'] >= 0" icon="trending_up" />
+            <x-investments.metric label="Proventos recebidos" :value="'R$ '.number_format($report['income'], 2, ',', '.')" hint="Recebimentos dentro do período" :positive="true" />
+            <x-investments.metric label="Resultado do período" :value="'R$ '.number_format($report['result'], 2, ',', '.')" hint="Resultado das vendas + proventos" :positive="$report['result'] >= 0" icon="query_stats" />
+            <x-investments.metric label="Taxas registradas" :value="'R$ '.number_format($report['fees'], 2, ',', '.')" hint="Já consideradas no custo de compras e vendas" icon="receipt_long" />
         </div>
-    </x-fx.card>
-
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Total investido</div>
-            <div class="text-xl font-bold">R$ {{ number_format($summary['total_invested'], 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Valor de mercado</div>
-            <div class="text-xl font-bold">R$ {{ number_format($summary['market_value'], 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Retorno total</div>
-            <div class="text-xl font-bold {{ $summary['total_return'] >= 0 ? 'text-system-up' : 'text-system-down' }}">
-                R$ {{ number_format($summary['total_return'], 2, ',', '.') }}
-            </div>
-            <div class="text-xxs text-mono-600 mt-xxxs">PnL não real. + proventos 12m + PnL real. total</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Yield on Cost (12m)</div>
-            <div class="text-xl font-bold">{{ number_format($summary['yield_on_cost_12m'], 2, ',', '.') }}%</div>
-            <div class="text-xxs text-mono-600 mt-xxxs">Proventos 12m: R$ {{ number_format($summary['dividends_12m'], 2, ',', '.') }}</div>
-        </x-fx.card>
-    </div>
-
-    <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">Por classe</h3>
-        @php $totalMv = collect($summary['by_class'])->sum('market_value'); @endphp
-        <table class="fx-table w-full text-sm">
-            <thead>
-                <tr>
-                    <th class="text-left">Classe</th>
-                    <th class="text-right">Investido</th>
-                    <th class="text-right">Valor mercado</th>
-                    <th class="text-right">PnL</th>
-                    <th class="text-right">% do total</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach ($summary['by_class'] as $name => $row)
-                    @php
-                        $pnl = $row['market_value'] - $row['invested'];
-                        $share = $totalMv > 0 ? ($row['market_value'] / $totalMv) * 100 : 0;
-                    @endphp
-                    <tr>
-                        <td>{{ $name }}</td>
-                        <td class="text-right">R$ {{ number_format($row['invested'], 2, ',', '.') }}</td>
-                        <td class="text-right">R$ {{ number_format($row['market_value'], 2, ',', '.') }}</td>
-                        <td class="text-right {{ $pnl >= 0 ? 'text-system-up' : 'text-system-down' }}">
-                            R$ {{ number_format($pnl, 2, ',', '.') }}
-                        </td>
-                        <td class="text-right">{{ number_format($share, 1, ',', '.') }}%</td>
-                    </tr>
-                @endforeach
-            </tbody>
-        </table>
-    </x-fx.card>
-
-    <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">PnL realizado no período</h3>
-        <div class="text-xl font-bold {{ $realized['total'] >= 0 ? 'text-system-up' : 'text-system-down' }} mb-sm">
-            R$ {{ number_format($realized['total'], 2, ',', '.') }}
-        </div>
-        @if ($realized['by_asset']->isNotEmpty())
-            <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Ativo</th><th class="text-right">PnL realizado</th></tr></thead>
-                <tbody>
-                    @foreach ($realized['by_asset'] as $ticker => $value)
-                        <tr>
-                            <td class="font-semibold">{{ $ticker }}</td>
-                            <td class="text-right {{ $value >= 0 ? 'text-system-up' : 'text-system-down' }}">
-                                R$ {{ number_format($value, 2, ',', '.') }}
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @else
-            <div class="text-sm text-mono-600">Nenhuma venda no período.</div>
-        @endif
-    </x-fx.card>
+        <x-jr.card>
+            <div class="mb-6 flex flex-wrap items-center justify-between gap-3"><h3 class="font-bold">Resultado por ativo</h3><span class="text-xs text-mono-600">{{ count($report['rows']) }} ativos com movimentação</span></div>
+            @if ($report['rows']->isEmpty())
+                <x-fx.empty-state icon="📊" title="Sem resultados neste período" description="Registre suas operações ou selecione outro período." />
+            @else
+                <div class="overflow-x-auto"><table class="investment-table">
+                    <thead><tr><th class="text-left">Ativo</th><th class="text-right">Compras</th><th class="text-right">Vendas</th><th class="text-right">Lucro / prejuízo nas vendas</th><th class="text-right">Proventos</th><th class="text-right">Resultado</th></tr></thead>
+                    <tbody>@foreach ($report['rows'] as $row)<tr><td class="font-semibold">{{ $row['ticker'] }}</td>@foreach (['buys', 'sales', 'realized', 'income', 'result'] as $key)<td class="text-right whitespace-nowrap {{ $key === 'result' ? ($row[$key] >= 0 ? 'text-up font-bold' : 'text-down font-bold') : '' }}">R$ {{ number_format($row[$key], 2, ',', '.') }}</td>@endforeach</tr>@endforeach</tbody>
+                </table></div>
+            @endif
+        </x-jr.card>
+        <x-jr.card><h3 class="mb-3 font-bold">Como interpretar os resultados</h3><p class="text-sm leading-relaxed text-mono-600">Compras e aplicações são movimentações de capital. O resultado realizado considera apenas as vendas, descontando o custo médio e as taxas registradas. A valorização dos ativos ainda em carteira aparece na aba Carteira. Os valores deste relatório não são uma taxa de rentabilidade anualizada e não incluem impostos não lançados.</p></x-jr.card>
+    @endif
 </div>

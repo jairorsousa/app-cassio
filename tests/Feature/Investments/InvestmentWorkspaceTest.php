@@ -1,0 +1,170 @@
+<?php
+
+namespace Tests\Feature\Investments;
+
+use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Investments\Models\Asset;
+use App\Domains\Investments\Models\AssetClass;
+use App\Domains\Investments\Models\AssetDividend;
+use App\Domains\Investments\Models\AssetOperation;
+use App\Domains\Investments\Services\AssetPositionService;
+use App\Domains\Investments\Services\InvestmentAnalyticsService;
+use App\Domains\Investments\Services\InvestmentLedgerService;
+use App\Domains\Investments\Services\PortfolioProfitabilityService;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
+use Tests\TestCase;
+
+class InvestmentWorkspaceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->travelTo(now()->setDate(2026, 9, 9)->startOfDay());
+        $this->actingAs(User::factory()->create());
+    }
+
+    private function asset(string $ticker = 'TEST'): Asset
+    {
+        $class = AssetClass::firstOrCreate(['slug' => 'acoes'], ['name' => 'Ações']);
+
+        return Asset::create(['ticker' => $ticker, 'name' => 'Ativo de teste', 'asset_class_id' => $class->id]);
+    }
+
+    private function operation(Asset $asset, array $extra = []): AssetOperation
+    {
+        return app(InvestmentLedgerService::class)->saveOperation(array_replace([
+            'asset_id' => $asset->id, 'date' => '2026-08-01', 'type' => 'buy', 'quantity' => 10, 'unit_price' => 10, 'fees' => 0, 'total' => 100, 'bank_account_id' => null,
+        ], $extra));
+    }
+
+    public function test_all_pages_render_empty_and_with_real_positions(): void
+    {
+        $pages = ['dashboard', 'assets.index', 'operations.index', 'dividends.index', 'positions', 'reports.profitability'];
+        foreach ($pages as $page) {
+            Volt::test('investments.'.$page)->assertSee('Visão geral');
+        }
+        $asset = $this->asset();
+        $this->operation($asset);
+        foreach ($pages as $page) {
+            Volt::test('investments.'.$page)->assertSee('Visão geral');
+        }
+        Volt::test('investments.dashboard')->assertSee('TEST')->assertSee('Fluxo dos investimentos');
+    }
+
+    public function test_asset_modal_can_create_custom_class_and_custody_details(): void
+    {
+        Volt::test('investments.assets.index')->call('create')
+            ->set('ticker', 'cdb-2027')->set('name', 'CDB Banco')
+            ->set('newClass', 'Renda fixa')->set('institution', 'Banco')
+            ->set('maturity_date', '2027-09-01')->set('liquidity', 'Diária')
+            ->call('save')->assertHasNoErrors()->assertSet('showFormModal', false);
+        $this->assertDatabaseHas('assets', ['ticker' => 'CDB-2027', 'institution' => 'Banco', 'liquidity' => 'Diária']);
+        $this->assertDatabaseHas('asset_classes', ['name' => 'Renda fixa']);
+    }
+
+    public function test_operation_modal_integrates_with_bank_and_edit_and_delete_stay_in_sync(): void
+    {
+        $asset = $this->asset();
+        $bank = BankAccount::create(['name' => 'Conta', 'initial_balance' => 1000]);
+        Volt::test('investments.operations.index')->call('create')->set('asset_id', $asset->id)
+            ->set('quantity', '10')->set('unit_price', '10')->set('bank_account_id', $bank->id)
+            ->call('save')->assertHasNoErrors()->assertSet('showFormModal', false);
+        $operation = AssetOperation::firstOrFail();
+        $this->assertEquals(900, $bank->fresh()->balance());
+        Volt::test('investments.operations.index')->call('edit', $operation->id)->set('unit_price', '20')->call('save')->assertHasNoErrors();
+        $this->assertEquals(800, $bank->fresh()->balance());
+        Volt::test('investments.operations.index')->call('delete', $operation->id)->assertHasNoErrors();
+        $this->assertEquals(1000, $bank->fresh()->balance());
+        $this->assertEquals(0, $asset->fresh()->position->quantity);
+    }
+
+    public function test_sale_cannot_precede_purchase_and_changes_are_rolled_back(): void
+    {
+        $asset = $this->asset();
+        $this->operation($asset);
+        try {
+            $this->operation($asset, ['type' => 'sell', 'date' => '2026-07-31']);
+            $this->fail('Should reject chronological overselling');
+        } catch (ValidationException) {
+            $this->assertSame(1, AssetOperation::count());
+            $this->assertEquals(10, $asset->fresh()->position->quantity);
+        }
+    }
+
+    public function test_purchase_cannot_be_deleted_if_later_sale_needs_it(): void
+    {
+        $asset = $this->asset();
+        $buy = $this->operation($asset);
+        $this->operation($asset, ['type' => 'sell', 'date' => '2026-08-02']);
+        try {
+            app(InvestmentLedgerService::class)->deleteOperation($buy->id);
+            $this->fail('Should reject orphan sale');
+        } catch (ValidationException) {
+            $this->assertNotNull($buy->fresh());
+        }
+    }
+
+    public function test_moving_operation_to_another_asset_recalculates_both(): void
+    {
+        $a = $this->asset('AAA');
+        $b = $this->asset('BBB');
+        $op = $this->operation($a);
+        app(InvestmentLedgerService::class)->saveOperation([
+            'asset_id' => $b->id, 'date' => '2026-08-01', 'type' => 'buy', 'quantity' => 10, 'unit_price' => 10, 'fees' => 0, 'total' => 100,
+        ], $op->id);
+        $this->assertEquals(0, $a->fresh()->position->quantity);
+        $this->assertEquals(10, $b->fresh()->position->quantity);
+    }
+
+    public function test_dividend_edit_delete_and_period_reporting(): void
+    {
+        $asset = $this->asset();
+        $bank = BankAccount::create(['name' => 'Conta']);
+        Volt::test('investments.dividends.index')->call('create')->set('asset_id', $asset->id)
+            ->set('payment_date', '2026-08-10')->set('quantity', '10')->set('unit_amount', '2')
+            ->set('bank_account_id', $bank->id)->call('save')->assertHasNoErrors();
+        $div = AssetDividend::firstOrFail();
+        Volt::test('investments.dividends.index')->call('edit', $div->id)->set('unit_amount', '3')->call('save')->assertHasNoErrors();
+        $this->assertEquals(30, $bank->fresh()->balance());
+        $this->assertEquals(30, app(InvestmentAnalyticsService::class)->period('2026-08-01', '2026-08-31')['income']);
+        $this->assertEquals(0, app(InvestmentAnalyticsService::class)->period('2026-09-01', '2026-09-09')['income']);
+        Volt::test('investments.dividends.index')->call('delete', $div->id);
+        $this->assertEquals(0, $bank->fresh()->balance());
+    }
+
+    public function test_summary_keeps_closed_position_profit_and_old_quote_does_not_replace_latest(): void
+    {
+        $asset = $this->asset();
+        $this->operation($asset);
+        $service = app(AssetPositionService::class);
+        $service->setQuote($asset, '2026-09-01', 20);
+        $service->setQuote($asset, '2026-08-01', 15);
+        $this->assertEquals(20, $asset->fresh()->position->current_price);
+        $this->operation($asset, ['type' => 'sell', 'date' => '2026-09-01', 'unit_price' => 20, 'total' => 200]);
+        $summary = app(PortfolioProfitabilityService::class)->summary();
+        $this->assertEquals(100, $summary['realized_pnl_total']);
+        $this->assertEquals(100, $summary['total_return']);
+        $this->assertEquals(0, $summary['market_value']);
+    }
+
+    public function test_report_validates_dates_and_exports_csv(): void
+    {
+        Volt::test('investments.reports.profitability')->set('from', '2026-09-09')->set('to', '2026-08-01')->call('applyFilters')->assertHasErrors('to');
+        Volt::test('investments.reports.profitability')->call('export')->assertFileDownloaded('investimentos-2026-01-01-2026-09-09.csv');
+    }
+
+    public function test_receipts_on_last_day_are_included_in_charts_summary_and_reports(): void
+    {
+        $asset = $this->asset();
+        AssetDividend::create(['asset_id' => $asset->id, 'payment_date' => '2026-09-09', 'type' => 'dividend', 'quantity' => 10, 'unit_amount' => 2, 'total' => 20]);
+        $analytics = app(InvestmentAnalyticsService::class);
+        $this->assertEquals(20, $analytics->period('2026-09-09', '2026-09-09')['income']);
+        $this->assertEquals(20, collect($analytics->monthlyCashflow())->last()['income']);
+        $this->assertEquals(20, app(PortfolioProfitabilityService::class)->summary()['dividends_12m']);
+    }
+}

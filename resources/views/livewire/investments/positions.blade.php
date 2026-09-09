@@ -9,11 +9,17 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component {
     public ?int $editingQuoteAssetId = null;
     public string $quotePrice = '';
+    public string $quoteDate = '';
+    public string $search = '';
+
+    public function cancel(): void { $this->editingQuoteAssetId = null; $this->resetValidation(); }
 
     public function startQuote(int $assetId): void
     {
         $position = AssetPosition::where('asset_id', $assetId)->first();
         $this->editingQuoteAssetId = $assetId;
+        $this->quoteDate = today()->format("Y-m-d");
+        $this->resetValidation();
         $this->quotePrice = (string) ($position?->current_price ?? $position?->average_price ?? 0);
     }
 
@@ -21,10 +27,11 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'quotePrice' => 'required|numeric|min:0',
+            'quoteDate' => 'required|date|before_or_equal:today',
         ]);
 
         $asset = Asset::findOrFail($this->editingQuoteAssetId);
-        $service->setQuote($asset, now()->format('Y-m-d'), (float) $this->quotePrice);
+        $service->setQuote($asset, $this->quoteDate, (float) $this->quotePrice);
 
         $this->editingQuoteAssetId = null;
         $this->quotePrice = '';
@@ -41,7 +48,8 @@ new #[Layout('layouts.app')] class extends Component {
     public function with(): array
     {
         return [
-            'positions' => AssetPosition::with('asset.assetClass')
+            'positions' => AssetPosition::with('asset.assetClass', 'asset.quotes')
+                ->when($this->search, fn ($q) => $q->whereHas('asset', fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))
                 ->where('quantity', '>', 0)
                 ->get()
                 ->sortByDesc(fn ($p) => $p->marketValue())
@@ -52,13 +60,16 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Investimentos · Posições</x-slot>
 
-<x-fx.card>
+<div class="investment-area"><x-investments.subnav />
+<div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-2xl font-bold">Minha carteira</h2><p class="mt-2 text-sm text-mono-600">Posições abertas, preço médio, valor atual e resultado por ativo.</p></div><x-jr.button href="{{ route('investments.operations.index') }}">Registrar movimentação</x-jr.button></div>
+<x-jr.card><x-jr.input label="Buscar na carteira" icon="search" wire:model.live.debounce.300ms="search" placeholder="Código ou nome do ativo" /></x-jr.card>
+<x-jr.card>
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
 
     @if ($positions->isEmpty())
         <div class="text-sm text-mono-600">Nenhuma posição em aberto.</div>
     @else
-        <table class="fx-table w-full text-sm">
+        <div class="overflow-x-auto"><table class="investment-table">
             <thead>
                 <tr>
                     <th class="text-left">Ticker</th>
@@ -68,7 +79,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <th class="text-right">Investido</th>
                     <th class="text-right">Cotação</th>
                     <th class="text-right">Valor de mercado</th>
-                    <th class="text-right">PnL</th>
+                    <th class="text-right">Resultado</th>
                     <th class="text-right">%</th>
                     <th></th>
                 </tr>
@@ -82,27 +93,17 @@ new #[Layout('layouts.app')] class extends Component {
                         <td class="text-right">R$ {{ number_format((float) $p->average_price, 4, ',', '.') }}</td>
                         <td class="text-right">R$ {{ number_format((float) $p->total_invested, 2, ',', '.') }}</td>
                         <td class="text-right">
-                            @if ($editingQuoteAssetId === $p->asset_id)
-                                <form wire:submit="saveQuote" class="inline-flex items-center gap-xs">
-                                    <input type="number" step="0.0001" wire:model="quotePrice" class="fx-form-field !w-24" />
-                                    <button type="submit" class="fx-btn fx-btn--text fx-btn--sm">OK</button>
-                                    <button type="button" class="fx-btn fx-btn--text fx-btn--sm" wire:click="$set('editingQuoteAssetId', null)">×</button>
-                                </form>
-                            @else
-                                <button type="button" class="hover:underline" wire:click="startQuote({{ $p->asset_id }})">
-                                    R$ {{ number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}
-                                </button>
-                            @endif
+                            <button type="button" class="text-primary-500 hover:underline" wire:click="startQuote({{ $p->asset_id }})">R$ {{ number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}</button><p class="mt-1 text-xs text-mono-600">{{ $p->asset?->quotes->first()?->date?->format('d/m/Y') ?? 'Preço médio · sem cotação' }}</p>
                         </td>
                         <td class="text-right font-semibold">R$ {{ number_format($p->marketValue(), 2, ',', '.') }}</td>
-                        <td class="text-right {{ $p->unrealizedPnL() >= 0 ? 'text-system-up' : 'text-system-down' }}">
+                        <td class="text-right {{ $p->unrealizedPnL() >= 0 ? 'text-up' : 'text-down' }}">
                             R$ {{ number_format($p->unrealizedPnL(), 2, ',', '.') }}
                         </td>
-                        <td class="text-right {{ $p->unrealizedPnLPercent() >= 0 ? 'text-system-up' : 'text-system-down' }}">
+                        <td class="text-right {{ $p->unrealizedPnLPercent() >= 0 ? 'text-up' : 'text-down' }}">
                             {{ number_format($p->unrealizedPnLPercent(), 2, ',', '.') }}%
                         </td>
                         <td class="text-right">
-                            <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="recalculate({{ $p->asset_id }})" title="Recalcular do zero">↻</button>
+                            <button class="investment-action" wire:click="recalculate({{ $p->asset_id }})" title="Recalcular do zero">↻</button>
                         </td>
                     </tr>
                 @endforeach
@@ -117,6 +118,15 @@ new #[Layout('layouts.app')] class extends Component {
                     <td colspan="2"></td>
                 </tr>
             </tfoot>
-        </table>
+        </table></div>
     @endif
-</x-fx.card>
+</x-jr.card>
+<p class="text-xs text-mono-600">Atualize a cotação clicando no preço. Valores em reais, informados manualmente. Sem cotação, o patrimônio é estimado pelo preço médio.</p>
+@if ($editingQuoteAssetId)
+<x-investments.modal title="Atualizar cotação" submit="saveQuote">
+<x-jr.input label="Data da cotação *" type="date" name="quoteDate" wire:model="quoteDate" required />
+<x-jr.input label="Preço por unidade (R$) *" type="number" step="0.0001" min="0" name="quotePrice" wire:model="quotePrice" required />
+<p class="text-sm text-mono-600 md:col-span-2">O valor mais recente por data será utilizado na carteira.</p>
+</x-investments.modal>
+@endif
+</div>

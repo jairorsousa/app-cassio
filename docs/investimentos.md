@@ -1,0 +1,38 @@
+# Investimentos
+
+A área utiliza o padrão do Financeiro: navegação por abas, filtros acima das listas e cadastros em modais.
+
+## Primeiro uso
+
+1. Em **Ativos**, cadastre o código, nome e classe. É possível criar uma classe no mesmo formulário. Instituição, vencimento, liquidez e observações são opcionais.
+2. Em **Movimentações**, registre compras/aplicações e vendas/resgates com data, quantidade, preço por unidade e taxas. As datas podem ser retroativas, até o dia atual.
+3. Selecione uma conta para gerar a saída ou entrada correspondente no Financeiro. Sem conta, a operação afeta somente a carteira. Edições e exclusões também atualizam o lançamento vinculado.
+4. Em **Carteira**, clique no preço para registrar uma cotação manual com data. A cotação mais recente por data determina o valor da posição; sem cotação, utiliza-se o preço médio.
+5. Em **Proventos**, registre dividendos, JCP e rendimentos de FII recebidos, com quantidade e valor por unidade. A conta selecionada recebe o crédito no Financeiro.
+
+Todos os valores são informados em reais. Para aplicações controladas por valor total, é possível registrar uma unidade pelo valor aplicado; um resgate parcial deve usar a fração correspondente dessa unidade. Não há cálculo automático de indexadores, câmbio, juros contratuais ou impostos.
+
+## Indicadores
+
+- Patrimônio: quantidade das posições abertas multiplicada pelo preço de referência.
+- Capital em posição: custo remanescente das posições abertas, incluindo taxas de compra.
+- Valorização em aberto: patrimônio menos capital em posição.
+- Proventos em 12 meses: recebimentos dos últimos 12 meses até hoje, incluindo o dia final.
+- Distribuição por classe: participação de cada classe no valor atual da carteira.
+- Fluxo mensal: compras, vendas e proventos registrados. Não representa rentabilidade nem evolução histórica do patrimônio.
+
+## Rentabilidade
+
+O relatório considera um período inclusivo e apresenta compras, vendas, taxas, lucro/prejuízo realizado e proventos por ativo. O resultado combina lucro/prejuízo das vendas com os proventos do período. O custo médio é obtido do histórico completo, incluindo compras anteriores ao filtro. É possível exportar os dados em CSV.
+
+O relatório não calcula taxa anualizada ou rentabilidade ponderada pelos aportes. Posições encerradas continuam participando do resultado realizado.
+
+## Integridade do histórico
+
+Vendas não podem ultrapassar a quantidade disponível na sua data. A mesma regra vale ao editar, excluir ou transferir uma operação para outro ativo. Ativos com movimentações não podem ser excluídos; podem ser desativados, mantendo o histórico acessível.
+
+## Publicação
+
+Executar `php artisan migrate --force` e `pnpm build` no fluxo de implantação. A migração `2026_09_09_020000_add_investment_asset_details` acrescenta instituição, vencimento e liquidez ao cadastro de ativos.
+
+Validação: `php artisan test tests/Feature/Investments tests/Feature/Banking`.
