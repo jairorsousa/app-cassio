@@ -43,4 +43,10 @@ return [
         'assignee_id' => env('CHATWOOT_ASSIGNEE_ID', 4),
     ],
 
+    'brapi' => [
+        'token' => env('BRAPI_TOKEN'),
+        'base_url' => env('BRAPI_BASE_URL', 'https://brapi.dev'),
+        'timeout' => (int) env('BRAPI_TIMEOUT', 8),
+    ],
+
 ];

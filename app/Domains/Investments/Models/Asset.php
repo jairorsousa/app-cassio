@@ -2,6 +2,7 @@
 
 namespace App\Domains\Investments\Models;
 
+use App\Domains\Investments\Support\MarketTicker;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -52,5 +53,10 @@ class Asset extends Model
     public function setTickerAttribute(string $value): void
     {
         $this->attributes['ticker'] = strtoupper(trim($value));
+    }
+
+    public function isMarketQuoted(): bool
+    {
+        return MarketTicker::isListed((string) $this->ticker);
     }
 }

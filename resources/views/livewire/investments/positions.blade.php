@@ -3,6 +3,7 @@
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetPosition;
 use App\Domains\Investments\Services\AssetPositionService;
+use App\Domains\Investments\Services\RefreshAssetQuotesService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -45,6 +46,31 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Posição recalculada.');
     }
 
+    public function refreshQuotes(RefreshAssetQuotesService $service): void
+    {
+        $result = $service->refresh();
+        $updated = count($result['updated']);
+        $failed = count($result['failed']);
+
+        if ($updated === 0 && $failed === 0) {
+            session()->flash('status', 'Nenhum ativo listado em bolsa nas posições abertas. Cotações manuais permanecem como estão.');
+
+            return;
+        }
+
+        $parts = [];
+        if ($updated > 0) {
+            $parts[] = $updated === 1
+                ? '1 cotação atualizada ('.$result['updated'][0].').'
+                : $updated.' cotações atualizadas ('.implode(', ', $result['updated']).').';
+        }
+        if ($failed > 0) {
+            $parts[] = 'Não foi possível atualizar '.implode(', ', $result['failed']).'.';
+        }
+
+        session()->flash('status', implode(' ', $parts));
+    }
+
     public function with(): array
     {
         return [
@@ -61,7 +87,7 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Investimentos · Posições</x-slot>
 
 <div class="investment-area"><x-investments.subnav />
-<div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-2xl font-bold">Minha carteira</h2><p class="mt-2 text-sm text-mono-600">Posições abertas, preço médio, valor atual e resultado por ativo.</p></div><x-jr.button href="{{ route('investments.operations.index') }}">Registrar movimentação</x-jr.button></div>
+<div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-2xl font-bold">Minha carteira</h2><p class="mt-2 text-sm text-mono-600">Posições abertas, preço médio, valor atual e resultado por ativo.</p></div><div class="flex flex-wrap gap-2"><x-jr.button variant="standard" wire:click="refreshQuotes" wire:loading.attr="disabled"><span class="material-icons-outlined text-[18px]">sync</span><span wire:loading.remove>Atualizar cotações</span><span wire:loading>Atualizando...</span></x-jr.button><x-jr.button href="{{ route('investments.operations.index') }}">Registrar movimentação</x-jr.button></div></div>
 <x-jr.card><x-jr.input label="Buscar na carteira" icon="search" wire:model.live.debounce.300ms="search" placeholder="Código ou nome do ativo" /></x-jr.card>
 <x-jr.card>
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
@@ -93,7 +119,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <td class="text-right">R$ {{ number_format((float) $p->average_price, 4, ',', '.') }}</td>
                         <td class="text-right">R$ {{ number_format((float) $p->total_invested, 2, ',', '.') }}</td>
                         <td class="text-right">
-                            <button type="button" class="text-primary-500 hover:underline" wire:click="startQuote({{ $p->asset_id }})">R$ {{ number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}</button><p class="mt-1 text-xs text-mono-600">{{ $p->asset?->quotes->first()?->date?->format('d/m/Y') ?? 'Preço médio · sem cotação' }}</p>
+                            <button type="button" class="text-primary-500 hover:underline" wire:click="startQuote({{ $p->asset_id }})">R$ {{ number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}</button><p class="mt-1 text-xs text-mono-600">{{ $p->asset?->quotes->first()?->date?->format('d/m/Y') ?? ($p->asset?->isMarketQuoted() ? 'Aguardando cotação automática' : 'Preço médio · sem cotação') }}</p>
                         </td>
                         <td class="text-right font-semibold">R$ {{ number_format($p->marketValue(), 2, ',', '.') }}</td>
                         <td class="text-right {{ $p->unrealizedPnL() >= 0 ? 'text-up' : 'text-down' }}">
@@ -121,7 +147,7 @@ new #[Layout('layouts.app')] class extends Component {
         </table></div>
     @endif
 </x-jr.card>
-<p class="text-xs text-mono-600">Atualize a cotação clicando no preço. Valores em reais, informados manualmente. Sem cotação, o patrimônio é estimado pelo preço médio.</p>
+<p class="text-xs text-mono-600">Ações, FIIs, ETFs e BDRs da B3 são atualizados automaticamente em dias úteis após o fechamento. Clique no preço para ajustar manualmente. CDB, Tesouro e demais ativos sem ticker de bolsa continuam manuais. Sem cotação, o patrimônio usa o preço médio.</p>
 @if ($editingQuoteAssetId)
 <x-investments.modal title="Atualizar cotação" submit="saveQuote">
 <x-jr.input label="Data da cotação *" type="date" name="quoteDate" wire:model="quoteDate" required />

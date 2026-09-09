@@ -5,6 +5,8 @@ use App\Domains\Banking\Jobs\GenerateRecurringTransactionsJob;
 use App\Domains\Dashboard\Jobs\RefreshDashboardSnapshotJob;
 use App\Domains\Integrations\Models\GoogleCalendarToken;
 use App\Domains\Integrations\Services\GoogleCalendarService;
+use App\Domains\Investments\Jobs\RefreshAssetQuotesJob;
+use App\Domains\Investments\Services\RefreshAssetQuotesService;
 use App\Domains\Writs\Jobs\SyncWritAwaitingReceiptToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritCessionToGoogleCalendar;
 use App\Domains\Writs\Jobs\SyncWritMonitoringToGoogleCalendar;
@@ -298,6 +300,24 @@ Artisan::command('writs:sync-google-calendar {writ}', function (Writ $writ, Goog
     return Command::SUCCESS;
 })->purpose('Sync a single writ with Google Calendar');
 
+Artisan::command('investments:refresh-quotes', function (RefreshAssetQuotesService $service) {
+    $result = $service->refresh();
+    $this->info('Atualizadas: '.($result['updated'] === [] ? 'nenhuma' : implode(', ', $result['updated'])));
+    if ($result['failed'] !== []) {
+        $this->warn('Falhas: '.implode(', ', $result['failed']));
+    }
+    if ($result['skipped'] !== []) {
+        $this->comment('Manuais: '.implode(', ', $result['skipped']));
+    }
+
+    return $result['failed'] === [] ? Command::SUCCESS : Command::FAILURE;
+})->purpose('Atualiza cotações de ativos listados em bolsa');
+
 Schedule::job(new GenerateRecurringTransactionsJob)->dailyAt('00:05');
 Schedule::job(new CloseInvoiceJob)->dailyAt('00:10');
 Schedule::job(new RefreshDashboardSnapshotJob)->everyFifteenMinutes();
+Schedule::job(new RefreshAssetQuotesJob)
+    ->weekdays()
+    ->dailyAt('18:30')
+    ->timezone('America/Sao_Paulo')
+    ->withoutOverlapping();

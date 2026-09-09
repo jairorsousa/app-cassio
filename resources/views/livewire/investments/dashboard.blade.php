@@ -41,12 +41,12 @@ new #[Layout('layouts.app')] class extends Component {
     @if ($assetCount === 0)
         <x-jr.card>
             <div class="flex flex-wrap items-center justify-between gap-6">
-                <div class="max-w-xl"><span class="material-icons-outlined mb-3 rounded-2xl bg-primary-100 p-3 text-primary-500">rocket_launch</span><h3 class="text-lg font-bold">Comece a construir sua carteira</h3><p class="mt-2 text-sm text-mono-600">Cadastre o primeiro ativo, registre uma compra ou aplicação e informe uma cotação. Os indicadores serão calculados a partir desses registros.</p></div>
+                <div class="max-w-xl"><span class="material-icons-outlined mb-3 rounded-2xl bg-primary-100 p-3 text-primary-500">rocket_launch</span><h3 class="text-lg font-bold">Comece a construir sua carteira</h3><p class="mt-2 text-sm text-mono-600">Cadastre o primeiro ativo e registre uma compra ou aplicação. Tickers da B3 recebem cotação automática; os demais podem ser informados na Carteira.</p></div>
                 <x-jr.button href="{{ route('investments.assets.index') }}">Cadastrar primeiro ativo<span class="material-icons-outlined text-[18px]">arrow_forward</span></x-jr.button>
             </div>
         </x-jr.card>
     @elseif ($withoutQuote > 0)
-        <x-jr.alert variant="info">{{ $withoutQuote }} ativo(s) em carteira ainda usam o preço médio como referência de valor. Atualize as cotações na aba Carteira.</x-jr.alert>
+        <x-jr.alert variant="info">{{ $withoutQuote }} ativo(s) em carteira ainda usam o preço médio como referência de valor. Na aba Carteira, use Atualizar cotações para ativos da B3 ou informe o preço manualmente.</x-jr.alert>
     @endif
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">

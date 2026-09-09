@@ -6,6 +6,7 @@ use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetOperation;
 use App\Domains\Investments\Models\AssetPosition;
 use App\Domains\Investments\Models\AssetQuote;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class AssetPositionService
@@ -45,10 +46,21 @@ class AssetPositionService
     public function setQuote(Asset $asset, string $date, float $price): AssetQuote
     {
         return DB::transaction(function () use ($asset, $date, $price) {
-            $quote = AssetQuote::updateOrCreate(
-                ['asset_id' => $asset->id, 'date' => $date],
-                ['price' => $price]
-            );
+            $day = Carbon::parse($date)->toDateString();
+            $quote = AssetQuote::query()
+                ->where('asset_id', $asset->id)
+                ->whereDate('date', $day)
+                ->first();
+
+            if ($quote) {
+                $quote->update(['price' => $price]);
+            } else {
+                $quote = AssetQuote::create([
+                    'asset_id' => $asset->id,
+                    'date' => $day,
+                    'price' => $price,
+                ]);
+            }
 
             $latest = AssetQuote::where('asset_id', $asset->id)->orderByDesc('date')->orderByDesc('id')->first();
             $position = AssetPosition::where('asset_id', $asset->id)->first();
