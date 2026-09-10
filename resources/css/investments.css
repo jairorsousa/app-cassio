@@ -24,14 +24,5 @@
     .investment-panel-header { @apply mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-mono-100 pb-5; }
     .investment-filter-pill { @apply inline-flex h-10 items-center gap-2 rounded-pill border border-mono-200 px-4 text-xs font-semibold text-mono-600; }
     .investment-filter-pill .material-icons-outlined { @apply text-[18px]; }
-    .investment-bar-chart { @apply relative h-72 overflow-hidden; }
-    .investment-chart-grid { @apply pointer-events-none absolute inset-x-0 bottom-8 top-0 flex flex-col justify-between; }
-    .investment-chart-grid span { @apply block border-t border-mono-100; }
-    .investment-chart-columns { @apply absolute inset-0 flex items-stretch gap-1 sm:gap-2; }
-    .investment-chart-month { @apply flex min-w-0 flex-1 flex-col; }
-    .investment-chart-bars { @apply flex min-h-0 flex-1 items-end justify-center gap-px sm:gap-1; }
-    .investment-chart-bar { @apply block w-[42%] max-w-5 rounded-t-sm transition-opacity hover:opacity-75; }
-    .investment-chart-bar.is-invested { @apply bg-info; }
-    .investment-chart-bar.is-market { @apply bg-primary-500; }
-    .investment-chart-label { @apply flex h-8 items-end justify-center truncate text-[9px] text-mono-600 sm:text-[10px]; }
+    .investment-line-chart { @apply overflow-hidden px-1 pt-2; }
 }
