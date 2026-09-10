@@ -234,6 +234,37 @@ class InvestmentWorkspaceTest extends TestCase
         $this->assertEquals(10, Asset::where('ticker', 'PETR4')->first()?->position?->quantity);
     }
 
+    public function test_purchase_reuses_existing_ticker_and_restores_soft_deleted_asset(): void
+    {
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 20000]);
+        $asset = $this->asset('PETR4');
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', 'petr4')
+            ->assertSet('asset_id', $asset->id)
+            ->assertSet('willCreateAsset', false)
+            ->set('quantity', '5')->set('unit_price', '20')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(1, Asset::count());
+        $this->assertEquals(5, $asset->fresh()->position?->quantity);
+
+        $asset->delete();
+        $this->assertSoftDeleted('assets', ['ticker' => 'PETR4']);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', 'PETR4')
+            ->set('quantity', '3')->set('unit_price', '22')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(1, Asset::count());
+        $this->assertNotSoftDeleted('assets', ['ticker' => 'PETR4']);
+        $this->assertEquals(8, $asset->fresh()->position?->quantity);
+        $this->assertSame(2, AssetOperation::count());
+    }
+
     public function test_purchase_accepts_masked_unit_price_and_rejects_huge_values(): void
     {
         $asset = $this->asset();

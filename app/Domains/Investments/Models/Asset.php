@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 class Asset extends Model
 {
@@ -58,5 +59,50 @@ class Asset extends Model
     public function isMarketQuoted(): bool
     {
         return MarketTicker::isListed((string) $this->ticker);
+    }
+
+    public static function findByTicker(string $ticker): ?self
+    {
+        return static::withTrashed()
+            ->where('ticker', strtoupper(trim($ticker)))
+            ->first();
+    }
+
+    public static function resolveByTicker(string $ticker, array $attributes = []): self
+    {
+        $ticker = strtoupper(trim($ticker));
+        $asset = static::findByTicker($ticker);
+
+        if ($asset) {
+            return static::reuse($asset, $attributes);
+        }
+
+        try {
+            return static::create(['ticker' => $ticker, 'status' => true] + $attributes);
+        } catch (UniqueConstraintViolationException $e) {
+            $asset = static::findByTicker($ticker);
+            if (! $asset) {
+                throw $e;
+            }
+
+            return static::reuse($asset, $attributes);
+        }
+    }
+
+    private static function reuse(self $asset, array $attributes): self
+    {
+        if ($asset->trashed()) {
+            $asset->restore();
+        }
+
+        $fill = array_filter(
+            $attributes,
+            fn ($value) => $value !== null && $value !== ''
+        );
+        $fill['status'] = true;
+        $asset->fill($fill);
+        $asset->save();
+
+        return $asset->refresh();
     }
 }

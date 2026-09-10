@@ -294,11 +294,18 @@ new #[Layout('layouts.app')] class extends Component {
             $this->assertSellableAsset();
         }
 
-        if (! $this->asset_id && $this->willCreateAsset && $this->opType === 'buy') {
-            $this->asset_id = $this->createAssetFromLookup()->id;
-            $data['asset_id'] = $this->asset_id;
-        } elseif ($this->opType === 'buy' && $this->asset_id) {
-            $this->syncAssetDetails();
+        if ($this->opType === 'buy') {
+            if (! $this->asset_id && $this->willCreateAsset) {
+                $this->asset_id = $this->createAssetFromLookup()->id;
+                $data['asset_id'] = $this->asset_id;
+            } elseif ($this->asset_id) {
+                $this->asset_id = Asset::resolveByTicker($this->ticker, [
+                    'name' => $this->assetName !== '' ? $this->assetName : $this->ticker,
+                    'asset_class_id' => $this->asset_class_id,
+                    'sector' => $this->assetSector !== '' ? $this->assetSector : null,
+                ])->id;
+                $data['asset_id'] = $this->asset_id;
+            }
         }
 
         $qty = (float) $data['quantity'];
@@ -358,9 +365,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function lookupBuyAsset(bool $fillQuote = false): void
     {
-        $existing = Asset::with('assetClass')->where('ticker', $this->ticker)->first();
+        $existing = Asset::findByTicker($this->ticker)?->load('assetClass');
         if ($existing) {
             $this->asset_id = $existing->id;
+            $this->willCreateAsset = false;
             $this->asset_class_id = $existing->asset_class_id;
             $this->fillAssetIdentity($existing->name, (string) $existing->sector);
             $this->lookupStatus = $existing->name.($existing->assetClass?->name ? ' · '.$existing->assetClass->name : '');
@@ -407,7 +415,11 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function lookupSellAsset(): void
     {
-        $asset = Asset::with('position', 'assetClass')->where('ticker', $this->ticker)->first();
+        $asset = Asset::findByTicker($this->ticker);
+        if ($asset?->trashed()) {
+            $asset = null;
+        }
+        $asset?->load(['position', 'assetClass']);
         if ($asset) {
             $available = $this->availableQuantityFor($asset);
             if ($available <= 0) {
@@ -481,36 +493,12 @@ new #[Layout('layouts.app')] class extends Component {
             );
         }
 
-        return Asset::firstOrCreate(
-            ['ticker' => $this->ticker],
-            [
-                'name' => $this->assetName !== '' ? $this->assetName : $this->ticker,
-                'asset_class_id' => $class->id,
-                'sector' => $this->assetSector !== '' ? $this->assetSector : null,
-                'status' => true,
-            ]
-        );
-    }
-
-    private function syncAssetDetails(): void
-    {
-        $asset = Asset::find($this->asset_id);
-        if (! $asset) {
-            return;
-        }
-
-        $name = trim($this->assetName);
-        $sector = trim($this->assetSector);
-        $payload = [];
-        if ($name !== '' && $name !== $asset->name) {
-            $payload['name'] = $name;
-        }
-        if ($sector !== (string) $asset->sector) {
-            $payload['sector'] = $sector !== '' ? $sector : null;
-        }
-        if ($payload !== []) {
-            $asset->update($payload);
-        }
+        return Asset::resolveByTicker($this->ticker, [
+            'name' => $this->assetName !== '' ? $this->assetName : $this->ticker,
+            'asset_class_id' => $class->id,
+            'sector' => $this->assetSector !== '' ? $this->assetSector : null,
+            'status' => true,
+        ]);
     }
 
     private function prepareNewAsset(string $name, string $classSlug, string $sector, bool $overwrite = false): void
