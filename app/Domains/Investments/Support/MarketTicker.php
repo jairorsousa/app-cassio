@@ -23,14 +23,29 @@ class MarketTicker
         };
     }
 
-    public static function className(string $slug): string
+    /**
+     * @return array<string, string>
+     */
+    public static function classes(): array
     {
-        return match ($slug) {
+        return [
             'acoes' => 'Ações',
             'fiis' => 'FIIs',
-            'etfs' => 'ETFs',
+            'stocks' => 'Stocks',
             'bdrs' => 'BDRs',
-            default => 'Outros',
-        };
+            'etfs' => 'ETFs',
+            'etfs-internacionais' => 'ETFs Internacionais',
+            'reits' => 'REITs',
+            'criptomoedas' => 'Criptomoedas',
+            'renda-fixa' => 'Renda Fixa',
+            'tesouro-direto' => 'Tesouro Direto',
+            'fundos-de-investimentos' => 'Fundos de Investimentos',
+            'outros' => 'Outros',
+        ];
+    }
+
+    public static function className(string $slug): string
+    {
+        return self::classes()[$slug] ?? 'Outros';
     }
 }

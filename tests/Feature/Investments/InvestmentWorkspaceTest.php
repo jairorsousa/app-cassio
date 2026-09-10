@@ -65,7 +65,36 @@ class InvestmentWorkspaceTest extends TestCase
             ->set('maturity_date', '2027-09-01')->set('liquidity', 'Diária')
             ->call('save')->assertHasNoErrors()->assertSet('showFormModal', false);
         $this->assertDatabaseHas('assets', ['ticker' => 'CDB-2027', 'institution' => 'Banco', 'liquidity' => 'Diária']);
-        $this->assertDatabaseHas('asset_classes', ['name' => 'Renda fixa']);
+        $this->assertDatabaseHas('asset_classes', ['slug' => 'renda-fixa', 'name' => 'Renda Fixa']);
+    }
+
+    public function test_purchase_form_lists_asset_types_and_creates_unlisted_asset(): void
+    {
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 5000]);
+
+        $component = Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy');
+        $component->assertSee('Nome')->assertSee('Setor')->assertSee('Preço unitário');
+        foreach ([
+            'Ações', 'FIIs', 'Stocks', 'BDRs', 'ETFs', 'ETFs Internacionais', 'REITs',
+            'Criptomoedas', 'Renda Fixa', 'Tesouro Direto', 'Fundos de Investimentos', 'Outros',
+        ] as $label) {
+            $component->assertSee($label);
+        }
+
+        $crypto = AssetClass::where('slug', 'criptomoedas')->firstOrFail();
+
+        $component->set('asset_class_id', $crypto->id)
+            ->set('ticker', 'BTC')
+            ->assertSet('willCreateAsset', true)
+            ->set('quantity', '0.5')->set('unit_price', '1000')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('assets', [
+            'ticker' => 'BTC',
+            'asset_class_id' => $crypto->id,
+        ]);
+        $this->assertSame(1, AssetOperation::count());
     }
 
     public function test_operation_modal_starts_with_buy_or_sell_and_requires_investment_account(): void
@@ -167,8 +196,18 @@ class InvestmentWorkspaceTest extends TestCase
                     'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
                     'sector' => 'Energy Minerals',
                     'subsector' => 'Petróleo e Gás Integrado',
+                    'close' => 37.1,
                     'type' => 'stock',
                     'subType' => 'stock',
+                ]],
+            ]),
+            'brapi.dev/api/v2/stocks/quote*' => Http::response([
+                'results' => [[
+                    'symbol' => 'PETR4',
+                    'data' => [
+                        'regularMarketPrice' => 38.42,
+                        'regularMarketTime' => '2026-09-09T20:45:30.000Z',
+                    ],
                 ]],
             ]),
         ]);
@@ -177,6 +216,10 @@ class InvestmentWorkspaceTest extends TestCase
             ->set('ticker', 'petr4')
             ->assertSet('willCreateAsset', true)
             ->assertSet('ticker', 'PETR4')
+            ->assertSet('assetName', 'PETROLEO BRASILEIRO S.A. PETROBRAS')
+            ->assertSet('assetSector', 'Petróleo e Gás Integrado')
+            ->assertSet('unit_price', '38.42')
+            ->assertSet('priceFromMarket', true)
             ->set('quantity', '10')->set('unit_price', '30')->set('bank_account_id', $bank->id)
             ->call('save')
             ->assertHasNoErrors();
@@ -184,8 +227,10 @@ class InvestmentWorkspaceTest extends TestCase
         $this->assertDatabaseHas('assets', [
             'ticker' => 'PETR4',
             'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+            'sector' => 'Petróleo e Gás Integrado',
         ]);
         $this->assertSame(1, AssetOperation::count());
+        $this->assertEquals(30.0, (float) AssetOperation::first()?->unit_price);
         $this->assertEquals(10, Asset::where('ticker', 'PETR4')->first()?->position?->quantity);
     }
 

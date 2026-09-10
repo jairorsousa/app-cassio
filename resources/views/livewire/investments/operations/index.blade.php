@@ -31,12 +31,14 @@ new #[Layout('layouts.app')] class extends Component {
     public ?int $editingId = null;
 
     public ?int $asset_id = null;
+    public ?int $asset_class_id = null;
     public string $ticker = '';
     public string $lookupStatus = '';
     public bool $willCreateAsset = false;
-    public string $resolvedName = '';
-    public string $resolvedSector = '';
+    public string $assetName = '';
+    public string $assetSector = '';
     public string $resolvedClassSlug = '';
+    public bool $priceFromMarket = false;
     public string $opDate = '';
     public string $opType = 'buy';
     public string $quantity = '';
@@ -93,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opType = $type;
         $this->formStep = 'form';
         $this->resetValidation();
-        $this->reset(['asset_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug']);
+        $this->reset(['asset_id', 'asset_class_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'assetName', 'assetSector', 'resolvedClassSlug', 'priceFromMarket']);
     }
 
     public function backToType(): void
@@ -104,7 +106,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         $this->formStep = 'choose';
         $this->resetValidation();
-        $this->reset(['asset_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug', 'quantity', 'unit_price']);
+        $this->reset(['asset_id', 'asset_class_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'assetName', 'assetSector', 'resolvedClassSlug', 'priceFromMarket', 'quantity', 'unit_price']);
         $this->fees = '0';
     }
 
@@ -123,6 +125,11 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'ticker' => 'required|string|max:20',
             'asset_id' => $this->willCreateAsset ? 'nullable' : 'required|exists:assets,id',
+            'asset_class_id' => $this->opType === 'buy' && $this->willCreateAsset
+                ? 'required|exists:asset_classes,id'
+                : 'nullable|exists:asset_classes,id',
+            'assetName' => $this->opType === 'buy' ? 'required|string|max:200' : 'nullable|string|max:200',
+            'assetSector' => 'nullable|string|max:120',
             'opDate' => 'required|date|before_or_equal:today',
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
@@ -138,6 +145,8 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'ticker.required' => 'Informe o código do ativo.',
             'asset_id.required' => 'Informe o código do ativo.',
+            'asset_class_id.required' => 'Selecione o tipo de ativo.',
+            'assetName.required' => 'Informe o nome do ativo.',
             'bank_account_id.required' => 'Selecione a conta de investimento (corretora) desta operação.',
             'bank_account_id.exists' => 'Selecione uma conta de investimento ativa.',
         ];
@@ -151,7 +160,11 @@ new #[Layout('layouts.app')] class extends Component {
         $op = AssetOperation::with('asset.position', 'asset.assetClass')->findOrFail($id);
         $this->editingId = $op->id;
         $this->asset_id = $op->asset_id;
+        $this->asset_class_id = $op->asset?->asset_class_id;
         $this->ticker = (string) ($op->asset?->ticker ?? '');
+        $this->assetName = (string) ($op->asset?->name ?? '');
+        $this->assetSector = (string) ($op->asset?->sector ?? '');
+        $this->priceFromMarket = false;
         if ($op->asset && $op->type === 'sell') {
             $this->lookupStatus = $this->holdingStatus($op->asset, $this->availableQuantityFor($op->asset));
         } elseif ($op->asset) {
@@ -171,25 +184,36 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function updatedTicker(): void
     {
-        $this->lookupAsset();
+        if (! $this->editingId) {
+            $this->assetName = '';
+            $this->assetSector = '';
+            $this->unit_price = '';
+            $this->priceFromMarket = false;
+        }
+        $this->lookupAsset(fillQuote: true);
     }
 
     public function updatedOpType(): void
     {
-        $this->reset(['asset_id', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug']);
+        $this->reset(['asset_id', 'lookupStatus', 'willCreateAsset', 'resolvedClassSlug']);
         if (trim($this->ticker) !== '') {
+            $this->lookupAsset(fillQuote: $this->opType === 'buy' && ! $this->editingId);
+        }
+    }
+
+    public function updatedAssetClassId(): void
+    {
+        if ($this->opType === 'buy' && trim($this->ticker) !== '') {
             $this->lookupAsset();
         }
     }
 
-    public function lookupAsset(): void
+    public function lookupAsset(bool $fillQuote = false): void
     {
         $this->ticker = strtoupper(trim($this->ticker));
         $this->lookupStatus = '';
         $this->willCreateAsset = false;
         $this->asset_id = null;
-        $this->resolvedName = '';
-        $this->resolvedSector = '';
         $this->resolvedClassSlug = '';
         $this->resetErrorBag('ticker');
 
@@ -203,7 +227,7 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
-        $this->lookupBuyAsset();
+        $this->lookupBuyAsset($fillQuote);
     }
 
     public function selectHolding(int $assetId): void
@@ -220,6 +244,9 @@ new #[Layout('layouts.app')] class extends Component {
         $this->willCreateAsset = false;
         $this->asset_id = $asset->id;
         $this->ticker = $asset->ticker;
+        $this->assetName = $asset->name;
+        $this->assetSector = (string) $asset->sector;
+        $this->asset_class_id = $asset->asset_class_id;
         $this->lookupStatus = $this->holdingStatus($asset, $available);
     }
 
@@ -245,6 +272,8 @@ new #[Layout('layouts.app')] class extends Component {
         if (! $this->asset_id && $this->willCreateAsset && $this->opType === 'buy') {
             $this->asset_id = $this->createAssetFromLookup()->id;
             $data['asset_id'] = $this->asset_id;
+        } elseif ($this->opType === 'buy' && $this->asset_id) {
+            $this->syncAssetDetails();
         }
 
         $qty = (float) $data['quantity'];
@@ -293,8 +322,8 @@ new #[Layout('layouts.app')] class extends Component {
         $this->formStep = 'choose';
         $this->resetValidation();
         $this->reset([
-            'editingId', 'asset_id', 'ticker', 'lookupStatus', 'willCreateAsset',
-            'resolvedName', 'resolvedSector', 'resolvedClassSlug', 'quantity',
+            'editingId', 'asset_id', 'asset_class_id', 'ticker', 'lookupStatus', 'willCreateAsset',
+            'assetName', 'assetSector', 'resolvedClassSlug', 'priceFromMarket', 'quantity',
             'unit_price', 'bank_account_id', 'opNotes',
         ]);
         $this->opType = 'buy';
@@ -302,34 +331,53 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opDate = now()->format('Y-m-d');
     }
 
-    private function lookupBuyAsset(): void
+    private function lookupBuyAsset(bool $fillQuote = false): void
     {
         $existing = Asset::with('assetClass')->where('ticker', $this->ticker)->first();
         if ($existing) {
             $this->asset_id = $existing->id;
+            $this->asset_class_id = $existing->asset_class_id;
+            $this->fillAssetIdentity($existing->name, (string) $existing->sector);
             $this->lookupStatus = $existing->name.($existing->assetClass?->name ? ' · '.$existing->assetClass->name : '');
+            if ($fillQuote) {
+                $this->fillUnitPriceFromMarket();
+            }
 
             return;
         }
 
         if (! MarketTicker::isListed($this->ticker)) {
-            $this->addError('ticker', 'Ativo não cadastrado. Informe um ticker da B3 ou cadastre o código em Ativos.');
+            if ($this->asset_class_id) {
+                $this->prepareNewAsset($this->ticker, $this->selectedClassSlug(), '');
+
+                return;
+            }
+
+            $this->addError('ticker', 'Ativo não cadastrado. Selecione o tipo de ativo ou cadastre o código em Ativos.');
 
             return;
         }
 
         $result = app(BrapiQuoteProvider::class)->lookup($this->ticker);
         if ($result === null) {
-            $this->addError('ticker', 'Não encontramos esse código na B3. Cadastre o ativo em Ativos.');
+            if ($this->asset_class_id) {
+                $this->prepareNewAsset($this->ticker, $this->selectedClassSlug(), '');
+
+                return;
+            }
+
+            $this->addError('ticker', 'Não encontramos esse código na B3. Selecione o tipo de ativo ou cadastre o código em Ativos.');
 
             return;
         }
 
-        $this->willCreateAsset = true;
-        $this->resolvedName = $result['name'];
-        $this->resolvedSector = (string) ($result['sector'] ?? '');
-        $this->resolvedClassSlug = $result['class_slug'];
-        $this->lookupStatus = 'Será cadastrado automaticamente: '.$result['name'];
+        $this->prepareNewAsset($result['name'], $result['class_slug'], (string) ($result['sector'] ?? ''), overwrite: $fillQuote);
+        if (! $this->asset_class_id) {
+            $this->asset_class_id = $this->classIdFromSlug($result['class_slug']);
+        }
+        if ($fillQuote) {
+            $this->fillUnitPriceFromMarket($result['close'] ?? null);
+        }
     }
 
     private function lookupSellAsset(): void
@@ -344,6 +392,8 @@ new #[Layout('layouts.app')] class extends Component {
             }
 
             $this->asset_id = $asset->id;
+            $this->asset_class_id = $asset->asset_class_id;
+            $this->fillAssetIdentity($asset->name, (string) $asset->sector);
             $this->lookupStatus = $this->holdingStatus($asset, $available);
 
             return;
@@ -397,25 +447,110 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function createAssetFromLookup(): Asset
     {
-        $slug = $this->resolvedClassSlug !== '' ? $this->resolvedClassSlug : 'outros';
-        $class = AssetClass::firstOrCreate(
-            ['slug' => $slug],
-            ['name' => MarketTicker::className($slug), 'status' => true]
-        );
+        $class = $this->asset_class_id ? AssetClass::find($this->asset_class_id) : null;
+        if (! $class) {
+            $slug = $this->resolvedClassSlug !== '' ? $this->resolvedClassSlug : 'outros';
+            $class = AssetClass::firstOrCreate(
+                ['slug' => $slug],
+                ['name' => MarketTicker::className($slug), 'status' => true]
+            );
+        }
 
         return Asset::firstOrCreate(
             ['ticker' => $this->ticker],
             [
-                'name' => $this->resolvedName !== '' ? $this->resolvedName : $this->ticker,
+                'name' => $this->assetName !== '' ? $this->assetName : $this->ticker,
                 'asset_class_id' => $class->id,
-                'sector' => $this->resolvedSector !== '' ? $this->resolvedSector : null,
+                'sector' => $this->assetSector !== '' ? $this->assetSector : null,
                 'status' => true,
             ]
         );
     }
 
+    private function syncAssetDetails(): void
+    {
+        $asset = Asset::find($this->asset_id);
+        if (! $asset) {
+            return;
+        }
+
+        $name = trim($this->assetName);
+        $sector = trim($this->assetSector);
+        $payload = [];
+        if ($name !== '' && $name !== $asset->name) {
+            $payload['name'] = $name;
+        }
+        if ($sector !== (string) $asset->sector) {
+            $payload['sector'] = $sector !== '' ? $sector : null;
+        }
+        if ($payload !== []) {
+            $asset->update($payload);
+        }
+    }
+
+    private function prepareNewAsset(string $name, string $classSlug, string $sector, bool $overwrite = false): void
+    {
+        $this->willCreateAsset = true;
+        $this->fillAssetIdentity($name, $sector, $overwrite);
+        $this->resolvedClassSlug = $classSlug !== '' ? $classSlug : 'outros';
+        $className = $this->asset_class_id
+            ? AssetClass::find($this->asset_class_id)?->name
+            : MarketTicker::className($this->resolvedClassSlug);
+        $label = $this->assetName !== '' ? $this->assetName : $name;
+        $this->lookupStatus = 'Será cadastrado automaticamente: '.$label.($className ? ' · '.$className : '');
+    }
+
+    private function fillAssetIdentity(string $name, string $sector, bool $overwrite = false): void
+    {
+        if ($overwrite || $this->assetName === '') {
+            $this->assetName = $name;
+        }
+        if ($overwrite || $this->assetSector === '') {
+            $this->assetSector = $sector;
+        }
+    }
+
+    private function fillUnitPriceFromMarket(?float $fallback = null): void
+    {
+        if ($this->editingId || $this->opType !== 'buy') {
+            return;
+        }
+
+        $price = null;
+        if (MarketTicker::isListed($this->ticker)) {
+            $quote = app(BrapiQuoteProvider::class)->quote($this->ticker);
+            $price = $quote['price'] ?? null;
+        }
+        if ((! $price || $price <= 0) && $fallback && $fallback > 0) {
+            $price = $fallback;
+        }
+        if ($price && $price > 0) {
+            $this->unit_price = (string) round((float) $price, 4);
+            $this->priceFromMarket = true;
+        }
+    }
+
+    private function selectedClassSlug(): string
+    {
+        if (! $this->asset_class_id) {
+            return 'outros';
+        }
+
+        return AssetClass::find($this->asset_class_id)?->slug ?: 'outros';
+    }
+
+    private function classIdFromSlug(string $slug): int
+    {
+        return AssetClass::firstOrCreate(
+            ['slug' => $slug],
+            ['name' => MarketTicker::className($slug), 'status' => true]
+        )->id;
+    }
+
     public function with(): array
     {
+        AssetClass::ensureCatalog();
+
         $q = AssetOperation::with('asset', 'bankAccount');
         if ($this->assetFilter) {
             $q->where('asset_id', $this->assetFilter);
@@ -453,6 +588,7 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'operations' => $q->when($this->from, fn ($q) => $q->whereDate('date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('date', '<=', $this->to))->orderByDesc('date')->orderByDesc('id')->paginate(25),
             'assets' => Asset::orderBy('ticker')->get(),
+            'classes' => AssetClass::ordered(),
             'brokers' => $brokers,
             'accounts' => $accounts,
             'holdings' => $holdings,
@@ -653,16 +789,46 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             @endif
 
+            @if ($opType === 'buy')
+                <div>
+                    <label class="mb-2 block">Ativo *</label>
+                    <select wire:model.live="asset_class_id">
+                        <option value="">Tipo de ativo</option>
+                        @foreach ($classes as $class)
+                            <option value="{{ $class->id }}">{{ $class->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
+
             <x-jr.input
                 label="Código / ticker *"
                 name="ticker"
                 icon="tag"
                 wire:model.blur="ticker"
                 placeholder="{{ $opType === 'sell' ? 'Código de um ativo da carteira' : 'PETR4, CDB-BANCO-2027...' }}"
-                :helper="filled($lookupStatus) ? $lookupStatus : ($opType === 'sell' ? 'Pesquise pelo código ou escolha um ativo da carteira abaixo.' : 'Tickers da B3 preenchem o ativo automaticamente. Códigos já cadastrados também são encontrados.')"
+                :helper="filled($lookupStatus) ? $lookupStatus : ($opType === 'sell' ? 'Pesquise pelo código ou escolha um ativo da carteira abaixo.' : 'Tickers da B3 preenchem nome, setor e preço. Você pode ajustar. Para CDB, Tesouro e cripto, selecione o tipo de ativo.')"
                 :success="filled($lookupStatus)"
                 required
             />
+
+            @if ($opType === 'buy')
+                <x-jr.input
+                    label="Nome *"
+                    name="assetName"
+                    icon="edit_note"
+                    wire:model="assetName"
+                    placeholder="Nome do ativo"
+                    required
+                />
+                <x-jr.input
+                    label="Setor"
+                    name="assetSector"
+                    icon="category"
+                    wire:model="assetSector"
+                    placeholder="Petróleo, Financeiro..."
+                />
+            @endif
 
             <x-jr.input label="Data" type="date" name="opDate" icon="event" wire:model="opDate" />
 
@@ -686,7 +852,16 @@ new #[Layout('layouts.app')] class extends Component {
 
             <div class="grid grid-cols-2 gap-4 md:col-span-2">
                 <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
-                <x-jr.input label="Preço unitário" type="number" step="0.0001" name="unit_price" icon="payments" wire:model.live.debounce.300ms="unit_price" />
+                <x-jr.input
+                    label="Preço unitário"
+                    type="number"
+                    step="0.0001"
+                    name="unit_price"
+                    icon="payments"
+                    wire:model.live.debounce.300ms="unit_price"
+                    :helper="$priceFromMarket ? 'Cotação atual da B3. Ajuste se a sua compra foi a outro preço.' : 'Informe o preço da sua compra. Tickers da B3 preenchem automaticamente.'"
+                    :success="$priceFromMarket"
+                />
             </div>
             <x-jr.input label="Taxas/corretagem" type="text" x-money name="fees" icon="edit_note" wire:model.live.debounce.300ms="fees" />
             <div class="md:col-span-2">

@@ -67,7 +67,7 @@ class BrapiQuoteProvider
     }
 
     /**
-     * @return array{ticker: string, name: string, sector: ?string, class_slug: string}|null
+     * @return array{ticker: string, name: string, sector: ?string, class_slug: string, close: ?float}|null
      */
     public function lookup(string $ticker): ?array
     {
@@ -108,6 +108,7 @@ class BrapiQuoteProvider
 
         $name = trim((string) ($item['name'] ?? ''));
         $sector = trim((string) ($item['subsector'] ?? '')) ?: trim((string) ($item['sector'] ?? '')) ?: null;
+        $close = isset($item['close']) ? round((float) $item['close'], 4) : 0.0;
 
         return [
             'ticker' => $ticker,
@@ -117,6 +118,7 @@ class BrapiQuoteProvider
                 isset($item['type']) ? (string) $item['type'] : null,
                 isset($item['subType']) ? (string) $item['subType'] : null,
             ),
+            'close' => $close > 0 ? $close : null,
         ];
     }
 

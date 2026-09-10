@@ -41,6 +41,13 @@ class QuoteRefreshTest extends TestCase
         $this->assertSame('fiis', MarketTicker::classSlug('fund', 'fii'));
         $this->assertSame('etfs', MarketTicker::classSlug('fund', 'etf'));
         $this->assertSame('bdrs', MarketTicker::classSlug('bdr', 'bdr'));
+        $this->assertSame('Ações', MarketTicker::className('acoes'));
+        $this->assertSame('Criptomoedas', MarketTicker::className('criptomoedas'));
+        $this->assertSame('Tesouro Direto', MarketTicker::className('tesouro-direto'));
+        $this->assertSame([
+            'acoes', 'fiis', 'stocks', 'bdrs', 'etfs', 'etfs-internacionais', 'reits',
+            'criptomoedas', 'renda-fixa', 'tesouro-direto', 'fundos-de-investimentos', 'outros',
+        ], array_keys(MarketTicker::classes()));
     }
 
     public function test_refresh_updates_listed_open_positions_and_skips_the_rest(): void

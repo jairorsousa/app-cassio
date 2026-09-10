@@ -155,9 +155,11 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
+        AssetClass::ensureCatalog();
+
         return [
             'assets' => Asset::with('assetClass', 'position')->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))->when($this->classFilter, fn ($q) => $q->where('asset_class_id', $this->classFilter))->orderBy('ticker')->get(),
-            'classes' => AssetClass::active()->orderBy('name')->get(),
+            'classes' => AssetClass::ordered(),
         ];
     }
 }; ?>
@@ -218,7 +220,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div>
                 <label class="mb-2 block">Classe</label>
                 <select wire:model="asset_class_id">
-                    <option value="">— selecionar —</option>
+                    <option value="">Tipo de ativo</option>
                     @foreach ($classes as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                     @endforeach
