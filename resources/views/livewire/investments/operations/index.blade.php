@@ -2,7 +2,12 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Investments\Models\Asset;
+use App\Domains\Investments\Models\AssetClass;
 use App\Domains\Investments\Models\AssetOperation;
+use App\Domains\Investments\Models\AssetPosition;
+use App\Domains\Investments\Services\BrapiQuoteProvider;
+use App\Domains\Investments\Support\MarketTicker;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -15,31 +20,23 @@ new #[Layout('layouts.app')] class extends Component {
     public string $assetFilter = '';
     #[Url]
     public string $typeFilter = '';
+    #[Url]
+    public string $accountFilter = '';
 
     public string $from = '';
     public string $to = '';
 
-    public function updated($property): void
-    {
-        if (in_array($property, ['from', 'to', 'assetFilter', 'typeFilter'])) $this->resetPage();
-    }
-
-    public function clearFilters(): void
-    {
-        $this->reset(['from', 'to', 'assetFilter', 'typeFilter']);
-        $this->resetPage();
-    }
-
     public bool $showFormModal = false;
+    public string $formStep = 'choose';
     public ?int $editingId = null;
 
-    public function create(): void
-    {
-        $this->resetForm();
-        $this->showFormModal = true;
-    }
-
     public ?int $asset_id = null;
+    public string $ticker = '';
+    public string $lookupStatus = '';
+    public bool $willCreateAsset = false;
+    public string $resolvedName = '';
+    public string $resolvedSector = '';
+    public string $resolvedClassSlug = '';
     public string $opDate = '';
     public string $opType = 'buy';
     public string $quantity = '';
@@ -53,17 +50,96 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opDate = now()->format('Y-m-d');
     }
 
+    public function updated($property): void
+    {
+        if (in_array($property, ['from', 'to', 'assetFilter', 'typeFilter', 'accountFilter'])) {
+            $this->resetPage();
+        }
+    }
+
+    public function clearFilters(): void
+    {
+        $this->reset(['from', 'to', 'assetFilter', 'typeFilter', 'accountFilter']);
+        $this->resetPage();
+    }
+
+    public function filterByAccount(int $id = 0): void
+    {
+        $this->accountFilter = $id > 0 ? (string) $id : '';
+        $this->resetPage();
+    }
+
+    public function create(): void
+    {
+        $this->resetForm();
+        $this->formStep = 'choose';
+        $this->showFormModal = true;
+        if ($this->accountFilter !== '') {
+            $this->bank_account_id = (int) $this->accountFilter;
+        } elseif (! $this->bank_account_id) {
+            $ids = BankAccount::active()->investment()->pluck('id');
+            if ($ids->count() === 1) {
+                $this->bank_account_id = (int) $ids->first();
+            }
+        }
+    }
+
+    public function chooseType(string $type): void
+    {
+        if (! in_array($type, ['buy', 'sell'], true)) {
+            return;
+        }
+
+        $this->opType = $type;
+        $this->formStep = 'form';
+        $this->resetValidation();
+        $this->reset(['asset_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug']);
+    }
+
+    public function backToType(): void
+    {
+        if ($this->editingId) {
+            return;
+        }
+
+        $this->formStep = 'choose';
+        $this->resetValidation();
+        $this->reset(['asset_id', 'ticker', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug', 'quantity', 'unit_price']);
+        $this->fees = '0';
+    }
+
     public function rules(): array
     {
+        $accountRule = Rule::exists('bank_accounts', 'id')->where(function ($query) {
+            $query->where('status', true)->whereNull('deleted_at');
+            $query->where(function ($query) {
+                $query->where('type', 'investment');
+                if ($this->editingId && $this->bank_account_id) {
+                    $query->orWhere('id', $this->bank_account_id);
+                }
+            });
+        });
+
         return [
-            'asset_id' => 'required|exists:assets,id',
+            'ticker' => 'required|string|max:20',
+            'asset_id' => $this->willCreateAsset ? 'nullable' : 'required|exists:assets,id',
             'opDate' => 'required|date|before_or_equal:today',
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
             'unit_price' => 'required|numeric|min:0',
             'fees' => 'required|numeric|min:0',
-            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'bank_account_id' => ['required', $accountRule],
             'opNotes' => 'nullable|string',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'ticker.required' => 'Informe o código do ativo.',
+            'asset_id.required' => 'Informe o código do ativo.',
+            'bank_account_id.required' => 'Selecione a conta de investimento (corretora) desta operação.',
+            'bank_account_id.exists' => 'Selecione uma conta de investimento ativa.',
         ];
     }
 
@@ -71,9 +147,19 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->resetValidation();
         $this->showFormModal = true;
-        $op = AssetOperation::findOrFail($id);
+        $this->formStep = 'form';
+        $op = AssetOperation::with('asset.position', 'asset.assetClass')->findOrFail($id);
         $this->editingId = $op->id;
         $this->asset_id = $op->asset_id;
+        $this->ticker = (string) ($op->asset?->ticker ?? '');
+        if ($op->asset && $op->type === 'sell') {
+            $this->lookupStatus = $this->holdingStatus($op->asset, $this->availableQuantityFor($op->asset));
+        } elseif ($op->asset) {
+            $this->lookupStatus = $op->asset->name.($op->asset->assetClass?->name ? ' · '.$op->asset->assetClass->name : '');
+        } else {
+            $this->lookupStatus = '';
+        }
+        $this->willCreateAsset = false;
         $this->opDate = $op->date->format('Y-m-d');
         $this->opType = $op->type;
         $this->quantity = (string) $op->quantity;
@@ -83,16 +169,91 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opNotes = (string) $op->notes;
     }
 
+    public function updatedTicker(): void
+    {
+        $this->lookupAsset();
+    }
+
+    public function updatedOpType(): void
+    {
+        $this->reset(['asset_id', 'lookupStatus', 'willCreateAsset', 'resolvedName', 'resolvedSector', 'resolvedClassSlug']);
+        if (trim($this->ticker) !== '') {
+            $this->lookupAsset();
+        }
+    }
+
+    public function lookupAsset(): void
+    {
+        $this->ticker = strtoupper(trim($this->ticker));
+        $this->lookupStatus = '';
+        $this->willCreateAsset = false;
+        $this->asset_id = null;
+        $this->resolvedName = '';
+        $this->resolvedSector = '';
+        $this->resolvedClassSlug = '';
+        $this->resetErrorBag('ticker');
+
+        if ($this->ticker === '') {
+            return;
+        }
+
+        if ($this->opType === 'sell') {
+            $this->lookupSellAsset();
+
+            return;
+        }
+
+        $this->lookupBuyAsset();
+    }
+
+    public function selectHolding(int $assetId): void
+    {
+        $asset = Asset::with('position')->findOrFail($assetId);
+        $available = $this->availableQuantityFor($asset);
+        if ($available <= 0) {
+            $this->addError('ticker', 'Você não possui quantidade disponível deste ativo na carteira.');
+
+            return;
+        }
+
+        $this->resetErrorBag('ticker');
+        $this->willCreateAsset = false;
+        $this->asset_id = $asset->id;
+        $this->ticker = $asset->ticker;
+        $this->lookupStatus = $this->holdingStatus($asset, $available);
+    }
+
     public function save(): void
     {
+        $this->ticker = strtoupper(trim($this->ticker));
+        if (! $this->asset_id && trim($this->ticker) !== '') {
+            $this->lookupAsset();
+        }
+
+        if (! $this->asset_id && ! $this->willCreateAsset) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'ticker' => $this->getErrorBag()->first('ticker') ?: 'Informe o código do ativo.',
+            ]);
+        }
+
         $data = $this->validate();
+
+        if ($this->opType === 'sell') {
+            $this->assertSellableAsset();
+        }
+
+        if (! $this->asset_id && $this->willCreateAsset && $this->opType === 'buy') {
+            $this->asset_id = $this->createAssetFromLookup()->id;
+            $data['asset_id'] = $this->asset_id;
+        }
+
         $qty = (float) $data['quantity'];
         $unit = (float) $data['unit_price'];
         $fees = (float) $data['fees'];
         $total = round($qty * $unit + ($data['opType'] === 'buy' ? $fees : -$fees), 2);
 
         $payload = [
-            'asset_id' => $data['asset_id'],
+            'asset_id' => $this->asset_id,
             'date' => $data['opDate'],
             'type' => $data['opType'],
             'quantity' => $qty,
@@ -115,33 +276,186 @@ new #[Layout('layouts.app')] class extends Component {
             app(\App\Domains\Investments\Services\InvestmentLedgerService::class)->deleteOperation($id);
         } catch (\Illuminate\Validation\ValidationException $e) {
             session()->flash('error', collect($e->errors())->flatten()->first());
+
             return;
         }
         session()->flash('status', 'Operação excluída.');
     }
 
-    public function cancel(): void { $this->resetForm(); }
+    public function cancel(): void
+    {
+        $this->resetForm();
+    }
 
     private function resetForm(): void
     {
         $this->showFormModal = false;
+        $this->formStep = 'choose';
         $this->resetValidation();
-        $this->reset(['editingId', 'asset_id', 'quantity', 'unit_price', 'fees', 'bank_account_id', 'opNotes']);
+        $this->reset([
+            'editingId', 'asset_id', 'ticker', 'lookupStatus', 'willCreateAsset',
+            'resolvedName', 'resolvedSector', 'resolvedClassSlug', 'quantity',
+            'unit_price', 'bank_account_id', 'opNotes',
+        ]);
         $this->opType = 'buy';
         $this->fees = '0';
         $this->opDate = now()->format('Y-m-d');
     }
 
+    private function lookupBuyAsset(): void
+    {
+        $existing = Asset::with('assetClass')->where('ticker', $this->ticker)->first();
+        if ($existing) {
+            $this->asset_id = $existing->id;
+            $this->lookupStatus = $existing->name.($existing->assetClass?->name ? ' · '.$existing->assetClass->name : '');
+
+            return;
+        }
+
+        if (! MarketTicker::isListed($this->ticker)) {
+            $this->addError('ticker', 'Ativo não cadastrado. Informe um ticker da B3 ou cadastre o código em Ativos.');
+
+            return;
+        }
+
+        $result = app(BrapiQuoteProvider::class)->lookup($this->ticker);
+        if ($result === null) {
+            $this->addError('ticker', 'Não encontramos esse código na B3. Cadastre o ativo em Ativos.');
+
+            return;
+        }
+
+        $this->willCreateAsset = true;
+        $this->resolvedName = $result['name'];
+        $this->resolvedSector = (string) ($result['sector'] ?? '');
+        $this->resolvedClassSlug = $result['class_slug'];
+        $this->lookupStatus = 'Será cadastrado automaticamente: '.$result['name'];
+    }
+
+    private function lookupSellAsset(): void
+    {
+        $asset = Asset::with('position', 'assetClass')->where('ticker', $this->ticker)->first();
+        if ($asset) {
+            $available = $this->availableQuantityFor($asset);
+            if ($available <= 0) {
+                $this->addError('ticker', 'Você não possui quantidade disponível deste ativo na carteira.');
+
+                return;
+            }
+
+            $this->asset_id = $asset->id;
+            $this->lookupStatus = $this->holdingStatus($asset, $available);
+
+            return;
+        }
+
+        $hasPartialMatch = Asset::whereHas('position', fn ($q) => $q->where('quantity', '>', 0))
+            ->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->ticker.'%')->orWhere('name', 'like', '%'.$this->ticker.'%'))
+            ->exists();
+
+        if (! $hasPartialMatch) {
+            $this->addError('ticker', 'Você só pode vender ativos que já estão na carteira.');
+        }
+    }
+
+    private function availableQuantityFor(Asset $asset): float
+    {
+        $qty = (float) ($asset->position?->quantity ?? 0);
+        if ($this->editingId) {
+            $op = AssetOperation::find($this->editingId);
+            if ($op && $op->type === 'sell' && (int) $op->asset_id === (int) $asset->id) {
+                $qty += (float) $op->quantity;
+            }
+        }
+
+        return $qty;
+    }
+
+    private function holdingStatus(Asset $asset, float $available): string
+    {
+        $avg = (float) ($asset->position?->average_price ?? 0);
+
+        return $asset->name.' · '.number_format($available, 6, ',', '.').' un disponíveis'
+            .($avg > 0 ? ' · preço médio R$ '.number_format($avg, 4, ',', '.') : '');
+    }
+
+    private function assertSellableAsset(): void
+    {
+        if (! $this->asset_id) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'ticker' => 'Você só pode vender ativos que já estão na carteira.',
+            ]);
+        }
+
+        $asset = Asset::with('position')->find($this->asset_id);
+        if (! $asset || $this->availableQuantityFor($asset) <= 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'ticker' => 'Você só pode vender ativos que já estão na carteira.',
+            ]);
+        }
+    }
+
+    private function createAssetFromLookup(): Asset
+    {
+        $slug = $this->resolvedClassSlug !== '' ? $this->resolvedClassSlug : 'outros';
+        $class = AssetClass::firstOrCreate(
+            ['slug' => $slug],
+            ['name' => MarketTicker::className($slug), 'status' => true]
+        );
+
+        return Asset::firstOrCreate(
+            ['ticker' => $this->ticker],
+            [
+                'name' => $this->resolvedName !== '' ? $this->resolvedName : $this->ticker,
+                'asset_class_id' => $class->id,
+                'sector' => $this->resolvedSector !== '' ? $this->resolvedSector : null,
+                'status' => true,
+            ]
+        );
+    }
+
     public function with(): array
     {
         $q = AssetOperation::with('asset', 'bankAccount');
-        if ($this->assetFilter) $q->where('asset_id', $this->assetFilter);
-        if ($this->typeFilter) $q->where('type', $this->typeFilter);
+        if ($this->assetFilter) {
+            $q->where('asset_id', $this->assetFilter);
+        }
+        if ($this->typeFilter) {
+            $q->where('type', $this->typeFilter);
+        }
+        if ($this->accountFilter) {
+            $q->where('bank_account_id', $this->accountFilter);
+        }
+
+        $brokers = BankAccount::active()->investment()->orderBy('name')->get();
+        $accounts = $brokers;
+        if ($this->bank_account_id && ! $accounts->contains('id', $this->bank_account_id)) {
+            $current = BankAccount::find($this->bank_account_id);
+            if ($current) {
+                $accounts = $accounts->prepend($current);
+            }
+        }
+
+        $holdings = collect();
+        if ($this->showFormModal && $this->formStep === 'form' && $this->opType === 'sell') {
+            $holdings = AssetPosition::with('asset.assetClass')
+                ->where(function ($query) {
+                    $query->where('quantity', '>', 0);
+                    if ($this->editingId && $this->asset_id) {
+                        $query->orWhere('asset_id', $this->asset_id);
+                    }
+                })
+                ->get()
+                ->sortBy(fn ($p) => $p->asset?->ticker)
+                ->values();
+        }
 
         return [
             'operations' => $q->when($this->from, fn ($q) => $q->whereDate('date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('date', '<=', $this->to))->orderByDesc('date')->orderByDesc('id')->paginate(25),
             'assets' => Asset::orderBy('ticker')->get(),
-            'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'brokers' => $brokers,
+            'accounts' => $accounts,
+            'holdings' => $holdings,
         ];
     }
 }; ?>
@@ -151,103 +465,241 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="investment-area">
     <x-investments.subnav />
     @if (session('error'))<x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>@endif
-    <div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-xl font-bold">Movimentações</h2><p class="mt-1 text-sm text-mono-600">Compras, aplicações, vendas e resgates com integração ao Financeiro.</p></div><x-jr.button wire:click="create"><span class="material-icons-outlined text-[18px]">add</span>Nova movimentação</x-jr.button></div>
-<x-jr.card>
-<div class="mb-4 flex items-center justify-between"><h3 class="font-semibold">Filtros</h3><button class="text-sm text-primary-500" wire:click="clearFilters">Limpar filtros</button></div>
-<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-<x-jr.input label="De" type="date" wire:model.live="from" /><x-jr.input label="Até" type="date" wire:model.live="to" />
-<div><label class="mb-2 block">Ativo</label><select wire:model.live="assetFilter"><option value="">Todos</option>@foreach ($assets as $a)<option value="{{ $a->id }}">{{ $a->ticker }}</option>@endforeach</select></div>
-<div><label class="mb-2 block">Tipo</label><select wire:model.live="typeFilter"><option value="">Todos</option><option value="buy">Compra / aplicação</option><option value="sell">Venda / resgate</option></select></div>
-</div></x-jr.card>
+
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h2 class="text-xl font-bold">Movimentações</h2>
+            <p class="mt-1 text-sm text-mono-600">Compras e vendas pela conta de investimento da corretora, com lançamento no Financeiro.</p>
+        </div>
+        <x-jr.button wire:click="create"><span class="material-icons-outlined text-[18px]">add</span>Nova movimentação</x-jr.button>
+    </div>
+
+    @if ($brokers->isEmpty())
+        <x-jr.card>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h3 class="font-semibold">Vincule uma corretora para começar</h3>
+                    <p class="mt-1 text-sm text-mono-600">Cadastre XP, BTG e demais contas com o tipo <strong>Investimento</strong> no Financeiro. Toda aplicação e resgate sai dessa conta.</p>
+                </div>
+                <x-jr.button href="{{ route('banking.accounts.index') }}" variant="standard">Cadastrar conta</x-jr.button>
+            </div>
+        </x-jr.card>
+    @else
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <button type="button" wire:click="filterByAccount(0)" @class(['rounded-2xl border px-4 py-4 text-left transition-colors', 'border-primary-500 bg-primary-100' => $accountFilter === '', 'border-mono-100 bg-mono-white hover:border-mono-200' => $accountFilter !== ''])>
+                <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">Todas as corretoras</p>
+                <p class="mt-2 text-lg font-bold">{{ $brokers->count() }} {{ $brokers->count() === 1 ? 'conta' : 'contas' }}</p>
+            </button>
+            @foreach ($brokers as $account)
+                <button type="button" wire:click="filterByAccount({{ $account->id }})" @class(['rounded-2xl border px-4 py-4 text-left transition-colors', 'border-primary-500 bg-primary-100' => $accountFilter === (string) $account->id, 'border-mono-100 bg-mono-white hover:border-mono-200' => $accountFilter !== (string) $account->id])>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">{{ $account->bank ?: 'Corretora' }}</p>
+                    <p class="mt-2 truncate text-lg font-bold">{{ $account->name }}</p>
+                    <p class="mt-1 text-sm text-mono-600">R$ {{ number_format($account->balance(), 2, ',', '.') }}</p>
+                </button>
+            @endforeach
+        </div>
+    @endif
+
+    <x-jr.card>
+        <div class="mb-4 flex items-center justify-between">
+            <h3 class="font-semibold">Filtros</h3>
+            <button class="text-sm text-primary-500" wire:click="clearFilters">Limpar filtros</button>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <x-jr.input label="De" type="date" wire:model.live="from" />
+            <x-jr.input label="Até" type="date" wire:model.live="to" />
+            <div>
+                <label class="mb-2 block">Ativo</label>
+                <select wire:model.live="assetFilter">
+                    <option value="">Todos</option>
+                    @foreach ($assets as $a)
+                        <option value="{{ $a->id }}">{{ $a->ticker }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div>
+                <label class="mb-2 block">Tipo</label>
+                <select wire:model.live="typeFilter">
+                    <option value="">Todos</option>
+                    <option value="buy">Compra / aplicação</option>
+                    <option value="sell">Venda / resgate</option>
+                </select>
+            </div>
+        </div>
+    </x-jr.card>
+
     <x-jr.card>
         @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
 
         @if ($operations->isEmpty())
             <x-fx.empty-state icon="↔" title="Nenhum registro encontrado" description="Ajuste os filtros ou registre sua primeira movimentação." />
         @else
-            <div class="overflow-x-auto"><table class="investment-table">
-                <thead>
-                    <tr>
-                        <th class="text-left">Data</th>
-                        <th class="text-left">Ativo</th>
-                        <th class="text-left">Tipo</th>
-                        <th class="text-right">Qtd</th>
-                        <th class="text-right">Preço</th>
-                        <th class="text-right">Total</th>
-                        <th class="text-right">Resultado realizado</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($operations as $op)
+            <div class="overflow-x-auto">
+                <table class="investment-table">
+                    <thead>
                         <tr>
-                            <td>{{ $op->date->format('d/m/Y') }}</td>
-                            <td class="font-semibold">{{ $op->asset?->ticker }}</td>
-                            <td>
-                                <span class="fx-badge fx-badge--{{ $op->type === 'buy' ? 'down' : 'up' }}">
-                                    {{ $op->type === 'buy' ? 'Compra' : 'Venda' }}
-                                </span>
-                            </td>
-                            <td class="text-right">{{ number_format((float) $op->quantity, 6, ',', '.') }}</td>
-                            <td class="text-right">R$ {{ number_format((float) $op->unit_price, 4, ',', '.') }}</td>
-                            <td class="text-right">R$ {{ number_format((float) $op->total, 2, ',', '.') }}</td>
-                            <td class="text-right {{ ((float) $op->realized_pnl) >= 0 ? 'text-up' : 'text-down' }}">
-                                {{ $op->realized_pnl !== null ? 'R$ '.number_format((float) $op->realized_pnl, 2, ',', '.') : '—' }}
-                            </td>
-                            <td class="text-right whitespace-nowrap">
-                                <button class="investment-action" wire:click="edit({{ $op->id }})">Editar</button>
-                                <button class="investment-action" wire:click="delete({{ $op->id }})" wire:confirm="Excluir operação?">Excluir</button>
-                            </td>
+                            <th class="text-left">Data</th>
+                            <th class="text-left">Corretora</th>
+                            <th class="text-left">Ativo</th>
+                            <th class="text-left">Tipo</th>
+                            <th class="text-right">Qtd</th>
+                            <th class="text-right">Preço</th>
+                            <th class="text-right">Total</th>
+                            <th class="text-right">Resultado realizado</th>
+                            <th></th>
                         </tr>
-                    @endforeach
-                </tbody>
-            </table></div>
+                    </thead>
+                    <tbody>
+                        @foreach ($operations as $op)
+                            <tr>
+                                <td>{{ $op->date->format('d/m/Y') }}</td>
+                                <td>{{ $op->bankAccount?->name ?? '—' }}</td>
+                                <td class="font-semibold">{{ $op->asset?->ticker }}</td>
+                                <td>
+                                    <span class="fx-badge fx-badge--{{ $op->type === 'buy' ? 'down' : 'up' }}">
+                                        {{ $op->type === 'buy' ? 'Compra' : 'Venda' }}
+                                    </span>
+                                </td>
+                                <td class="text-right">{{ number_format((float) $op->quantity, 6, ',', '.') }}</td>
+                                <td class="text-right">R$ {{ number_format((float) $op->unit_price, 4, ',', '.') }}</td>
+                                <td class="text-right">R$ {{ number_format((float) $op->total, 2, ',', '.') }}</td>
+                                <td class="text-right {{ ((float) $op->realized_pnl) >= 0 ? 'text-up' : 'text-down' }}">
+                                    {{ $op->realized_pnl !== null ? 'R$ '.number_format((float) $op->realized_pnl, 2, ',', '.') : '—' }}
+                                </td>
+                                <td class="text-right whitespace-nowrap">
+                                    <button class="investment-action" wire:click="edit({{ $op->id }})">Editar</button>
+                                    <button class="investment-action" wire:click="delete({{ $op->id }})" wire:confirm="Excluir operação?">Excluir</button>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
             <div class="mt-sm">{{ $operations->links() }}</div>
         @endif
     </x-jr.card>
 
-    @if ($showFormModal)
-    <x-investments.modal :title="$editingId ? 'Editar movimentação' : 'Nova movimentação'">
-@if ($errors->any())<div class="md:col-span-2"><x-jr.alert variant="error"><ul>@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul></x-jr.alert></div>@endif
+    @if ($showFormModal && $formStep === 'choose')
+        <div class="fixed inset-0 z-modal flex items-center justify-center px-4 py-6" x-data x-on:keydown.escape.window="$wire.cancel()">
+            <button type="button" class="fixed inset-0 bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
+            <div role="dialog" aria-modal="true" aria-label="Nova movimentação" class="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex items-center justify-between border-b border-mono-100 px-6 py-5">
+                    <h3 class="text-lg font-bold text-mono-900">Nova movimentação</h3>
+                    <button type="button" wire:click="cancel" class="text-mono-600" aria-label="Fechar"><span class="material-icons-outlined">close</span></button>
+                </div>
+                <div class="p-6">
+                    <p class="mb-5 text-sm text-mono-600">O que você deseja registrar?</p>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <button type="button" wire:click="chooseType('buy')" class="rounded-2xl border border-mono-100 p-5 text-left transition-colors hover:border-primary-500 hover:bg-primary-100">
+                            <span class="material-icons-outlined text-primary-500">add_circle</span>
+                            <strong class="mt-3 block text-base">Compra / aplicação</strong>
+                            <span class="mt-1 block text-sm text-mono-600">Comprar um ativo pela conta da corretora.</span>
+                        </button>
+                        <button type="button" wire:click="chooseType('sell')" class="rounded-2xl border border-mono-100 p-5 text-left transition-colors hover:border-primary-500 hover:bg-primary-100">
+                            <span class="material-icons-outlined text-up">remove_circle</span>
+                            <strong class="mt-3 block text-base">Venda / resgate</strong>
+                            <span class="mt-1 block text-sm text-mono-600">Vender somente o que você já tem na carteira.</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if ($showFormModal && $formStep === 'form')
+        <x-investments.modal :title="$editingId ? 'Editar movimentação' : ($opType === 'sell' ? 'Nova venda' : 'Nova compra')">
+            @if ($errors->any())
+                <div class="md:col-span-2">
+                    <x-jr.alert variant="error">
+                        <ul>@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul>
+                    </x-jr.alert>
+                </div>
+            @endif
+
+            @unless ($editingId)
+                <div class="md:col-span-2">
+                    <button type="button" class="text-sm font-semibold text-primary-500" wire:click="backToType">← Alterar para {{ $opType === 'buy' ? 'venda' : 'compra' }}</button>
+                </div>
+            @endunless
+
+            @if ($accounts->isEmpty())
+                <div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">
+                    Cadastre uma conta do tipo Investimento (XP, BTG...) no Financeiro para lançar a movimentação.
+                    <a href="{{ route('banking.accounts.index') }}" class="ml-1 font-semibold text-primary-500">Ir para contas</a>
+                </div>
+            @endif
+
             <div>
-                <label class="mb-2 block">Ativo</label>
-                <select wire:model="asset_id"  required>
-                    <option value="">—</option>
-                    @foreach ($assets as $a)
-                        <option value="{{ $a->id }}">{{ $a->ticker }} — {{ $a->name }}</option>
+                <label class="mb-2 block">Corretora *</label>
+                <select wire:model="bank_account_id" required>
+                    <option value="">— selecionar conta de investimento —</option>
+                    @foreach ($accounts as $a)
+                        <option value="{{ $a->id }}">{{ $a->name }}{{ $a->bank ? ' · '.$a->bank : '' }}</option>
                     @endforeach
                 </select>
             </div>
-            <div class="grid grid-cols-2 gap-4 md:col-span-2">
-                <x-jr.input label="Data" type="date" name="opDate" icon="event" wire:model="opDate" />
+
+            @if ($editingId)
                 <div>
                     <label class="mb-2 block">Tipo</label>
-                    <select wire:model.live.debounce.300ms="opType" >
+                    <select wire:model.live="opType">
                         <option value="buy">Compra</option>
                         <option value="sell">Venda</option>
                     </select>
                 </div>
-            </div>
+            @else
+                <div class="flex items-end">
+                    <span class="fx-badge fx-badge--{{ $opType === 'buy' ? 'down' : 'up' }}">{{ $opType === 'buy' ? 'Compra / aplicação' : 'Venda / resgate' }}</span>
+                </div>
+            @endif
+
+            <x-jr.input
+                label="Código / ticker *"
+                name="ticker"
+                icon="tag"
+                wire:model.blur="ticker"
+                placeholder="{{ $opType === 'sell' ? 'Código de um ativo da carteira' : 'PETR4, CDB-BANCO-2027...' }}"
+                :helper="filled($lookupStatus) ? $lookupStatus : ($opType === 'sell' ? 'Pesquise pelo código ou escolha um ativo da carteira abaixo.' : 'Tickers da B3 preenchem o ativo automaticamente. Códigos já cadastrados também são encontrados.')"
+                :success="filled($lookupStatus)"
+                required
+            />
+
+            <x-jr.input label="Data" type="date" name="opDate" icon="event" wire:model="opDate" />
+
+            @if ($opType === 'sell')
+                <div class="md:col-span-2">
+                    <p class="mb-2 text-sm font-medium text-mono-600">Ativos na carteira</p>
+                    @if ($holdings->isEmpty())
+                        <p class="rounded-2xl bg-mono-50 px-4 py-3 text-sm text-mono-600">{{ $ticker !== '' ? 'Nenhum ativo da carteira corresponde a esse código.' : 'Você não possui ativos em carteira para vender. Registre uma compra primeiro.' }}</p>
+                    @else
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            @foreach ($holdings as $holding)
+                                <button type="button" wire:click="selectHolding({{ $holding->asset_id }})" @class(['rounded-2xl border px-4 py-3 text-left transition-colors', 'border-primary-500 bg-primary-100' => (int) $asset_id === (int) $holding->asset_id, 'border-mono-100 hover:border-primary-500' => (int) $asset_id !== (int) $holding->asset_id])>
+                                    <strong class="block">{{ $holding->asset?->ticker }}</strong>
+                                    <span class="mt-1 block text-xs text-mono-600">{{ $holding->asset?->name }} · {{ number_format((float) $holding->quantity, 6, ',', '.') }} un · médio R$ {{ number_format((float) $holding->average_price, 4, ',', '.') }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            @endif
+
             <div class="grid grid-cols-2 gap-4 md:col-span-2">
                 <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
                 <x-jr.input label="Preço unitário" type="number" step="0.0001" name="unit_price" icon="payments" wire:model.live.debounce.300ms="unit_price" />
             </div>
             <x-jr.input label="Taxas/corretagem" type="text" x-money name="fees" icon="edit_note" wire:model.live.debounce.300ms="fees" />
-            <div>
-                <label class="mb-2 block">Conta liquidação</label>
-                <select wire:model="bank_account_id" >
-                    <option value="">— nenhuma —</option>
-                    @foreach ($accounts as $a)
-                        <option value="{{ $a->id }}">{{ $a->name }}</option>
-                    @endforeach
-                </select>
-            </div>
             <div class="md:col-span-2">
                 <label class="mb-2 block">Observações</label>
-                <textarea wire:model="opNotes"  rows="2"></textarea>
+                <textarea wire:model="opNotes" rows="2"></textarea>
             </div>
-<div class="md:col-span-2 flex items-center justify-between border-t border-mono-100 pt-4"><span class="font-medium">Total da movimentação</span><strong class="text-xl">R$ {{ number_format(max(0, (float)$quantity * (float)$unit_price + ($opType === 'buy' ? (float)$fees : -(float)$fees)), 2, ',', '.') }}</strong></div>
-<div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">Informe quantidade, preço unitário e taxas. Para aplicações controladas pelo valor total, utilize quantidade 1. Ao escolher uma conta, a movimentação também será lançada no Financeiro.</div>
-    </x-investments.modal>
+            <div class="md:col-span-2 flex items-center justify-between border-t border-mono-100 pt-4">
+                <span class="font-medium">Total da movimentação</span>
+                <strong class="text-xl">R$ {{ number_format(max(0, (float) $quantity * (float) $unit_price + ($opType === 'buy' ? (float) $fees : -(float) $fees)), 2, ',', '.') }}</strong>
+            </div>
+            <div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">
+                A movimentação é liquidada na corretora escolhida e lançada no Financeiro. Para aplicações controladas pelo valor total, utilize quantidade 1.
+            </div>
+        </x-investments.modal>
     @endif
 </div>

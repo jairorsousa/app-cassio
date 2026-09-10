@@ -30,6 +30,16 @@ class BankAccount extends Model
         return $query->where('status', true);
     }
 
+    public function scopeInvestment($query)
+    {
+        return $query->where('type', 'investment');
+    }
+
+    public function isInvestment(): bool
+    {
+        return $this->type === 'investment';
+    }
+
     public function balance(): float
     {
         $signed = (float) $this->transactions()

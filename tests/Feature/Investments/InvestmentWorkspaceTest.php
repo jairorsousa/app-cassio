@@ -13,6 +13,7 @@ use App\Domains\Investments\Services\InvestmentLedgerService;
 use App\Domains\Investments\Services\PortfolioProfitabilityService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -67,11 +68,55 @@ class InvestmentWorkspaceTest extends TestCase
         $this->assertDatabaseHas('asset_classes', ['name' => 'Renda fixa']);
     }
 
+    public function test_operation_modal_starts_with_buy_or_sell_and_requires_investment_account(): void
+    {
+        $asset = $this->asset();
+
+        Volt::test('investments.operations.index')
+            ->assertSee('Vincule uma corretora para começar');
+
+        $checking = BankAccount::create(['name' => 'Nubank', 'type' => 'checking', 'initial_balance' => 1000]);
+        $xp = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'bank' => 'XP', 'initial_balance' => 1000]);
+
+        Volt::test('investments.operations.index')
+            ->assertSee('XP Investimentos')
+            ->assertDontSee('Nubank')
+            ->assertDontSee('Vincule uma corretora para começar');
+
+        Volt::test('investments.operations.index')
+            ->call('create')
+            ->assertSet('formStep', 'choose')
+            ->assertSet('bank_account_id', $xp->id)
+            ->assertSee('O que você deseja registrar?')
+            ->call('chooseType', 'buy')
+            ->assertSet('formStep', 'form')
+            ->assertSet('opType', 'buy')
+            ->assertSee('Nova compra')
+            ->set('bank_account_id', null)
+            ->set('ticker', 'TEST')
+            ->assertSet('asset_id', $asset->id)
+            ->set('quantity', '10')
+            ->set('unit_price', '10')
+            ->call('save')
+            ->assertHasErrors('bank_account_id')
+            ->set('bank_account_id', $checking->id)
+            ->call('save')
+            ->assertHasErrors('bank_account_id')
+            ->set('bank_account_id', $xp->id)
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', false);
+
+        $this->assertEquals(900, $xp->fresh()->balance());
+        $this->assertEquals(1000, $checking->fresh()->balance());
+    }
+
     public function test_operation_modal_integrates_with_bank_and_edit_and_delete_stay_in_sync(): void
     {
         $asset = $this->asset();
-        $bank = BankAccount::create(['name' => 'Conta', 'initial_balance' => 1000]);
-        Volt::test('investments.operations.index')->call('create')->set('asset_id', $asset->id)
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 1000]);
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
             ->set('quantity', '10')->set('unit_price', '10')->set('bank_account_id', $bank->id)
             ->call('save')->assertHasNoErrors()->assertSet('showFormModal', false);
         $operation = AssetOperation::firstOrFail();
@@ -81,6 +126,67 @@ class InvestmentWorkspaceTest extends TestCase
         Volt::test('investments.operations.index')->call('delete', $operation->id)->assertHasNoErrors();
         $this->assertEquals(1000, $bank->fresh()->balance());
         $this->assertEquals(0, $asset->fresh()->position->quantity);
+    }
+
+    public function test_sale_accepts_only_assets_already_in_the_portfolio(): void
+    {
+        $held = $this->asset('PETR4');
+        $this->asset('VALE3');
+        $this->operation($held);
+        $bank = BankAccount::create(['name' => 'BTG', 'type' => 'investment', 'initial_balance' => 5000]);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'sell')
+            ->set('ticker', 'VALE3')
+            ->assertHasErrors('ticker')
+            ->assertSet('asset_id', null)
+            ->set('quantity', '1')->set('unit_price', '10')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasErrors();
+
+        $this->assertSame(0, AssetOperation::where('type', 'sell')->count());
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'sell')
+            ->call('selectHolding', $held->id)
+            ->assertSet('asset_id', $held->id)
+            ->assertSet('ticker', 'PETR4')
+            ->set('quantity', '4')->set('unit_price', '12')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(6, $held->fresh()->position->quantity);
+        $this->assertEquals(5048, $bank->fresh()->balance());
+    }
+
+    public function test_purchase_creates_unregistered_b3_asset_from_ticker_lookup(): void
+    {
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 10000]);
+        Http::fake([
+            'brapi.dev/api/quote/list*' => Http::response([
+                'stocks' => [[
+                    'stock' => 'PETR4',
+                    'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+                    'sector' => 'Energy Minerals',
+                    'subsector' => 'Petróleo e Gás Integrado',
+                    'type' => 'stock',
+                    'subType' => 'stock',
+                ]],
+            ]),
+        ]);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', 'petr4')
+            ->assertSet('willCreateAsset', true)
+            ->assertSet('ticker', 'PETR4')
+            ->set('quantity', '10')->set('unit_price', '30')->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('assets', [
+            'ticker' => 'PETR4',
+            'name' => 'PETROLEO BRASILEIRO S.A. PETROBRAS',
+        ]);
+        $this->assertSame(1, AssetOperation::count());
+        $this->assertEquals(10, Asset::where('ticker', 'PETR4')->first()?->position?->quantity);
     }
 
     public function test_sale_cannot_precede_purchase_and_changes_are_rolled_back(): void
