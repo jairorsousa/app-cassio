@@ -43,6 +43,7 @@ new #[Layout('layouts.app')] class extends Component {
     public string $opType = 'buy';
     public string $quantity = '';
     public string $unit_price = '';
+    public string $cash_amount = '';
     public string $fees = '0';
     public ?int $bank_account_id = null;
     public string $opNotes = '';
@@ -58,7 +59,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->resetPage();
         }
 
-        if (in_array($property, ['fees', 'unit_price'], true)) {
+        if (in_array($property, ['fees', 'unit_price', 'cash_amount'], true)) {
             $this->{$property} = $this->normalizeMoney((string) $this->{$property});
             if ($property === 'fees' && $this->fees === '') {
                 $this->fees = '0';
@@ -119,6 +120,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function rules(): array
     {
+        $automaticAccountId = $this->automaticLiquidityAsset()?->linked_bank_account_id;
         $accountRule = Rule::exists('bank_accounts', 'id')->where(function ($query) {
             $query->where('status', true)->whereNull('deleted_at');
             $query->where(function ($query) {
@@ -128,6 +130,15 @@ new #[Layout('layouts.app')] class extends Component {
                 }
             });
         });
+
+        if ($automaticAccountId) {
+            $accountRule = Rule::exists('bank_accounts', 'id')->where(fn ($query) => $query
+                ->where('id', $automaticAccountId)
+                ->where('status', true)
+                ->whereNull('deleted_at'));
+        }
+
+        $usesAutomaticLiquidity = $automaticAccountId !== null;
 
         return [
             'ticker' => 'required|string|max:20',
@@ -140,7 +151,8 @@ new #[Layout('layouts.app')] class extends Component {
             'opDate' => 'required|date|before_or_equal:today',
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
-            'unit_price' => 'required|numeric|min:0|max:999999999.99',
+            'unit_price' => 'required|numeric|min:0.0001|max:999999999.99',
+            'cash_amount' => $usesAutomaticLiquidity ? 'required|numeric|min:0.01|max:999999999.99' : 'nullable',
             'fees' => 'nullable|numeric|min:0|max:999999999.99',
             'bank_account_id' => ['required', $accountRule],
             'opNotes' => 'nullable|string',
@@ -158,8 +170,9 @@ new #[Layout('layouts.app')] class extends Component {
             'unit_price.max' => 'Informe um preço unitário válido.',
             'fees.numeric' => 'Informe um valor de taxas válido.',
             'fees.max' => 'Informe um valor de taxas válido.',
-            'bank_account_id.required' => 'Selecione a conta de investimento (corretora) desta operação.',
-            'bank_account_id.exists' => 'Selecione uma conta de investimento ativa.',
+            'bank_account_id.required' => 'Selecione a conta de liquidação desta operação.',
+            'bank_account_id.exists' => 'Selecione uma conta de liquidação ativa.',
+            'cash_amount.required' => 'Informe o valor da aplicação ou do resgate.',
         ];
     }
 
@@ -188,6 +201,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opType = $op->type;
         $this->quantity = (string) $op->quantity;
         $this->unit_price = (string) $op->unit_price;
+        $this->cash_amount = $op->asset?->usesAutomaticLiquidity() ? (string) $op->total : '';
         $this->fees = (string) $op->fees;
         $this->bank_account_id = $op->bank_account_id;
         $this->opNotes = (string) $op->notes;
@@ -259,10 +273,15 @@ new #[Layout('layouts.app')] class extends Component {
         $this->assetSector = (string) $asset->sector;
         $this->asset_class_id = $asset->asset_class_id;
         $this->lookupStatus = $this->holdingStatus($asset, $available);
+        $this->applyAutomaticLiquidityDefaults($asset);
     }
 
     public function operationTotal(): float
     {
+        if ($this->automaticLiquidityAsset()) {
+            return $this->moneyValue($this->cash_amount);
+        }
+
         $qty = (float) $this->quantity;
         $unit = $this->moneyValue($this->unit_price);
         $fees = $this->moneyValue($this->fees);
@@ -288,6 +307,23 @@ new #[Layout('layouts.app')] class extends Component {
             ]);
         }
 
+        $automaticAsset = $this->automaticLiquidityAsset();
+        if ($automaticAsset) {
+            if (! $automaticAsset->linked_bank_account_id) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'bank_account_id' => 'Este ativo não possui uma conta corrente vinculada.',
+                ]);
+            }
+
+            $this->cash_amount = $this->normalizeMoney($this->cash_amount);
+            $unitPrice = $this->automaticLiquidityUnitPrice($automaticAsset);
+            $cashAmount = $this->moneyValue($this->cash_amount);
+            $this->unit_price = (string) $unitPrice;
+            $this->quantity = $unitPrice > 0 ? (string) round($cashAmount / $unitPrice, 6) : '';
+            $this->fees = '0';
+            $this->bank_account_id = (int) $automaticAsset->linked_bank_account_id;
+        }
+
         $data = $this->validate();
 
         if ($this->opType === 'sell') {
@@ -311,7 +347,9 @@ new #[Layout('layouts.app')] class extends Component {
         $qty = (float) $data['quantity'];
         $unit = (float) $data['unit_price'];
         $fees = (float) ($data['fees'] ?? 0);
-        $total = round($qty * $unit + ($data['opType'] === 'buy' ? $fees : -$fees), 2);
+        $total = $automaticAsset
+            ? $this->moneyValue($data['cash_amount'])
+            : round($qty * $unit + ($data['opType'] === 'buy' ? $fees : -$fees), 2);
 
         $payload = [
             'asset_id' => $this->asset_id,
@@ -357,6 +395,7 @@ new #[Layout('layouts.app')] class extends Component {
             'editingId', 'asset_id', 'asset_class_id', 'ticker', 'lookupStatus', 'willCreateAsset',
             'assetName', 'assetSector', 'resolvedClassSlug', 'priceFromMarket', 'quantity',
             'unit_price', 'bank_account_id', 'opNotes',
+            'cash_amount',
         ]);
         $this->opType = 'buy';
         $this->fees = '0';
@@ -375,6 +414,7 @@ new #[Layout('layouts.app')] class extends Component {
             if ($fillQuote) {
                 $this->fillUnitPriceFromMarket();
             }
+            $this->applyAutomaticLiquidityDefaults($existing);
 
             return;
         }
@@ -432,6 +472,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->asset_class_id = $asset->asset_class_id;
             $this->fillAssetIdentity($asset->name, (string) $asset->sector);
             $this->lookupStatus = $this->holdingStatus($asset, $available);
+            $this->applyAutomaticLiquidityDefaults($asset);
 
             return;
         }
@@ -460,10 +501,55 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function holdingStatus(Asset $asset, float $available): string
     {
+        if ($asset->usesAutomaticLiquidity()) {
+            $value = (float) ($asset->position?->marketValue() ?? 0);
+
+            return $asset->name.' · saldo disponível R$ '.number_format($value, 2, ',', '.');
+        }
+
         $avg = (float) ($asset->position?->average_price ?? 0);
 
         return $asset->name.' · '.number_format($available, 6, ',', '.').' un disponíveis'
             .($avg > 0 ? ' · preço médio R$ '.number_format($avg, 4, ',', '.') : '');
+    }
+
+    public function usesAutomaticLiquidity(): bool
+    {
+        return $this->automaticLiquidityAsset() !== null;
+    }
+
+    private function automaticLiquidityAsset(): ?Asset
+    {
+        if (! $this->asset_id) {
+            return null;
+        }
+
+        $asset = Asset::with('position')->find($this->asset_id);
+
+        return $asset?->usesAutomaticLiquidity() ? $asset : null;
+    }
+
+    private function applyAutomaticLiquidityDefaults(Asset $asset): void
+    {
+        if (! $asset->usesAutomaticLiquidity()) {
+            return;
+        }
+
+        $this->bank_account_id = $asset->linked_bank_account_id;
+        $this->fees = '0';
+        $this->unit_price = (string) $this->automaticLiquidityUnitPrice($asset);
+    }
+
+    private function automaticLiquidityUnitPrice(Asset $asset): float
+    {
+        if ($this->editingId) {
+            $operation = AssetOperation::find($this->editingId);
+            if ($operation && (int) $operation->asset_id === (int) $asset->id) {
+                return max(0.0001, (float) $operation->unit_price);
+            }
+        }
+
+        return max(0.0001, (float) ($asset->position?->current_price ?? $asset->position?->average_price ?? 1));
     }
 
     private function assertSellableAsset(): void
@@ -614,7 +700,11 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $brokers = BankAccount::active()->investment()->orderBy('name')->get();
-        $accounts = $brokers;
+        $automaticAccountIds = Asset::where('automatic_liquidity', true)->whereNotNull('linked_bank_account_id')->pluck('linked_bank_account_id');
+        $accounts = BankAccount::active()
+            ->where(fn ($query) => $query->where('type', 'investment')->orWhereIn('id', $automaticAccountIds))
+            ->orderBy('name')
+            ->get();
         if ($this->bank_account_id && ! $accounts->contains('id', $this->bank_account_id)) {
             $current = BankAccount::find($this->bank_account_id);
             if ($current) {
@@ -656,17 +746,17 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
             <h2 class="text-xl font-bold">Movimentações</h2>
-            <p class="mt-1 text-sm text-mono-600">Compras e vendas pela conta de investimento da corretora, com lançamento no Financeiro.</p>
+            <p class="mt-1 text-sm text-mono-600">Compras, aplicações, vendas e resgates conciliados com as contas do Financeiro.</p>
         </div>
         <x-jr.button wire:click="create"><span class="material-icons-outlined text-[18px]">add</span>Nova movimentação</x-jr.button>
     </div>
 
-    @if ($brokers->isEmpty())
+    @if ($accounts->isEmpty())
         <x-jr.card>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h3 class="font-semibold">Vincule uma corretora para começar</h3>
-                    <p class="mt-1 text-sm text-mono-600">Cadastre XP, BTG e demais contas com o tipo <strong>Investimento</strong> no Financeiro. Toda aplicação e resgate sai dessa conta.</p>
+                    <p class="mt-1 text-sm text-mono-600">Cadastre uma conta de investimento ou vincule uma aplicação de liquidez automática à sua conta corrente.</p>
                 </div>
                 <x-jr.button href="{{ route('banking.accounts.index') }}" variant="standard">Cadastrar conta</x-jr.button>
             </div>
@@ -674,12 +764,12 @@ new #[Layout('layouts.app')] class extends Component {
     @else
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button type="button" wire:click="filterByAccount(0)" @class(['rounded-2xl border px-4 py-4 text-left transition-colors', 'border-primary-500 bg-primary-100' => $accountFilter === '', 'border-mono-100 bg-mono-white hover:border-mono-200' => $accountFilter !== ''])>
-                <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">Todas as corretoras</p>
-                <p class="mt-2 text-lg font-bold">{{ $brokers->count() }} {{ $brokers->count() === 1 ? 'conta' : 'contas' }}</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">Todas as contas</p>
+                <p class="mt-2 text-lg font-bold">{{ $accounts->count() }} {{ $accounts->count() === 1 ? 'conta' : 'contas' }}</p>
             </button>
-            @foreach ($brokers as $account)
+            @foreach ($accounts as $account)
                 <button type="button" wire:click="filterByAccount({{ $account->id }})" @class(['rounded-2xl border px-4 py-4 text-left transition-colors', 'border-primary-500 bg-primary-100' => $accountFilter === (string) $account->id, 'border-mono-100 bg-mono-white hover:border-mono-200' => $accountFilter !== (string) $account->id])>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">{{ $account->bank ?: 'Corretora' }}</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-mono-600">{{ $account->bank ?: ($account->isInvestment() ? 'Corretora' : 'Conta corrente') }}</p>
                     <p class="mt-2 truncate text-lg font-bold">{{ $account->name }}</p>
                     <p class="mt-1 text-sm text-mono-600">R$ {{ number_format($account->balance(), 2, ',', '.') }}</p>
                 </button>
@@ -744,11 +834,11 @@ new #[Layout('layouts.app')] class extends Component {
                                 <td class="font-semibold">{{ $op->asset?->ticker }}</td>
                                 <td>
                                     <span class="fx-badge fx-badge--{{ $op->type === 'buy' ? 'down' : 'up' }}">
-                                        {{ $op->type === 'buy' ? 'Compra' : 'Venda' }}
+                                        {{ $op->asset?->usesAutomaticLiquidity() ? ($op->type === 'buy' ? 'Aplicação automática' : 'Resgate automático') : ($op->type === 'buy' ? 'Compra' : 'Venda') }}
                                     </span>
                                 </td>
-                                <td class="text-right">{{ number_format((float) $op->quantity, 6, ',', '.') }}</td>
-                                <td class="text-right">R$ {{ number_format((float) $op->unit_price, 4, ',', '.') }}</td>
+                                <td class="text-right">{{ $op->asset?->usesAutomaticLiquidity() ? '—' : number_format((float) $op->quantity, 6, ',', '.') }}</td>
+                                <td class="text-right">{{ $op->asset?->usesAutomaticLiquidity() ? '—' : 'R$ '.number_format((float) $op->unit_price, 4, ',', '.') }}</td>
                                 <td class="text-right">R$ {{ number_format((float) $op->total, 2, ',', '.') }}</td>
                                 <td class="text-right {{ ((float) $op->realized_pnl) >= 0 ? 'text-up' : 'text-down' }}">
                                     {{ $op->realized_pnl !== null ? 'R$ '.number_format((float) $op->realized_pnl, 2, ',', '.') : '—' }}
@@ -817,9 +907,9 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
 
             <div>
-                <label class="mb-2 block">Corretora *</label>
-                <select wire:model="bank_account_id" required>
-                    <option value="">— selecionar conta de investimento —</option>
+                <label class="mb-2 block">Conta de liquidação *</label>
+                <select wire:model="bank_account_id" required @disabled($this->usesAutomaticLiquidity())>
+                    <option value="">— selecionar conta —</option>
                     @foreach ($accounts as $a)
                         <option value="{{ $a->id }}">{{ $a->name }}{{ $a->bank ? ' · '.$a->bank : '' }}</option>
                     @endforeach
@@ -901,20 +991,35 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             @endif
 
-            <div class="grid grid-cols-2 gap-4 md:col-span-2">
-                <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
-                <x-jr.input
-                    label="Preço unitário"
-                    type="text"
-                    x-money
-                    name="unit_price"
-                    icon="payments"
-                    wire:model.live.debounce.300ms="unit_price"
-                    :helper="$priceFromMarket ? 'Cotação atual da B3. Ajuste se a sua compra foi a outro preço.' : 'Informe o preço da sua compra. Tickers da B3 preenchem automaticamente.'"
-                    :success="$priceFromMarket"
-                />
-            </div>
-            <x-jr.input label="Taxas/corretagem" type="text" x-money name="fees" icon="edit_note" wire:model.live.debounce.300ms="fees" />
+            @if ($this->usesAutomaticLiquidity())
+                <div class="md:col-span-2">
+                    <x-jr.input
+                        :label="$opType === 'buy' ? 'Valor aplicado *' : 'Valor resgatado *'"
+                        type="text"
+                        x-money
+                        name="cash_amount"
+                        icon="payments"
+                        wire:model.live.debounce.300ms="cash_amount"
+                        helper="Informe o valor movimentado em reais. O Cassio calcula as unidades pelo valor atual da aplicação."
+                        required
+                    />
+                </div>
+            @else
+                <div class="grid grid-cols-2 gap-4 md:col-span-2">
+                    <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
+                    <x-jr.input
+                        label="Preço unitário"
+                        type="text"
+                        x-money
+                        name="unit_price"
+                        icon="payments"
+                        wire:model.live.debounce.300ms="unit_price"
+                        :helper="$priceFromMarket ? 'Cotação atual da B3. Ajuste se a sua compra foi a outro preço.' : 'Informe o preço da sua compra. Tickers da B3 preenchem automaticamente.'"
+                        :success="$priceFromMarket"
+                    />
+                </div>
+                <x-jr.input label="Taxas/corretagem" type="text" x-money name="fees" icon="edit_note" wire:model.live.debounce.300ms="fees" />
+            @endif
             <div class="md:col-span-2">
                 <label class="mb-2 block">Observações</label>
                 <textarea wire:model="opNotes" rows="2"></textarea>
@@ -924,7 +1029,11 @@ new #[Layout('layouts.app')] class extends Component {
                 <strong class="text-xl">R$ {{ number_format($this->operationTotal(), 2, ',', '.') }}</strong>
             </div>
             <div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">
-                A movimentação é liquidada na corretora escolhida e lançada no Financeiro. Para aplicações controladas pelo valor total, utilize quantidade 1.
+                @if ($this->usesAutomaticLiquidity())
+                    Esta movimentação ajustará a aplicação e a conta corrente vinculada como transferência patrimonial, sem gerar receita ou despesa.
+                @else
+                    A movimentação é liquidada na corretora escolhida e lançada no Financeiro. Para aplicações controladas pelo valor total, utilize quantidade 1.
+                @endif
             </div>
         </x-investments.modal>
     @endif

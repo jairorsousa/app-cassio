@@ -2,7 +2,9 @@
 
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetClass;
+use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Investments\Services\BrapiQuoteProvider;
+use App\Domains\Investments\Services\InvestmentBankSyncService;
 use App\Domains\Investments\Support\MarketTicker;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -24,6 +26,8 @@ new #[Layout('layouts.app')] class extends Component {
     public string $institution = '';
     public string $maturity_date = '';
     public string $liquidity = '';
+    public bool $automatic_liquidity = false;
+    public ?int $linked_bank_account_id = null;
     public string $name = '';
     public ?int $asset_class_id = null;
     public string $sector = '';
@@ -41,6 +45,12 @@ new #[Layout('layouts.app')] class extends Component {
             'institution' => 'nullable|string|max:120',
             'maturity_date' => 'nullable|date',
             'liquidity' => 'nullable|string|max:120',
+            'automatic_liquidity' => 'boolean',
+            'linked_bank_account_id' => [
+                'nullable',
+                'required_if:automatic_liquidity,true',
+                \Illuminate\Validation\Rule::exists('bank_accounts', 'id')->where(fn ($query) => $query->where('type', 'checking')->where('status', true)->whereNull('deleted_at')),
+            ],
             'sector' => 'nullable|string|max:120',
             'notes' => 'nullable|string',
             'assetStatus' => 'boolean',
@@ -62,6 +72,8 @@ new #[Layout('layouts.app')] class extends Component {
         $this->institution = (string) $a->institution;
         $this->maturity_date = $a->maturity_date?->format('Y-m-d') ?? '';
         $this->liquidity = (string) $a->liquidity;
+        $this->automatic_liquidity = (bool) $a->automatic_liquidity;
+        $this->linked_bank_account_id = $a->linked_bank_account_id;
     }
 
     public function updatedTicker(): void
@@ -118,10 +130,14 @@ new #[Layout('layouts.app')] class extends Component {
             'institution' => $data['institution'] ?: null,
             'maturity_date' => $data['maturity_date'] ?: null,
             'liquidity' => $data['liquidity'] ?: null,
+            'automatic_liquidity' => $data['automatic_liquidity'],
+            'linked_bank_account_id' => $data['automatic_liquidity'] ? $data['linked_bank_account_id'] : null,
         ];
 
         if ($this->editingId) {
-            Asset::find($this->editingId)?->update($payload);
+            $asset = Asset::find($this->editingId);
+            $asset?->update($payload);
+            $asset?->operations()->each(fn ($operation) => app(InvestmentBankSyncService::class)->sync($operation));
         } else {
             Asset::create($payload);
         }
@@ -151,6 +167,8 @@ new #[Layout('layouts.app')] class extends Component {
         $this->assetStatus = true;
         $this->newClass = '';
         $this->reset(['institution', 'maturity_date', 'liquidity']);
+        $this->automatic_liquidity = false;
+        $this->linked_bank_account_id = null;
     }
 
     public function with(): array
@@ -158,8 +176,9 @@ new #[Layout('layouts.app')] class extends Component {
         AssetClass::ensureCatalog();
 
         return [
-            'assets' => Asset::with('assetClass', 'position')->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))->when($this->classFilter, fn ($q) => $q->where('asset_class_id', $this->classFilter))->orderBy('ticker')->get(),
+            'assets' => Asset::with('assetClass', 'position', 'linkedBankAccount')->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))->when($this->classFilter, fn ($q) => $q->where('asset_class_id', $this->classFilter))->orderBy('ticker')->get(),
             'classes' => AssetClass::ordered(),
+            'checkingAccounts' => BankAccount::active()->where('type', 'checking')->orderBy('name')->get(),
         ];
     }
 }; ?>
@@ -197,7 +216,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <tr>
                             <td class="font-semibold">{{ $a->ticker }}</td>
                             <td>{{ $a->name }} @unless($a->status)<span class="text-xxs text-mono-600">(inativo)</span>@endunless</td>
-                            <td>{{ $a->assetClass?->name }}<p class="mt-1 text-xs text-mono-600">{{ $a->institution }} @if($a->maturity_date) · Vence {{ $a->maturity_date->format('d/m/Y') }} @endif</p></td>
+                            <td>{{ $a->assetClass?->name }} @if($a->automatic_liquidity)<span class="fx-badge fx-badge--info ml-1">Automática</span>@endif<p class="mt-1 text-xs text-mono-600">{{ $a->institution }} @if($a->maturity_date) · Vence {{ $a->maturity_date->format('d/m/Y') }} @endif @if($a->automatic_liquidity && $a->linkedBankAccount) · {{ $a->linkedBankAccount->name }} @endif</p></td>
                             <td class="text-right">{{ number_format((float) ($a->position?->quantity ?? 0), 6, ',', '.') }}</td>
                             <td class="text-right">R$ {{ number_format((float) ($a->position?->average_price ?? 0), 4, ',', '.') }}</td>
                             <td class="text-right whitespace-nowrap">
@@ -232,6 +251,24 @@ new #[Layout('layouts.app')] class extends Component {
             <x-jr.input label="Instituição / corretora" name="institution" icon="account_balance" wire:model="institution" />
             <x-jr.input label="Vencimento (opcional)" name="maturity_date" icon="event" type="date" wire:model="maturity_date" />
             <x-jr.input label="Liquidez / prazo de resgate" name="liquidity" wire:model="liquidity" placeholder="Diária, D+2, no vencimento..." />
+            <div class="md:col-span-2 rounded-2xl border border-mono-100 bg-mono-50 p-4">
+                <label class="flex cursor-pointer items-start gap-3">
+                    <input type="checkbox" wire:model.live="automatic_liquidity" class="mt-0.5 h-5 w-5 rounded border-mono-300 text-primary-500 focus:ring-primary-500" />
+                    <span><strong class="block text-mono-900">Aplicação com liquidez automática</strong><span class="mt-1 block text-xs font-normal text-mono-600">Aplicações e resgates cobrem automaticamente o saldo da conta corrente sem virar receita ou despesa.</span></span>
+                </label>
+            </div>
+            @if ($automatic_liquidity)
+                <div class="md:col-span-2">
+                    <label class="mb-2 block">Conta corrente vinculada *</label>
+                    <select wire:model="linked_bank_account_id">
+                        <option value="">— selecionar conta corrente —</option>
+                        @foreach ($checkingAccounts as $account)
+                            <option value="{{ $account->id }}">{{ $account->name }}{{ $account->bank ? ' · '.$account->bank : '' }}</option>
+                        @endforeach
+                    </select>
+                    @error('linked_bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                </div>
+            @endif
             <div class="md:col-span-2">
                 <label class="mb-2 block">Observações</label>
                 <textarea wire:model="notes"  rows="2"></textarea>

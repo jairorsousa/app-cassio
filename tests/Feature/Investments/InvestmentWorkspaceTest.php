@@ -3,6 +3,7 @@
 namespace Tests\Feature\Investments;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Transaction;
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetClass;
 use App\Domains\Investments\Models\AssetDividend;
@@ -66,6 +67,30 @@ class InvestmentWorkspaceTest extends TestCase
             ->call('save')->assertHasNoErrors()->assertSet('showFormModal', false);
         $this->assertDatabaseHas('assets', ['ticker' => 'CDB-2027', 'institution' => 'Banco', 'liquidity' => 'Diária']);
         $this->assertDatabaseHas('asset_classes', ['slug' => 'renda-fixa', 'name' => 'Renda Fixa']);
+    }
+
+    public function test_asset_modal_links_automatic_liquidity_to_a_checking_account(): void
+    {
+        $checking = BankAccount::create(['name' => 'BB Conta Corrente', 'type' => 'checking', 'initial_balance' => 0]);
+
+        Volt::test('investments.assets.index')
+            ->call('create')
+            ->set('ticker', 'bb-auto')
+            ->set('name', 'Aplicação automática BB')
+            ->set('newClass', 'Renda fixa')
+            ->set('institution', 'Banco do Brasil')
+            ->set('liquidity', 'Diária')
+            ->set('automatic_liquidity', true)
+            ->assertSee('Conta corrente vinculada')
+            ->set('linked_bank_account_id', $checking->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('assets', [
+            'ticker' => 'BB-AUTO',
+            'automatic_liquidity' => true,
+            'linked_bank_account_id' => $checking->id,
+        ]);
     }
 
     public function test_purchase_form_lists_asset_types_and_creates_unlisted_asset(): void
@@ -138,6 +163,107 @@ class InvestmentWorkspaceTest extends TestCase
 
         $this->assertEquals(900, $xp->fresh()->balance());
         $this->assertEquals(1000, $checking->fresh()->balance());
+    }
+
+    public function test_automatic_liquidity_application_and_redemption_keep_checking_account_settled(): void
+    {
+        $checking = BankAccount::create([
+            'name' => 'BB Conta Corrente',
+            'bank' => 'Banco do Brasil',
+            'type' => 'checking',
+            'initial_balance' => 10000,
+        ]);
+        $class = AssetClass::firstOrCreate(['slug' => 'renda-fixa'], ['name' => 'Renda Fixa']);
+        $asset = Asset::create([
+            'ticker' => 'BB-AUTO',
+            'name' => 'Aplicação automática BB',
+            'asset_class_id' => $class->id,
+            'institution' => 'Banco do Brasil',
+            'liquidity' => 'Diária',
+            'automatic_liquidity' => true,
+            'linked_bank_account_id' => $checking->id,
+        ]);
+
+        Volt::test('investments.operations.index')
+            ->call('create')
+            ->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
+            ->assertSet('bank_account_id', $checking->id)
+            ->assertSee('Valor aplicado')
+            ->set('cash_amount', '10000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0.0, $checking->balance());
+        $this->assertEquals(10000.0, $asset->fresh()->position->marketValue());
+        $this->assertDatabaseHas('transactions', [
+            'bank_account_id' => $checking->id,
+            'type' => 'transfer',
+            'amount' => -10000,
+            'description' => 'Aplicação automática BB-AUTO',
+        ]);
+
+        Transaction::create([
+            'type' => 'expense',
+            'date' => '2026-09-09',
+            'amount' => 2000,
+            'description' => 'Transferência realizada',
+            'status' => 'settled',
+            'bank_account_id' => $checking->id,
+        ]);
+        $this->assertEquals(-2000.0, $checking->balance());
+
+        Volt::test('investments.operations.index')
+            ->call('create')
+            ->call('chooseType', 'sell')
+            ->set('ticker', $asset->ticker)
+            ->assertSet('bank_account_id', $checking->id)
+            ->assertSee('Valor resgatado')
+            ->set('cash_amount', '2000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0.0, $checking->balance());
+        $this->assertEquals(8000.0, $asset->fresh()->position->marketValue());
+        $this->assertEquals(8000.0, app(PortfolioProfitabilityService::class)->summary()['market_value']);
+        $this->assertDatabaseHas('transactions', [
+            'bank_account_id' => $checking->id,
+            'type' => 'transfer',
+            'amount' => 2000,
+            'description' => 'Resgate automático BB-AUTO',
+        ]);
+    }
+
+    public function test_automatic_liquidity_balance_update_recognizes_accrued_return(): void
+    {
+        $checking = BankAccount::create(['name' => 'BB Conta Corrente', 'type' => 'checking', 'initial_balance' => 10000]);
+        $class = AssetClass::firstOrCreate(['slug' => 'renda-fixa'], ['name' => 'Renda Fixa']);
+        $asset = Asset::create([
+            'ticker' => 'BB-RENDE',
+            'name' => 'BB Rende Fácil',
+            'asset_class_id' => $class->id,
+            'automatic_liquidity' => true,
+            'linked_bank_account_id' => $checking->id,
+        ]);
+        $this->operation($asset, [
+            'date' => '2026-09-01',
+            'quantity' => 10000,
+            'unit_price' => 1,
+            'total' => 10000,
+            'bank_account_id' => $checking->id,
+        ]);
+
+        Volt::test('investments.positions')
+            ->call('startQuote', $asset->id)
+            ->assertSee('Saldo atual')
+            ->set('quotePrice', '10100')
+            ->set('quoteDate', '2026-09-09')
+            ->call('saveQuote')
+            ->assertHasNoErrors();
+
+        $position = $asset->fresh()->position;
+        $this->assertEquals(10100.0, $position->marketValue());
+        $this->assertEquals(100.0, $position->unrealizedPnL());
     }
 
     public function test_operation_modal_integrates_with_bank_and_edit_and_delete_stay_in_sync(): void

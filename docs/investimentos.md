@@ -11,6 +11,18 @@ A área utiliza o padrão do Financeiro: navegação por abas, filtros acima das
 5. Em **Carteira**, as cotações de tickers da B3 (padrão `PETR4`, `HGLG11`) são buscadas automaticamente após o fechamento em dias úteis, via [brapi.dev](https://brapi.dev). O botão **Atualizar cotações** dispara a mesma busca na hora. Clique no preço para registrar uma cotação manual com data. A cotação mais recente por data determina o valor da posição; sem cotação, utiliza-se o preço médio. CDB, Tesouro e demais códigos que não sejam ticker de bolsa continuam manuais.
 6. Em **Proventos**, registre dividendos, JCP e rendimentos de FII recebidos, com quantidade e valor por unidade. A conta selecionada recebe o crédito no Financeiro.
 
+## Aplicações com liquidez automática
+
+Aplicações bancárias que aplicam o saldo disponível e resgatam automaticamente para cobrir a conta corrente podem ser vinculadas diretamente à conta correspondente:
+
+1. Cadastre a conta corrente em **Financeiro → Contas**.
+2. Em **Investimentos → Ativos**, cadastre a aplicação como Renda Fixa, marque **Aplicação com liquidez automática** e selecione a conta corrente vinculada.
+3. Em **Movimentações**, escolha o ativo e informe diretamente o valor aplicado ou resgatado. O Cassio calcula as unidades pelo valor vigente da aplicação.
+4. Aplicações geram uma transferência patrimonial negativa na conta corrente; resgates geram uma transferência positiva. Esses lançamentos alteram o saldo, mas não são classificados como receita ou despesa.
+5. Na **Carteira**, use **Atualizar saldo** e informe o total exibido pelo banco. A diferença entre o saldo e o capital aplicado é reconhecida como valorização da posição.
+
+Exemplo: uma aplicação de R$ 10.000 deixa a conta corrente em R$ 0 e a carteira com R$ 10.000. Após uma saída de R$ 2.000, o resgate automático credita R$ 2.000 na conta corrente e reduz a posição para R$ 8.000. O dinheiro não é contado duas vezes.
+
 Todos os valores são informados em reais. Para aplicações controladas por valor total, é possível registrar uma unidade pelo valor aplicado; um resgate parcial deve usar a fração correspondente dessa unidade. Não há cálculo automático de indexadores, câmbio, juros contratuais ou impostos.
 
 ## Indicadores

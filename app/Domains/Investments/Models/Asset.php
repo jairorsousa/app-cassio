@@ -2,6 +2,7 @@
 
 namespace App\Domains\Investments\Models;
 
+use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Investments\Support\MarketTicker;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,11 +15,12 @@ class Asset extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['ticker', 'name', 'asset_class_id', 'sector', 'notes', 'status', 'institution', 'maturity_date', 'liquidity'];
+    protected $fillable = ['ticker', 'name', 'asset_class_id', 'sector', 'notes', 'status', 'institution', 'maturity_date', 'liquidity', 'automatic_liquidity', 'linked_bank_account_id'];
 
     protected $casts = [
         'status' => 'boolean',
         'maturity_date' => 'date',
+        'automatic_liquidity' => 'boolean',
     ];
 
     public function assetClass(): BelongsTo
@@ -44,6 +46,16 @@ class Asset extends Model
     public function position(): HasOne
     {
         return $this->hasOne(AssetPosition::class);
+    }
+
+    public function linkedBankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'linked_bank_account_id');
+    }
+
+    public function usesAutomaticLiquidity(): bool
+    {
+        return (bool) $this->automatic_liquidity;
     }
 
     public function scopeActive($query)

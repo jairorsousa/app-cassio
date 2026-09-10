@@ -17,11 +17,13 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function startQuote(int $assetId): void
     {
-        $position = AssetPosition::where('asset_id', $assetId)->first();
+        $position = AssetPosition::with('asset')->where('asset_id', $assetId)->first();
         $this->editingQuoteAssetId = $assetId;
         $this->quoteDate = today()->format("Y-m-d");
         $this->resetValidation();
-        $this->quotePrice = (string) ($position?->current_price ?? $position?->average_price ?? 0);
+        $this->quotePrice = $position?->asset?->usesAutomaticLiquidity()
+            ? (string) $position->marketValue()
+            : (string) ($position?->current_price ?? $position?->average_price ?? 0);
     }
 
     public function saveQuote(AssetPositionService $service): void
@@ -31,12 +33,29 @@ new #[Layout('layouts.app')] class extends Component {
             'quoteDate' => 'required|date|before_or_equal:today',
         ]);
 
-        $asset = Asset::findOrFail($this->editingQuoteAssetId);
-        $service->setQuote($asset, $this->quoteDate, (float) $this->quotePrice);
+        $asset = Asset::with('position')->findOrFail($this->editingQuoteAssetId);
+        $price = (float) $this->quotePrice;
+        if ($asset->usesAutomaticLiquidity()) {
+            $quantity = (float) ($asset->position?->quantity ?? 0);
+            if ($quantity <= 0) {
+                $this->addError('quotePrice', 'Registre uma aplicação antes de informar o saldo.');
+
+                return;
+            }
+            $price = $price / $quantity;
+        }
+        $service->setQuote($asset, $this->quoteDate, $price);
 
         $this->editingQuoteAssetId = null;
         $this->quotePrice = '';
-        session()->flash('status', 'Cotação atualizada.');
+        session()->flash('status', $asset->usesAutomaticLiquidity() ? 'Saldo da aplicação atualizado.' : 'Cotação atualizada.');
+    }
+
+    public function editingAutomaticLiquidity(): bool
+    {
+        return $this->editingQuoteAssetId
+            ? (bool) Asset::find($this->editingQuoteAssetId)?->usesAutomaticLiquidity()
+            : false;
     }
 
     public function recalculate(int $assetId, AssetPositionService $service): void
@@ -115,11 +134,11 @@ new #[Layout('layouts.app')] class extends Component {
                     <tr>
                         <td class="font-semibold">{{ $p->asset?->ticker }}</td>
                         <td>{{ $p->asset?->assetClass?->name }}</td>
-                        <td class="text-right">{{ number_format((float) $p->quantity, 6, ',', '.') }}</td>
-                        <td class="text-right">R$ {{ number_format((float) $p->average_price, 4, ',', '.') }}</td>
+                        <td class="text-right">{{ $p->asset?->usesAutomaticLiquidity() ? 'Saldo automático' : number_format((float) $p->quantity, 6, ',', '.') }}</td>
+                        <td class="text-right">{{ $p->asset?->usesAutomaticLiquidity() ? '—' : 'R$ '.number_format((float) $p->average_price, 4, ',', '.') }}</td>
                         <td class="text-right">R$ {{ number_format((float) $p->total_invested, 2, ',', '.') }}</td>
                         <td class="text-right">
-                            <button type="button" class="text-primary-500 hover:underline" wire:click="startQuote({{ $p->asset_id }})">R$ {{ number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}</button><p class="mt-1 text-xs text-mono-600">{{ $p->asset?->quotes->first()?->date?->format('d/m/Y') ?? ($p->asset?->isMarketQuoted() ? 'Aguardando cotação automática' : 'Preço médio · sem cotação') }}</p>
+                            <button type="button" class="text-primary-500 hover:underline" wire:click="startQuote({{ $p->asset_id }})">{{ $p->asset?->usesAutomaticLiquidity() ? 'Atualizar saldo' : 'R$ '.number_format((float) ($p->current_price ?? $p->average_price), 4, ',', '.') }}</button><p class="mt-1 text-xs text-mono-600">{{ $p->asset?->quotes->first()?->date?->format('d/m/Y') ?? ($p->asset?->usesAutomaticLiquidity() ? 'Informe o saldo exibido pelo banco' : ($p->asset?->isMarketQuoted() ? 'Aguardando cotação automática' : 'Preço médio · sem cotação')) }}</p>
                         </td>
                         <td class="text-right font-semibold">R$ {{ number_format($p->marketValue(), 2, ',', '.') }}</td>
                         <td class="text-right {{ $p->unrealizedPnL() >= 0 ? 'text-up' : 'text-down' }}">
@@ -149,10 +168,10 @@ new #[Layout('layouts.app')] class extends Component {
 </x-jr.card>
 <p class="text-xs text-mono-600">Ações, FIIs, ETFs e BDRs da B3 são atualizados automaticamente em dias úteis após o fechamento. Clique no preço para ajustar manualmente. CDB, Tesouro e demais ativos sem ticker de bolsa continuam manuais. Sem cotação, o patrimônio usa o preço médio.</p>
 @if ($editingQuoteAssetId)
-<x-investments.modal title="Atualizar cotação" submit="saveQuote">
+<x-investments.modal :title="$this->editingAutomaticLiquidity() ? 'Atualizar saldo da aplicação' : 'Atualizar cotação'" submit="saveQuote">
 <x-jr.input label="Data da cotação *" type="date" name="quoteDate" wire:model="quoteDate" required />
-<x-jr.input label="Preço por unidade (R$) *" type="number" step="0.0001" min="0" name="quotePrice" wire:model="quotePrice" required />
-<p class="text-sm text-mono-600 md:col-span-2">O valor mais recente por data será utilizado na carteira.</p>
+<x-jr.input :label="$this->editingAutomaticLiquidity() ? 'Saldo atual (R$) *' : 'Preço por unidade (R$) *'" type="number" step="0.0001" min="0" name="quotePrice" wire:model="quotePrice" required />
+<p class="text-sm text-mono-600 md:col-span-2">{{ $this->editingAutomaticLiquidity() ? 'Informe o saldo total mostrado pelo banco. A diferença será reconhecida como valorização da aplicação.' : 'O valor mais recente por data será utilizado na carteira.' }}</p>
 </x-investments.modal>
 @endif
 </div>
