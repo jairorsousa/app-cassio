@@ -102,7 +102,7 @@ document.addEventListener('alpine:init', () => {
         let submitting = false;
 
         const rawValue = () => {
-            const digits = el.value.replace(/\D/g, '');
+            const digits = el.value.replace(/\D/g, '').slice(0, 11);
             return String(digits ? parseInt(digits, 10) / 100 : 0);
         };
 

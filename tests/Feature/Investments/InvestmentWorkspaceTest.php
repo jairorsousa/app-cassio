@@ -234,6 +234,63 @@ class InvestmentWorkspaceTest extends TestCase
         $this->assertEquals(10, Asset::where('ticker', 'PETR4')->first()?->position?->quantity);
     }
 
+    public function test_purchase_accepts_masked_unit_price_and_rejects_huge_values(): void
+    {
+        $asset = $this->asset();
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 100000]);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
+            ->set('quantity', '2')
+            ->set('unit_price', '1.234,56')
+            ->set('fees', '10,00')
+            ->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $operation = AssetOperation::firstOrFail();
+        $this->assertEquals(1234.56, (float) $operation->unit_price);
+        $this->assertEquals(10.0, (float) $operation->fees);
+        $this->assertEquals(2479.12, (float) $operation->total);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
+            ->set('quantity', '1')
+            ->set('unit_price', '99999999999999999')
+            ->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasErrors('unit_price');
+    }
+
+    public function test_purchase_allows_zero_or_empty_fees(): void
+    {
+        $asset = $this->asset();
+        $bank = BankAccount::create(['name' => 'XP Investimentos', 'type' => 'investment', 'initial_balance' => 10000]);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
+            ->set('quantity', '1')
+            ->set('unit_price', '10')
+            ->set('fees', '0,00')
+            ->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0.0, (float) AssetOperation::firstOrFail()->fees);
+        $this->assertEquals(10.0, (float) AssetOperation::firstOrFail()->total);
+
+        Volt::test('investments.operations.index')->call('create')->call('chooseType', 'buy')
+            ->set('ticker', $asset->ticker)
+            ->set('quantity', '1')
+            ->set('unit_price', '10')
+            ->set('fees', '')
+            ->set('bank_account_id', $bank->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0.0, (float) AssetOperation::orderByDesc('id')->firstOrFail()->fees);
+    }
+
     public function test_sale_cannot_precede_purchase_and_changes_are_rolled_back(): void
     {
         $asset = $this->asset();

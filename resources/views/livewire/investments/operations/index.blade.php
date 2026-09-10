@@ -57,6 +57,13 @@ new #[Layout('layouts.app')] class extends Component {
         if (in_array($property, ['from', 'to', 'assetFilter', 'typeFilter', 'accountFilter'])) {
             $this->resetPage();
         }
+
+        if (in_array($property, ['fees', 'unit_price'], true)) {
+            $this->{$property} = $this->normalizeMoney((string) $this->{$property});
+            if ($property === 'fees' && $this->fees === '') {
+                $this->fees = '0';
+            }
+        }
     }
 
     public function clearFilters(): void
@@ -133,8 +140,8 @@ new #[Layout('layouts.app')] class extends Component {
             'opDate' => 'required|date|before_or_equal:today',
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
-            'unit_price' => 'required|numeric|min:0',
-            'fees' => 'required|numeric|min:0',
+            'unit_price' => 'required|numeric|min:0|max:999999999.99',
+            'fees' => 'nullable|numeric|min:0|max:999999999.99',
             'bank_account_id' => ['required', $accountRule],
             'opNotes' => 'nullable|string',
         ];
@@ -147,6 +154,10 @@ new #[Layout('layouts.app')] class extends Component {
             'asset_id.required' => 'Informe o código do ativo.',
             'asset_class_id.required' => 'Selecione o tipo de ativo.',
             'assetName.required' => 'Informe o nome do ativo.',
+            'unit_price.numeric' => 'Informe um preço unitário válido.',
+            'unit_price.max' => 'Informe um preço unitário válido.',
+            'fees.numeric' => 'Informe um valor de taxas válido.',
+            'fees.max' => 'Informe um valor de taxas válido.',
             'bank_account_id.required' => 'Selecione a conta de investimento (corretora) desta operação.',
             'bank_account_id.exists' => 'Selecione uma conta de investimento ativa.',
         ];
@@ -250,8 +261,22 @@ new #[Layout('layouts.app')] class extends Component {
         $this->lookupStatus = $this->holdingStatus($asset, $available);
     }
 
+    public function operationTotal(): float
+    {
+        $qty = (float) $this->quantity;
+        $unit = $this->moneyValue($this->unit_price);
+        $fees = $this->moneyValue($this->fees);
+
+        return max(0, round($qty * $unit + ($this->opType === 'buy' ? $fees : -$fees), 2));
+    }
+
     public function save(): void
     {
+        $this->unit_price = $this->normalizeMoney($this->unit_price);
+        $this->fees = $this->normalizeMoney($this->fees);
+        if ($this->fees === '') {
+            $this->fees = '0';
+        }
         $this->ticker = strtoupper(trim($this->ticker));
         if (! $this->asset_id && trim($this->ticker) !== '') {
             $this->lookupAsset();
@@ -278,7 +303,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         $qty = (float) $data['quantity'];
         $unit = (float) $data['unit_price'];
-        $fees = (float) $data['fees'];
+        $fees = (float) ($data['fees'] ?? 0);
         $total = round($qty * $unit + ($data['opType'] === 'buy' ? $fees : -$fees), 2);
 
         $payload = [
@@ -525,9 +550,47 @@ new #[Layout('layouts.app')] class extends Component {
             $price = $fallback;
         }
         if ($price && $price > 0) {
-            $this->unit_price = (string) round((float) $price, 4);
+            $this->unit_price = number_format((float) $price, 2, '.', '');
             $this->priceFromMarket = true;
         }
+    }
+
+    private function moneyValue(string $value): float
+    {
+        $normalized = $this->normalizeMoney($value);
+
+        return $normalized === '' ? 0.0 : (float) $normalized;
+    }
+
+    private function normalizeMoney(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return $value;
+        }
+
+        $value = preg_replace('/[^\d,.-]/', '', $value) ?? '';
+        if ($value === '' || ! preg_match('/\d/', $value)) {
+            return '';
+        }
+
+        if (str_contains($value, ',') && str_contains($value, '.')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        } elseif (str_contains($value, ',')) {
+            $value = str_replace(',', '.', $value);
+        }
+
+        if (! is_numeric($value)) {
+            return $value;
+        }
+
+        $number = (float) $value;
+        if (! is_finite($number) || $number > 999999999.99) {
+            return '1000000000';
+        }
+
+        return number_format(max(0, $number), 2, '.', '');
     }
 
     private function selectedClassSlug(): string
@@ -854,8 +917,8 @@ new #[Layout('layouts.app')] class extends Component {
                 <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
                 <x-jr.input
                     label="Preço unitário"
-                    type="number"
-                    step="0.0001"
+                    type="text"
+                    x-money
                     name="unit_price"
                     icon="payments"
                     wire:model.live.debounce.300ms="unit_price"
@@ -870,7 +933,7 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
             <div class="md:col-span-2 flex items-center justify-between border-t border-mono-100 pt-4">
                 <span class="font-medium">Total da movimentação</span>
-                <strong class="text-xl">R$ {{ number_format(max(0, (float) $quantity * (float) $unit_price + ($opType === 'buy' ? (float) $fees : -(float) $fees)), 2, ',', '.') }}</strong>
+                <strong class="text-xl">R$ {{ number_format($this->operationTotal(), 2, ',', '.') }}</strong>
             </div>
             <div class="md:col-span-2 rounded-2xl bg-primary-100 p-4 text-sm text-mono-900">
                 A movimentação é liquidada na corretora escolhida e lançada no Financeiro. Para aplicações controladas pelo valor total, utilize quantidade 1.
