@@ -13,7 +13,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         return [
             'summary' => app(PortfolioProfitabilityService::class)->summary(),
-            'cashflow' => app(InvestmentAnalyticsService::class)->monthlyCashflow(),
+            'evolution' => app(InvestmentAnalyticsService::class)->portfolioEvolution(),
             'positions' => AssetPosition::with('asset.assetClass')->where('quantity', '>', 0)->get()->sortByDesc(fn ($p) => $p->marketValue()),
             'recent' => AssetOperation::with('asset')->orderByDesc('date')->orderByDesc('id')->limit(5)->get(),
             'assetCount' => Asset::count(),
@@ -51,8 +51,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <x-jr.card class="xl:col-span-2">
-            <div class="mb-6 flex items-center justify-between"><div><h3 class="text-base font-bold">Fluxo dos investimentos</h3><p class="mt-1 text-xs text-mono-600">Últimos 12 meses · movimentações em reais, não rentabilidade</p></div><span class="material-icons-outlined text-mono-300">bar_chart</span></div>
-            <x-investments.cashflow-chart :rows="$cashflow" />
+            <div class="mb-6 flex items-center justify-between"><div><h3 class="text-base font-bold">Evolução do patrimônio</h3><p class="mt-1 text-xs text-mono-600">Últimos 12 meses · valor da carteira a cada mês, com as cotações da época</p></div><span class="material-icons-outlined text-mono-300">show_chart</span></div>
+            <x-investments.equity-chart :rows="$evolution" />
         </x-jr.card>
         <x-jr.card>
             <h3 class="text-base font-bold">Distribuição da carteira</h3><p class="mt-1 text-xs text-mono-600">Participação por classe no valor atual</p>

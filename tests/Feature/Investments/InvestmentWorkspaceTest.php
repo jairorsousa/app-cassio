@@ -54,7 +54,7 @@ class InvestmentWorkspaceTest extends TestCase
         foreach ($pages as $page) {
             Volt::test('investments.'.$page)->assertSee('Visão geral');
         }
-        Volt::test('investments.dashboard')->assertSee('TEST')->assertSee('Fluxo dos investimentos');
+        Volt::test('investments.dashboard')->assertSee('TEST')->assertSee('Evolução do patrimônio');
     }
 
     public function test_asset_modal_can_create_custom_class_and_custody_details(): void
@@ -395,6 +395,25 @@ class InvestmentWorkspaceTest extends TestCase
     {
         Volt::test('investments.reports.profitability')->set('from', '2026-09-09')->set('to', '2026-08-01')->call('applyFilters')->assertHasErrors('to');
         Volt::test('investments.reports.profitability')->call('export')->assertFileDownloaded('investimentos-2026-01-01-2026-09-09.csv');
+    }
+
+    public function test_portfolio_evolution_uses_cost_until_quotes_are_available(): void
+    {
+        $asset = $this->asset();
+        $this->operation($asset, ['date' => '2026-06-10']);
+
+        $rows = collect(app(InvestmentAnalyticsService::class)->portfolioEvolution())->keyBy('key');
+        $this->assertEquals(0.0, $rows['2026-05']['market_value']);
+        $this->assertEquals(100.0, $rows['2026-06']['market_value']);
+        $this->assertEquals(100.0, $rows['2026-06']['invested']);
+
+        app(AssetPositionService::class)->setQuote($asset, '2026-07-15', 20);
+
+        $rows = collect(app(InvestmentAnalyticsService::class)->portfolioEvolution())->keyBy('key');
+        $this->assertEquals(100.0, $rows['2026-06']['market_value']);
+        $this->assertEquals(200.0, $rows['2026-07']['market_value']);
+        $this->assertEquals(100.0, $rows['2026-07']['invested']);
+        $this->assertEquals(200.0, $rows['2026-09']['market_value']);
     }
 
     public function test_receipts_on_last_day_are_included_in_charts_summary_and_reports(): void

@@ -4,9 +4,106 @@ namespace App\Domains\Investments\Services;
 
 use App\Domains\Investments\Models\AssetDividend;
 use App\Domains\Investments\Models\AssetOperation;
+use App\Domains\Investments\Models\AssetQuote;
+use Illuminate\Support\Collection;
 
 class InvestmentAnalyticsService
 {
+    /**
+     * @return list<array{key: string, label: string, date: string, market_value: float, invested: float}>
+     */
+    public function portfolioEvolution(int $months = 12): array
+    {
+        $start = today()->startOfMonth()->subMonths($months - 1);
+        $operations = AssetOperation::query()
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('asset_id');
+        $quotes = AssetQuote::query()
+            ->orderBy('date')
+            ->get()
+            ->groupBy('asset_id');
+
+        $rows = [];
+        for ($i = 0; $i < $months; $i++) {
+            $month = $start->copy()->addMonths($i);
+            $asOf = $month->copy()->endOfMonth();
+            if ($asOf->gt(today())) {
+                $asOf = today();
+            }
+            $asOfDate = $asOf->toDateString();
+            $snapshot = $this->snapshotAsOf($operations, $quotes, $asOfDate);
+            $rows[] = [
+                'key' => $month->format('Y-m'),
+                'label' => $month->locale('pt_BR')->translatedFormat('M/y'),
+                'date' => $asOfDate,
+                'market_value' => $snapshot['market_value'],
+                'invested' => $snapshot['invested'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  Collection<int|string, Collection<int, AssetOperation>>  $operations
+     * @param  Collection<int|string, Collection<int, AssetQuote>>  $quotes
+     * @return array{market_value: float, invested: float}
+     */
+    private function snapshotAsOf(Collection $operations, Collection $quotes, string $asOfDate): array
+    {
+        $market = 0.0;
+        $invested = 0.0;
+
+        foreach ($operations as $assetId => $ops) {
+            $quantity = 0.0;
+            $cost = 0.0;
+            foreach ($ops as $op) {
+                if ($op->date->toDateString() > $asOfDate) {
+                    break;
+                }
+                $qty = (float) $op->quantity;
+                if ($op->type === 'buy') {
+                    $cost += (float) $op->total;
+                    $quantity += $qty;
+                } else {
+                    $avg = $quantity > 0 ? $cost / $quantity : 0.0;
+                    $cost -= $avg * $qty;
+                    $quantity -= $qty;
+                    if ($quantity <= 1e-6) {
+                        $quantity = 0.0;
+                        $cost = 0.0;
+                    }
+                }
+            }
+
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $average = $cost / $quantity;
+            $price = $this->priceAsOf($quotes->get($assetId, collect()), $asOfDate, $average);
+            $market += $quantity * $price;
+            $invested += $cost;
+        }
+
+        return [
+            'market_value' => round($market, 2),
+            'invested' => round(max(0, $invested), 2),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, AssetQuote>  $quotes
+     */
+    private function priceAsOf(Collection $quotes, string $asOfDate, float $fallback): float
+    {
+        $quote = $quotes->last(fn (AssetQuote $quote) => $quote->date->toDateString() <= $asOfDate);
+
+        return $quote ? (float) $quote->price : $fallback;
+    }
+
     public function monthlyCashflow(int $months = 12): array
     {
         $start = today()->startOfMonth()->subMonths($months - 1);

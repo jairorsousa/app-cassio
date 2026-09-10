@@ -20,7 +20,8 @@ Todos os valores são informados em reais. Para aplicações controladas por val
 - Valorização em aberto: patrimônio menos capital em posição.
 - Proventos em 12 meses: recebimentos dos últimos 12 meses até hoje, incluindo o dia final.
 - Distribuição por classe: participação de cada classe no valor atual da carteira.
-- Fluxo mensal: compras, vendas e proventos registrados. Não representa rentabilidade nem evolução histórica do patrimônio.
+- Evolução do patrimônio: valor da carteira ao fim de cada um dos últimos 12 meses. Usa a cotação vigente naquela data; sem cotação, utiliza o custo médio das posições então em aberto. A linha de capital investido é o custo remanescente, não o total já aportado.
+- Fluxo mensal (relatórios): compras, vendas e proventos registrados. Não representa rentabilidade.
 
 ## Rentabilidade
 
