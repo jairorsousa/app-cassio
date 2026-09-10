@@ -32,10 +32,79 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <x-investments.metric label="Patrimônio em carteira" :value="'R$ '.number_format($summary['market_value'], 2, ',', '.')" :hint="$positions->count().' ativos em carteira · valores em reais'" icon="account_balance_wallet" />
-        <x-investments.metric label="Capital em posição" :value="'R$ '.number_format($summary['total_invested'], 2, ',', '.')" hint="Custo das posições ainda em carteira, incluindo taxas" icon="savings" />
-        <x-investments.metric label="Valorização em aberto" :value="'R$ '.number_format($summary['unrealized_pnl'], 2, ',', '.')" :hint="number_format($summary['unrealized_pct'], 2, ',', '.').'% sobre o custo das posições abertas'" :positive="$summary['unrealized_pnl'] >= 0" icon="trending_up" />
-        <x-investments.metric label="Proventos em 12 meses" :value="'R$ '.number_format($summary['dividends_12m'], 2, ',', '.')" hint="Dividendos, JCP e rendimentos recebidos" icon="payments" :positive="true" />
+        <x-jr.card class="investment-summary-card">
+            <div class="investment-summary-title">
+                <span class="investment-summary-icon material-icons-outlined">account_balance_wallet</span>
+                <span>Patrimônio total</span>
+            </div>
+            <div class="mt-5 flex flex-wrap items-center gap-2">
+                <p class="investment-summary-value">R$ {{ number_format($summary['market_value'], 2, ',', '.') }}</p>
+                <span @class(['investment-rate-pill', 'is-positive' => $summary['unrealized_pct'] >= 0, 'is-negative' => $summary['unrealized_pct'] < 0])>
+                    {{ number_format(abs($summary['unrealized_pct']), 2, ',', '.') }}%
+                    <span class="material-icons-outlined">{{ $summary['unrealized_pct'] >= 0 ? 'north_east' : 'south_east' }}</span>
+                </span>
+            </div>
+            <div class="investment-summary-detail">
+                <span>Valor investido</span>
+                <strong>R$ {{ number_format($summary['total_invested'], 2, ',', '.') }}</strong>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card class="investment-summary-card">
+            <div class="investment-summary-title">
+                <span class="investment-summary-icon material-icons-outlined">paid</span>
+                <span>Lucro total</span>
+            </div>
+            <p @class(['investment-summary-value mt-5', 'text-up' => $summary['total_return'] >= 0, 'text-down' => $summary['total_return'] < 0])>
+                {{ $summary['total_return'] < 0 ? '- ' : '' }}R$ {{ number_format(abs($summary['total_return']), 2, ',', '.') }}
+            </p>
+            <div class="mt-5 grid grid-cols-2 gap-4">
+                <div class="investment-summary-detail mt-0">
+                    <span>Ganho de capital</span>
+                    <strong>R$ {{ number_format($summary['unrealized_pnl'] + $summary['realized_pnl_total'], 2, ',', '.') }}</strong>
+                </div>
+                <div class="investment-summary-detail mt-0">
+                    <span>Proventos</span>
+                    <strong>R$ {{ number_format($summary['dividends_total'], 2, ',', '.') }}</strong>
+                </div>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card class="investment-summary-card">
+            <div class="investment-summary-title">
+                <span class="investment-summary-icon material-icons-outlined">payments</span>
+                <span>Proventos recebidos (12M)</span>
+            </div>
+            <p class="investment-summary-value mt-5">R$ {{ number_format($summary['dividends_12m'], 2, ',', '.') }}</p>
+            <div class="investment-summary-detail">
+                <span>Total recebido</span>
+                <strong>R$ {{ number_format($summary['dividends_total'], 2, ',', '.') }}</strong>
+            </div>
+        </x-jr.card>
+
+        <x-jr.card class="investment-summary-card">
+            <div class="investment-summary-title">
+                <span class="investment-summary-icon material-icons-outlined">query_stats</span>
+                <span>Rentabilidade</span>
+            </div>
+            <div class="mt-5 grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Em aberto</p>
+                    <span @class(['investment-rate-pill mt-2', 'is-positive' => $summary['unrealized_pct'] >= 0, 'is-negative' => $summary['unrealized_pct'] < 0])>
+                        {{ number_format(abs($summary['unrealized_pct']), 2, ',', '.') }}%
+                        <span class="material-icons-outlined">{{ $summary['unrealized_pct'] >= 0 ? 'north_east' : 'south_east' }}</span>
+                    </span>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-mono-600">Retorno total</p>
+                    <span @class(['investment-rate-pill mt-2', 'is-positive' => $summary['total_return_pct'] >= 0, 'is-negative' => $summary['total_return_pct'] < 0])>
+                        {{ number_format(abs($summary['total_return_pct']), 2, ',', '.') }}%
+                        <span class="material-icons-outlined">{{ $summary['total_return_pct'] >= 0 ? 'north_east' : 'south_east' }}</span>
+                    </span>
+                </div>
+            </div>
+            <p class="mt-5 text-xs text-mono-600">Resultado sobre o capital atualmente investido</p>
+        </x-jr.card>
     </div>
 
     @if ($assetCount === 0)
@@ -49,13 +118,19 @@ new #[Layout('layouts.app')] class extends Component {
         <x-jr.alert variant="info">{{ $withoutQuote }} ativo(s) em carteira ainda usam o preço médio como referência de valor. Na aba Carteira, use Atualizar cotações para ativos da B3 ou informe o preço manualmente.</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <x-jr.card class="xl:col-span-2">
-            <div class="mb-6 flex items-center justify-between"><div><h3 class="text-base font-bold">Evolução do patrimônio</h3><p class="mt-1 text-xs text-mono-600">Últimos 12 meses · valor da carteira a cada mês, com as cotações da época</p></div><span class="material-icons-outlined text-mono-300">show_chart</span></div>
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <x-jr.card class="xl:col-span-3">
+            <div class="investment-panel-header">
+                <div><h3 class="text-lg font-bold">Evolução do patrimônio</h3><p class="mt-1 text-xs text-mono-600">Valor da carteira e capital investido mês a mês</p></div>
+                <span class="investment-filter-pill"><span class="material-icons-outlined">calendar_month</span>12 meses</span>
+            </div>
             <x-investments.equity-chart :rows="$evolution" />
         </x-jr.card>
-        <x-jr.card>
-            <h3 class="text-base font-bold">Distribuição da carteira</h3><p class="mt-1 text-xs text-mono-600">Participação por classe no valor atual</p>
+        <x-jr.card class="xl:col-span-2">
+            <div class="investment-panel-header">
+                <div><h3 class="text-lg font-bold">Ativos na carteira</h3><p class="mt-1 text-xs text-mono-600">Participação por classe no valor atual</p></div>
+                <span class="investment-filter-pill"><span class="material-icons-outlined">category</span>Todos os tipos</span>
+            </div>
             @php
                 $colors = ['#ff6f00', '#1a73e8', '#15a96f', '#8b5cf6', '#eab308', '#ec4899', '#06b6d4'];
                 $segments = []; $offset = 0;
@@ -65,8 +140,8 @@ new #[Layout('layouts.app')] class extends Component {
                     $offset += $share;
                 }
             @endphp
-            <div class="mx-auto my-7 flex h-44 w-44 items-center justify-center rounded-full" style="background: {{ $segments ? 'conic-gradient('.implode(', ', $segments).')' : 'var(--colors-mono-g100)' }}">
-                <div class="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-mono-white"><span class="text-3xl font-bold">{{ $positions->count() }}</span><span class="text-xs text-mono-600">ativos na carteira</span></div>
+            <div class="mx-auto my-8 flex h-52 w-52 items-center justify-center rounded-full" style="background: {{ $segments ? 'conic-gradient('.implode(', ', $segments).')' : 'var(--colors-mono-g100)' }}">
+                <div class="flex h-36 w-36 flex-col items-center justify-center rounded-full bg-mono-white"><span class="text-3xl font-bold">{{ $positions->count() }}</span><span class="text-xs text-mono-600">ativos na carteira</span></div>
             </div>
             <div class="space-y-3">
                 @forelse ($summary['by_class'] as $label => $row)

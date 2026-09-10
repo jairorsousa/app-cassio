@@ -38,6 +38,7 @@ class PortfolioProfitabilityService
         $realizedTotal = (float) AssetPosition::sum('realized_pnl_total');
         $dividendsTotal = (float) AssetDividend::whereDate('payment_date', '<=', today())->sum('total');
         $totalReturn = round($unrealizedPnL + $dividendsTotal + $realizedTotal, 2);
+        $totalReturnPct = $totalInvested > 0 ? round(($totalReturn / $totalInvested) * 100, 3) : 0.0;
 
         return [
             'total_invested' => round($totalInvested, 2),
@@ -49,6 +50,7 @@ class PortfolioProfitabilityService
             'dividends_12m' => round($dividendsLast12, 2),
             'yield_on_cost_12m' => $yieldOnCost,
             'total_return' => $totalReturn,
+            'total_return_pct' => $totalReturnPct,
             'by_class' => $byClass,
         ];
     }
