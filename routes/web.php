@@ -62,7 +62,6 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
     Volt::route('/cards', 'banking.cards.index')->name('cards.index');
     Volt::route('/cards/{card}/invoices', 'banking.cards.invoices')->name('cards.invoices');
     Volt::route('/transactions', 'banking.transactions.index')->name('transactions.index');
-    Volt::route('/transactions/import/preview', 'banking.transactions.import-preview')->name('transactions.import.preview');
     Volt::route('/transactions/create', 'banking.transactions.form')->name('transactions.create');
     Volt::route('/transactions/{transaction}/edit', 'banking.transactions.form')->name('transactions.edit');
     Volt::route('/recurring', 'banking.recurring.index')->name('recurring.index');

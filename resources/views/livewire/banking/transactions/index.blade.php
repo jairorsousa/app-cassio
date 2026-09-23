@@ -29,6 +29,9 @@ new #[Layout('layouts.app')] class extends Component
     public ?int $ofxAccountId = null;
 
     #[Url]
+    public string $preview = '';
+
+    #[Url]
     public string $from = '';
 
     #[Url]
@@ -117,7 +120,7 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
-        $this->redirectRoute('banking.transactions.import.preview', navigate: true);
+        $this->redirectRoute('banking.transactions.index', ['preview' => 'ofx'], navigate: true);
     }
 
     private function validateImport(): void
@@ -268,6 +271,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public function with(): array
     {
+        if ($this->preview === 'ofx') {
+            return [];
+        }
+
         $q = Transaction::with(['category', 'bankAccount', 'creditCard']);
 
         if ($this->from) {
@@ -300,8 +307,11 @@ new #[Layout('layouts.app')] class extends Component
     }
 }; ?>
 
-<x-slot name="header">Financeiro</x-slot>
+<x-slot name="header">{{ $preview === 'ofx' ? 'Prévia da importação OFX' : 'Financeiro' }}</x-slot>
 
+@if ($preview === 'ofx')
+    <livewire:banking.transactions.import-preview />
+@else
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav />
     @if (session('status'))
@@ -602,3 +612,4 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     @endif
 </div>
+@endif

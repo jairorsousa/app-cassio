@@ -4,10 +4,9 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Services\OfxImportDraftService;
 use App\Domains\Banking\Services\OfxImportService;
-use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component
+new class extends Component
 {
     public array $excludedIndices = [];
 
@@ -189,8 +188,6 @@ new #[Layout('layouts.app')] class extends Component
         ];
     }
 }; ?>
-
-<x-slot name="header">Prévia da importação OFX</x-slot>
 
 <div class="flex flex-col gap-6">
     <x-banking.subnav />

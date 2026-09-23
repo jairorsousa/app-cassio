@@ -30,7 +30,12 @@ class OfxImportTest extends TestCase
             ->set('ofxFile', $file)
             ->call('previewImport')
             ->assertHasNoErrors()
-            ->assertRedirect(route('banking.transactions.import.preview'));
+            ->assertRedirect(route('banking.transactions.index', ['preview' => 'ofx']));
+
+        $this->get(route('banking.transactions.index', ['preview' => 'ofx']))
+            ->assertOk()
+            ->assertSee('Mercado')
+            ->assertSee('Salario');
 
         Volt::test('banking.transactions.import-preview')
             ->assertSee('Mercado')
@@ -57,7 +62,7 @@ class OfxImportTest extends TestCase
             ->set('ofxAccountId', $account->id)
             ->set('ofxFile', UploadedFile::fake()->createWithContent('extrato.ofx', $this->sgmlStatement()))
             ->call('previewImport')
-            ->assertRedirect(route('banking.transactions.import.preview'));
+            ->assertRedirect(route('banking.transactions.index', ['preview' => 'ofx']));
 
         Volt::test('banking.transactions.import-preview')
             ->assertSee('2 já importada(s)')
@@ -97,7 +102,7 @@ class OfxImportTest extends TestCase
             ->set('ofxAccountId', $account->id)
             ->set('ofxFile', UploadedFile::fake()->createWithContent('completo.ofx', $this->manyRowsStatement(25)))
             ->call('previewImport')
-            ->assertRedirect(route('banking.transactions.import.preview'));
+            ->assertRedirect(route('banking.transactions.index', ['preview' => 'ofx']));
 
         Volt::test('banking.transactions.import-preview')
             ->assertSee('Item 25')
