@@ -27,6 +27,7 @@ class Transaction extends Model
         'type', 'date', 'amount', 'description', 'notes', 'status',
         'category_id', 'bank_account_id', 'credit_card_id', 'credit_card_invoice_id',
         'related_transaction_id', 'source_type', 'source_id',
+        'ofx_fitid',
         'installment_group_id', 'installment_number', 'installment_total',
     ];
 
