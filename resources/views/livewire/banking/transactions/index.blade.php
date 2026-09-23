@@ -5,6 +5,7 @@ use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\InstallmentService;
+use App\Domains\Banking\Services\OfxImportDraftService;
 use App\Domains\Banking\Services\OfxImportService;
 use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Banking\Services\TransferService;
@@ -26,18 +27,6 @@ new #[Layout('layouts.app')] class extends Component
     public $ofxFile = null;
 
     public ?int $ofxAccountId = null;
-
-    public array $ofxPreviewRows = [];
-
-    public int $ofxTotal = 0;
-
-    public int $ofxDuplicates = 0;
-
-    public ?string $ofxStatementAccount = null;
-
-    public ?string $ofxPreviewHash = null;
-
-    public ?int $ofxPreviewAccountId = null;
 
     #[Url]
     public string $from = '';
@@ -101,78 +90,34 @@ new #[Layout('layouts.app')] class extends Component
 
     public function openImport(): void
     {
-        $this->resetImport();
+        $this->reset(['ofxFile', 'ofxAccountId']);
+        $this->resetValidation();
         $this->showImportModal = true;
     }
 
     public function closeImport(): void
     {
-        $this->resetImport();
+        $this->reset(['ofxFile', 'ofxAccountId']);
+        $this->resetValidation();
         $this->showImportModal = false;
     }
 
-    public function updatedOfxFile(): void
-    {
-        $this->clearImportPreview();
-    }
-
-    public function updatedOfxAccountId(): void
-    {
-        $this->clearImportPreview();
-    }
-
-    public function previewImport(OfxImportService $service): void
+    public function previewImport(OfxImportService $service, OfxImportDraftService $drafts): void
     {
         $this->validateImport();
 
         try {
-            $parsed = $service->parse(file_get_contents($this->ofxFile->getRealPath()));
+            $contents = file_get_contents($this->ofxFile->getRealPath());
+            $service->parse($contents);
             $account = BankAccount::active()->findOrFail($this->ofxAccountId);
-            $existing = $service->existingFitids($account, $parsed['transactions']);
-            $this->ofxPreviewRows = array_slice(array_map(
-                fn (array $row) => $row + ['duplicate' => isset($existing[$row['fitid']])],
-                $parsed['transactions'],
-            ), 0, 20);
-            $this->ofxTotal = count($parsed['transactions']);
-            $this->ofxDuplicates = count($existing);
-            $this->ofxStatementAccount = $parsed['account'];
-            $this->ofxPreviewHash = hash_file('sha256', $this->ofxFile->getRealPath());
-            $this->ofxPreviewAccountId = $account->id;
-        } catch (\InvalidArgumentException $e) {
-            $this->clearImportPreview();
-            $this->addError('ofxFile', $e->getMessage());
-        }
-    }
-
-    public function confirmImport(OfxImportService $service): void
-    {
-        $this->validateImport();
-
-        if (! $this->ofxPreviewHash || $this->ofxPreviewAccountId !== $this->ofxAccountId
-            || ! hash_equals($this->ofxPreviewHash, hash_file('sha256', $this->ofxFile->getRealPath()))) {
-            $this->addError('ofxFile', 'Confira a prévia novamente antes de importar.');
-
-            return;
-        }
-
-        try {
-            $parsed = $service->parse(file_get_contents($this->ofxFile->getRealPath()));
-            $account = BankAccount::active()->findOrFail($this->ofxAccountId);
-            $result = $service->import($account, $parsed['transactions']);
-        } catch (\InvalidArgumentException $e) {
+            $drafts->create($account->id, $contents);
+        } catch (\InvalidArgumentException|\RuntimeException $e) {
             $this->addError('ofxFile', $e->getMessage());
 
             return;
         }
 
-        $dates = array_column($parsed['transactions'], 'date');
-        $this->from = min($dates);
-        $this->to = max($dates);
-        $this->account = (string) $account->id;
-        $this->category = $this->status = $this->type = '';
-        $this->resetPage();
-        $this->closeImport();
-        session()->flash('status', "OFX importado: {$result['imported']} lançamento(s) novo(s) e {$result['skipped']} já importado(s) nesta conta.");
+        $this->redirectRoute('banking.transactions.import.preview', navigate: true);
     }
 
     private function validateImport(): void
@@ -185,18 +130,6 @@ new #[Layout('layouts.app')] class extends Component
         if (strtolower(pathinfo($this->ofxFile->getClientOriginalName(), PATHINFO_EXTENSION)) !== 'ofx') {
             throw \Illuminate\Validation\ValidationException::withMessages(['ofxFile' => 'Selecione um arquivo com extensão .ofx.']);
         }
-    }
-
-    private function clearImportPreview(): void
-    {
-        $this->reset(['ofxPreviewRows', 'ofxTotal', 'ofxDuplicates', 'ofxStatementAccount', 'ofxPreviewHash', 'ofxPreviewAccountId']);
-        $this->resetValidation();
-    }
-
-    private function resetImport(): void
-    {
-        $this->reset(['ofxFile', 'ofxAccountId']);
-        $this->clearImportPreview();
     }
 
     public function create(): void
@@ -512,38 +445,10 @@ new #[Layout('layouts.app')] class extends Component
                         <p wire:loading wire:target="ofxFile" class="mt-2 text-xs text-mono-500">Carregando arquivo...</p>
                         @error('ofxFile') <p class="mt-2 text-xs text-error">{{ $message }}</p> @enderror
                     </div>
-                    @if ($ofxPreviewHash)
-                        <div class="rounded-xl bg-mono-50 p-4 text-sm text-mono-700">
-                            <p><strong>{{ $ofxTotal }}</strong> lançamento(s) no arquivo; <strong>{{ $ofxDuplicates }}</strong> já importado(s) nesta conta; <strong>{{ $ofxTotal - $ofxDuplicates }}</strong> novo(s).</p>
-                            @if ($ofxStatementAccount)
-                                <p class="mt-1">Conta informada no OFX: {{ $ofxStatementAccount }}. Confira se corresponde à conta selecionada.</p>
-                            @endif
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-sm text-mono-700">
-                                <thead><tr class="border-b border-mono-200 text-left"><th class="p-2">Data</th><th class="p-2">Descrição</th><th class="p-2 text-right">Valor</th><th class="p-2">Situação</th></tr></thead>
-                                <tbody>
-                                    @foreach ($ofxPreviewRows as $row)
-                                        <tr class="border-b border-mono-100">
-                                            <td class="p-2 whitespace-nowrap">{{ \Illuminate\Support\Carbon::parse($row['date'])->format('d/m/Y') }}</td>
-                                            <td class="p-2">{{ $row['description'] }}</td>
-                                            <td class="p-2 text-right whitespace-nowrap {{ $row['type'] === 'income' ? 'text-green-700' : 'text-red-700' }}">{{ $row['type'] === 'income' ? '+' : '-' }} R$ {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
-                                            <td class="p-2">{{ $row['duplicate'] ? 'Já importado' : 'Novo' }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                            @if ($ofxTotal > 20) <p class="mt-2 text-xs text-mono-500">Exibindo os primeiros 20 lançamentos.</p> @endif
-                        </div>
-                    @endif
                 </div>
                 <div class="flex justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
                     <button type="button" wire:click="closeImport" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900">Cancelar</button>
-                    @if ($ofxPreviewHash)
-                        <button type="button" wire:click="confirmImport" wire:loading.attr="disabled" wire:target="confirmImport,ofxFile" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white disabled:opacity-50">Importar {{ $ofxTotal - $ofxDuplicates }} novo(s)</button>
-                    @else
-                        <button type="button" wire:click="previewImport" wire:loading.attr="disabled" wire:target="previewImport,ofxFile" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white disabled:opacity-50">Conferir prévia</button>
-                    @endif
+                    <button type="button" wire:click="previewImport" wire:loading.attr="disabled" wire:target="previewImport,ofxFile" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white disabled:opacity-50">Ver prévia completa</button>
                 </div>
             </div>
         </div>

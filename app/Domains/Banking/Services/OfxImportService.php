@@ -121,7 +121,7 @@ class OfxImportService
         return $found;
     }
 
-    /** @param array<int, array<string, string|null>> $transactions
+    /** @param array<int, array<string, string|int|null>> $transactions
      * @return array{imported: int, skipped: int}
      */
     public function import(BankAccount $account, array $transactions): array
@@ -142,6 +142,7 @@ class OfxImportService
                     'description' => $row['description'],
                     'notes' => $row['notes'],
                     'status' => 'settled',
+                    'category_id' => $row['category_id'] ?? null,
                     'bank_account_id' => $account->id,
                     'ofx_fitid' => $row['fitid'],
                 ]);

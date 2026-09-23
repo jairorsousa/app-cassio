@@ -14,11 +14,20 @@
     </a>
     <a
         href="{{ route('banking.transactions.index') }}"
-        class="{{ $tab }} {{ request()->routeIs('banking.transactions.*') ? $activeTab : $inactiveTab }}"
+        class="{{ $tab }} {{ request()->routeIs('banking.transactions.index', 'banking.transactions.create', 'banking.transactions.edit') ? $activeTab : $inactiveTab }}"
     >
         <span class="material-icons-outlined text-[18px]">receipt_long</span>
         Lançamentos
     </a>
+    @if (session()->has(\App\Domains\Banking\Services\OfxImportDraftService::SESSION_KEY))
+        <a
+            href="{{ route('banking.transactions.import.preview') }}"
+            class="{{ $tab }} {{ request()->routeIs('banking.transactions.import.preview') ? $activeTab : $inactiveTab }}"
+        >
+            <span class="material-icons-outlined text-[18px]">preview</span>
+            Prévia OFX
+        </a>
+    @endif
     <a
         href="{{ route('banking.accounts.index') }}"
         class="{{ $tab }} {{ request()->routeIs('banking.accounts.*') ? $activeTab : $inactiveTab }}"

@@ -3,11 +3,13 @@
 namespace Tests\Feature\Banking;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\OfxImportService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -18,6 +20,7 @@ class OfxImportTest extends TestCase
     public function test_previews_and_imports_sgml_statement_without_reimporting_the_same_fitid(): void
     {
         $this->actingAs(User::factory()->create());
+        Storage::fake('local');
         $account = BankAccount::create(['name' => 'Conta principal']);
         $file = UploadedFile::fake()->createWithContent('extrato.ofx', $this->sgmlStatement());
 
@@ -27,11 +30,16 @@ class OfxImportTest extends TestCase
             ->set('ofxFile', $file)
             ->call('previewImport')
             ->assertHasNoErrors()
-            ->assertSet('ofxTotal', 2)
-            ->assertSet('ofxDuplicates', 0)
+            ->assertRedirect(route('banking.transactions.import.preview'));
+
+        Volt::test('banking.transactions.import-preview')
+            ->assertSee('Mercado')
+            ->assertSee('Salario')
+            ->assertSee('R$ 1.000,00')
+            ->assertSee('R$ 34,50')
             ->call('confirmImport')
             ->assertHasNoErrors()
-            ->assertSet('showImportModal', false);
+            ->assertRedirect();
 
         $this->assertDatabaseCount('transactions', 2);
         $this->assertDatabaseHas('transactions', [
@@ -49,9 +57,12 @@ class OfxImportTest extends TestCase
             ->set('ofxAccountId', $account->id)
             ->set('ofxFile', UploadedFile::fake()->createWithContent('extrato.ofx', $this->sgmlStatement()))
             ->call('previewImport')
-            ->assertSet('ofxDuplicates', 2)
+            ->assertRedirect(route('banking.transactions.import.preview'));
+
+        Volt::test('banking.transactions.import-preview')
+            ->assertSee('2 já importada(s)')
             ->call('confirmImport')
-            ->assertHasNoErrors();
+            ->assertHasErrors(['import']);
 
         $this->assertDatabaseCount('transactions', 2);
     }
@@ -74,6 +85,85 @@ class OfxImportTest extends TestCase
         $this->assertSame(['imported' => 0, 'skipped' => 2], $service->import($first, $rows));
     }
 
+    public function test_full_preview_groups_all_rows_and_applies_category_and_exclusions(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'Conta completa']);
+        $category = Category::create(['name' => 'Receitas diversas', 'type' => 'income']);
+
+        Volt::test('banking.transactions.index')
+            ->call('openImport')
+            ->set('ofxAccountId', $account->id)
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('completo.ofx', $this->manyRowsStatement(25)))
+            ->call('previewImport')
+            ->assertRedirect(route('banking.transactions.import.preview'));
+
+        Volt::test('banking.transactions.import-preview')
+            ->assertSee('Item 25')
+            ->assertSee('R$ 130,00')
+            ->assertSee('R$ 24,00')
+            ->assertSeeInOrder(['Receitas', 'Item 25', 'Despesas'])
+            ->set('categorySelections.0', $category->id)
+            ->call('exclude', 24)
+            ->assertSee('Retirado');
+
+        Volt::test('banking.transactions.import-preview')
+            ->assertSet('categorySelections.0', $category->id)
+            ->assertSee('Retirado')
+            ->call('confirmImport')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $this->assertDatabaseCount('transactions', 24);
+        $this->assertDatabaseHas('transactions', [
+            'ofx_fitid' => 'many-1',
+            'category_id' => $category->id,
+        ]);
+        $this->assertDatabaseMissing('transactions', ['ofx_fitid' => 'many-25']);
+    }
+
+    public function test_preview_rejects_category_from_the_wrong_transaction_type(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'Conta']);
+        $expenseCategory = Category::create(['name' => 'Mercado', 'type' => 'expense']);
+
+        Volt::test('banking.transactions.index')
+            ->call('openImport')
+            ->set('ofxAccountId', $account->id)
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('extrato.ofx', $this->sgmlStatement()))
+            ->call('previewImport');
+
+        Volt::test('banking.transactions.import-preview')
+            ->set('categorySelections.1', $expenseCategory->id)
+            ->call('confirmImport')
+            ->assertHasErrors(['import']);
+
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_cancel_discards_the_preview_without_importing(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'Conta']);
+
+        Volt::test('banking.transactions.index')
+            ->call('openImport')
+            ->set('ofxAccountId', $account->id)
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('extrato.ofx', $this->sgmlStatement()))
+            ->call('previewImport');
+
+        Volt::test('banking.transactions.import-preview')
+            ->call('cancel')
+            ->assertRedirect(route('banking.transactions.index'));
+
+        $this->assertDatabaseCount('transactions', 0);
+        $this->assertCount(0, Storage::disk('local')->files('banking/ofx-previews'));
+    }
+
     public function test_parses_xml_ofx_and_rejects_invalid_transactions_before_import(): void
     {
         $service = app(OfxImportService::class);
@@ -92,6 +182,7 @@ class OfxImportTest extends TestCase
     public function test_rejects_non_ofx_file_in_upload_flow(): void
     {
         $this->actingAs(User::factory()->create());
+        Storage::fake('local');
         $account = BankAccount::create(['name' => 'Conta']);
 
         Volt::test('banking.transactions.index')
@@ -131,5 +222,17 @@ class OfxImportTest extends TestCase
             '<BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260910<TRNAMT>-34.50<FITID>bank-001<NAME>Mercado<MEMO>Compra de alimentos</STMTTRN>'.
             '<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260911<TRNAMT>1000.00<FITID>bank-002<NAME>Salario</STMTTRN>'.
             '</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>';
+    }
+
+    private function manyRowsStatement(int $count): string
+    {
+        $rows = '';
+
+        for ($index = 1; $index <= $count; $index++) {
+            $amount = $index % 2 === 1 ? '10.00' : '-2.00';
+            $rows .= "<STMTTRN><DTPOSTED>20260901<TRNAMT>{$amount}<FITID>many-{$index}<NAME>Item {$index}</STMTTRN>";
+        }
+
+        return "<OFX><BANKTRANLIST>{$rows}</BANKTRANLIST></OFX>";
     }
 }
