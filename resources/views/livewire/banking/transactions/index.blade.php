@@ -309,10 +309,10 @@ new #[Layout('layouts.app')] class extends Component
 
 <x-slot name="header">{{ $preview === 'ofx' ? 'Prévia da importação OFX' : 'Financeiro' }}</x-slot>
 
+<div class="flex flex-col gap-space-5">
 @if ($preview === 'ofx')
     <livewire:banking.transactions.import-preview />
 @else
-<div class="flex flex-col gap-space-5">
     <x-banking.subnav />
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
@@ -611,5 +611,5 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     @endif
-</div>
 @endif
+</div>

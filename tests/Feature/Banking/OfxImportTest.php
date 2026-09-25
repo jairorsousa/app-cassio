@@ -32,10 +32,22 @@ class OfxImportTest extends TestCase
             ->assertHasNoErrors()
             ->assertRedirect(route('banking.transactions.index', ['preview' => 'ofx']));
 
-        $this->get(route('banking.transactions.index', ['preview' => 'ofx']))
+        $previewPage = $this->get(route('banking.transactions.index', ['preview' => 'ofx']));
+        $previewPage
             ->assertOk()
             ->assertSee('Mercado')
             ->assertSee('Salario');
+
+        $document = new \DOMDocument;
+        @$document->loadHTML($previewPage->getContent());
+        $button = (new \DOMXPath($document))->query('//button[contains(normalize-space(.), "Importar transações")]')->item(0);
+        $this->assertNotNull($button);
+
+        while ($button && ! ($button instanceof \DOMElement && $button->hasAttribute('wire:id'))) {
+            $button = $button->parentNode;
+        }
+
+        $this->assertInstanceOf(\DOMElement::class, $button);
 
         Volt::test('banking.transactions.import-preview')
             ->assertSee('Mercado')

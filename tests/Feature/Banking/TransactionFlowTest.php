@@ -38,6 +38,30 @@ class TransactionFlowTest extends TestCase
             ->assertSet('showFormModal', false);
     }
 
+    public function test_transaction_action_buttons_are_inside_the_livewire_root(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $response = $this->get(route('banking.transactions.index'));
+        $response->assertOk();
+
+        $document = new \DOMDocument;
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+
+        foreach (['Importar OFX', 'Novo lançamento'] as $label) {
+            $button = $xpath->query('//button[contains(normalize-space(.), "'.$label.'")]')->item(0);
+            $this->assertNotNull($button, "Botão {$label} não encontrado.");
+
+            $parent = $button;
+
+            while ($parent && ! ($parent instanceof \DOMElement && $parent->hasAttribute('wire:id'))) {
+                $parent = $parent->parentNode;
+            }
+
+            $this->assertInstanceOf(\DOMElement::class, $parent, "Botão {$label} fora da raiz Livewire.");
+        }
+    }
+
     public function test_transaction_modal_creates_a_manual_transaction(): void
     {
         $this->actingAs(User::factory()->create());
