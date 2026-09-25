@@ -22,6 +22,18 @@ class TransactionService
             throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
         }
 
+        if ($transaction->allocations()->exists()) {
+            if (isset($data['amount']) && round((float) $data['amount'] * 100) !== round((float) $transaction->amount * 100)) {
+                throw new \DomainException('Ajuste ou remova o rateio antes de alterar o valor total.');
+            }
+
+            if (isset($data['type']) && $data['type'] !== $transaction->type) {
+                throw new \DomainException('Remova o rateio antes de alterar o tipo do lançamento.');
+            }
+
+            $data['category_id'] = null;
+        }
+
         return DB::transaction(function () use ($transaction, $data) {
             $transaction->update($data);
 

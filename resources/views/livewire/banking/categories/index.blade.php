@@ -186,10 +186,10 @@ new #[Layout('layouts.app')] class extends Component {
     private function categoryRoots(string $type): Collection
     {
         return Category::query()
-            ->withCount('transactions')
+            ->withCount(['transactions', 'allocations' => fn ($query) => $query->whereHas('transaction')])
             ->with(['children' => fn ($query) => $query
                 ->where('type', $type)
-                ->withCount('transactions')
+                ->withCount(['transactions', 'allocations' => fn ($query) => $query->whereHas('transaction')])
                 ->orderBy('name')])
             ->roots()
             ->where('type', $type)
@@ -251,7 +251,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-baseline gap-x-xs gap-y-xxxs">
                                     <h4 class="truncate text-sm font-semibold text-mono-900">{{ $category->name }}</h4>
-                                    <span class="text-xs text-mono-600">{{ $category->transactions_count }} transações</span>
+                                    <span class="text-xs text-mono-600">{{ $category->transactions_count + $category->allocations_count }} transações</span>
                                 </div>
                                 @unless ($category->status)
                                     <span class="text-xxs text-mono-600">Inativa</span>
@@ -282,7 +282,7 @@ new #[Layout('layouts.app')] class extends Component {
                                         <div class="min-w-0 flex-1">
                                             <div class="flex flex-wrap items-baseline gap-x-xs gap-y-xxxs">
                                                 <span class="truncate text-xs font-semibold text-mono-900">{{ $child->name }}</span>
-                                                <span class="text-xxs text-mono-600">{{ $child->transactions_count }} transações</span>
+                                                <span class="text-xxs text-mono-600">{{ $child->transactions_count + $child->allocations_count }} transações</span>
                                             </div>
                                         </div>
                                         <button type="button" class="fx-btn fx-btn--icon h-8 w-8" wire:click="edit({{ $child->id }})" title="Editar categoria" aria-label="Editar {{ $child->name }}">
@@ -325,7 +325,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-baseline gap-x-xs gap-y-xxxs">
                                     <h4 class="truncate text-sm font-semibold text-mono-900">{{ $category->name }}</h4>
-                                    <span class="text-xs text-mono-600">{{ $category->transactions_count }} transações</span>
+                                    <span class="text-xs text-mono-600">{{ $category->transactions_count + $category->allocations_count }} transações</span>
                                 </div>
                                 @unless ($category->status)
                                     <span class="text-xxs text-mono-600">Inativa</span>
@@ -356,7 +356,7 @@ new #[Layout('layouts.app')] class extends Component {
                                         <div class="min-w-0 flex-1">
                                             <div class="flex flex-wrap items-baseline gap-x-xs gap-y-xxxs">
                                                 <span class="truncate text-xs font-semibold text-mono-900">{{ $child->name }}</span>
-                                                <span class="text-xxs text-mono-600">{{ $child->transactions_count }} transações</span>
+                                                <span class="text-xxs text-mono-600">{{ $child->transactions_count + $child->allocations_count }} transações</span>
                                             </div>
                                         </div>
                                         <button type="button" class="fx-btn fx-btn--icon h-8 w-8" wire:click="edit({{ $child->id }})" title="Editar categoria" aria-label="Editar {{ $child->name }}">

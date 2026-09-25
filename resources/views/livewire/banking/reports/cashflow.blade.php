@@ -26,12 +26,23 @@ new #[Layout('layouts.app')] class extends Component {
             $start = Carbon::createFromFormat('Y-m-d', $month.'-01')->startOfMonth();
             $end = (clone $start)->endOfMonth();
 
-            $byCategory = Transaction::with('category')
+            $byCategory = Transaction::with(['category', 'allocations.category'])
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereIn('type', ['income', 'expense', 'invoice_payment'])
                 ->get()
-                ->groupBy(fn ($t) => $t->category?->name ?? '— sem categoria —')
+                ->flatMap(fn ($transaction) => $transaction->allocations->isNotEmpty()
+                    ? $transaction->allocations->map(fn ($allocation) => [
+                        'category' => $allocation->category?->name ?? '— sem categoria —',
+                        'type' => $transaction->type,
+                        'amount' => (float) $allocation->amount,
+                    ])
+                    : [[
+                        'category' => $transaction->category?->name ?? '— sem categoria —',
+                        'type' => $transaction->type,
+                        'amount' => (float) $transaction->amount,
+                    ]])
+                ->groupBy('category')
                 ->map(fn ($group) => [
                     'income' => $group->where('type', 'income')->sum('amount'),
                     'expense' => $group->whereIn('type', ['expense', 'invoice_payment'])->sum('amount'),

@@ -29,6 +29,11 @@ class Category extends Model
         return $this->hasMany(Transaction::class);
     }
 
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(TransactionAllocation::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('status', true);

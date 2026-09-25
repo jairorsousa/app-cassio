@@ -8,9 +8,11 @@ use App\Domains\Banking\Services\InstallmentService;
 use App\Domains\Banking\Services\OfxImportDraftService;
 use App\Domains\Banking\Services\OfxImportService;
 use App\Domains\Banking\Services\TransactionService;
+use App\Domains\Banking\Services\TransactionAllocationService;
 use App\Domains\Banking\Services\TransferService;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -50,6 +52,22 @@ new #[Layout('layouts.app')] class extends Component
     public string $type = '';
 
     public bool $showFormModal = false;
+
+    public bool $showAllocationModal = false;
+
+    public ?int $allocatingId = null;
+
+    public array $allocationRows = [];
+
+    public string $allocationDescription = '';
+
+    public string $allocationAmount = '';
+
+    public string $allocationType = '';
+
+    public bool $allocationExists = false;
+
+    public bool $editingHasAllocations = false;
 
     public ?int $editingId = null;
 
@@ -143,7 +161,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function edit(int $id): void
     {
-        $transaction = Transaction::findOrFail($id);
+        $transaction = Transaction::withCount('allocations')->findOrFail($id);
 
         if ($transaction->isReadOnly()) {
             session()->flash('error', 'Lançamento gerado por outro módulo é somente leitura.');
@@ -152,6 +170,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->editingId = $transaction->id;
+        $this->editingHasAllocations = $transaction->allocations_count > 0;
         $this->formType = $transaction->type;
         $this->formDate = $transaction->date->format('Y-m-d');
         $this->formAmount = (string) abs((float) $transaction->amount);
@@ -168,6 +187,76 @@ new #[Layout('layouts.app')] class extends Component
     public function cancel(): void
     {
         $this->resetForm();
+    }
+
+    public function openAllocation(int $id): void
+    {
+        $transaction = Transaction::with('allocations')->findOrFail($id);
+
+        if ($transaction->isReadOnly() || ! in_array($transaction->type, ['income', 'expense'], true)) {
+            session()->flash('error', 'Este lançamento não pode ser rateado.');
+
+            return;
+        }
+
+        $this->allocatingId = $transaction->id;
+        $this->allocationDescription = $transaction->description;
+        $this->allocationAmount = (string) $transaction->amount;
+        $this->allocationType = $transaction->type;
+        $this->allocationExists = $transaction->allocations->isNotEmpty();
+        $this->allocationRows = $transaction->allocations->isNotEmpty()
+            ? $transaction->allocations->map(fn ($allocation) => [
+                'key' => 'allocation-'.$allocation->id,
+                'category_id' => $allocation->category_id,
+                'amount' => (string) $allocation->amount,
+            ])->all()
+            : [
+                ['key' => (string) Str::uuid(), 'category_id' => $transaction->category_id, 'amount' => (string) $transaction->amount],
+                ['key' => (string) Str::uuid(), 'category_id' => null, 'amount' => ''],
+            ];
+        $this->resetValidation();
+        $this->showAllocationModal = true;
+    }
+
+    public function addAllocationRow(): void
+    {
+        if (count($this->allocationRows) < 20) {
+            $this->allocationRows[] = ['key' => (string) Str::uuid(), 'category_id' => null, 'amount' => ''];
+        }
+    }
+
+    public function removeAllocationRow(int $index): void
+    {
+        if (count($this->allocationRows) > 2 && isset($this->allocationRows[$index])) {
+            array_splice($this->allocationRows, $index, 1);
+        }
+    }
+
+    public function closeAllocation(): void
+    {
+        $this->reset(['showAllocationModal', 'allocatingId', 'allocationRows', 'allocationDescription', 'allocationAmount', 'allocationType', 'allocationExists']);
+        $this->resetValidation();
+    }
+
+    public function saveAllocation(TransactionAllocationService $service): void
+    {
+        try {
+            $service->replace(Transaction::findOrFail($this->allocatingId), $this->allocationRows);
+        } catch (\InvalidArgumentException|\DomainException $e) {
+            $this->addError('allocationRows', $e->getMessage());
+
+            return;
+        }
+
+        $this->closeAllocation();
+        session()->flash('status', 'Rateio salvo.');
+    }
+
+    public function clearAllocation(TransactionAllocationService $service): void
+    {
+        $service->clear(Transaction::findOrFail($this->allocatingId));
+        $this->closeAllocation();
+        session()->flash('status', 'Rateio removido. O lançamento ficou sem categoria.');
     }
 
     public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment): void
@@ -187,7 +276,20 @@ new #[Layout('layouts.app')] class extends Component
         ]);
 
         if ($this->editingId) {
-            $transaction = Transaction::findOrFail($this->editingId);
+            $transaction = Transaction::withCount('allocations')->findOrFail($this->editingId);
+
+            if ($transaction->allocations_count > 0 && round((float) $data['formAmount'] * 100) !== round((float) $transaction->amount * 100)) {
+                $this->addError('formAmount', 'Ajuste ou remova o rateio antes de alterar o valor total.');
+
+                return;
+            }
+
+            if ($transaction->allocations_count > 0 && $data['formType'] !== $transaction->type) {
+                $this->addError('formType', 'Remova o rateio antes de alterar o tipo do lançamento.');
+
+                return;
+            }
+
             $service->update($transaction, [
                 'type' => $data['formType'],
                 'date' => $data['formDate'],
@@ -195,7 +297,7 @@ new #[Layout('layouts.app')] class extends Component
                 'description' => $data['formDescription'],
                 'notes' => $data['formNotes'] ?: null,
                 'status' => $data['formStatus'],
-                'category_id' => $data['formCategoryId'],
+                'category_id' => $transaction->allocations_count > 0 ? null : $data['formCategoryId'],
                 'bank_account_id' => $data['formBankAccountId'],
                 'credit_card_id' => $data['formCreditCardId'],
             ]);
@@ -250,7 +352,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations',
         ]);
         $this->formType = 'expense';
         $this->formDate = now()->format('Y-m-d');
@@ -275,7 +377,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'bankAccount', 'creditCard']);
+        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -284,7 +386,10 @@ new #[Layout('layouts.app')] class extends Component
             $q->where('date', '<=', $this->to);
         }
         if ($this->category) {
-            $q->where('category_id', $this->category);
+            $q->where(function ($query) {
+                $query->where('category_id', $this->category)
+                    ->orWhereHas('allocations', fn ($allocations) => $allocations->where('category_id', $this->category));
+            });
         }
         if ($this->account) {
             $q->where('bank_account_id', $this->account);
@@ -407,11 +512,27 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
                             @endif
+                            @if ($t->allocations->isNotEmpty())
+                                <x-fx.badge variant="neutral" class="ml-space-2">rateado</x-fx.badge>
+                            @endif
                             @if ($t->status === 'pending')
                                 <x-fx.badge variant="warning" class="ml-space-2">pendente</x-fx.badge>
                             @endif
                         </td>
-                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $t->category?->name }}</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">
+                            @if ($t->allocations->isNotEmpty())
+                                <details>
+                                    <summary class="cursor-pointer text-primary-600">{{ $t->allocations->count() }} categorias</summary>
+                                    <div class="mt-2 space-y-1">
+                                        @foreach ($t->allocations as $allocation)
+                                            <div>{{ $allocation->category?->name ?? 'Sem categoria' }}: R$ {{ number_format((float) $allocation->amount, 2, ',', '.') }}</div>
+                                        @endforeach
+                                    </div>
+                                </details>
+                            @else
+                                {{ $t->category?->name }}
+                            @endif
+                        </td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $t->bankAccount?->name ?? $t->creditCard?->name }}</td>
                         <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $t->type === 'income' ? 'text-cryptex-green-500' : ($t->type === 'transfer' ? 'text-cryptex-text-primary' : 'text-cryptex-red-500') }}">
                             R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
@@ -419,6 +540,9 @@ new #[Layout('layouts.app')] class extends Component
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
                             @unless ($t->isReadOnly())
                                 <button type="button" wire:click="edit({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Editar</button>
+                                @if (in_array($t->type, ['income', 'expense'], true))
+                                    <button type="button" wire:click="openAllocation({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->allocations->isNotEmpty() ? 'Editar rateio' : 'Ratear' }}</button>
+                                @endif
                                 <button class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $t->id }})" wire:confirm="Excluir lançamento?">Excluir</button>
                             @endunless
                         </td>
@@ -460,6 +584,69 @@ new #[Layout('layouts.app')] class extends Component
                     <button type="button" wire:click="closeImport" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900">Cancelar</button>
                     <button type="button" wire:click="previewImport" wire:loading.attr="disabled" wire:target="previewImport,ofxFile" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white disabled:opacity-50">Ver prévia completa</button>
                 </div>
+            </div>
+        </div>
+    @endif
+
+    @if ($showAllocationModal)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="closeAllocation" aria-label="Fechar rateio"></button>
+            <div class="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex items-center justify-between border-b border-mono-100 px-6 py-4">
+                    <h3 class="text-lg font-bold text-mono-900">Ratear lançamento</h3>
+                    <button type="button" wire:click="closeAllocation" aria-label="Fechar" class="text-mono-500 hover:text-mono-900"><span class="material-icons-outlined">close</span></button>
+                </div>
+                <form wire:submit="saveAllocation" class="flex min-h-0 flex-1 flex-col">
+                    <div class="space-y-5 overflow-y-auto px-6 py-5">
+                        <div class="rounded-xl bg-mono-50 p-4">
+                            <p class="text-sm font-semibold text-mono-900">{{ $allocationDescription }}</p>
+                            <p class="mt-1 text-sm text-mono-600">Valor total: <strong>R$ {{ number_format((float) $allocationAmount, 2, ',', '.') }}</strong></p>
+                        </div>
+
+                        <p class="text-sm text-mono-600">Distribua o valor entre duas ou mais categorias. O lançamento continuará único na conta bancária.</p>
+
+                        <div class="space-y-3">
+                            @foreach ($allocationRows as $index => $row)
+                                <div wire:key="allocation-row-{{ $row['key'] }}" class="grid grid-cols-1 gap-3 rounded-xl border border-mono-100 p-3 sm:grid-cols-[1fr_150px_36px] sm:items-end">
+                                    <div>
+                                        <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-category-{{ $row['key'] }}">Categoria {{ $index + 1 }}</label>
+                                        <select id="allocation-category-{{ $row['key'] }}" wire:model.change="allocationRows.{{ $index }}.category_id" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900">
+                                            <option value="">Selecione</option>
+                                            @foreach ($activeCategories->where('type', $allocationType) as $categoryOption)
+                                                <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-amount-{{ $row['key'] }}">Valor (R$)</label>
+                                        <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00">
+                                    </div>
+                                    <button type="button" wire:click="removeAllocationRow({{ $index }})" @disabled(count($allocationRows) <= 2) aria-label="Remover linha {{ $index + 1 }}" class="flex h-10 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined">close</span></button>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <button type="button" wire:click="addAllocationRow" @disabled(count($allocationRows) >= 20) class="text-sm font-semibold text-primary-600 disabled:opacity-50">+ Adicionar categoria</button>
+
+                        @php
+                            $allocated = collect($allocationRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
+                            $remaining = (float) $allocationAmount - $allocated;
+                        @endphp
+                        <div class="flex flex-wrap justify-between gap-2 rounded-xl bg-mono-50 p-4 text-sm">
+                            <span>Rateado: <strong>R$ {{ number_format($allocated, 2, ',', '.') }}</strong></span>
+                            <span class="{{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">Restante: <strong>R$ {{ number_format($remaining, 2, ',', '.') }}</strong></span>
+                        </div>
+
+                        @error('allocationRows') <p class="text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        @if ($allocationExists)
+                            <button type="button" wire:click="clearAllocation" wire:confirm="Remover o rateio? O lançamento ficará sem categoria." class="mr-auto text-sm font-semibold text-error">Remover rateio</button>
+                        @endif
+                        <button type="button" wire:click="closeAllocation" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900">Cancelar</button>
+                        <button type="submit" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white">Salvar rateio</button>
+                    </div>
+                </form>
             </div>
         </div>
     @endif
@@ -523,12 +710,15 @@ new #[Layout('layouts.app')] class extends Component
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
-                                        <select wire:model="formCategoryId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                        <select wire:model="formCategoryId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" @disabled($editingHasAllocations)>
                                             <option value="">Sem categoria</option>
                                             @foreach ($activeCategories as $categoryOption)
                                                 <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }} ({{ $categoryOption->type === 'income' ? 'Receita' : 'Despesa' }})</option>
                                             @endforeach
                                         </select>
+                                        @if ($editingHasAllocations)
+                                            <p class="mt-2 text-xs text-mono-500">Este lançamento está rateado. Use “Editar rateio” na lista para alterar as categorias.</p>
+                                        @endif
                                         @error('formCategoryId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
 

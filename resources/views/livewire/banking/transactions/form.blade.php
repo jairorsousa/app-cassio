@@ -25,6 +25,7 @@ new #[Layout('layouts.app')] class extends Component {
     public ?int $credit_card_id = null;
     public ?int $transfer_to_id = null;
     public int $installments = 1;
+    public bool $hasAllocations = false;
 
     public function mount(?Transaction $transaction = null): void
     {
@@ -40,6 +41,7 @@ new #[Layout('layouts.app')] class extends Component {
                 abort(403, 'Lançamento gerado por outro módulo é somente leitura.');
             }
             $this->transaction = $transaction;
+            $this->hasAllocations = $transaction->allocations()->exists();
             $this->type = $transaction->type;
             $this->date = $transaction->date->format('Y-m-d');
             $this->amount = (string) abs((float) $transaction->amount);
@@ -74,6 +76,12 @@ new #[Layout('layouts.app')] class extends Component {
         $data = $this->validate();
 
         if ($this->transaction) {
+            if ($this->hasAllocations && round((float) $data['amount'] * 100) !== round((float) $this->transaction->amount * 100)) {
+                $this->addError('amount', 'Ajuste ou remova o rateio antes de alterar o valor total.');
+
+                return null;
+            }
+
             $service->update($this->transaction, [
                 'type' => $data['type'],
                 'date' => $data['date'],
@@ -81,7 +89,7 @@ new #[Layout('layouts.app')] class extends Component {
                 'description' => $data['description'],
                 'notes' => $data['notes'] ?? null,
                 'status' => $data['status'],
-                'category_id' => $data['category_id'],
+                'category_id' => $this->hasAllocations ? null : $data['category_id'],
                 'bank_account_id' => $data['bank_account_id'],
                 'credit_card_id' => $data['credit_card_id'],
             ]);
@@ -166,7 +174,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </select>
             </div>
             <x-fx.input label="Data" type="date" wire:model="date" />
-            <x-fx.input label="Valor" type="text" x-money wire:model="amount" numeric />
+            <x-fx.input label="Valor" name="amount" type="text" x-money wire:model="amount" numeric />
         </div>
 
         <x-fx.input label="Descrição" wire:model="description" required />
@@ -174,12 +182,15 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
             <div class="flex flex-col gap-space-1">
                 <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Categoria</label>
-                <select wire:model="category_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
+                <select wire:model="category_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors" @disabled($hasAllocations)>
                     <option value="">— sem categoria —</option>
                     @foreach ($categories as $c)
                         <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->type === 'income' ? 'R' : 'D' }})</option>
                     @endforeach
                 </select>
+                @if ($hasAllocations)
+                    <p class="text-xs text-mono-600">Categoria definida no rateio. Altere pela lista de lançamentos.</p>
+                @endif
             </div>
             <div class="flex flex-col gap-space-1">
                 <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Status</label>
