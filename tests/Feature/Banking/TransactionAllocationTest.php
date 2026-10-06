@@ -16,6 +16,80 @@ class TransactionAllocationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_percentage_allocation_for_income_and_expense_recalculates_when_total_changes(): void
+    {
+        $this->actingAs(User::factory()->create());
+        foreach (['income', 'expense'] as $type) {
+            $first = Category::create(['name' => 'A '.$type, 'type' => $type]);
+            $second = Category::create(['name' => 'B '.$type, 'type' => $type]);
+            $component = Volt::test('banking.transactions.index')->call('create', $type)
+                ->set('formAmount', '1250.00')->set('formDescription', 'Rateio percentual')
+                ->set('formAllocationEnabled', true)->set('formAllocationMode', 'percentage')
+                ->set('formAllocationRows', [
+                    ['key' => 'a', 'category_id' => $first->id, 'percentage' => '20.00'],
+                    ['key' => 'b', 'category_id' => $second->id, 'percentage' => '80.00'],
+                ])->assertSee('R$ 250,00')->assertSee('R$ 1.000,00')
+                ->set('formAmount', '2000.00')->assertSee('R$ 400,00')->assertSee('R$ 1.600,00')
+                ->call('saveTransaction')->assertHasNoErrors();
+            $transaction = Transaction::where('type', $type)->sole();
+            $this->assertEquals(['400.00', '1600.00'], $transaction->allocations->pluck('amount')->all());
+        }
+    }
+
+    public function test_percentage_allocation_rejects_incomplete_excessive_or_invalid_percentages(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $first = Category::create(['name' => 'A', 'type' => 'income']);
+        $second = Category::create(['name' => 'B', 'type' => 'income']);
+        foreach ([['20', '79.99'], ['20', '81'], ['0', '100'], ['-20', '120'], ['20.001', '79.999']] as [$a, $b]) {
+            Volt::test('banking.transactions.index')->call('create', 'income')
+                ->set('formAmount', '1250.00')->set('formDescription', 'Inválido')
+                ->set('formAllocationEnabled', true)->set('formAllocationMode', 'percentage')
+                ->set('formAllocationRows', [
+                    ['key' => 'a', 'category_id' => $first->id, 'percentage' => $a],
+                    ['key' => 'b', 'category_id' => $second->id, 'percentage' => $b],
+                ])->call('saveTransaction')->assertHasErrors(['formAllocationRows']);
+            $this->assertDatabaseCount('transactions', 0);
+        }
+    }
+
+    public function test_percentage_conversion_preserves_total_cents_and_switching_modes(): void
+    {
+        $service = app(TransactionAllocationService::class);
+        $rows = $service->fromPercentages('10.01', [
+            ['percentage' => '33.33'], ['percentage' => '33.33'], ['percentage' => '33.34'],
+        ]);
+        $this->assertEquals(['3.34', '3.33', '3.34'], array_column($rows, 'amount'));
+        $percentages = $service->toPercentages('0.03', [['amount' => '0.01'], ['amount' => '0.01'], ['amount' => '0.01']]);
+        $this->assertEquals(['33.34', '33.33', '33.33'], array_column($percentages, 'percentage'));
+
+        $this->actingAs(User::factory()->create());
+        Volt::test('banking.transactions.index')->call('create', 'income')->set('formAmount', '1250.00')
+            ->set('formAllocationEnabled', true)->set('formAllocationRows', [
+                ['key' => 'a', 'category_id' => null, 'amount' => '250.00'],
+                ['key' => 'b', 'category_id' => null, 'amount' => '1000.00'],
+            ])->set('formAllocationMode', 'percentage')
+            ->assertSet('formAllocationRows.0.percentage', '20.00')
+            ->assertSet('formAllocationRows.1.percentage', '80.00')
+            ->set('formAllocationMode', 'amount')
+            ->assertSet('formAllocationRows.0.amount', '250.00')
+            ->assertSet('formAllocationRows.1.amount', '1000.00');
+    }
+
+    public function test_saved_transaction_can_be_allocated_by_percentage(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $first = Category::create(['name' => 'A', 'type' => 'income']);
+        $second = Category::create(['name' => 'B', 'type' => 'income']);
+        $transaction = Transaction::create(['type' => 'income', 'date' => now(), 'amount' => '1250.00', 'description' => 'Receita']);
+        Volt::test('banking.transactions.index')->call('openAllocation', $transaction->id)
+            ->set('allocationMode', 'percentage')->set('allocationRows', [
+                ['key' => 'a', 'category_id' => $first->id, 'percentage' => '20'],
+                ['key' => 'b', 'category_id' => $second->id, 'percentage' => '80'],
+            ])->call('saveAllocation')->assertHasNoErrors()->assertSet('showAllocationModal', false);
+        $this->assertEquals(['250.00', '1000.00'], $transaction->fresh()->allocations->pluck('amount')->all());
+    }
+
     public function test_creating_income_and_expense_with_allocation_keeps_one_transaction(): void
     {
         $this->actingAs(User::factory()->create());

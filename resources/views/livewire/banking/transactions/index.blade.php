@@ -103,6 +103,42 @@ new #[Layout('layouts.app')] class extends Component
 
     public array $formAllocationRows = [];
 
+    public string $formAllocationMode = 'amount';
+
+    public string $allocationMode = 'amount';
+
+    public function updatedFormAllocationMode(): void
+    {
+        $this->formAllocationRows = $this->convertAllocationMode($this->formAmount, $this->formAllocationRows, $this->formAllocationMode);
+    }
+
+    public function updatedAllocationMode(): void
+    {
+        $this->allocationRows = $this->convertAllocationMode($this->allocationAmount, $this->allocationRows, $this->allocationMode);
+    }
+
+    private function convertAllocationMode(string $amount, array $rows, string $mode): array
+    {
+        try {
+            $service = app(TransactionAllocationService::class);
+            return $mode === 'percentage' ? $service->toPercentages($amount, $rows) : $service->fromPercentages($amount, $rows, false);
+        } catch (\InvalidArgumentException) {
+            return $rows;
+        }
+    }
+
+    public function allocationPreview(string $amount, array $rows, string $mode): array
+    {
+        if ($mode !== 'percentage') {
+            return $rows;
+        }
+        try {
+            return app(TransactionAllocationService::class)->fromPercentages($amount, $rows, false);
+        } catch (\InvalidArgumentException) {
+            return array_map(fn ($row) => array_replace($row, ['amount' => '']), $rows);
+        }
+    }
+
     public function updatedFormAllocationEnabled(): void
     {
         if ($this->formAllocationEnabled && count($this->formAllocationRows) < 2) {
@@ -288,6 +324,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->allocatingId = $transaction->id;
+        $this->allocationMode = 'amount';
         $this->allocationDescription = $transaction->description;
         $this->allocationAmount = (string) $transaction->amount;
         $this->allocationType = $transaction->type;
@@ -322,14 +359,16 @@ new #[Layout('layouts.app')] class extends Component
 
     public function closeAllocation(): void
     {
-        $this->reset(['showAllocationModal', 'allocatingId', 'allocationRows', 'allocationDescription', 'allocationAmount', 'allocationType', 'allocationExists']);
+        $this->reset(['showAllocationModal', 'allocatingId', 'allocationRows', 'allocationDescription', 'allocationAmount', 'allocationType', 'allocationExists', 'allocationMode']);
         $this->resetValidation();
     }
 
     public function saveAllocation(TransactionAllocationService $service): void
     {
+        $this->validate(['allocationMode' => 'required|in:amount,percentage']);
         try {
-            $service->replace(Transaction::findOrFail($this->allocatingId), $this->allocationRows);
+            $rows = $this->allocationMode === 'percentage' ? $service->fromPercentages($this->allocationAmount, $this->allocationRows) : $this->allocationRows;
+            $service->replace(Transaction::findOrFail($this->allocatingId), $rows);
         } catch (\InvalidArgumentException|\DomainException $e) {
             $this->addError('allocationRows', $e->getMessage());
 
@@ -381,11 +420,16 @@ new #[Layout('layouts.app')] class extends Component
             'formInvoiceMonth' => [Rule::requiredIf($this->formIsCard), 'nullable', 'date_format:Y-m'],
             'formTransferToId' => 'nullable|exists:bank_accounts,id|different:formBankAccountId',
             'formInstallments' => 'required|integer|min:1|max:36',
+            'formAllocationMode' => 'required|in:amount,percentage',
         ]);
 
+        $allocationRows = $this->formAllocationRows;
         if ($this->formAllocationEnabled) {
             try {
-                $allocations->validateRows($this->formType, $this->formAmount, $this->formAllocationRows);
+                if ($this->formAllocationMode === 'percentage') {
+                    $allocationRows = $allocations->fromPercentages($this->formAmount, $allocationRows);
+                }
+                $allocations->validateRows($this->formType, $this->formAmount, $allocationRows);
             } catch (\InvalidArgumentException $e) {
                 $this->addError('formAllocationRows', $e->getMessage());
                 return;
@@ -393,7 +437,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         try {
-            $message = \Illuminate\Support\Facades\DB::transaction(function () use ($service, $transfer, $installment, $allocations, $data) {
+            $message = \Illuminate\Support\Facades\DB::transaction(function () use ($service, $transfer, $installment, $allocations, $data, $allocationRows) {
                 $saved = [];
                 if ($this->editingId) {
                     $transaction = Transaction::withCount('allocations')->findOrFail($this->editingId);
@@ -468,7 +512,7 @@ new #[Layout('layouts.app')] class extends Component
                 }
 
                 if ($this->formAllocationEnabled) {
-                    $allocations->replaceForTransactions($saved, $this->formAllocationRows);
+                    $allocations->replaceForTransactions($saved, $allocationRows);
                 }
                 return $message;
             });
@@ -489,7 +533,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -736,9 +780,11 @@ new #[Layout('layouts.app')] class extends Component
 
                         <p class="text-sm text-mono-600">Distribua o valor entre duas ou mais categorias. O lançamento continuará único na conta bancária.</p>
 
+                        <x-banking.allocation-mode model="allocationMode" id="saved-allocation-mode" />
+                        @php $allocationPreviewRows = $this->allocationPreview($allocationAmount, $allocationRows, $allocationMode); @endphp
                         <div class="space-y-3">
                             @foreach ($allocationRows as $index => $row)
-                                <div wire:key="allocation-row-{{ $row['key'] }}" class="grid grid-cols-1 gap-3 rounded-xl border border-mono-100 p-3 sm:grid-cols-[1fr_150px_36px] sm:items-end">
+                                <div wire:key="allocation-row-{{ $row['key'] }}-{{ $index }}-{{ $allocationMode }}" class="grid grid-cols-1 gap-3 rounded-xl border border-mono-100 p-3 sm:grid-cols-[1fr_150px_36px] sm:items-end">
                                     <div>
                                         <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-category-{{ $row['key'] }}">Categoria {{ $index + 1 }}</label>
                                         <select id="allocation-category-{{ $row['key'] }}" wire:model.change="allocationRows.{{ $index }}.category_id" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900">
@@ -749,8 +795,13 @@ new #[Layout('layouts.app')] class extends Component
                                         </select>
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-amount-{{ $row['key'] }}">Valor (R$)</label>
-                                        <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00">
+                                        <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-amount-{{ $row['key'] }}">{{ $allocationMode === 'percentage' ? 'Percentual (%)' : 'Valor (R$)' }}</label>
+                                        @if ($allocationMode === 'percentage')
+                                            <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" max="100" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.percentage" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
+                                            <p class="mt-1 text-xs text-mono-600">R$ {{ number_format((float) ($allocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.') }}</p>
+                                        @else
+                                            <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
+                                        @endif
                                     </div>
                                     <button type="button" wire:click="removeAllocationRow({{ $index }})" @disabled(count($allocationRows) <= 2) aria-label="Remover linha {{ $index + 1 }}" class="flex h-10 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined">close</span></button>
                                 </div>
@@ -760,7 +811,7 @@ new #[Layout('layouts.app')] class extends Component
                         <button type="button" wire:click="addAllocationRow" @disabled(count($allocationRows) >= 20) class="text-sm font-semibold text-primary-600 disabled:opacity-50">+ Adicionar categoria</button>
 
                         @php
-                            $allocated = collect($allocationRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
+                            $allocated = collect($allocationPreviewRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
                             $remaining = (float) $allocationAmount - $allocated;
                         @endphp
                         <div class="flex flex-wrap justify-between gap-2 rounded-xl bg-mono-50 p-4 text-sm">
@@ -768,6 +819,9 @@ new #[Layout('layouts.app')] class extends Component
                             <span class="{{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">Restante: <strong>R$ {{ number_format($remaining, 2, ',', '.') }}</strong></span>
                         </div>
 
+                        @if ($allocationMode === 'percentage')
+                            <p class="text-sm text-mono-600">Total dos percentuais: <strong>{{ number_format(collect($allocationRows)->sum(fn ($row) => is_numeric($row['percentage'] ?? null) ? (float) $row['percentage'] : 0), 2, ',', '.') }}%</strong> de 100%</p>
+                        @endif
                         @error('allocationRows') <p class="text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
                     </div>
                     <div class="flex flex-wrap justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
@@ -865,24 +919,34 @@ new #[Layout('layouts.app')] class extends Component
                                         </div>
                                         @if ($formAllocationEnabled)
                                             <div class="space-y-3 rounded-2xl border border-mono-100 bg-mono-50 p-4 md:col-span-2">
-                                                <p class="text-sm text-mono-600">Distribua o valor total entre duas ou mais categorias. Exemplo: R$ 900,00 em uma categoria e R$ 100,00 em outra para um lançamento de R$ 1.000,00.</p>
+                                                <x-banking.allocation-mode model="formAllocationMode" id="form-allocation-mode" />
+                                                <p class="text-sm text-mono-600">{{ $formAllocationMode === 'percentage' ? 'Informe o percentual de cada categoria. A soma deve ser 100%. Os valores serão recalculados quando o total do lançamento mudar.' : 'Distribua o valor total entre duas ou mais categorias. A soma deve ser igual ao total do lançamento.' }}</p>
+                                                @php $formAllocationPreviewRows = $this->allocationPreview($formAmount, $formAllocationRows, $formAllocationMode); @endphp
                                                 @foreach ($formAllocationRows as $index => $row)
-                                                    <div wire:key="form-allocation-{{ $row['key'] }}-{{ $index }}" class="grid grid-cols-1 gap-3 rounded-xl bg-white p-3 sm:grid-cols-[1fr_160px_40px] sm:items-end">
+                                                    <div wire:key="form-allocation-{{ $row['key'] }}-{{ $index }}-{{ $formAllocationMode }}" class="grid grid-cols-1 gap-3 rounded-xl bg-white p-3 sm:grid-cols-[1fr_160px_40px] sm:items-end">
                                                         <x-banking.category-picker :categories="$activeCategories->where('type', $formType)"
                                                             :model="'formAllocationRows.'.$index.'.category_id'" :id="'form-allocation-'.$row['key']" :label="'Categoria '.($index + 1)" />
-                                                        <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="number" min="0.01" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
+                                                        @if ($formAllocationMode === 'percentage')
+                                                            <x-jr.input label="Percentual (%)" :name="'formAllocationRows.'.$index.'.percentage'" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.percentage" :helper="'R$ '.number_format((float) ($formAllocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.')" required />
+                                                        @else
+                                                            <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="number" min="0.01" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
+                                                        @endif
                                                         <button type="button" wire:click="removeFormAllocationRow({{ $index }})" @disabled(count($formAllocationRows) <= 2) aria-label="Remover categoria {{ $index + 1 }}" class="flex h-12 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined" aria-hidden="true">close</span></button>
                                                     </div>
                                                 @endforeach
                                                 <button type="button" wire:click="addFormAllocationRow" @disabled(count($formAllocationRows) >= 20) class="text-sm font-semibold text-primary-600 disabled:opacity-50">+ Adicionar categoria</button>
                                                 @php
-                                                    $allocated = collect($formAllocationRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
+                                                    $allocated = collect($formAllocationPreviewRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
                                                     $remaining = (is_numeric($formAmount) ? (float) $formAmount : 0) - $allocated;
                                                 @endphp
                                                 <div class="flex flex-wrap justify-between gap-2 text-sm text-mono-900">
                                                     <span>Rateado: <strong>R$ {{ number_format($allocated, 2, ',', '.') }}</strong></span>
                                                     <span class="{{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">{{ $remaining < -0.005 ? 'Excedente' : 'Restante' }}: <strong>R$ {{ number_format(abs($remaining), 2, ',', '.') }}</strong></span>
                                                 </div>
+                                                @if ($formAllocationMode === 'percentage')
+                                                    <p class="text-sm text-mono-600">Total dos percentuais: <strong>{{ number_format(collect($formAllocationRows)->sum(fn ($row) => is_numeric($row['percentage'] ?? null) ? (float) $row['percentage'] : 0), 2, ',', '.') }}%</strong> de 100%</p>
+                                                    <p class="text-xs text-mono-600">Diferenças de arredondamento serão ajustadas automaticamente nos centavos.</p>
+                                                @endif
                                                 @if ($formIsCard && ! $editingId)
                                                     <p class="text-xs text-mono-600">Em compras parceladas, o rateio será distribuído entre as parcelas, preservando os totais de cada categoria.</p>
                                                 @endif
