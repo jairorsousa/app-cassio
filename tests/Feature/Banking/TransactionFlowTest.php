@@ -183,6 +183,37 @@ class TransactionFlowTest extends TestCase
         }
     }
 
+    public function test_category_picker_groups_children_under_their_actual_parent_including_allocation(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $subscriptions = Category::create(['name' => 'Assinaturas', 'type' => 'expense']);
+        $housing = Category::create(['name' => 'Moradia', 'type' => 'expense']);
+        $transport = Category::create(['name' => 'Transporte', 'type' => 'expense']);
+        $fuel = Category::create(['name' => 'Combustível', 'type' => 'expense', 'parent_id' => $transport->id]);
+        $condo = Category::create(['name' => 'Condomínio', 'type' => 'expense', 'parent_id' => $housing->id]);
+        $maintenance = Category::create(['name' => 'Manutenção carro', 'type' => 'expense', 'parent_id' => $transport->id]);
+        $expected = ['', (string) $subscriptions->id, (string) $housing->id, (string) $condo->id, (string) $transport->id, (string) $fuel->id, (string) $maintenance->id];
+
+        $component = Volt::test('banking.transactions.index')->call('create', 'expense');
+        foreach ([false, true] as $allocation) {
+            $component->set('formAllocationEnabled', $allocation);
+            $document = new \DOMDocument;
+            @$document->loadHTML(mb_convert_encoding($component->html(), 'HTML-ENTITIES', 'UTF-8'));
+            $xpath = new \DOMXPath($document);
+            $lists = $xpath->query('//*[@role="listbox"]');
+            $this->assertCount($allocation ? 2 : 1, $lists);
+            foreach ($lists as $list) {
+                $values = [];
+                foreach ($xpath->query('./button[@role="option"]', $list) as $option) {
+                    $values[] = $option->getAttribute('data-category-id');
+                }
+                $this->assertEquals($expected, $values);
+                $this->assertSame('Moradia / Condomínio', $xpath->query('./button[@data-category-id="'.$condo->id.'"]', $list)->item(0)->getAttribute('aria-label'));
+                $this->assertSame('Transporte / Combustível', $xpath->query('./button[@data-category-id="'.$fuel->id.'"]', $list)->item(0)->getAttribute('aria-label'));
+            }
+        }
+    }
+
     public function test_transfer_switch_status_is_applied_to_both_sides_on_creation_and_edit(): void
     {
         $this->actingAs(User::factory()->create());
