@@ -3,14 +3,16 @@
 namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Models\Transaction;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class OfxImportService
 {
     /**
-     * @return array{account: ?string, transactions: array<int, array{fitid: string, date: string, amount: string, type: string, description: string, notes: ?string}>}
+     * @return array{account: ?string, statement_type: string, transactions: array<int, array{fitid: string, date: string, amount: string, type: string, description: string, notes: ?string, card_kind: ?string}>}
      */
     public function parse(string $contents): array
     {
@@ -19,6 +21,7 @@ class OfxImportService
         }
 
         $contents = $this->toUtf8($contents);
+        $isCard = (bool) preg_match('/<CCSTMTRS\b/i', $contents);
 
         if (! preg_match('/<OFX\b[^>]*>/i', $contents)) {
             throw new InvalidArgumentException('O arquivo não contém uma estrutura OFX válida.');
@@ -27,7 +30,7 @@ class OfxImportService
         $statementCount = preg_match_all('/<BANKTRANLIST\b/i', $contents);
 
         if ($statementCount !== 1 || ! preg_match('/<\/BANKTRANLIST\s*>/i', $contents)) {
-            throw new InvalidArgumentException('Selecione um OFX com um único extrato de conta bancária.');
+            throw new InvalidArgumentException('Selecione um OFX com um único extrato de conta ou fatura de cartão.');
         }
 
         preg_match_all('~<STMTTRN\b[^>]*>(.*?)</STMTTRN\s*>~is', $contents, $matches);
@@ -95,23 +98,28 @@ class OfxImportService
                 'type' => ($amountParts[1] ?? '') === '-' ? 'expense' : 'income',
                 'description' => mb_substr($description, 0, 200),
                 'notes' => $memo !== '' && $memo !== $name ? $memo : null,
+                'card_kind' => ! $isCard ? null : (
+                    preg_match('/^(?:PGTO|PAGAMENTO)\b/iu', $description) ? 'payment' :
+                    (($amountParts[1] ?? '') === '-' ? 'purchase' : 'refund')
+                ),
             ];
         }
 
         return [
             'account' => $this->field($contents, 'ACCTID') ?: null,
+            'statement_type' => $isCard ? 'card' : 'bank',
             'transactions' => $transactions,
         ];
     }
 
     /** @param array<int, array<string, string|null>> $transactions */
-    public function existingFitids(BankAccount $account, array $transactions): array
+    public function existingFitids(BankAccount|CreditCard $account, array $transactions): array
     {
         $found = [];
 
         foreach (array_chunk(array_column($transactions, 'fitid'), 500) as $chunk) {
             foreach (Transaction::withTrashed()
-                ->where('bank_account_id', $account->id)
+                ->where($account instanceof CreditCard ? 'credit_card_id' : 'bank_account_id', $account->id)
                 ->whereIn('ofx_fitid', $chunk)
                 ->pluck('ofx_fitid') as $fitid) {
                 $found[$fitid] = true;
@@ -149,6 +157,37 @@ class OfxImportService
                 $imported++;
             }
 
+            return ['imported' => $imported, 'skipped' => count($transactions) - $imported];
+        });
+    }
+
+    public function importCard(CreditCard $card, string $referenceMonth, array $transactions): array
+    {
+        return DB::transaction(function () use ($card, $referenceMonth, $transactions) {
+            $card = CreditCard::query()->lockForUpdate()->findOrFail($card->id);
+            $existing = $this->existingFitids($card, $transactions);
+            $invoices = app(InvoiceService::class);
+            $invoice = $invoices->findOrCreateForReference($card, Carbon::createFromFormat('!Y-m', $referenceMonth));
+            $invoice = $invoice->newQuery()->lockForUpdate()->findOrFail($invoice->id);
+            if (! $invoice->isOpen()) {
+                throw new InvalidArgumentException('A fatura selecionada está fechada ou paga. Escolha uma fatura aberta.');
+            }
+            $imported = 0;
+            foreach ($transactions as $row) {
+                if (isset($existing[$row['fitid']]) || ($row['card_kind'] ?? '') === 'payment') {
+                    continue;
+                }
+                Transaction::create([
+                    'type' => 'expense', 'date' => $row['date'],
+                    'amount' => ($row['card_kind'] === 'refund' ? '-' : '').$row['amount'],
+                    'description' => $row['description'], 'notes' => $row['notes'],
+                    'status' => 'settled', 'category_id' => $row['category_id'] ?? null,
+                    'credit_card_id' => $card->id, 'credit_card_invoice_id' => $invoice->id,
+                    'ofx_fitid' => $row['fitid'],
+                ]);
+                $imported++;
+            }
+            $invoices->recalculateTotal($invoice);
             return ['imported' => $imported, 'skipped' => count($transactions) - $imported];
         });
     }

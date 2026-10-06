@@ -31,6 +31,12 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $ofxAccountId = null;
 
+    public string $ofxTargetType = 'bank';
+
+    public ?int $ofxCardId = null;
+
+    public string $ofxInvoiceMonth = '';
+
     #[Url]
     public string $preview = '';
 
@@ -92,6 +98,9 @@ new #[Layout('layouts.app')] class extends Component
 
     #[\Livewire\Attributes\Locked]
     public bool $formIsCard = false;
+
+    #[\Livewire\Attributes\Locked]
+    public bool $formIsCardRefund = false;
 
     public string $formInvoiceMonth = '';
 
@@ -182,14 +191,14 @@ new #[Layout('layouts.app')] class extends Component
 
     public function openImport(): void
     {
-        $this->reset(['ofxFile', 'ofxAccountId']);
+        $this->reset(['ofxFile', 'ofxAccountId', 'ofxTargetType', 'ofxCardId', 'ofxInvoiceMonth']);
         $this->resetValidation();
         $this->showImportModal = true;
     }
 
     public function closeImport(): void
     {
-        $this->reset(['ofxFile', 'ofxAccountId']);
+        $this->reset(['ofxFile', 'ofxAccountId', 'ofxTargetType', 'ofxCardId', 'ofxInvoiceMonth']);
         $this->resetValidation();
         $this->showImportModal = false;
     }
@@ -200,9 +209,12 @@ new #[Layout('layouts.app')] class extends Component
 
         try {
             $contents = file_get_contents($this->ofxFile->getRealPath());
-            $service->parse($contents);
-            $account = BankAccount::active()->findOrFail($this->ofxAccountId);
-            $drafts->create($account->id, $contents);
+            $parsed = $service->parse($contents);
+            if ($parsed['statement_type'] !== $this->ofxTargetType) {
+                throw new \InvalidArgumentException($parsed['statement_type'] === 'card' ? 'Este OFX é de cartão de crédito. Selecione Cartão de crédito e a fatura.' : 'Este OFX é de conta bancária. Selecione Conta bancária.');
+            }
+            $target = $this->ofxTargetType === 'card' ? CreditCard::active()->findOrFail($this->ofxCardId) : BankAccount::active()->findOrFail($this->ofxAccountId);
+            $drafts->create($target->id, $contents, $this->ofxTargetType, $this->ofxTargetType === 'card' ? $this->ofxInvoiceMonth : null);
         } catch (\InvalidArgumentException|\RuntimeException $e) {
             $this->addError('ofxFile', $e->getMessage());
 
@@ -215,7 +227,10 @@ new #[Layout('layouts.app')] class extends Component
     private function validateImport(): void
     {
         $this->validate([
-            'ofxAccountId' => ['required', 'integer', Rule::exists('bank_accounts', 'id')->where('status', true)->whereNull('deleted_at')],
+            'ofxTargetType' => 'required|in:bank,card',
+            'ofxCardId' => [Rule::requiredIf($this->ofxTargetType === 'card'), 'nullable', 'integer', Rule::exists('credit_cards', 'id')->where('status', true)->whereNull('deleted_at')],
+            'ofxInvoiceMonth' => [Rule::requiredIf($this->ofxTargetType === 'card'), 'nullable', 'date_format:Y-m'],
+            'ofxAccountId' => [Rule::requiredIf($this->ofxTargetType === 'bank'), 'nullable', 'integer', Rule::exists('bank_accounts', 'id')->where('status', true)->whereNull('deleted_at')],
             'ofxFile' => 'required|file|max:2048',
         ]);
 
@@ -261,6 +276,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->formBankAccountId = $transaction->bank_account_id;
         $this->formCreditCardId = $transaction->credit_card_id;
         $this->formIsCard = $transaction->type === 'expense' && $transaction->credit_card_id !== null;
+        $this->formIsCardRefund = $this->formIsCard && (float) $transaction->amount < 0;
         $this->formInvoiceMonth = $transaction->invoice?->reference_month ?? '';
         if ($this->formIsCard && $this->formInvoiceMonth === '') {
             $this->suggestInvoiceMonth();
@@ -400,6 +416,9 @@ new #[Layout('layouts.app')] class extends Component
             $this->formType = 'expense';
             $this->formBankAccountId = null;
             $this->formStatus = 'settled';
+            if ($this->formIsCardRefund) {
+                $this->formAllocationEnabled = false;
+            }
         } else {
             $this->formCreditCardId = null;
         }
@@ -452,7 +471,7 @@ new #[Layout('layouts.app')] class extends Component
                     $updates = [
                         'type' => $data['formType'],
                         'date' => $data['formDate'],
-                        'amount' => $data['formAmount'],
+                        'amount' => ($this->formIsCardRefund ? '-' : '').$data['formAmount'],
                         'description' => $data['formDescription'],
                         'notes' => $data['formNotes'] ?: null,
                         'status' => $data['formStatus'],
@@ -533,7 +552,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -737,6 +756,24 @@ new #[Layout('layouts.app')] class extends Component
                     <button type="button" wire:click="closeImport" aria-label="Fechar" class="text-mono-500 hover:text-mono-900"><span class="material-icons-outlined">close</span></button>
                 </div>
                 <div class="overflow-y-auto px-6 py-5 space-y-5">
+                    <div>
+                        <label for="ofx-target-type" class="mb-2 block text-sm font-medium text-mono-600">Importar para</label>
+                        <select id="ofx-target-type" wire:model.live="ofxTargetType" class="h-12 w-full rounded-pill border border-mono-200 bg-white px-4 text-sm">
+                            <option value="bank">Conta bancária</option><option value="card">Cartão de crédito</option>
+                        </select>
+                    </div>
+                    @if ($ofxTargetType === 'card')
+                        <div>
+                            <label for="ofx-card" class="mb-2 block text-sm font-medium text-mono-600">Cartão de crédito *</label>
+                            <select id="ofx-card" wire:model="ofxCardId" class="h-12 w-full rounded-pill border border-mono-200 bg-white px-4 text-sm">
+                                <option value="">Selecione o cartão</option>
+                                @foreach ($cards as $cardOption)<option value="{{ $cardOption->id }}">{{ $cardOption->name }}</option>@endforeach
+                            </select>
+                            @error('ofxCardId') <p class="mt-2 text-xs text-error">{{ $message }}</p> @enderror
+                        </div>
+                        <x-jr.input label="Mês de referência da fatura *" type="month" name="ofxInvoiceMonth" wire:model="ofxInvoiceMonth" helper="Selecione o mês do fechamento da fatura. O vencimento segue a configuração do cartão." required />
+                        <p class="text-sm text-mono-600">As compras serão vinculadas a esta fatura. Parcelas presentes no arquivo serão importadas uma única vez. Pagamentos da fatura serão identificados na prévia e não serão importados como compras.</p>
+                    @else
                     <p class="text-sm text-mono-600">Escolha a conta de destino e confira os lançamentos antes de cadastrar. Reimportações da mesma conta são ignoradas pelo identificador do OFX. Confira possíveis lançamentos manuais equivalentes antes de confirmar.</p>
                     <div>
                         <label for="ofx-account" class="mb-2 block text-sm font-medium text-mono-600">Conta bancária *</label>
@@ -748,6 +785,7 @@ new #[Layout('layouts.app')] class extends Component
                         </select>
                         @error('ofxAccountId') <p class="mt-2 text-xs text-error">{{ $message }}</p> @enderror
                     </div>
+                    @endif
                     <div>
                         <label for="ofx-file" class="mb-2 block text-sm font-medium text-mono-600">Arquivo OFX (até 2 MB) *</label>
                         <input id="ofx-file" type="file" accept=".ofx" wire:model="ofxFile" class="block w-full rounded-xl border border-mono-200 p-3 text-sm text-mono-700">
@@ -913,12 +951,14 @@ new #[Layout('layouts.app')] class extends Component
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     @if (in_array($formType, ['income', 'expense'], true))
+                                        @if (! $formIsCardRefund)
                                         <div class="md:col-span-2">
                                             <label class="inline-flex min-h-10 cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900">
                                                 <input type="checkbox" wire:model.live="formAllocationEnabled" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">
                                                 Rateio entre categorias
                                             </label>
                                         </div>
+                                        @endif
                                         @if ($formAllocationEnabled)
                                             <div class="space-y-3 rounded-2xl border border-mono-100 bg-mono-50 p-4 md:col-span-2">
                                                 <x-banking.allocation-mode model="formAllocationMode" id="form-allocation-mode" />

@@ -12,7 +12,7 @@ class OfxImportDraftService
 
     private const DIRECTORY = 'banking/ofx-previews';
 
-    public function create(int $accountId, string $contents): void
+    public function create(int $accountId, string $contents, string $targetType = 'bank', ?string $invoiceMonth = null): void
     {
         $this->clear();
         $this->deleteExpiredFiles();
@@ -26,6 +26,8 @@ class OfxImportDraftService
         session()->put(self::SESSION_KEY, [
             'user_id' => auth()->id(),
             'account_id' => $accountId,
+            'target_type' => $targetType,
+            'invoice_month' => $invoiceMonth,
             'path' => $path,
             'hash' => hash('sha256', $contents),
             'expires_at' => now()->addDay()->timestamp,
@@ -34,7 +36,7 @@ class OfxImportDraftService
         ]);
     }
 
-    /** @return array{account_id: int, contents: string, categories: array, excluded: array}|null */
+    /** @return array{account_id: int, target_type: string, invoice_month: ?string, contents: string, categories: array, excluded: array}|null */
     public function current(): ?array
     {
         $draft = session(self::SESSION_KEY);
@@ -58,6 +60,8 @@ class OfxImportDraftService
 
         return [
             'account_id' => (int) $draft['account_id'],
+            'target_type' => $draft['target_type'] ?? 'bank',
+            'invoice_month' => $draft['invoice_month'] ?? null,
             'contents' => $contents,
             'categories' => $draft['categories'] ?? [],
             'excluded' => $draft['excluded'] ?? [],

@@ -2,6 +2,7 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
+use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Services\OfxImportDraftService;
 use App\Domains\Banking\Services\OfxImportService;
 use Livewire\Volt\Component;
@@ -59,10 +60,11 @@ new class extends Component
             return;
         }
 
-        $account = BankAccount::active()->find($draft['account_id']);
+        $isCard = $draft['target_type'] === 'card';
+        $account = $isCard ? CreditCard::active()->find($draft['account_id']) : BankAccount::active()->find($draft['account_id']);
 
         if (! $account) {
-            $this->addError('import', 'A conta selecionada não está mais disponível.');
+            $this->addError('import', $isCard ? 'O cartão selecionado não está mais disponível.' : 'A conta selecionada não está mais disponível.');
 
             return;
         }
@@ -73,7 +75,7 @@ new class extends Component
         $chosenIds = [];
 
         foreach ($rows as $index => $row) {
-            if (isset($existing[$row['fitid']]) || ! empty($this->excludedIndices[$index])) {
+            if (isset($existing[$row['fitid']]) || ! empty($this->excludedIndices[$index]) || ($isCard && $row['card_kind'] === 'payment')) {
                 continue;
             }
 
@@ -102,23 +104,28 @@ new class extends Component
         $categories = Category::active()->whereIn('id', array_unique($chosenIds))->get()->keyBy('id');
 
         foreach ($selected as $row) {
-            if (isset($row['category_id']) && $categories->get($row['category_id'])?->type !== $row['type']) {
+            if (isset($row['category_id']) && $categories->get($row['category_id'])?->type !== ($isCard ? 'expense' : $row['type'])) {
                 $this->addError('import', 'Uma categoria selecionada não corresponde ao tipo do lançamento.');
 
                 return;
             }
         }
 
-        $result = $service->import($account, $selected);
+        try {
+            $result = $isCard ? $service->importCard($account, $draft['invoice_month'], $selected) : $service->import($account, $selected);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError('import', $e->getMessage());
+            return;
+        }
         $dates = array_column($selected, 'date');
         $alreadyImported = count($existing) + $result['skipped'];
         $drafts->clear();
-        session()->flash('status', "OFX importado: {$result['imported']} lançamento(s) novo(s) e {$alreadyImported} já importado(s) nesta conta.");
-        $this->redirectRoute('banking.transactions.index', [
-            'from' => min($dates),
-            'to' => max($dates),
-            'account' => $account->id,
-        ], navigate: true);
+        session()->flash('status', "OFX importado: {$result['imported']} lançamento(s) novo(s) e {$alreadyImported} já importado(s) neste destino.");
+        $filters = ['from' => min($dates), 'to' => max($dates)];
+        if (! $isCard) {
+            $filters['account'] = $account->id;
+        }
+        $this->redirectRoute('banking.transactions.index', $filters, navigate: true);
     }
 
     public function formatMoney(int $cents): string
@@ -135,12 +142,13 @@ new class extends Component
                 'incomeRows' => [], 'expenseRows' => [], 'incomeCents' => 0,
                 'expenseCents' => 0, 'selectedCount' => 0, 'duplicateCount' => 0,
                 'excludedCount' => 0, 'statementAccount' => null, 'accountName' => '',
-                'incomeCategories' => collect(), 'expenseCategories' => collect(),
+                'incomeCategories' => collect(), 'expenseCategories' => collect(), 'isCard' => false, 'invoiceMonth' => null,
             ];
         }
 
         $parsed = $service->parse($draft['contents']);
-        $account = BankAccount::find($draft['account_id']);
+        $isCard = $draft['target_type'] === 'card';
+        $account = $isCard ? CreditCard::find($draft['account_id']) : BankAccount::find($draft['account_id']);
         $existing = $account ? $service->existingFitids($account, $parsed['transactions']) : [];
         $incomeRows = $expenseRows = [];
         $incomeCents = $expenseCents = $selectedCount = $excludedCount = 0;
@@ -148,16 +156,17 @@ new class extends Component
         foreach ($parsed['transactions'] as $index => $row) {
             $row['index'] = $index;
             $row['duplicate'] = isset($existing[$row['fitid']]);
-            $row['excluded'] = ! empty($this->excludedIndices[$index]);
+            $row['payment'] = $isCard && $row['card_kind'] === 'payment';
+            $row['excluded'] = ! empty($this->excludedIndices[$index]) || $row['payment'];
             $parts = explode('.', $row['amount']);
             $cents = ((int) $parts[0] * 100) + (int) $parts[1];
 
             if ($row['type'] === 'income') {
                 $incomeRows[] = $row;
-                $incomeCents += $cents;
+                $incomeCents += $row['payment'] ? 0 : $cents;
             } else {
                 $expenseRows[] = $row;
-                $expenseCents += $cents;
+                $expenseCents += $row['payment'] ? 0 : $cents;
             }
 
             if ($row['excluded'] && ! $row['duplicate']) {
@@ -181,9 +190,10 @@ new class extends Component
             'selectedCount' => $selectedCount,
             'duplicateCount' => count($existing),
             'excludedCount' => $excludedCount,
-            'statementAccount' => $parsed['account'],
+            'statementAccount' => $isCard ? 'Final '.substr($parsed['account'] ?? '', -4) : $parsed['account'],
+            'isCard' => $isCard, 'invoiceMonth' => $draft['invoice_month'],
             'accountName' => $account?->name ?? 'Conta indisponível',
-            'incomeCategories' => Category::active()->where('type', 'income')->orderBy('name')->get(),
+            'incomeCategories' => Category::active()->where('type', $isCard ? 'expense' : 'income')->orderBy('name')->get(),
             'expenseCategories' => Category::active()->where('type', 'expense')->orderBy('name')->get(),
         ];
     }
@@ -196,8 +206,8 @@ new class extends Component
         <div>
             <a href="{{ route('banking.transactions.index') }}" class="text-sm font-medium text-primary-500 hover:underline">Lançamentos</a>
             <span class="mx-2 text-mono-400">/</span><span class="text-sm text-mono-600">Prévia OFX</span>
-            <h1 class="mt-2 text-2xl font-bold text-mono-900">Confira os lançamentos do extrato</h1>
-            <p class="mt-1 text-sm text-mono-600">Conta de destino: <strong>{{ $accountName }}</strong>@if ($statementAccount) · Conta no OFX: <strong>{{ $statementAccount }}</strong>@endif</p>
+            <h1 class="mt-2 text-2xl font-bold text-mono-900">{{ $isCard ? 'Confira os lançamentos da fatura' : 'Confira os lançamentos do extrato' }}</h1>
+            <p class="mt-1 text-sm text-mono-600">{{ $isCard ? 'Cartão de destino' : 'Conta de destino' }}: <strong>{{ $accountName }}</strong>@if ($statementAccount) · {{ $isCard ? 'Cartão no OFX' : 'Conta no OFX' }}: <strong>{{ $statementAccount }}</strong>@endif @if ($isCard) · Fatura: <strong>{{ $invoiceMonth }}</strong>@endif</p>
         </div>
         <button type="button" wire:click="cancel" class="text-sm font-semibold text-mono-600 hover:text-mono-900">Cancelar importação</button>
     </div>
@@ -209,17 +219,20 @@ new class extends Component
         </div>
         <div class="flex items-center gap-4 rounded-2xl border border-mono-100 bg-mono-white p-5 shadow-sm">
             <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-green-50 text-green-600"><span class="material-icons-outlined">trending_up</span></span>
-            <div><p class="text-sm text-mono-500">Total receitas</p><p class="text-xl font-bold text-green-600">R$ {{ $this->formatMoney($incomeCents) }}</p></div>
+            <div><p class="text-sm text-mono-500">{{ $isCard ? 'Estornos e créditos' : 'Total receitas' }}</p><p class="text-xl font-bold text-green-600">R$ {{ $this->formatMoney($incomeCents) }}</p></div>
         </div>
         <div class="flex items-center gap-4 rounded-2xl border border-mono-100 bg-mono-white p-5 shadow-sm">
             <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600"><span class="material-icons-outlined">trending_down</span></span>
-            <div><p class="text-sm text-mono-500">Total despesas</p><p class="text-xl font-bold text-red-600">R$ {{ $this->formatMoney($expenseCents) }}</p></div>
+            <div><p class="text-sm text-mono-500">{{ $isCard ? 'Compras da fatura' : 'Total despesas' }}</p><p class="text-xl font-bold text-red-600">R$ {{ $this->formatMoney($expenseCents) }}</p></div>
         </div>
     </div>
 
-    <p class="text-sm text-mono-600">Os totais acima incluem todas as transações do arquivo. Lançamentos já importados nesta conta aparecem identificados e não serão cadastrados novamente. Você pode definir categorias e retirar itens da importação.</p>
+    <p class="text-sm text-mono-600">Os totais acima incluem as transações do arquivo, exceto os pagamentos de fatura identificados. Lançamentos já importados neste destino aparecem identificados e não serão cadastrados novamente. Você pode definir categorias e retirar itens da importação.</p>
 
-    @foreach (['income' => ['title' => 'Receitas', 'rows' => $incomeRows, 'categories' => $incomeCategories, 'color' => 'green'], 'expense' => ['title' => 'Despesas', 'rows' => $expenseRows, 'categories' => $expenseCategories, 'color' => 'red']] as $type => $section)
+    @if ($isCard)
+        <p class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Pagamentos de fatura não serão importados como compras. Estornos e créditos reduzem o total da fatura. Confira também possíveis compras já cadastradas manualmente antes de importar.</p>
+    @endif
+    @foreach (['income' => ['title' => $isCard ? 'Estornos e créditos' : 'Receitas', 'rows' => $incomeRows, 'categories' => $incomeCategories, 'color' => 'green'], 'expense' => ['title' => $isCard ? 'Compras e pagamentos identificados' : 'Despesas', 'rows' => $expenseRows, 'categories' => $expenseCategories, 'color' => 'red']] as $type => $section)
         <section class="space-y-3">
             <div class="flex items-center gap-3">
                 <span class="material-icons-outlined {{ $type === 'income' ? 'text-green-600' : 'text-red-600' }}">{{ $type === 'income' ? 'north' : 'south' }}</span>
@@ -238,7 +251,8 @@ new class extends Component
                                 <td class="px-5 py-4 font-medium text-mono-900">
                                     {{ $row['description'] }}
                                     @if ($row['duplicate']) <span class="ml-2 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Já importado</span> @endif
-                                    @if ($row['excluded'] && ! $row['duplicate']) <span class="ml-2 rounded-full bg-mono-200 px-2 py-1 text-xs text-mono-600">Retirado</span> @endif
+                                    @if ($row['payment']) <span class="ml-2 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Pagamento de fatura · não será importado</span> @endif
+                                    @if ($row['excluded'] && ! $row['duplicate'] && ! $row['payment']) <span class="ml-2 rounded-full bg-mono-200 px-2 py-1 text-xs text-mono-600">Retirado</span> @endif
                                 </td>
                                 <td class="px-5 py-3">
                                     <select wire:model.change="categorySelections.{{ $row['index'] }}" aria-label="Categoria de {{ $row['description'] }}" @disabled($row['duplicate'] || $row['excluded']) class="h-10 w-full rounded-xl border border-mono-200 bg-mono-white px-3 text-sm text-mono-700 focus:border-primary-500 focus:outline-none">
@@ -250,7 +264,7 @@ new class extends Component
                                 </td>
                                 <td class="whitespace-nowrap px-5 py-4 text-right font-semibold {{ $type === 'income' ? 'text-green-600' : 'text-red-600' }}">{{ $type === 'income' ? '+' : '-' }} R$ {{ number_format((float) $row['amount'], 2, ',', '.') }}</td>
                                 <td class="px-3 py-4 text-center">
-                                    @if (! $row['duplicate'])
+                                    @if (! $row['duplicate'] && ! $row['payment'])
                                         @if ($row['excluded'])
                                             <button type="button" wire:click="restore({{ $row['index'] }})" title="Reincluir lançamento" aria-label="Reincluir lançamento" class="text-primary-500 hover:text-primary-600"><span class="material-icons-outlined text-[20px]">undo</span></button>
                                         @else

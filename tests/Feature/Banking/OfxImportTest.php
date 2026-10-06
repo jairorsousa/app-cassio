@@ -4,6 +4,7 @@ namespace Tests\Feature\Banking;
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
+use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\OfxImportService;
 use App\Models\User;
@@ -16,6 +17,94 @@ use Tests\TestCase;
 class OfxImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_bb_card_ofx_imports_only_purchases_into_selected_invoice_without_debiting_bank_account(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'BB', 'initial_balance' => 1000]);
+        $card = CreditCard::create(['name' => 'Ourocard', 'limit' => 10000, 'closing_day' => 15, 'due_day' => 20, 'default_payment_account_id' => $account->id]);
+        $category = Category::create(['name' => 'Compras', 'type' => 'expense']);
+
+        $upload = fn () => Volt::test('banking.transactions.index')->call('openImport')
+            ->set('ofxTargetType', 'card')->set('ofxCardId', $card->id)->set('ofxInvoiceMonth', '2026-10')
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('bb.ofx', $this->bbCardStatement()))
+            ->call('previewImport')->assertHasNoErrors()->assertRedirect();
+        $upload();
+        Volt::test('banking.transactions.import-preview')->assertSee('Ourocard')
+            ->assertSee('Pagamento de fatura')->assertSee('R$ 806,95')
+            ->assertViewHas('selectedCount', 4)->set('categorySelections.1', $category->id)
+            ->call('restore', 0)->call('confirmImport')->assertHasNoErrors();
+
+        $this->assertDatabaseCount('transactions', 4);
+        $invoice = $card->invoices()->sole();
+        $this->assertSame('2026-10', $invoice->reference_month);
+        $this->assertSame('806.95', $invoice->total);
+        $this->assertSame(1000.0, $account->fresh()->balance());
+        $this->assertTrue(Transaction::get()->every(fn ($row) => $row->bank_account_id === null && $row->credit_card_id === $card->id && $row->credit_card_invoice_id === $invoice->id));
+        $this->assertDatabaseMissing('transactions', ['ofx_fitid' => 'bb-payment']);
+        $this->assertDatabaseHas('transactions', ['ofx_fitid' => 'bb-parcel', 'amount' => '580.55', 'category_id' => null]);
+        $this->assertDatabaseHas('transactions', ['ofx_fitid' => 'bb-purchase1', 'category_id' => $category->id]);
+
+        $upload();
+        Volt::test('banking.transactions.import-preview')->assertViewHas('selectedCount', 0)
+            ->assertViewHas('duplicateCount', 4)->call('confirmImport')->assertHasErrors(['import']);
+        $this->assertDatabaseCount('transactions', 4);
+    }
+
+    public function test_card_import_requires_card_and_invoice_and_rejects_card_file_for_bank_target(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'Conta']);
+        Volt::test('banking.transactions.index')->call('openImport')->set('ofxTargetType', 'card')
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('bb.ofx', $this->bbCardStatement()))
+            ->call('previewImport')->assertHasErrors(['ofxCardId', 'ofxInvoiceMonth']);
+        Volt::test('banking.transactions.index')->call('openImport')->set('ofxAccountId', $account->id)
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('bb.ofx', $this->bbCardStatement()))
+            ->call('previewImport')->assertHasErrors(['ofxFile']);
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_card_refunds_reduce_invoice_and_closed_invoice_rejects_import(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $card = CreditCard::create(['name' => 'Ourocard', 'limit' => 10000, 'closing_day' => 15, 'due_day' => 20]);
+        $contents = str_replace('</BANKTRANLIST>', '<STMTTRN><TRNTYPE>CREDIT</TRNTYPE><DTPOSTED>20261004</DTPOSTED><TRNAMT>10.00</TRNAMT><FITID>bb-refund</FITID><MEMO>ESTORNO COMPRA</MEMO></STMTTRN></BANKTRANLIST>', $this->bbCardStatement());
+        $service = app(OfxImportService::class);
+        $rows = $service->parse($contents)['transactions'];
+        $service->importCard($card, '2026-10', $rows);
+        $this->assertSame('796.95', $card->invoices()->sole()->total);
+        $refund = Transaction::where('ofx_fitid', 'bb-refund')->sole();
+        Volt::test('banking.transactions.index')->call('edit', $refund->id)
+            ->set('formAmount', '5.00')->call('saveTransaction')->assertHasNoErrors();
+        $this->assertSame('-5.00', $refund->fresh()->amount);
+        $this->assertSame('801.95', $card->invoices()->sole()->total);
+        $invoice = $card->invoices()->sole();
+        $invoice->update(['status' => 'paid']);
+        $count = Transaction::count();
+        try {
+            $service->importCard($card, '2026-10', [array_replace($rows[1], ['fitid' => 'new-purchase'])]);
+            $this->fail('Importação em fatura paga foi aceita.');
+        } catch (\InvalidArgumentException) {
+            $this->assertDatabaseCount('transactions', $count);
+        }
+    }
+
+    private function bbCardStatement(): string
+    {
+        $rows = '';
+        foreach ([
+            ['CREDIT', '20260921', '-580.56', 'bb-payment', 'PGTO DEBITO CONTA'],
+            ['PAYMENT', '20260926', '-35.00', 'bb-purchase1', 'ASSINATURA'],
+            ['PAYMENT', '20260928', '-5.00', 'bb-purchase2', 'LOJA'],
+            ['PAYMENT', '20261004', '-186.40', 'bb-purchase3', 'RESTAURANTE'],
+            ['PAYMENT', '20260820', '-580.55', 'bb-parcel', 'VIAGEM PARC 02/03'],
+        ] as [$type, $date, $amount, $fitid, $memo]) {
+            $rows .= "<STMTTRN><TRNTYPE>{$type}</TRNTYPE><DTPOSTED>{$date}</DTPOSTED><TRNAMT>{$amount}</TRNAMT><FITID>{$fitid}</FITID><MEMO>{$memo}</MEMO></STMTTRN>";
+        }
+        return "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nCHARSET:1252\n<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>BRL</CURDEF><CCACCTFROM><ACCTID>0000000000001234</ACCTID></CCACCTFROM><BANKTRANLIST>{$rows}</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>";
+    }
 
     public function test_previews_and_imports_sgml_statement_without_reimporting_the_same_fitid(): void
     {
