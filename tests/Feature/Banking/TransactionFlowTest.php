@@ -128,6 +128,86 @@ class TransactionFlowTest extends TestCase
         ]);
     }
 
+    public function test_card_purchase_requires_an_active_card_and_has_its_own_form(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $card = CreditCard::create(['name' => 'Inativo', 'status' => false, 'limit' => 1000, 'closing_day' => 25, 'due_day' => 5]);
+
+        $component = Volt::test('banking.transactions.index')
+            ->call('create', 'card_expense')
+            ->assertSet('formType', 'expense')
+            ->assertSee('Nova despesa no cartão de crédito')
+            ->assertDontSeeHtml('wire:model="formBankAccountId"')
+            ->assertDontSeeHtml('wire:model="formStatus"')
+            ->set('formAmount', '100.00')
+            ->set('formDescription', 'Compra')
+            ->call('saveTransaction')
+            ->assertHasErrors(['formCreditCardId', 'formInvoiceMonth']);
+
+        $component->set('formCreditCardId', $card->id)
+            ->call('saveTransaction')
+            ->assertHasErrors(['formCreditCardId']);
+
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_card_purchase_splits_into_selected_monthly_invoices_without_debiting_account(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 1000]);
+        $card = CreditCard::create(['name' => 'Visa', 'limit' => 5000, 'closing_day' => 25, 'due_day' => 5, 'default_payment_account_id' => $account->id]);
+
+        Volt::test('banking.transactions.index')
+            ->call('create', 'card_expense')
+            ->set('formDate', '2026-10-26')
+            ->set('formCreditCardId', $card->id)
+            ->assertSet('formInvoiceMonth', '2026-11')
+            ->set('formInvoiceMonth', '2026-12')
+            ->set('formAmount', '100.00')
+            ->set('formDescription', 'Compra parcelada')
+            ->set('formInstallments', 3)
+            ->set('formBankAccountId', $account->id)
+            ->call('saveTransaction')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', false);
+
+        $transactions = Transaction::where('credit_card_id', $card->id)->orderBy('installment_number')->get();
+        $this->assertCount(3, $transactions);
+        $this->assertEquals([33.33, 33.33, 33.34], $transactions->pluck('amount')->map(fn ($amount) => (float) $amount)->all());
+        $this->assertTrue($transactions->every(fn ($transaction) => $transaction->type === 'expense' && $transaction->bank_account_id === null));
+        $invoices = $card->invoices()->orderBy('reference_month')->get();
+        $this->assertEquals(['2026-12', '2027-01', '2027-02'], $invoices->pluck('reference_month')->all());
+        $this->assertEquals('2027-01-05', $invoices->first()->due_date->format('Y-m-d'));
+        $this->assertEquals(100, $invoices->sum('total'));
+        $this->assertEquals(1000, $account->fresh()->balance());
+    }
+
+    public function test_editing_card_expense_moves_it_to_the_correct_invoice_and_recalculates_totals(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $card = CreditCard::create(['name' => 'Visa', 'limit' => 5000, 'closing_day' => 25, 'due_day' => 5]);
+        $other = CreditCard::create(['name' => 'Mastercard', 'limit' => 5000, 'closing_day' => 20, 'due_day' => 28]);
+        $transaction = app(InstallmentService::class)->split($card, Carbon::parse('2026-10-10'), 100, 1, 'Compra')[0];
+        $oldInvoice = $transaction->invoice;
+
+        Volt::test('banking.transactions.index')
+            ->call('edit', $transaction->id)
+            ->assertSee('Editar despesa no cartão')
+            ->assertSet('formInvoiceMonth', '2026-10')
+            ->set('formCreditCardId', $other->id)
+            ->set('formInvoiceMonth', '2026-11')
+            ->set('formAmount', '150.00')
+            ->call('saveTransaction')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(0, (float) $oldInvoice->fresh()->total);
+        $transaction->refresh();
+        $this->assertEquals($other->id, $transaction->credit_card_id);
+        $this->assertEquals('2026-11', $transaction->invoice->reference_month);
+        $this->assertEquals(150, (float) $transaction->invoice->total);
+        $this->assertNull($transaction->bank_account_id);
+    }
+
     public function test_creates_simple_income_and_expense(): void
     {
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 100]);

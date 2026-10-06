@@ -35,7 +35,12 @@ class TransactionService
         }
 
         return DB::transaction(function () use ($transaction, $data) {
+            $oldInvoice = $transaction->invoice;
             $transaction->update($data);
+
+            if ($oldInvoice && $oldInvoice->id !== $transaction->credit_card_invoice_id) {
+                app(InvoiceService::class)->recalculateTotal($oldInvoice);
+            }
 
             return $transaction->fresh();
         });

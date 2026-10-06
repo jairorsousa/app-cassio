@@ -22,6 +22,7 @@
         @foreach ([
             ['type' => 'expense', 'label' => 'Despesa', 'icon' => 'trending_down', 'color' => 'text-red-500', 'background' => 'bg-red-50'],
             ['type' => 'income', 'label' => 'Receita', 'icon' => 'trending_up', 'color' => 'text-green-600', 'background' => 'bg-green-50'],
+            ['type' => 'card_expense', 'label' => 'Despesa no cartão', 'icon' => 'credit_card', 'color' => 'text-teal-600', 'background' => 'bg-teal-50'],
             ['type' => 'transfer', 'label' => 'Transferência', 'icon' => 'sync_alt', 'color' => 'text-blue-500', 'background' => 'bg-blue-50'],
         ] as $option)
             <button type="button" role="menuitem" wire:click="create('{{ $option['type'] }}')"

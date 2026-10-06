@@ -5,6 +5,7 @@ use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\InstallmentService;
+use App\Domains\Banking\Services\InvoiceService;
 use App\Domains\Banking\Services\OfxImportDraftService;
 use App\Domains\Banking\Services\OfxImportService;
 use App\Domains\Banking\Services\TransactionService;
@@ -89,6 +90,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $formCreditCardId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public bool $formIsCard = false;
+
+    public string $formInvoiceMonth = '';
+
     public ?int $formTransferToId = null;
 
     public int $formInstallments = 1;
@@ -155,10 +161,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public function create(string $type = 'expense'): void
     {
-        abort_unless(in_array($type, ['expense', 'income', 'transfer'], true), 422);
+        abort_unless(in_array($type, ['expense', 'income', 'card_expense', 'transfer'], true), 422);
 
         $this->resetForm();
-        $this->formType = $type;
+        $this->formIsCard = $type === 'card_expense';
+        $this->formType = $this->formIsCard ? 'expense' : $type;
         $this->showFormModal = true;
     }
 
@@ -172,6 +179,7 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
+        $this->resetForm();
         $this->editingId = $transaction->id;
         $this->editingHasAllocations = $transaction->allocations_count > 0;
         $this->formType = $transaction->type;
@@ -183,6 +191,11 @@ new #[Layout('layouts.app')] class extends Component
         $this->formCategoryId = $transaction->category_id;
         $this->formBankAccountId = $transaction->bank_account_id;
         $this->formCreditCardId = $transaction->credit_card_id;
+        $this->formIsCard = $transaction->type === 'expense' && $transaction->credit_card_id !== null;
+        $this->formInvoiceMonth = $transaction->invoice?->reference_month ?? '';
+        if ($this->formIsCard && $this->formInvoiceMonth === '') {
+            $this->suggestInvoiceMonth();
+        }
         $this->showFormModal = true;
         $this->resetValidation();
     }
@@ -190,6 +203,32 @@ new #[Layout('layouts.app')] class extends Component
     public function cancel(): void
     {
         $this->resetForm();
+    }
+
+    public function updatedFormCreditCardId(): void
+    {
+        $this->suggestInvoiceMonth();
+    }
+
+    public function updatedFormDate(): void
+    {
+        $this->suggestInvoiceMonth();
+    }
+
+    private function suggestInvoiceMonth(): void
+    {
+        $this->formInvoiceMonth = '';
+        $card = CreditCard::find($this->formCreditCardId);
+        if (! $this->formIsCard || ! $card || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)) {
+            return;
+        }
+
+        try {
+            $date = Carbon::parse($this->formDate);
+            $this->formInvoiceMonth = ($date->day <= $card->closing_day ? $date : $date->addMonthNoOverflow())->format('Y-m');
+        } catch (\Exception) {
+            // A validação do formulário apresentará o erro da data.
+        }
     }
 
     public function openAllocation(int $id): void
@@ -264,6 +303,14 @@ new #[Layout('layouts.app')] class extends Component
 
     public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment): void
     {
+        if ($this->formIsCard) {
+            $this->formType = 'expense';
+            $this->formBankAccountId = null;
+            $this->formStatus = 'settled';
+        } else {
+            $this->formCreditCardId = null;
+        }
+
         $data = $this->validate([
             'formType' => 'required|in:income,expense,transfer',
             'formDate' => 'required|date',
@@ -273,7 +320,8 @@ new #[Layout('layouts.app')] class extends Component
             'formStatus' => 'required|in:pending,settled',
             'formCategoryId' => 'nullable|exists:categories,id',
             'formBankAccountId' => 'nullable|exists:bank_accounts,id',
-            'formCreditCardId' => 'nullable|exists:credit_cards,id',
+            'formCreditCardId' => [Rule::requiredIf($this->formIsCard), 'nullable', Rule::exists('credit_cards', 'id')->whereNull('deleted_at')->when(! $this->editingId, fn ($rule) => $rule->where('status', true))],
+            'formInvoiceMonth' => [Rule::requiredIf($this->formIsCard), 'nullable', 'date_format:Y-m'],
             'formTransferToId' => 'nullable|exists:bank_accounts,id|different:formBankAccountId',
             'formInstallments' => 'required|integer|min:1|max:36',
         ]);
@@ -293,7 +341,7 @@ new #[Layout('layouts.app')] class extends Component
                 return;
             }
 
-            $service->update($transaction, [
+            $updates = [
                 'type' => $data['formType'],
                 'date' => $data['formDate'],
                 'amount' => $data['formAmount'],
@@ -303,7 +351,14 @@ new #[Layout('layouts.app')] class extends Component
                 'category_id' => $transaction->allocations_count > 0 ? null : $data['formCategoryId'],
                 'bank_account_id' => $data['formBankAccountId'],
                 'credit_card_id' => $data['formCreditCardId'],
-            ]);
+            ];
+            if ($this->formIsCard) {
+                $updates['credit_card_invoice_id'] = app(InvoiceService::class)->findOrCreateForReference(
+                    CreditCard::findOrFail($data['formCreditCardId']),
+                    Carbon::createFromFormat('!Y-m', $data['formInvoiceMonth']),
+                )->id;
+            }
+            $service->update($transaction, $updates);
             $message = 'Lançamento atualizado.';
         } elseif ($data['formType'] === 'transfer') {
             if (! $data['formBankAccountId'] || ! $data['formTransferToId']) {
@@ -330,6 +385,7 @@ new #[Layout('layouts.app')] class extends Component
                 $data['formDescription'],
                 $data['formCategoryId'],
                 $data['formNotes'] ?: null,
+                $data['formInvoiceMonth'],
             );
             $message = $data['formInstallments'] > 1 ? 'Compra parcelada criada.' : 'Lançamento criado.';
         } else {
@@ -355,7 +411,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth',
         ]);
         $this->formType = 'expense';
         $this->formDate = now()->format('Y-m-d');
@@ -410,7 +466,7 @@ new #[Layout('layouts.app')] class extends Component
             'accounts' => BankAccount::orderBy('name')->get(),
             'activeCategories' => Category::active()->orderBy('name')->get(),
             'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
-            'cards' => CreditCard::active()->orderBy('name')->get(),
+            'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
         ];
     }
 }; ?>
@@ -650,17 +706,17 @@ new #[Layout('layouts.app')] class extends Component
 
     @if ($showFormModal)
         @php
-            $formHeading = $editingId ? 'Editar Lançamento' : match ($formType) {
+            $formHeading = $formIsCard ? ($editingId ? 'Editar despesa no cartão' : 'Nova despesa no cartão de crédito') : ($editingId ? 'Editar Lançamento' : match ($formType) {
                 'income' => 'Nova receita',
                 'transfer' => 'Nova transferência',
                 default => 'Nova despesa',
-            };
-            $formColor = match ($formType) {
+            });
+            $formColor = $formIsCard ? 'text-teal-600' : match ($formType) {
                 'income' => 'text-green-600',
                 'transfer' => 'text-blue-500',
                 default => 'text-red-500',
             };
-            $formIcon = match ($formType) {
+            $formIcon = $formIsCard ? 'credit_card' : match ($formType) {
                 'income' => 'trending_up',
                 'transfer' => 'sync_alt',
                 default => 'trending_down',
@@ -690,13 +746,14 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model="formDate" required />
+                                    <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model="formAmount" x-money required />
 
                                     <div class="md:col-span-2">
                                         <x-jr.input label="Descrição *" icon="description" name="formDescription" wire:model="formDescription" maxlength="200" required />
                                     </div>
 
+                                    @if (! $formIsCard)
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Status *</label>
                                         <select wire:model="formStatus" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
@@ -705,6 +762,7 @@ new #[Layout('layouts.app')] class extends Component
                                         </select>
                                         @error('formStatus') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
+                                    @endif
                                 </div>
                             </section>
 
@@ -752,6 +810,33 @@ new #[Layout('layouts.app')] class extends Component
                                             </select>
                                             @error('formTransferToId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
+
+                                    @elseif ($formIsCard)
+                                            <div>
+                                                <label class="mb-2 block text-sm font-medium text-mono-600">Cartão de crédito *</label>
+                                                <select wire:model.live="formCreditCardId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
+                                                    <option value="">Selecionar cartão</option>
+                                                    @foreach ($cards as $cardOption)
+                                                        <option value="{{ $cardOption->id }}">{{ $cardOption->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                                @error('formCreditCardId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                            </div>
+
+                                            @if (! $editingId)
+                                                <x-jr.input label="Parcelas" helper="Use 1 para uma compra sem parcelamento." icon="view_week" name="formInstallments" type="number" min="1" max="36" wire:model="formInstallments" />
+                                            @endif
+                                        <x-jr.input :label="$editingId ? 'Fatura *' : 'Primeira fatura *'" icon="receipt_long" name="formInvoiceMonth" type="month" wire:model="formInvoiceMonth" required />
+                                        <div class="md:col-span-2 rounded-xl bg-teal-50 p-4 text-sm text-teal-800">
+                                            @if ($editingId)
+                                                As alterações serão aplicadas somente a este lançamento. O valor será atualizado na fatura selecionada.
+                                            @else
+                                                A compra será lançada na fatura do cartão. Para parcelar, informe o valor total e a quantidade de parcelas; cada parcela irá para uma fatura mensal.
+                                            @endif
+                                        </div>
+                                        @if ($cards->isEmpty())
+                                            <p class="md:col-span-2 text-sm text-error">Cadastre um cartão de crédito ativo na seção Cartões para registrar uma compra.</p>
+                                        @endif
                                     @else
                                         <div>
                                             <label class="mb-2 block text-sm font-medium text-mono-600">Conta bancária</label>
@@ -764,22 +849,6 @@ new #[Layout('layouts.app')] class extends Component
                                             @error('formBankAccountId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
 
-                                        @if ($formType === 'expense')
-                                            <div>
-                                                <label class="mb-2 block text-sm font-medium text-mono-600">Cartão de crédito</label>
-                                                <select wire:model.live="formCreditCardId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                                    <option value="">Nenhum</option>
-                                                    @foreach ($cards as $cardOption)
-                                                        <option value="{{ $cardOption->id }}">{{ $cardOption->name }}</option>
-                                                    @endforeach
-                                                </select>
-                                                @error('formCreditCardId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                            </div>
-
-                                            @if ($formCreditCardId && ! $editingId)
-                                                <x-jr.input label="Parcelas" icon="view_week" name="formInstallments" type="number" min="1" max="36" wire:model="formInstallments" />
-                                            @endif
-                                        @endif
                                     @endif
                                 </div>
                             </section>

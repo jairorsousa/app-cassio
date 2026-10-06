@@ -15,7 +15,15 @@ class InvoiceService
             ? $purchaseDate->copy()
             : $purchaseDate->copy()->addMonthNoOverflow();
 
+        return $this->findOrCreateForReference($card, $reference);
+    }
+
+    public function findOrCreateForReference(CreditCard $card, Carbon $reference): CreditCardInvoice
+    {
         $referenceMonth = $reference->format('Y-m');
+        $dueMonth = $card->due_day <= $card->closing_day
+            ? $reference->copy()->addMonthNoOverflow()
+            : $reference->copy();
 
         return CreditCardInvoice::firstOrCreate(
             [
@@ -31,8 +39,8 @@ class InvoiceService
                     min($card->closing_day, $reference->daysInMonth)
                 ),
                 'due_date' => Carbon::createFromDate(
-                    $reference->year, $reference->month,
-                    min($card->due_day, $reference->daysInMonth)
+                    $dueMonth->year, $dueMonth->month,
+                    min($card->due_day, $dueMonth->daysInMonth)
                 ),
             ]
         );

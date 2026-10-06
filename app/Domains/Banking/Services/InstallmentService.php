@@ -25,6 +25,7 @@ class InstallmentService
         string $description,
         ?int $categoryId = null,
         ?string $notes = null,
+        ?string $firstReferenceMonth = null,
     ): array {
         if ($installments < 1) {
             throw new \InvalidArgumentException('Número de parcelas inválido.');
@@ -33,7 +34,7 @@ class InstallmentService
             throw new \InvalidArgumentException('Valor total deve ser positivo.');
         }
 
-        return DB::transaction(function () use ($card, $purchaseDate, $totalAmount, $installments, $description, $categoryId, $notes) {
+        return DB::transaction(function () use ($card, $purchaseDate, $totalAmount, $installments, $description, $categoryId, $notes, $firstReferenceMonth) {
             $groupId = (string) Str::uuid();
             $perInstallment = round($totalAmount / $installments, 2);
             $remainder = round($totalAmount - ($perInstallment * $installments), 2);
@@ -49,7 +50,9 @@ class InstallmentService
                 $monthOffset = $i - 1;
                 $invoiceDate = $purchaseDate->copy()->addMonthsNoOverflow($monthOffset);
 
-                $invoice = $this->invoiceService->findOrCreateForPurchase($card, $invoiceDate);
+                $invoice = $firstReferenceMonth
+                    ? $this->invoiceService->findOrCreateForReference($card, Carbon::createFromFormat('!Y-m', $firstReferenceMonth)->addMonthsNoOverflow($monthOffset))
+                    : $this->invoiceService->findOrCreateForPurchase($card, $invoiceDate);
 
                 $created[] = Transaction::create([
                     'type' => 'expense',
