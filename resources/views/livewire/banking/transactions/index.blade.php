@@ -408,7 +408,7 @@ new #[Layout('layouts.app')] class extends Component
             'formType' => 'required|in:income,expense,transfer',
             'formDate' => 'required|date',
             'formAmount' => 'required|numeric|min:0.01',
-            'formDescription' => 'required|string|max:200',
+            'formDescription' => [Rule::requiredIf($this->formType !== 'transfer'), 'nullable', 'string', 'max:200'],
             'formNotes' => 'nullable|string',
             'formStatus' => 'required|in:pending,settled',
             'formCategoryId' => ['nullable', Rule::exists('categories', 'id')->when(
@@ -480,7 +480,7 @@ new #[Layout('layouts.app')] class extends Component
                         BankAccount::findOrFail($data['formTransferToId']),
                         (float) $data['formAmount'],
                         $data['formDate'],
-                        $data['formDescription'],
+                        null,
                         $data['formNotes'] ?: null,
                         $data['formStatus'],
                     );
@@ -881,9 +881,11 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model.live.debounce.300ms="formAmount" x-money required />
                                     <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
 
+                                    @if ($formType !== 'transfer')
                                     <div class="md:col-span-2">
                                         <x-jr.input label="Descrição *" icon="description" name="formDescription" wire:model="formDescription" maxlength="200" required />
                                     </div>
+                                    @endif
 
                                     @if (! $formIsCard)
                                         <div x-data="{ status: $wire.entangle('formStatus') }">

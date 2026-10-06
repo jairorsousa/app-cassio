@@ -222,17 +222,18 @@ class TransactionFlowTest extends TestCase
 
         $component = Volt::test('banking.transactions.index')
             ->call('create', 'transfer')
+            ->assertDontSeeHtml('name="formDescription"')
             ->assertSet('formStatus', 'settled')
             ->set('formDate', now('America/Sao_Paulo')->addDay()->format('Y-m-d'))
             ->assertSet('formStatus', 'pending')
             ->set('formBankAccountId', $origin->id)
             ->set('formTransferToId', $destination->id)
             ->set('formAmount', '100.00')
-            ->set('formDescription', 'Transferência pendente')
             ->call('saveTransaction')
             ->assertHasNoErrors();
 
         $this->assertEquals(2, Transaction::where('type', 'transfer')->where('status', 'pending')->count());
+        $this->assertEquals(2, Transaction::where('type', 'transfer')->where('description', 'Transferência Origem → Destino')->count());
         $transaction = Transaction::where('bank_account_id', $destination->id)->firstOrFail();
         $component->call('edit', $transaction->id)
             ->assertSet('formStatus', 'pending')
