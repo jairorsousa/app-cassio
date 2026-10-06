@@ -914,7 +914,7 @@ new #[Layout('layouts.app')] class extends Component
                                         <div class="md:col-span-2">
                                             <label class="inline-flex min-h-10 cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900">
                                                 <input type="checkbox" wire:model.live="formAllocationEnabled" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">
-                                                Dividir entre categorias
+                                                Rateio entre categorias
                                             </label>
                                         </div>
                                         @if ($formAllocationEnabled)
