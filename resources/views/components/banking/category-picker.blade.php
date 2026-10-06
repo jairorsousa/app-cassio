@@ -1,4 +1,4 @@
-@props(['categories', 'disabled' => false])
+@props(['categories', 'disabled' => false, 'model' => 'formCategoryId', 'id' => 'transaction-category', 'label' => 'Categoria'])
 
 @php
     $icons = [
@@ -19,7 +19,7 @@
 
 <div class="relative" x-data="{
     open: false,
-    value: $wire.entangle('formCategoryId'),
+    value: $wire.entangle(@js($model)),
     options: @js($options),
     get selected() { return this.options.find(option => option.id == this.value) },
     choose(id) { this.value = id; this.open = false; this.$refs.trigger.focus() },
@@ -37,9 +37,9 @@
     }
 }" @click.outside="open = false" @keydown.escape.stop.prevent="open = false; $refs.trigger.focus()"
     @focusout="if (!$el.contains($event.relatedTarget)) open = false">
-    <label class="mb-2 block text-sm font-medium text-mono-600" for="transaction-category-trigger">Categoria</label>
-    <button id="transaction-category-trigger" type="button" x-ref="trigger" aria-haspopup="listbox"
-        :aria-expanded="open" aria-controls="transaction-category-options" @disabled($disabled)
+    <label class="mb-2 block text-sm font-medium text-mono-600" for="{{ $id }}-trigger">{{ $label }}</label>
+    <button id="{{ $id }}-trigger" type="button" x-ref="trigger" aria-haspopup="listbox"
+        :aria-expanded="open" aria-controls="{{ $id }}-options" @disabled($disabled)
         @click="open ? open = false : show()" @keydown.arrow-down.prevent="show()" @keydown.arrow-up.prevent="show()"
         class="flex h-12 w-full items-center gap-3 rounded-pill border border-mono-200 bg-mono-white px-4 text-left text-sm text-mono-900 transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-50">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
@@ -50,7 +50,7 @@
         <span class="material-icons-outlined text-[20px] text-mono-400" aria-hidden="true">expand_more</span>
     </button>
 
-    <div id="transaction-category-options" x-ref="options" x-show="open" x-cloak x-transition
+    <div id="{{ $id }}-options" x-ref="options" x-show="open" x-cloak x-transition
         role="listbox" aria-label="Categorias" @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
         @keydown.home.prevent="$refs.options.firstElementChild.focus()" @keydown.end.prevent="$refs.options.lastElementChild.focus()"
         class="absolute left-0 right-0 top-full z-50 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-mono-100 bg-mono-white p-2 shadow-elevated">

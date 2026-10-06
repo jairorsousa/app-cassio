@@ -99,6 +99,35 @@ new #[Layout('layouts.app')] class extends Component
 
     public int $formInstallments = 1;
 
+    public bool $formAllocationEnabled = false;
+
+    public array $formAllocationRows = [];
+
+    public function updatedFormAllocationEnabled(): void
+    {
+        if ($this->formAllocationEnabled && count($this->formAllocationRows) < 2) {
+            $this->formAllocationRows = [
+                ['key' => (string) Str::uuid(), 'category_id' => $this->formCategoryId, 'amount' => $this->formAmount],
+                ['key' => (string) Str::uuid(), 'category_id' => null, 'amount' => ''],
+            ];
+        }
+        $this->resetValidation('formAllocationRows');
+    }
+
+    public function addFormAllocationRow(): void
+    {
+        if (count($this->formAllocationRows) < 20) {
+            $this->formAllocationRows[] = ['key' => (string) Str::uuid(), 'category_id' => null, 'amount' => ''];
+        }
+    }
+
+    public function removeFormAllocationRow(int $index): void
+    {
+        if (count($this->formAllocationRows) > 2 && isset($this->formAllocationRows[$index])) {
+            array_splice($this->formAllocationRows, $index, 1);
+        }
+    }
+
     public function mount(): void
     {
         if ($this->from === '') {
@@ -182,6 +211,10 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetForm();
         $this->editingId = $transaction->id;
         $this->editingHasAllocations = $transaction->allocations_count > 0;
+        $this->formAllocationEnabled = $this->editingHasAllocations;
+        $this->formAllocationRows = $transaction->allocations->map(fn ($row) => [
+            'key' => (string) Str::uuid(), 'category_id' => $row->category_id, 'amount' => (string) $row->amount,
+        ])->all();
         $this->formType = $transaction->type;
         $this->formDate = $transaction->date->format('Y-m-d');
         $this->formAmount = (string) abs((float) $transaction->amount);
@@ -208,6 +241,13 @@ new #[Layout('layouts.app')] class extends Component
     public function updatedFormCreditCardId(): void
     {
         $this->suggestInvoiceMonth();
+    }
+
+    public function updatedFormAmount(): void
+    {
+        if (str_contains($this->formAmount, ',')) {
+            $this->formAmount = str_replace(',', '.', str_replace('.', '', $this->formAmount));
+        }
     }
 
     public function updatedFormDate(): void
@@ -307,9 +347,13 @@ new #[Layout('layouts.app')] class extends Component
         session()->flash('status', 'Rateio removido. O lançamento ficou sem categoria.');
     }
 
-    public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment): void
+    public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment, TransactionAllocationService $allocations): void
     {
         if ($this->formType === 'transfer') {
+            $this->formCategoryId = null;
+            $this->formAllocationEnabled = false;
+        }
+        if ($this->formAllocationEnabled) {
             $this->formCategoryId = null;
         }
 
@@ -339,81 +383,101 @@ new #[Layout('layouts.app')] class extends Component
             'formInstallments' => 'required|integer|min:1|max:36',
         ]);
 
-        if ($this->editingId) {
-            $transaction = Transaction::withCount('allocations')->findOrFail($this->editingId);
-
-            if ($transaction->allocations_count > 0 && round((float) $data['formAmount'] * 100) !== round((float) $transaction->amount * 100)) {
-                $this->addError('formAmount', 'Ajuste ou remova o rateio antes de alterar o valor total.');
-
+        if ($this->formAllocationEnabled) {
+            try {
+                $allocations->validateRows($this->formType, $this->formAmount, $this->formAllocationRows);
+            } catch (\InvalidArgumentException $e) {
+                $this->addError('formAllocationRows', $e->getMessage());
                 return;
             }
+        }
 
-            if ($transaction->allocations_count > 0 && $data['formType'] !== $transaction->type) {
-                $this->addError('formType', 'Remova o rateio antes de alterar o tipo do lançamento.');
+        try {
+            $message = \Illuminate\Support\Facades\DB::transaction(function () use ($service, $transfer, $installment, $allocations, $data) {
+                $saved = [];
+                if ($this->editingId) {
+                    $transaction = Transaction::withCount('allocations')->findOrFail($this->editingId);
 
-                return;
-            }
+                    if ($transaction->allocations_count > 0 && $data['formType'] !== $transaction->type) {
+                        throw new \DomainException('Remova o rateio antes de alterar o tipo do lançamento.');
+                    }
 
-            $updates = [
-                'type' => $data['formType'],
-                'date' => $data['formDate'],
-                'amount' => $data['formAmount'],
-                'description' => $data['formDescription'],
-                'notes' => $data['formNotes'] ?: null,
-                'status' => $data['formStatus'],
-                'category_id' => $transaction->allocations_count > 0 ? null : $data['formCategoryId'],
-                'bank_account_id' => $data['formBankAccountId'],
-                'credit_card_id' => $data['formCreditCardId'],
-            ];
-            if ($this->formIsCard) {
-                $updates['credit_card_invoice_id'] = app(InvoiceService::class)->findOrCreateForReference(
-                    CreditCard::findOrFail($data['formCreditCardId']),
-                    Carbon::createFromFormat('!Y-m', $data['formInvoiceMonth']),
-                )->id;
-            }
-            $service->update($transaction, $updates);
-            $message = 'Lançamento atualizado.';
-        } elseif ($data['formType'] === 'transfer') {
-            if (! $data['formBankAccountId'] || ! $data['formTransferToId']) {
-                $this->addError('formTransferToId', 'Selecione as contas de origem e destino.');
+                    if ($transaction->allocations_count > 0) {
+                        $allocations->clear($transaction);
+                    }
+                    $updates = [
+                        'type' => $data['formType'],
+                        'date' => $data['formDate'],
+                        'amount' => $data['formAmount'],
+                        'description' => $data['formDescription'],
+                        'notes' => $data['formNotes'] ?: null,
+                        'status' => $data['formStatus'],
+                        'category_id' => $data['formCategoryId'],
+                        'bank_account_id' => $data['formBankAccountId'],
+                        'credit_card_id' => $data['formCreditCardId'],
+                    ];
+                    if ($this->formIsCard) {
+                        $updates['credit_card_invoice_id'] = app(InvoiceService::class)->findOrCreateForReference(
+                            CreditCard::findOrFail($data['formCreditCardId']),
+                            Carbon::createFromFormat('!Y-m', $data['formInvoiceMonth']),
+                        )->id;
+                    }
+                    $saved = [$service->update($transaction, $updates)];
+                    $message = 'Lançamento atualizado.';
+                } elseif ($data['formType'] === 'transfer') {
+                    if (! $data['formBankAccountId'] || ! $data['formTransferToId']) {
+                        $this->addError('formTransferToId', 'Selecione as contas de origem e destino.');
 
-                return;
-            }
+                        return;
+                    }
 
-            $transfer->execute(
-                BankAccount::findOrFail($data['formBankAccountId']),
-                BankAccount::findOrFail($data['formTransferToId']),
-                (float) $data['formAmount'],
-                $data['formDate'],
-                $data['formDescription'],
-                $data['formNotes'] ?: null,
-                $data['formStatus'],
-            );
-            $message = 'Transferência criada.';
-        } elseif ($data['formType'] === 'expense' && $data['formCreditCardId']) {
-            $installment->split(
-                CreditCard::findOrFail($data['formCreditCardId']),
-                Carbon::parse($data['formDate']),
-                (float) $data['formAmount'],
-                $data['formInstallments'],
-                $data['formDescription'],
-                $data['formCategoryId'],
-                $data['formNotes'] ?: null,
-                $data['formInvoiceMonth'],
-            );
-            $message = $data['formInstallments'] > 1 ? 'Compra parcelada criada.' : 'Lançamento criado.';
-        } else {
-            $service->create([
-                'type' => $data['formType'],
-                'date' => $data['formDate'],
-                'amount' => $data['formAmount'],
-                'description' => $data['formDescription'],
-                'notes' => $data['formNotes'] ?: null,
-                'status' => $data['formStatus'],
-                'category_id' => $data['formCategoryId'],
-                'bank_account_id' => $data['formBankAccountId'],
-            ]);
-            $message = 'Lançamento criado.';
+                    $transfer->execute(
+                        BankAccount::findOrFail($data['formBankAccountId']),
+                        BankAccount::findOrFail($data['formTransferToId']),
+                        (float) $data['formAmount'],
+                        $data['formDate'],
+                        $data['formDescription'],
+                        $data['formNotes'] ?: null,
+                        $data['formStatus'],
+                    );
+                    $message = 'Transferência criada.';
+                } elseif ($data['formType'] === 'expense' && $data['formCreditCardId']) {
+                    $saved = $installment->split(
+                        CreditCard::findOrFail($data['formCreditCardId']),
+                        Carbon::parse($data['formDate']),
+                        (float) $data['formAmount'],
+                        $data['formInstallments'],
+                        $data['formDescription'],
+                        $data['formCategoryId'],
+                        $data['formNotes'] ?: null,
+                        $data['formInvoiceMonth'],
+                    );
+                    $message = $data['formInstallments'] > 1 ? 'Compra parcelada criada.' : 'Lançamento criado.';
+                } else {
+                    $saved = [$service->create([
+                        'type' => $data['formType'],
+                        'date' => $data['formDate'],
+                        'amount' => $data['formAmount'],
+                        'description' => $data['formDescription'],
+                        'notes' => $data['formNotes'] ?: null,
+                        'status' => $data['formStatus'],
+                        'category_id' => $data['formCategoryId'],
+                        'bank_account_id' => $data['formBankAccountId'],
+                    ])];
+                    $message = 'Lançamento criado.';
+                }
+
+                if ($this->formAllocationEnabled) {
+                    $allocations->replaceForTransactions($saved, $this->formAllocationRows);
+                }
+                return $message;
+            });
+        } catch (\InvalidArgumentException|\DomainException $e) {
+            $this->addError('formAllocationRows', $e->getMessage());
+            return;
+        }
+        if ($message === null) {
+            return;
         }
 
         $this->resetForm();
@@ -425,7 +489,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -760,7 +824,7 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model="formAmount" x-money required />
+                                    <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model.live.debounce.300ms="formAmount" x-money required />
                                     <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
 
                                     <div class="md:col-span-2">
@@ -792,16 +856,44 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    @if ($formType !== 'transfer')
-                                    <div>
-                                        <x-banking.category-picker
-                                            :categories="in_array($formType, ['income', 'expense'], true) ? $activeCategories->where('type', $formType) : $activeCategories"
-                                            :disabled="$editingHasAllocations" />
-                                        @if ($editingHasAllocations)
-                                            <p class="mt-2 text-xs text-mono-500">Este lançamento está rateado. Use “Editar rateio” na lista para alterar as categorias.</p>
+                                    @if (in_array($formType, ['income', 'expense'], true))
+                                        <div class="md:col-span-2">
+                                            <label class="inline-flex min-h-10 cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900">
+                                                <input type="checkbox" wire:model.live="formAllocationEnabled" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">
+                                                Dividir entre categorias
+                                            </label>
+                                        </div>
+                                        @if ($formAllocationEnabled)
+                                            <div class="space-y-3 rounded-2xl border border-mono-100 bg-mono-50 p-4 md:col-span-2">
+                                                <p class="text-sm text-mono-600">Distribua o valor total entre duas ou mais categorias. Exemplo: R$ 900,00 em uma categoria e R$ 100,00 em outra para um lançamento de R$ 1.000,00.</p>
+                                                @foreach ($formAllocationRows as $index => $row)
+                                                    <div wire:key="form-allocation-{{ $row['key'] }}-{{ $index }}" class="grid grid-cols-1 gap-3 rounded-xl bg-white p-3 sm:grid-cols-[1fr_160px_40px] sm:items-end">
+                                                        <x-banking.category-picker :categories="$activeCategories->where('type', $formType)"
+                                                            :model="'formAllocationRows.'.$index.'.category_id'" :id="'form-allocation-'.$row['key']" :label="'Categoria '.($index + 1)" />
+                                                        <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="number" min="0.01" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
+                                                        <button type="button" wire:click="removeFormAllocationRow({{ $index }})" @disabled(count($formAllocationRows) <= 2) aria-label="Remover categoria {{ $index + 1 }}" class="flex h-12 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined" aria-hidden="true">close</span></button>
+                                                    </div>
+                                                @endforeach
+                                                <button type="button" wire:click="addFormAllocationRow" @disabled(count($formAllocationRows) >= 20) class="text-sm font-semibold text-primary-600 disabled:opacity-50">+ Adicionar categoria</button>
+                                                @php
+                                                    $allocated = collect($formAllocationRows)->sum(fn ($row) => is_numeric($row['amount'] ?? null) ? (float) $row['amount'] : 0);
+                                                    $remaining = (is_numeric($formAmount) ? (float) $formAmount : 0) - $allocated;
+                                                @endphp
+                                                <div class="flex flex-wrap justify-between gap-2 text-sm text-mono-900">
+                                                    <span>Rateado: <strong>R$ {{ number_format($allocated, 2, ',', '.') }}</strong></span>
+                                                    <span class="{{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">{{ $remaining < -0.005 ? 'Excedente' : 'Restante' }}: <strong>R$ {{ number_format(abs($remaining), 2, ',', '.') }}</strong></span>
+                                                </div>
+                                                @if ($formIsCard && ! $editingId)
+                                                    <p class="text-xs text-mono-600">Em compras parceladas, o rateio será distribuído entre as parcelas, preservando os totais de cada categoria.</p>
+                                                @endif
+                                                @error('formAllocationRows') <p class="text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
+                                            </div>
+                                        @else
+                                            <div>
+                                                <x-banking.category-picker :categories="$activeCategories->where('type', $formType)" />
+                                                @error('formCategoryId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                            </div>
                                         @endif
-                                        @error('formCategoryId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
                                     @endif
 
                                     @if ($formType === 'transfer')

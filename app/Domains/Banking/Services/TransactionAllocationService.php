@@ -4,6 +4,7 @@ namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\Transaction;
+use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 
 class TransactionAllocationService
@@ -18,40 +19,7 @@ class TransactionAllocationService
                 throw new \DomainException('Este lançamento não pode ser rateado.');
             }
 
-            if (count($rows) < 2 || count($rows) > 20) {
-                throw new \InvalidArgumentException('Informe de 2 a 20 categorias para o rateio.');
-            }
-
-            $categoryIds = [];
-            $amounts = [];
-
-            foreach ($rows as $row) {
-                $categoryId = $row['category_id'] ?? null;
-
-                if (! ctype_digit((string) $categoryId) || (int) $categoryId < 1) {
-                    throw new \InvalidArgumentException('Selecione uma categoria em cada linha do rateio.');
-                }
-
-                $categoryIds[] = (int) $categoryId;
-                $amounts[] = $this->cents((string) ($row['amount'] ?? ''));
-            }
-
-            if (count(array_unique($categoryIds)) !== count($categoryIds)) {
-                throw new \InvalidArgumentException('Cada categoria deve aparecer apenas uma vez no rateio.');
-            }
-
-            $validCategories = Category::active()
-                ->where('type', $transaction->type)
-                ->whereIn('id', $categoryIds)
-                ->count();
-
-            if ($validCategories !== count($categoryIds)) {
-                throw new \InvalidArgumentException('Escolha categorias ativas do mesmo tipo do lançamento.');
-            }
-
-            if (array_sum($amounts) !== $this->cents((string) $transaction->amount)) {
-                throw new \InvalidArgumentException('A soma do rateio deve ser igual ao valor total do lançamento.');
-            }
+            [$categoryIds, $amounts] = $this->validateRows($transaction->type, (string) $transaction->amount, $rows);
 
             $transaction->allocations()->delete();
 
@@ -65,6 +33,99 @@ class TransactionAllocationService
             $transaction->category_id = null;
             $transaction->save();
             $transaction->touch();
+        });
+    }
+
+    /** Validate before saving so invalid allocations cannot leave a partial transaction. */
+    public function validateRows(string $type, string $amount, array $rows): array
+    {
+        if (count($rows) < 2 || count($rows) > 20) {
+            throw new \InvalidArgumentException('Informe de 2 a 20 categorias para o rateio.');
+        }
+
+        $categoryIds = [];
+        $amounts = [];
+
+        foreach ($rows as $row) {
+            $categoryId = $row['category_id'] ?? null;
+
+            if (! ctype_digit((string) $categoryId) || (int) $categoryId < 1) {
+                throw new \InvalidArgumentException('Selecione uma categoria em cada linha do rateio.');
+            }
+
+            $categoryIds[] = (int) $categoryId;
+            $amounts[] = $this->cents((string) ($row['amount'] ?? ''));
+        }
+
+        if (count(array_unique($categoryIds)) !== count($categoryIds)) {
+            throw new \InvalidArgumentException('Cada categoria deve aparecer apenas uma vez no rateio.');
+        }
+
+        $validCategories = Category::active()
+            ->where('type', $type)
+            ->whereIn('id', $categoryIds)
+            ->count();
+
+        if ($validCategories !== count($categoryIds)) {
+            throw new \InvalidArgumentException('Escolha categorias ativas do mesmo tipo do lançamento.');
+        }
+
+        if (array_sum($amounts) !== $this->cents($amount)) {
+            throw new \InvalidArgumentException('A soma do rateio deve ser igual ao valor total do lançamento.');
+        }
+
+        return [$categoryIds, $amounts];
+    }
+
+    /** Distribute a purchase's category totals across its monthly installments in cents. */
+    public function replaceForTransactions(array $transactions, array $rows): void
+    {
+        if ($transactions === []) {
+            throw new \InvalidArgumentException('Informe um lançamento para o rateio.');
+        }
+        foreach ($transactions as $transaction) {
+            if ($transaction->isReadOnly() || ! in_array($transaction->type, ['income', 'expense'], true) || $transaction->type !== $transactions[0]->type) {
+                throw new \DomainException('Este lançamento não pode ser rateado.');
+            }
+        }
+
+        DB::transaction(function () use ($transactions, $rows) {
+            $total = array_sum(array_map(fn ($transaction) => $this->cents((string) $transaction->amount), $transactions));
+            [$categoryIds, $remaining] = $this->validateRows(
+                $transactions[0]->type,
+                intdiv($total, 100).'.'.str_pad((string) ($total % 100), 2, '0', STR_PAD_LEFT),
+                $rows,
+            );
+
+            foreach ($transactions as $transaction) {
+                $target = $this->cents((string) $transaction->amount);
+                $parts = array_map(fn ($amount) => BigInteger::of($amount)->multipliedBy($target)->quotient($total)->toInt(), $remaining);
+                $leftover = $target - array_sum($parts);
+                foreach ($parts as $index => $part) {
+                    if ($leftover > 0 && $part < $remaining[$index]) {
+                        $parts[$index]++;
+                        $leftover--;
+                    }
+                }
+
+                $allocatedRows = [];
+                foreach ($parts as $index => $part) {
+                    $remaining[$index] -= $part;
+                    if ($part > 0) {
+                        $allocatedRows[] = [
+                            'category_id' => $categoryIds[$index],
+                            'amount' => intdiv($part, 100).'.'.str_pad((string) ($part % 100), 2, '0', STR_PAD_LEFT),
+                        ];
+                    }
+                }
+                if (count($allocatedRows) === 1) {
+                    $this->clear($transaction);
+                    $transaction->update(['category_id' => $allocatedRows[0]['category_id']]);
+                } else {
+                    $this->replace($transaction, $allocatedRows);
+                }
+                $total -= $target;
+            }
         });
     }
 
