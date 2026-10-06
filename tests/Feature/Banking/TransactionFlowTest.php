@@ -233,7 +233,14 @@ class TransactionFlowTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertEquals(2, Transaction::where('type', 'transfer')->where('status', 'pending')->count());
-        $this->assertEquals(2, Transaction::where('type', 'transfer')->where('description', 'Transferência Origem → Destino')->count());
+        $this->assertDatabaseHas('transactions', [
+            'type' => 'transfer', 'bank_account_id' => $origin->id,
+            'amount' => '-100.00', 'description' => 'Transferência Saída Origem → Destino',
+        ]);
+        $this->assertDatabaseHas('transactions', [
+            'type' => 'transfer', 'bank_account_id' => $destination->id,
+            'amount' => '100.00', 'description' => 'Transferência Entrada Origem → Destino',
+        ]);
         $transaction = Transaction::where('bank_account_id', $destination->id)->firstOrFail();
         $component->call('edit', $transaction->id)
             ->assertSet('formStatus', 'pending')

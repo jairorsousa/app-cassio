@@ -30,13 +30,14 @@ class TransferService
         }
 
         return DB::transaction(function () use ($from, $to, $amount, $date, $description, $notes, $status) {
-            $description ??= "Transferência {$from->name} → {$to->name}";
+            $outDescription = $description ?? "Transferência Saída {$from->name} → {$to->name}";
+            $inDescription = $description ?? "Transferência Entrada {$from->name} → {$to->name}";
 
             $out = Transaction::create([
                 'type' => 'transfer',
                 'date' => $date,
                 'amount' => -$amount,
-                'description' => $description,
+                'description' => $outDescription,
                 'notes' => $notes,
                 'status' => $status,
                 'bank_account_id' => $from->id,
@@ -46,7 +47,7 @@ class TransferService
                 'type' => 'transfer',
                 'date' => $date,
                 'amount' => $amount,
-                'description' => $description,
+                'description' => $inDescription,
                 'notes' => $notes,
                 'status' => $status,
                 'bank_account_id' => $to->id,
