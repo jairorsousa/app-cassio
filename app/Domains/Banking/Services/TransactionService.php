@@ -38,6 +38,10 @@ class TransactionService
             $oldInvoice = $transaction->invoice;
             $transaction->update($data);
 
+            if ($transaction->type === 'transfer' && $transaction->related_transaction_id && array_key_exists('status', $data)) {
+                $transaction->related?->update(['status' => $data['status']]);
+            }
+
             if ($oldInvoice && $oldInvoice->id !== $transaction->credit_card_invoice_id) {
                 app(InvoiceService::class)->recalculateTotal($oldInvoice);
             }

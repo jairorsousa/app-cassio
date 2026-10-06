@@ -82,7 +82,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $formNotes = '';
 
-    public string $formStatus = 'settled';
+    public string $formStatus = 'pending';
 
     public ?int $formCategoryId = null;
 
@@ -213,6 +213,12 @@ new #[Layout('layouts.app')] class extends Component
     public function updatedFormDate(): void
     {
         $this->suggestInvoiceMonth();
+        if (! $this->formIsCard) {
+            $validator = validator(['date' => $this->formDate], ['date' => 'required|date_format:Y-m-d']);
+            if ($validator->passes()) {
+                $this->formStatus = $this->formDate < now('America/Sao_Paulo')->format('Y-m-d') ? 'settled' : 'pending';
+            }
+        }
     }
 
     private function suggestInvoiceMonth(): void
@@ -377,6 +383,7 @@ new #[Layout('layouts.app')] class extends Component
                 $data['formDate'],
                 $data['formDescription'],
                 $data['formNotes'] ?: null,
+                $data['formStatus'],
             );
             $message = 'Transferência criada.';
         } elseif ($data['formType'] === 'expense' && $data['formCreditCardId']) {
@@ -417,8 +424,8 @@ new #[Layout('layouts.app')] class extends Component
             'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formInvoiceMonth',
         ]);
         $this->formType = 'expense';
-        $this->formDate = now()->format('Y-m-d');
-        $this->formStatus = 'settled';
+        $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
+        $this->formStatus = 'pending';
         $this->formInstallments = 1;
         $this->resetValidation();
     }
@@ -757,14 +764,19 @@ new #[Layout('layouts.app')] class extends Component
                                     </div>
 
                                     @if (! $formIsCard)
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Status *</label>
-                                        <select wire:model="formStatus" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                            <option value="settled">Liquidado</option>
-                                            <option value="pending">Pendente</option>
-                                        </select>
-                                        @error('formStatus') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
+                                        <div x-data="{ status: $wire.entangle('formStatus') }">
+                                            <button type="button" role="switch" :aria-checked="status === 'settled'"
+                                                @click="status = status === 'settled' ? 'pending' : 'settled'"
+                                                class="inline-flex min-h-12 items-center gap-3 rounded-xl text-sm font-semibold text-mono-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2">
+                                                <span class="relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors"
+                                                    :class="status === 'settled' ? 'bg-primary-500' : 'bg-mono-200'" aria-hidden="true">
+                                                    <span class="absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                                                        :class="status === 'settled' ? 'translate-x-5' : 'translate-x-0'"></span>
+                                                </span>
+                                                {{ $formType === 'income' ? 'Já foi recebido' : 'Já foi pago' }}
+                                            </button>
+                                            @error('formStatus') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
                                     @endif
                                 </div>
                             </section>

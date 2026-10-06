@@ -157,6 +157,58 @@ class TransactionFlowTest extends TestCase
         $this->assertDatabaseCount('transactions', 0);
     }
 
+    public function test_payment_switch_defaults_follow_the_date_and_allow_manual_override(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->travelTo(Carbon::parse('2026-10-07 01:00:00', 'UTC'));
+
+        foreach (['expense', 'income'] as $type) {
+            Volt::test('banking.transactions.index')
+                ->call('create', $type)
+                ->assertSet('formDate', '2026-10-06')
+                ->assertSet('formStatus', 'pending')
+                ->assertSee($type === 'income' ? 'Já foi recebido' : 'Já foi pago')
+                ->set('formDate', '2026-10-05')
+                ->assertSet('formStatus', 'settled')
+                ->set('formDate', '2026-10-06')
+                ->assertSet('formStatus', 'pending')
+                ->set('formDate', '2026-10-08')
+                ->assertSet('formStatus', 'pending')
+                ->set('formStatus', 'settled')
+                ->set('formAmount', '100.00')
+                ->set('formDescription', 'Pagamento manual')
+                ->call('saveTransaction')
+                ->assertHasNoErrors();
+            $this->assertDatabaseHas('transactions', ['type' => $type, 'date' => '2026-10-08 00:00:00', 'status' => 'settled']);
+        }
+    }
+
+    public function test_transfer_switch_status_is_applied_to_both_sides_on_creation_and_edit(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $origin = BankAccount::create(['name' => 'Origem', 'initial_balance' => 1000]);
+        $destination = BankAccount::create(['name' => 'Destino', 'initial_balance' => 0]);
+
+        $component = Volt::test('banking.transactions.index')
+            ->call('create', 'transfer')
+            ->assertSet('formStatus', 'pending')
+            ->set('formBankAccountId', $origin->id)
+            ->set('formTransferToId', $destination->id)
+            ->set('formAmount', '100.00')
+            ->set('formDescription', 'Transferência pendente')
+            ->call('saveTransaction')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(2, Transaction::where('type', 'transfer')->where('status', 'pending')->count());
+        $transaction = Transaction::where('bank_account_id', $destination->id)->firstOrFail();
+        $component->call('edit', $transaction->id)
+            ->assertSet('formStatus', 'pending')
+            ->set('formStatus', 'settled')
+            ->call('saveTransaction')
+            ->assertHasNoErrors();
+        $this->assertEquals(2, Transaction::where('type', 'transfer')->where('status', 'settled')->count());
+    }
+
     public function test_card_purchase_requires_an_active_card_and_has_its_own_form(): void
     {
         $this->actingAs(User::factory()->create());

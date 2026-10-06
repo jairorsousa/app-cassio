@@ -16,6 +16,7 @@ class TransferService
         Carbon|string $date,
         ?string $description = null,
         ?string $notes = null,
+        string $status = 'settled',
     ): Transaction {
         if ($from->id === $to->id) {
             throw new \InvalidArgumentException('Conta origem e destino devem ser diferentes.');
@@ -24,7 +25,11 @@ class TransferService
             throw new \InvalidArgumentException('Valor da transferência deve ser positivo.');
         }
 
-        return DB::transaction(function () use ($from, $to, $amount, $date, $description, $notes) {
+        if (! in_array($status, ['pending', 'settled'], true)) {
+            throw new \InvalidArgumentException('Status da transferência inválido.');
+        }
+
+        return DB::transaction(function () use ($from, $to, $amount, $date, $description, $notes, $status) {
             $description ??= "Transferência {$from->name} → {$to->name}";
 
             $out = Transaction::create([
@@ -33,7 +38,7 @@ class TransferService
                 'amount' => -$amount,
                 'description' => $description,
                 'notes' => $notes,
-                'status' => 'settled',
+                'status' => $status,
                 'bank_account_id' => $from->id,
             ]);
 
@@ -43,7 +48,7 @@ class TransferService
                 'amount' => $amount,
                 'description' => $description,
                 'notes' => $notes,
-                'status' => 'settled',
+                'status' => $status,
                 'bank_account_id' => $to->id,
                 'related_transaction_id' => $out->id,
             ]);
