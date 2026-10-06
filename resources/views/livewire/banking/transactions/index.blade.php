@@ -309,6 +309,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment): void
     {
+        if ($this->formType === 'transfer') {
+            $this->formCategoryId = null;
+        }
+
         if ($this->formIsCard) {
             $this->formType = 'expense';
             $this->formBankAccountId = null;
@@ -788,6 +792,7 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    @if ($formType !== 'transfer')
                                     <div>
                                         <x-banking.category-picker
                                             :categories="in_array($formType, ['income', 'expense'], true) ? $activeCategories->where('type', $formType) : $activeCategories"
@@ -797,9 +802,9 @@ new #[Layout('layouts.app')] class extends Component
                                         @endif
                                         @error('formCategoryId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
+                                    @endif
 
                                     @if ($formType === 'transfer')
-                                        <div></div>
                                         <div>
                                             <label class="mb-2 block text-sm font-medium text-mono-600">Conta de origem *</label>
                                             <select wire:model="formBankAccountId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
