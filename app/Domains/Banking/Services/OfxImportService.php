@@ -12,7 +12,7 @@ use InvalidArgumentException;
 class OfxImportService
 {
     /**
-     * @return array{account: ?string, statement_type: string, transactions: array<int, array{fitid: string, date: string, amount: string, type: string, description: string, notes: ?string, card_kind: ?string}>}
+     * @return array{account: ?string, statement_type: string, transactions: array<int, array{fitid: string, original_fitid: ?string, date: string, amount: string, type: string, description: string, notes: ?string, card_kind: ?string}>}
      */
     public function parse(string $contents): array
     {
@@ -22,6 +22,7 @@ class OfxImportService
 
         $contents = $this->toUtf8($contents);
         $isCard = (bool) preg_match('/<CCSTMTRS\b/i', $contents);
+        $isBbBank = ! $isCard && mb_strtolower($this->field($contents, 'ORG')) === 'banco do brasil';
 
         if (! preg_match('/<OFX\b[^>]*>/i', $contents)) {
             throw new InvalidArgumentException('O arquivo não contém uma estrutura OFX válida.');
@@ -57,6 +58,10 @@ class OfxImportService
             $name = $this->field($block, 'NAME');
             $memo = $this->field($block, 'MEMO');
 
+            if ($isBbBank && $fitid === '' && mb_strtolower($name) === 'saldo anterior') {
+                continue;
+            }
+
             if ($fitid === '' || mb_strlen($fitid) > 255 || ! preg_match('/^\d{8}/', $dateValue)) {
                 throw new InvalidArgumentException('O lançamento '.($index + 1).' não possui identificador ou data válida.');
             }
@@ -84,6 +89,16 @@ class OfxImportService
                 throw new InvalidArgumentException('O lançamento '.($index + 1).' não possui descrição.');
             }
 
+            $originalFitid = $isBbBank ? $fitid : null;
+            if ($isBbBank) {
+                // O BB reutiliza FITID (como o código do Rende Fácil) em movimentos distintos.
+                $fitid = 'bb:'.hash('sha256', json_encode([
+                    $fitid, substr($dateValue, 0, 8),
+                    ($amountParts[1] ?? '') === '-' ? '-'.$amount : $amount,
+                    $name, $memo,
+                ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            }
+
             if (isset($seen[$fitid])) {
                 throw new InvalidArgumentException('O OFX contém identificadores de lançamento repetidos: '.$fitid);
             }
@@ -93,6 +108,7 @@ class OfxImportService
 
             $transactions[] = [
                 'fitid' => $fitid,
+                'original_fitid' => $originalFitid,
                 'date' => sprintf('%04d-%02d-%02d', $year, $month, $day),
                 'amount' => $amount,
                 'type' => ($amountParts[1] ?? '') === '-' ? 'expense' : 'income',
@@ -116,17 +132,27 @@ class OfxImportService
     public function existingFitids(BankAccount|CreditCard $account, array $transactions): array
     {
         $found = [];
+        $legacy = [];
+        $ids = array_unique(array_merge(array_column($transactions, 'fitid'), array_filter(array_column($transactions, 'original_fitid'), fn ($id) => $id !== null && $id !== '')));
 
-        foreach (array_chunk(array_column($transactions, 'fitid'), 500) as $chunk) {
+        foreach (array_chunk($ids, 500) as $chunk) {
             foreach (Transaction::withTrashed()
                 ->where($account instanceof CreditCard ? 'credit_card_id' : 'bank_account_id', $account->id)
                 ->whereIn('ofx_fitid', $chunk)
-                ->pluck('ofx_fitid') as $fitid) {
-                $found[$fitid] = true;
+                ->get(['ofx_fitid', 'date', 'amount', 'type']) as $transaction) {
+                $found[$transaction->ofx_fitid] = true;
+                $legacy[implode('|', [$transaction->ofx_fitid, $transaction->date->format('Y-m-d'), $transaction->amount, $transaction->type])] = true;
             }
         }
 
-        return $found;
+        $result = [];
+        foreach ($transactions as $row) {
+            if (isset($found[$row['fitid']]) || (isset($row['original_fitid']) && $row['original_fitid'] !== '' && isset($legacy[implode('|', [$row['original_fitid'], $row['date'], $row['amount'], $row['type']])]))) {
+                $result[$row['fitid']] = true;
+            }
+        }
+
+        return $result;
     }
 
     /** @param array<int, array<string, string|int|null>> $transactions

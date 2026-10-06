@@ -18,6 +18,66 @@ class OfxImportTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_bb_bank_statement_ignores_opening_balance_and_distinguishes_reused_fitids(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Storage::fake('local');
+        $account = BankAccount::create(['name' => 'BB', 'initial_balance' => 1000]);
+        $contents = $this->bbBankStatement();
+        $service = app(OfxImportService::class);
+        $rows = $service->parse($contents)['transactions'];
+        $this->assertCount(4, $rows);
+        $this->assertCount(4, array_unique(array_column($rows, 'fitid')));
+        $this->assertSame('9.903', $rows[1]['original_fitid']);
+        $this->assertSame('9.903', $rows[3]['original_fitid']);
+        $this->assertNotSame($rows[1]['fitid'], $rows[3]['fitid']);
+
+        Volt::test('banking.transactions.index')->call('openImport')->set('ofxAccountId', $account->id)
+            ->set('ofxFile', UploadedFile::fake()->createWithContent('bb.ofx', $contents))
+            ->call('previewImport')->assertHasNoErrors()->assertRedirect();
+        Volt::test('banking.transactions.import-preview')->assertViewHas('selectedCount', 4)
+            ->assertDontSee('Saldo Anterior')->call('confirmImport')->assertHasNoErrors();
+        $this->assertDatabaseCount('transactions', 4);
+        $this->assertSame(1000.0, $account->fresh()->balance());
+        $this->assertSame(['imported' => 0, 'skipped' => 4], $service->import($account, $rows));
+
+        // Uma exportação parcial produz a mesma chave, mesmo sem o outro FITID repetido.
+        $partial = preg_replace('~<STMTTRN>.*?<FITID>9\.903</FITID>.*?</STMTTRN>~s', '', $contents, 1);
+        $partialRows = $service->parse($partial)['transactions'];
+        $this->assertContains($rows[3]['fitid'], array_column($partialRows, 'fitid'));
+        $this->assertEquals(count($partialRows), count($service->existingFitids($account, $partialRows)));
+    }
+
+    public function test_bb_normalized_identifiers_recognize_previous_imports_with_original_fitid(): void
+    {
+        $account = BankAccount::create(['name' => 'BB']);
+        $service = app(OfxImportService::class);
+        $rows = $service->parse($this->bbBankStatement())['transactions'];
+        Transaction::create([
+            'bank_account_id' => $account->id, 'ofx_fitid' => '9.903',
+            'type' => 'expense', 'date' => '2026-10-02', 'amount' => '200.00', 'description' => 'Aplicação anterior',
+        ]);
+        $existing = $service->existingFitids($account, $rows);
+        $this->assertArrayHasKey($rows[1]['fitid'], $existing);
+        $this->assertArrayNotHasKey($rows[3]['fitid'], $existing);
+        $this->assertSame(['imported' => 3, 'skipped' => 1], $service->import($account, $rows));
+        $this->assertDatabaseCount('transactions', 4);
+    }
+
+    private function bbBankStatement(): string
+    {
+        $rows = '<STMTTRN><TRNTYPE>CREDIT</TRNTYPE><DTPOSTED>20260930000000[-3:BRT]</DTPOSTED><TRNAMT>0.00</TRNAMT><FITID></FITID><NAME>Saldo Anterior</NAME><MEMO></MEMO></STMTTRN>';
+        foreach ([
+            ['20261002', '200.00', '100.001', 'Transferência recebida'],
+            ['20261002', '-200.00', '9.903', 'BB Rende Fácil'],
+            ['20261005', '-10.00', '100.002', 'Compra'],
+            ['20261005', '10.00', '9.903', 'BB Rende Fácil'],
+        ] as [$date, $amount, $fitid, $name]) {
+            $rows .= "<STMTTRN><DTPOSTED>{$date}000000[-3:BRT]</DTPOSTED><TRNAMT>{$amount}</TRNAMT><FITID>{$fitid}</FITID><NAME>{$name}</NAME><MEMO></MEMO></STMTTRN>";
+        }
+        return "OFXHEADER:100\nENCODING:UTF-8\nCHARSET:NONE\n<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>Banco do Brasil</ORG><FID>1</FID></FI></SONRS></SIGNONMSGSRSV1><BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><ACCTID>0001</ACCTID></BANKACCTFROM><BANKTRANLIST>{$rows}</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>";
+    }
+
     public function test_bb_card_ofx_imports_only_purchases_into_selected_invoice_without_debiting_bank_account(): void
     {
         $this->actingAs(User::factory()->create());
