@@ -28,14 +28,22 @@ class TransactionFlowTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
 
-        Volt::test('banking.transactions.index')
-            ->assertSet('showFormModal', false)
-            ->call('create')
-            ->assertSet('showFormModal', true)
-            ->assertSet('formType', 'expense')
-            ->assertSet('formDate', now()->format('Y-m-d'))
-            ->call('cancel')
+        $component = Volt::test('banking.transactions.index')
             ->assertSet('showFormModal', false);
+
+        foreach (['expense' => 'Nova despesa', 'income' => 'Nova receita', 'transfer' => 'Nova transferência'] as $type => $title) {
+            $component
+                ->call('create', $type)
+                ->assertSet('showFormModal', true)
+                ->assertSet('formType', $type)
+                ->assertSet('formDate', now()->format('Y-m-d'))
+                ->assertSet('formDescription', '')
+                ->assertSee($title)
+                ->assertDontSeeHtml('wire:model.live="formType"')
+                ->set('formDescription', 'Rascunho descartado')
+                ->call('cancel')
+                ->assertSet('showFormModal', false);
+        }
     }
 
     public function test_transaction_action_buttons_are_inside_the_livewire_root(): void
@@ -69,8 +77,7 @@ class TransactionFlowTest extends TestCase
         $category = Category::create(['name' => 'Honorários', 'type' => 'income', 'status' => true]);
 
         Volt::test('banking.transactions.index')
-            ->call('create')
-            ->set('formType', 'income')
+            ->call('create', 'income')
             ->set('formDate', '2026-09-09')
             ->set('formAmount', '1250.50')
             ->set('formDescription', 'Recebimento de honorários')

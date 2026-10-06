@@ -153,9 +153,12 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
-    public function create(): void
+    public function create(string $type = 'expense'): void
     {
+        abort_unless(in_array($type, ['expense', 'income', 'transfer'], true), 422);
+
         $this->resetForm();
+        $this->formType = $type;
         $this->showFormModal = true;
     }
 
@@ -434,10 +437,7 @@ new #[Layout('layouts.app')] class extends Component
                     <span class="material-icons-outlined text-[18px]">upload_file</span>
                     Importar OFX
                 </x-jr.button>
-                <x-jr.button type="button" size="sm" wire:click="create">
-                    <span class="material-icons-outlined text-[18px]">add</span>
-                    Novo lançamento
-                </x-jr.button>
+                <x-banking.new-transaction size="sm" />
             </div>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-6 gap-space-3">
@@ -491,10 +491,7 @@ new #[Layout('layouts.app')] class extends Component
                 icon="📋"
                 title="Nenhum lançamento no período"
                 description="Ajuste os filtros acima ou registre um novo lançamento.">
-                <x-jr.button type="button" class="mt-space-4" wire:click="create">
-                    <span class="material-icons-outlined text-[18px]">add</span>
-                    Novo lançamento
-                </x-jr.button>
+                <x-banking.new-transaction class="mt-space-4" align="left" />
             </x-fx.empty-state>
         @else
             <x-fx.table :headers="['Data', 'Descrição', 'Categoria', 'Conta', 'Valor', '']">
@@ -652,12 +649,32 @@ new #[Layout('layouts.app')] class extends Component
     @endif
 
     @if ($showFormModal)
-        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
+        @php
+            $formHeading = $editingId ? 'Editar Lançamento' : match ($formType) {
+                'income' => 'Nova receita',
+                'transfer' => 'Nova transferência',
+                default => 'Nova despesa',
+            };
+            $formColor = match ($formType) {
+                'income' => 'text-green-600',
+                'transfer' => 'text-blue-500',
+                default => 'text-red-500',
+            };
+            $formIcon = match ($formType) {
+                'income' => 'trending_up',
+                'transfer' => 'sync_alt',
+                default => 'trending_down',
+            };
+        @endphp
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6" x-data @keydown.escape.window=" $wire.cancel()">
             <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
 
-            <div class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+            <div role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" x-trap.inert.noscroll="true" class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
                 <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
-                    <h3 class="text-lg font-bold text-mono-900">{{ $editingId ? 'Editar Lançamento' : 'Novo Lançamento' }}</h3>
+                    <h3 id="transaction-form-title" class="flex items-center gap-3 text-lg font-bold text-mono-900">
+                        <span class="material-icons-outlined text-[24px] {{ $formColor }}" aria-hidden="true">{{ $formIcon }}</span>
+                        {{ $formHeading }}
+                    </h3>
                     <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancel" aria-label="Fechar">
                         <span class="material-icons-outlined text-[22px]">close</span>
                     </button>
@@ -672,17 +689,7 @@ new #[Layout('layouts.app')] class extends Component
                                     <h4 class="text-base font-bold text-mono-900">Dados do lançamento</h4>
                                 </div>
 
-                                <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                                    <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Tipo *</label>
-                                        <select wire:model.live="formType" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" @disabled($editingId)>
-                                            <option value="expense">Despesa</option>
-                                            <option value="income">Receita</option>
-                                            <option value="transfer">Transferência</option>
-                                        </select>
-                                        @error('formType') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
-
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model="formDate" required />
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model="formAmount" x-money required />
 
