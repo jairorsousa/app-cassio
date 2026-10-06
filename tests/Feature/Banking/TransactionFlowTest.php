@@ -128,6 +128,35 @@ class TransactionFlowTest extends TestCase
         ]);
     }
 
+    public function test_transaction_categories_match_the_type_including_card_expenses(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $income = Category::create(['name' => 'Honorários', 'type' => 'income', 'status' => true]);
+        $expense = Category::create(['name' => 'Alimentação', 'type' => 'expense', 'status' => true]);
+
+        foreach (['income', 'expense', 'card_expense'] as $type) {
+            $expected = $type === 'income' ? $income : $expense;
+            $wrong = $type === 'income' ? $expense : $income;
+            $component = Volt::test('banking.transactions.index')->call('create', $type);
+            $document = new \DOMDocument;
+            @$document->loadHTML(mb_convert_encoding($component->html(), 'HTML-ENTITIES', 'UTF-8'));
+            $xpath = new \DOMXPath($document);
+            $options = $xpath->query('//select[@*[name()="wire:model" and .="formCategoryId"]]/option');
+            $values = [];
+            foreach ($options as $option) {
+                $values[] = $option->getAttribute('value');
+            }
+            $this->assertEquals(['', (string) $expected->id], $values);
+
+            $component->set('formCategoryId', $wrong->id)
+                ->set('formAmount', '100.00')
+                ->set('formDescription', 'Lançamento')
+                ->call('saveTransaction')
+                ->assertHasErrors(['formCategoryId']);
+        }
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
     public function test_card_purchase_requires_an_active_card_and_has_its_own_form(): void
     {
         $this->actingAs(User::factory()->create());

@@ -318,7 +318,10 @@ new #[Layout('layouts.app')] class extends Component
             'formDescription' => 'required|string|max:200',
             'formNotes' => 'nullable|string',
             'formStatus' => 'required|in:pending,settled',
-            'formCategoryId' => 'nullable|exists:categories,id',
+            'formCategoryId' => ['nullable', Rule::exists('categories', 'id')->when(
+                in_array($this->formType, ['income', 'expense'], true),
+                fn ($rule) => $rule->where('type', $this->formType),
+            )],
             'formBankAccountId' => 'nullable|exists:bank_accounts,id',
             'formCreditCardId' => [Rule::requiredIf($this->formIsCard), 'nullable', Rule::exists('credit_cards', 'id')->whereNull('deleted_at')->when(! $this->editingId, fn ($rule) => $rule->where('status', true))],
             'formInvoiceMonth' => [Rule::requiredIf($this->formIsCard), 'nullable', 'date_format:Y-m'],
@@ -746,8 +749,8 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model="formAmount" x-money required />
+                                    <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
 
                                     <div class="md:col-span-2">
                                         <x-jr.input label="Descrição *" icon="description" name="formDescription" wire:model="formDescription" maxlength="200" required />
@@ -777,7 +780,7 @@ new #[Layout('layouts.app')] class extends Component
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
                                         <select wire:model="formCategoryId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" @disabled($editingHasAllocations)>
                                             <option value="">Sem categoria</option>
-                                            @foreach ($activeCategories as $categoryOption)
+                                            @foreach (in_array($formType, ['income', 'expense'], true) ? $activeCategories->where('type', $formType) : $activeCategories as $categoryOption)
                                                 <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }} ({{ $categoryOption->type === 'income' ? 'Receita' : 'Despesa' }})</option>
                                             @endforeach
                                         </select>
