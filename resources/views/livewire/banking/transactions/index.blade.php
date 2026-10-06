@@ -82,7 +82,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $formNotes = '';
 
-    public string $formStatus = 'pending';
+    public string $formStatus = 'settled';
 
     public ?int $formCategoryId = null;
 
@@ -216,7 +216,7 @@ new #[Layout('layouts.app')] class extends Component
         if (! $this->formIsCard) {
             $validator = validator(['date' => $this->formDate], ['date' => 'required|date_format:Y-m-d']);
             if ($validator->passes()) {
-                $this->formStatus = $this->formDate < now('America/Sao_Paulo')->format('Y-m-d') ? 'settled' : 'pending';
+                $this->formStatus = $this->formDate <= now('America/Sao_Paulo')->format('Y-m-d') ? 'settled' : 'pending';
             }
         }
     }
@@ -425,7 +425,7 @@ new #[Layout('layouts.app')] class extends Component
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
-        $this->formStatus = 'pending';
+        $this->formStatus = 'settled';
         $this->formInstallments = 1;
         $this->resetValidation();
     }
@@ -789,13 +789,9 @@ new #[Layout('layouts.app')] class extends Component
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
-                                        <select wire:model="formCategoryId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" @disabled($editingHasAllocations)>
-                                            <option value="">Sem categoria</option>
-                                            @foreach (in_array($formType, ['income', 'expense'], true) ? $activeCategories->where('type', $formType) : $activeCategories as $categoryOption)
-                                                <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }} ({{ $categoryOption->type === 'income' ? 'Receita' : 'Despesa' }})</option>
-                                            @endforeach
-                                        </select>
+                                        <x-banking.category-picker
+                                            :categories="in_array($formType, ['income', 'expense'], true) ? $activeCategories->where('type', $formType) : $activeCategories"
+                                            :disabled="$editingHasAllocations" />
                                         @if ($editingHasAllocations)
                                             <p class="mt-2 text-xs text-mono-500">Este lançamento está rateado. Use “Editar rateio” na lista para alterar as categorias.</p>
                                         @endif

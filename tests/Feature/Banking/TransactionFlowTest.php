@@ -141,10 +141,10 @@ class TransactionFlowTest extends TestCase
             $document = new \DOMDocument;
             @$document->loadHTML(mb_convert_encoding($component->html(), 'HTML-ENTITIES', 'UTF-8'));
             $xpath = new \DOMXPath($document);
-            $options = $xpath->query('//select[@*[name()="wire:model" and .="formCategoryId"]]/option');
+            $options = $xpath->query('//*[@id="transaction-category-options"]/button[@role="option"]');
             $values = [];
             foreach ($options as $option) {
-                $values[] = $option->getAttribute('value');
+                $values[] = $option->getAttribute('data-category-id');
             }
             $this->assertEquals(['', (string) $expected->id], $values);
 
@@ -166,12 +166,12 @@ class TransactionFlowTest extends TestCase
             Volt::test('banking.transactions.index')
                 ->call('create', $type)
                 ->assertSet('formDate', '2026-10-06')
-                ->assertSet('formStatus', 'pending')
+                ->assertSet('formStatus', 'settled')
                 ->assertSee($type === 'income' ? 'Já foi recebido' : 'Já foi pago')
                 ->set('formDate', '2026-10-05')
                 ->assertSet('formStatus', 'settled')
                 ->set('formDate', '2026-10-06')
-                ->assertSet('formStatus', 'pending')
+                ->assertSet('formStatus', 'settled')
                 ->set('formDate', '2026-10-08')
                 ->assertSet('formStatus', 'pending')
                 ->set('formStatus', 'settled')
@@ -191,6 +191,8 @@ class TransactionFlowTest extends TestCase
 
         $component = Volt::test('banking.transactions.index')
             ->call('create', 'transfer')
+            ->assertSet('formStatus', 'settled')
+            ->set('formDate', now('America/Sao_Paulo')->addDay()->format('Y-m-d'))
             ->assertSet('formStatus', 'pending')
             ->set('formBankAccountId', $origin->id)
             ->set('formTransferToId', $destination->id)
