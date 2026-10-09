@@ -49,6 +49,16 @@ class Transaction extends Model
         return $this->hasMany(TransactionAllocation::class);
     }
 
+    public function destinations(): HasMany
+    {
+        return $this->hasMany(ReceiptDestination::class, 'receipt_id');
+    }
+
+    public function destinationPayment(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ReceiptDestinationPayment::class, 'transaction_id');
+    }
+
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);

@@ -18,6 +18,16 @@ class TransactionService
 
     public function update(Transaction $transaction, array $data): Transaction
     {
+        if ($transaction->destinationPayment()->exists()) {
+            throw new \DomainException('Desvincule este pagamento da destinação antes de alterar o lançamento.');
+        }
+        if ($transaction->destinations()->exists()) {
+            foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {
+                if (array_key_exists($field, $data) && (string) $data[$field] !== (string) $transaction->$field && ($field !== 'amount' || round((float) $data[$field] * 100) !== round((float) $transaction->$field * 100))) {
+                    throw new \DomainException('Remova a destinação antes de alterar o valor, o tipo, a conta ou o status do recebimento.');
+                }
+            }
+        }
         if ($transaction->isReadOnly()) {
             throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
         }
@@ -52,6 +62,9 @@ class TransactionService
 
     public function delete(Transaction $transaction): void
     {
+        if ($transaction->destinations()->exists() || $transaction->destinationPayment()->exists()) {
+            throw new \DomainException('Remova a destinação ou desvincule o repasse antes de excluir este lançamento.');
+        }
         if ($transaction->isReadOnly()) {
             throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
         }

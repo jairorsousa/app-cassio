@@ -1,6 +1,7 @@
 <?php
 
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Banking\Models\ReceiptDestination;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Layout;
@@ -67,7 +68,12 @@ new #[Layout('layouts.app')] class extends Component {
             return compact('byCategory', 'byAccount', 'totalIncome', 'totalExpense');
         });
 
-        return $data + ['result' => $data['totalIncome'] - $data['totalExpense']];
+        $destinations = ReceiptDestination::with('commission', 'payments.transaction')->whereHas('receipt', fn ($q) => $q->where('type', 'income')->where('status', 'settled')->whereBetween('date', [Carbon::parse($month.'-01')->startOfMonth(), Carbon::parse($month.'-01')->endOfMonth()]))->get();
+        $thirdPartyIncome = $destinations->where('kind', '!=', 'own')->sum('amount');
+        $ownIncome = round($data['totalIncome'] - $thirdPartyIncome, 2);
+        $pendingRepasses = $destinations->sum(fn ($part) => $part->remainingCents()) / 100;
+
+        return $data + compact('thirdPartyIncome', 'ownIncome', 'pendingRepasses') + ['result' => $data['totalIncome'] - $data['totalExpense']];
     }
 }; ?>
 
@@ -83,7 +89,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-md">
         <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Receitas</div>
+            <div class="text-xxs text-mono-600 uppercase">Entradas recebidas</div>
             <div class="text-xl font-bold text-system-up">R$ {{ number_format($totalIncome, 2, ',', '.') }}</div>
         </x-fx.card>
         <x-fx.card>
@@ -91,7 +97,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="text-xl font-bold text-system-down">R$ {{ number_format($totalExpense, 2, ',', '.') }}</div>
         </x-fx.card>
         <x-fx.card>
-            <div class="text-xxs text-mono-600 uppercase">Resultado</div>
+            <div class="text-xxs text-mono-600 uppercase">Resultado de caixa</div>
             <div class="text-xl font-bold {{ $result >= 0 ? 'text-system-up' : 'text-system-down' }}">
                 R$ {{ number_format($result, 2, ',', '.') }}
             </div>
@@ -99,7 +105,17 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">Por categoria</h3>
+        <h3 class="text-md font-semibold mb-sm">Destinação dos recebimentos do mês</h3>
+        <div class="grid gap-4 md:grid-cols-3 text-sm">
+            <div>Receitas após separar terceiros<strong class="mt-1 block text-lg text-system-up">R$ {{ number_format($ownIncome, 2, ',', '.') }}</strong></div>
+            <div>Destinado a clientes, corretores e escritórios<strong class="mt-1 block text-lg">R$ {{ number_format($thirdPartyIncome, 2, ',', '.') }}</strong></div>
+            <div>Ainda a repassar destes recebimentos<strong class="mt-1 block text-lg">R$ {{ number_format($pendingRepasses, 2, ',', '.') }}</strong></div>
+        </div>
+        <p class="mt-3 text-xs text-mono-600">Recebimentos sem destinação são considerados receitas próprias. O resultado de caixa acima acompanha entradas e saídas efetivas.</p>
+    </x-fx.card>
+
+    <x-fx.card>
+        <h3 class="text-md font-semibold mb-sm">Entradas e saídas por categoria</h3>
         <table class="fx-table w-full text-sm">
             <thead>
                 <tr>

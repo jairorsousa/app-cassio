@@ -87,6 +87,10 @@ class BrokerCommissionService
             $commissionAmount = round((float) $data['commission_amount'], 2);
             $paidAmount = $commission->paidAmount();
 
+            if (\App\Domains\Banking\Models\ReceiptDestination::where('commission_id', $commission->id)->exists() && round($commissionAmount * 100) !== round((float) $commission->commission_amount * 100)) {
+                throw new \DomainException('Altere a destinação do recebimento antes de mudar o valor desta comissão.');
+            }
+
             if ($commissionAmount <= 0) {
                 throw new \DomainException('O valor da comissão deve ser maior que zero.');
             }

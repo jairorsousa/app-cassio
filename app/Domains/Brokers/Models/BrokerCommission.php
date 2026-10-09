@@ -47,6 +47,11 @@ class BrokerCommission extends Model
         return $this->hasMany(BrokerCommissionPayment::class, 'commission_id');
     }
 
+    public function receiptDestination(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(\App\Domains\Banking\Models\ReceiptDestination::class, 'commission_id');
+    }
+
     /**
      * Total já compensado por adiantamentos.
      */

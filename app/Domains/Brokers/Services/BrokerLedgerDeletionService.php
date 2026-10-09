@@ -52,7 +52,14 @@ class BrokerLedgerDeletionService
 
             $commissionId = $payment->commission_id;
 
-            $this->deleteLinkedTransaction($payment->transaction);
+            $linkedDestination = $payment->transaction?->destinationPayment;
+            if ($linkedDestination && $linkedDestination->destination->commission_id === $commissionId && ! $linkedDestination->transaction_created) {
+                $receipt = $linkedDestination->destination->receipt;
+                $linkedDestination->delete();
+                $receipt->touch();
+            } else {
+                $this->deleteLinkedTransaction($payment->transaction);
+            }
 
             $payment->delete();
 
@@ -66,6 +73,9 @@ class BrokerLedgerDeletionService
      */
     public function deleteCommission(BrokerCommission $commission): void
     {
+        if (\App\Domains\Banking\Models\ReceiptDestination::where('commission_id', $commission->id)->exists()) {
+            throw new \DomainException('Remova o vínculo na destinação do recebimento antes de excluir esta comissão.');
+        }
         DB::transaction(function () use ($commission) {
             $commission = BrokerCommission::with('payments.transaction', 'settlements')
                 ->lockForUpdate()

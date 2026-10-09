@@ -62,6 +62,27 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $showAllocationModal = false;
 
+    public ?int $distributingId = null;
+
+    public function openDistribution(int $id): void
+    {
+        try {
+            app(\App\Domains\Banking\Services\ReceiptDestinationService::class)->eligible(Transaction::findOrFail($id));
+            $this->distributingId = $id;
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    #[\Livewire\Attributes\On('receipt-destination-closed')]
+    public function closeDistribution(): void
+    {
+        $this->distributingId = null;
+    }
+
+    #[\Livewire\Attributes\On('receipt-destination-updated')]
+    public function refreshDestinations(): void {}
+
     public ?int $allocatingId = null;
 
     public array $allocationRows = [];
@@ -109,6 +130,8 @@ new #[Layout('layouts.app')] class extends Component
     public int $formInstallments = 1;
 
     public bool $formAllocationEnabled = false;
+
+    public bool $formDestinateAfterSave = false;
 
     public array $formAllocationRows = [];
 
@@ -429,12 +452,12 @@ new #[Layout('layouts.app')] class extends Component
             'formAmount' => 'required|numeric|min:0.01',
             'formDescription' => [Rule::requiredIf($this->formType !== 'transfer'), 'nullable', 'string', 'max:200'],
             'formNotes' => 'nullable|string',
-            'formStatus' => 'required|in:pending,settled',
+            'formStatus' => $this->formType === 'income' && $this->formDestinateAfterSave ? 'required|in:settled' : 'required|in:pending,settled',
             'formCategoryId' => ['nullable', Rule::exists('categories', 'id')->when(
                 in_array($this->formType, ['income', 'expense'], true),
                 fn ($rule) => $rule->where('type', $this->formType),
             )],
-            'formBankAccountId' => 'nullable|exists:bank_accounts,id',
+            'formBankAccountId' => [Rule::requiredIf($this->formType === 'income' && $this->formDestinateAfterSave), 'nullable', 'exists:bank_accounts,id'],
             'formCreditCardId' => [Rule::requiredIf($this->formIsCard), 'nullable', Rule::exists('credit_cards', 'id')->whereNull('deleted_at')->when(! $this->editingId, fn ($rule) => $rule->where('status', true))],
             'formInvoiceMonth' => [Rule::requiredIf($this->formIsCard), 'nullable', 'date_format:Y-m'],
             'formTransferToId' => 'nullable|exists:bank_accounts,id|different:formBankAccountId',
@@ -456,7 +479,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         try {
-            $message = \Illuminate\Support\Facades\DB::transaction(function () use ($service, $transfer, $installment, $allocations, $data, $allocationRows) {
+            $result = \Illuminate\Support\Facades\DB::transaction(function () use ($service, $transfer, $installment, $allocations, $data, $allocationRows) {
                 $saved = [];
                 if ($this->editingId) {
                     $transaction = Transaction::withCount('allocations')->findOrFail($this->editingId);
@@ -533,26 +556,30 @@ new #[Layout('layouts.app')] class extends Component
                 if ($this->formAllocationEnabled) {
                     $allocations->replaceForTransactions($saved, $allocationRows);
                 }
-                return $message;
+                return ['message' => $message, 'receipt_id' => ($saved[0] ?? null)?->id];
             });
         } catch (\InvalidArgumentException|\DomainException $e) {
-            $this->addError('formAllocationRows', $e->getMessage());
+            $this->addError('transaction', $e->getMessage());
             return;
         }
-        if ($message === null) {
+        if ($result === null) {
             return;
         }
 
+        $destinate = $this->formType === 'income' && $this->formDestinateAfterSave;
         $this->resetForm();
         $this->resetPage();
-        session()->flash('status', $message);
+        session()->flash('status', $result['message']);
+        if ($destinate) {
+            $this->distributingId = $result['receipt_id'];
+        }
     }
 
     private function resetForm(): void
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -577,7 +604,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard']);
+        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -701,7 +728,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <span class="text-fs-12 text-cryptex-text-tertiary ml-1 font-mono">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
                             @endif
                             @if ($t->isReadOnly())
-                                <x-fx.badge variant="neutral" class="ml-space-2">origem: {{ class_basename($t->source_type) }}</x-fx.badge>
+                                <x-fx.badge variant="neutral" class="ml-space-2">{{ $t->source_type === \App\Domains\Banking\Models\ReceiptDestinationPayment::class ? 'Repasse vinculado' : 'origem: '.class_basename($t->source_type) }}</x-fx.badge>
                             @endif
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
@@ -711,6 +738,15 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                             @if ($t->status === 'pending')
                                 <x-fx.badge variant="warning" class="ml-space-2">pendente</x-fx.badge>
+                            @endif
+                            @if ($t->destinations->isNotEmpty())
+                                <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
+                                    <div>Sua parte: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
+                                    <div>Ainda a repassar: <strong>R$ {{ number_format($t->destinations->sum(fn ($part) => $part->remainingCents()) / 100, 2, ',', '.') }}</strong></div>
+                                    <details><summary class="cursor-pointer text-primary-600">Ver beneficiários</summary>
+                                        @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }} @if ($part->kind !== 'own') · {{ $part->remainingCents() === 0 ? 'Quitado' : 'Repasse pendente' }}@endif</p>@endforeach
+                                    </details>
+                                </div>
                             @endif
                         </td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">
@@ -732,7 +768,13 @@ new #[Layout('layouts.app')] class extends Component
                             R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
                         </td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
+                            @if ($t->destinationPayment?->destination)
+                                <button type="button" wire:click="openDistribution({{ $t->destinationPayment->destination->receipt_id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Ver recebimento</button>
+                            @endif
                             @unless ($t->isReadOnly())
+                                @if ($t->type === 'income' && $t->status === 'settled' && $t->bank_account_id)
+                                    <button type="button" wire:click="openDistribution({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->destinations->isNotEmpty() ? 'Ver destinação' : 'Destinar recebimento' }}</button>
+                                @endif
                                 <button type="button" wire:click="edit({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Editar</button>
                                 @if (in_array($t->type, ['income', 'expense'], true))
                                     <button type="button" wire:click="openAllocation({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->allocations->isNotEmpty() ? 'Editar rateio' : 'Ratear' }}</button>
@@ -746,6 +788,10 @@ new #[Layout('layouts.app')] class extends Component
             <div class="mt-space-4">{{ $transactions->links() }}</div>
         @endif
     </x-fx.card>
+
+    @if ($distributingId)
+        <livewire:banking.transactions.distribution :receipt-id="$distributingId" :key="'receipt-destination-'.$distributingId" />
+    @endif
 
     @if ($showImportModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">
@@ -908,6 +954,7 @@ new #[Layout('layouts.app')] class extends Component
 
                 <form wire:submit="saveTransaction" class="flex min-h-0 flex-1 flex-col">
                     <div class="flex-1 overflow-y-auto px-6 py-5">
+                        @error('transaction') <p class="mb-4 text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
                         <div class="space-y-8">
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
@@ -1077,6 +1124,12 @@ new #[Layout('layouts.app')] class extends Component
                                 <textarea id="formNotes" name="formNotes" wire:model="formNotes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3" placeholder="Informações adicionais sobre o lançamento"></textarea>
                                 @error('formNotes') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                             </section>
+                            @if ($formType === 'income')
+                                <div class="rounded-xl bg-blue-50 p-4">
+                                    <label class="flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model="formDestinateAfterSave" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">Definir destinação após salvar</label>
+                                    <p class="mt-2 text-xs text-mono-600">Para receitas já recebidas em conta: separe cliente, corretor, escritório e sua parte. A divisão abrirá após o cadastro.</p>
+                                </div>
+                            @endif
                         </div>
                     </div>
 
