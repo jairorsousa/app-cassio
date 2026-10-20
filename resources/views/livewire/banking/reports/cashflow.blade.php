@@ -64,6 +64,7 @@ new #[Layout('layouts.app')] class extends Component {
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereNotNull('bank_account_id')
+                ->whereHas('bankAccount', fn ($q) => $q->where('type', '!=', 'repasse'))
                 ->get()
                 ->groupBy(fn ($t) => $t->bankAccount?->name ?? '—')
                 ->map(fn ($group) => [

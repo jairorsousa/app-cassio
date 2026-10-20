@@ -13,12 +13,13 @@ use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class ReceiptDestinationService
 {
     public function eligible(Transaction $receipt): void
     {
-        if ($receipt->type !== 'income' || $receipt->status !== 'settled' || ! $receipt->bank_account_id || $receipt->isReadOnly() || $receipt->trashed()) {
+        if ($receipt->type !== 'income' || $receipt->status !== 'settled' || ! $receipt->bank_account_id || $receipt->isReadOnly() || $receipt->trashed() || $receipt->bankAccount?->type === 'repasse') {
             throw new \DomainException('Selecione uma receita recebida em conta bancária para definir a divisão do recebimento.');
         }
     }
@@ -177,12 +178,7 @@ class ReceiptDestinationService
                 }
 
                 foreach ($part->payments()->with('transaction')->lockForUpdate()->get() as $payment) {
-                    $transaction = $payment->transaction;
-                    $created = $payment->transaction_created;
-                    $payment->delete();
-                    if ($created && $transaction) {
-                        app(TransactionService::class)->deleteGenerated($transaction);
-                    }
+                    $this->removePaymentEntries($payment);
                 }
 
                 $part->delete();
@@ -194,19 +190,30 @@ class ReceiptDestinationService
         });
     }
 
-    public function pay(ReceiptDestination $part, string $amount, string $date, int $accountId, ?int $existingTransactionId = null): void
+    public function pay(ReceiptDestination $part, string $amount, string $date, int $accountId, ?int $existingTransactionId = null, ?string $requestKey = null): void
     {
-        DB::transaction(function () use ($part, $amount, $date, $accountId, $existingTransactionId) {
+        DB::transaction(function () use ($part, $amount, $date, $accountId, $existingTransactionId, $requestKey) {
             $receipt = Transaction::lockForUpdate()->findOrFail($part->receipt_id);
             $this->eligible($receipt);
             $part = ReceiptDestination::lockForUpdate()->findOrFail($part->id);
+            // A retried form submission must not create a second partial payment.
+            if ($requestKey && ($existing = ReceiptDestinationPayment::where('request_key', $requestKey)->first())) {
+                if ($existing->destination_id !== $part->id) {
+                    throw new \DomainException('Esta confirmação já foi usada em outro repasse.');
+                }
+
+                return;
+            }
             if ($part->kind === 'own') {
                 throw new \DomainException('A parte própria não gera repasse.');
             }
             if ($part->kind === 'broker') {
                 $part->setRelation('commission', BrokerCommission::lockForUpdate()->findOrFail($part->commission_id));
             }
-            $account = BankAccount::active()->find($accountId);
+            Validator::make(['date' => $date], [
+                'date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today', 'after_or_equal:'.$receipt->date->toDateString()],
+            ])->validate();
+            $account = BankAccount::active()->where('type', '!=', 'repasse')->find($accountId);
             if (! $account) {
                 throw new \DomainException('Selecione uma conta bancária ativa para o repasse.');
             }
@@ -236,15 +243,17 @@ class ReceiptDestinationService
                     app(BrokerCommissionService::class)->payAmount($part->commission, (float) $this->money($cents), $date, $accountId);
                 }
             } else {
-                $payment = $part->payments()->create(['transaction_id' => $existingTransactionId, 'transaction_created' => ! $existingTransactionId]);
+                $payment = $part->payments()->create(['transaction_id' => $existingTransactionId, 'transaction_created' => ! $existingTransactionId, 'request_key' => $requestKey]);
                 if (! $existingTransactionId) {
                     $transaction = app(TransactionService::class)->create([
-                        'type' => 'expense', 'status' => 'settled', 'amount' => $this->money($cents), 'date' => $date,
+                        'type' => $part->repasse_account_id ? 'transfer' : 'expense', 'status' => 'settled',
+                        'amount' => ($part->repasse_account_id ? '-' : '').$this->money($cents), 'date' => $date,
                         'bank_account_id' => $accountId, 'description' => mb_substr('Repasse '.($part->kind === 'client' ? 'cliente' : 'escritório').' · '.$part->beneficiary, 0, 200),
                         'source_type' => ReceiptDestinationPayment::class, 'source_id' => $payment->id,
                     ]);
                     $payment->update(['transaction_id' => $transaction->id]);
                 }
+                app(ReceiptAccountAllocationService::class)->settle($payment);
             }
             $part->receipt->touch();
         });
@@ -260,11 +269,25 @@ class ReceiptDestinationService
         }
     }
 
+    private function removePaymentEntries(ReceiptDestinationPayment $payment): void
+    {
+        $transaction = $payment->transaction;
+        $settlement = $payment->settlementTransaction;
+        $created = $payment->transaction_created;
+        $payment->delete();
+        if ($settlement) {
+            app(TransactionService::class)->deleteGenerated($settlement);
+        }
+        if ($created && $transaction) {
+            app(TransactionService::class)->deleteGenerated($transaction);
+        }
+    }
+
     public function undo(ReceiptDestinationPayment $payment): void
     {
         DB::transaction(function () use ($payment) {
+            $receipt = Transaction::lockForUpdate()->findOrFail($payment->destination->receipt_id);
             $payment = ReceiptDestinationPayment::lockForUpdate()->findOrFail($payment->id);
-            $receipt = $payment->destination->receipt;
             if ($payment->destination->kind === 'broker') {
                 $brokerPayment = BrokerCommissionPayment::where('commission_id', $payment->destination->commission_id)->where('transaction_id', $payment->transaction_id)->firstOrFail();
                 app(BrokerLedgerDeletionService::class)->deletePayment($brokerPayment);
@@ -272,12 +295,7 @@ class ReceiptDestinationService
 
                 return;
             }
-            $transaction = $payment->transaction;
-            $created = $payment->transaction_created;
-            $payment->delete();
-            if ($created && $transaction) {
-                app(TransactionService::class)->deleteGenerated($transaction);
-            }
+            $this->removePaymentEntries($payment);
             $receipt->touch();
         });
     }

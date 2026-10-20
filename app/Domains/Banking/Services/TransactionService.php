@@ -25,7 +25,7 @@ class TransactionService
         }
         if (array_key_exists('date', $data) && $transaction->destinations()->whereNotNull('allocation_transaction_id')->exists()
             && Carbon::parse($data['date'])->toDateString() !== $transaction->date->toDateString()) {
-            throw new \DomainException('Remova a divisão antes de alterar a data do recebimento e suas transferências de repasse.');
+            throw new \DomainException('Remova a divisão antes de alterar a data do recebimento e seus valores reservados para repasse.');
         }
         if ($transaction->destinations()->exists()) {
             foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {

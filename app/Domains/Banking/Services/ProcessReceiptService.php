@@ -49,10 +49,10 @@ class ProcessReceiptService
     {
         $total = $this->destinations->cents((string) $receipt->amount);
         $fees = $this->portion((string) ($data['fees'] ?? '0'), $data['fees_mode'] ?? 'amount', $total);
-        $broker = $this->portion((string) ($data['broker_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
+        $broker = empty($data['broker_id']) ? 0 : $this->portion((string) ($data['broker_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
         $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
         if (($data['commission_mode'] ?? 'amount') === 'percent') {
-            $brokerPercent = $this->destinations->cents((string) ($data['broker_amount'] ?? '0'), true);
+            $brokerPercent = empty($data['broker_id']) ? 0 : $this->destinations->cents((string) ($data['broker_amount'] ?? '0'), true);
             $officePercent = $this->destinations->cents((string) ($data['office_amount'] ?? '0'), true);
             if ($brokerPercent + $officePercent > 10000) {
                 throw new \DomainException('As comissões não podem superar 100% dos honorários.');
@@ -77,8 +77,14 @@ class ProcessReceiptService
 
     public function save(Transaction $receipt, array $data): void
     {
+        if (empty($data['broker_id'])) {
+            $data['broker_id'] = null;
+            $data['broker_amount'] = '0.00';
+            $data['expenses'] = [];
+            $data['advances'] = [];
+        }
         Validator::make($data, [
-            'broker_id' => ['required', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
+            'broker_id' => ['nullable', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
             'client_name' => 'required|string|max:200',
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('type', 'income')->where('status', true)],
             'fees_mode' => 'required|in:amount,percent', 'commission_mode' => 'required|in:amount,percent',
@@ -92,10 +98,13 @@ class ProcessReceiptService
         DB::transaction(function () use ($receipt, $data) {
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $this->destinations->eligible($receipt);
-            $broker = Broker::lockForUpdate()->findOrFail($data['broker_id']);
-            $contact = app(BrokerProfileService::class)->contactForBroker($broker);
-            if (! $contact || ! $contact->status) {
-                throw new \DomainException('Selecione um contato ativo do tipo corretor.');
+            $broker = null;
+            if ($data['broker_id'] !== null) {
+                $broker = Broker::lockForUpdate()->findOrFail($data['broker_id']);
+                $contact = app(BrokerProfileService::class)->contactForBroker($broker);
+                if (! $contact || ! $contact->status) {
+                    throw new \DomainException('Selecione um contato ativo do tipo corretor.');
+                }
             }
             $values = $this->calculate($receipt, $data);
             $allocations = app(ReceiptAccountAllocationService::class);
@@ -122,7 +131,7 @@ class ProcessReceiptService
             }
             $this->destinations->replace($receipt, $rows, automaticAdvances: false);
             ProcessReceipt::create([
-                'receipt_id' => $receipt->id, 'broker_id' => $broker->id,
+                'receipt_id' => $receipt->id, 'broker_id' => $broker?->id,
                 'fees_amount' => $this->money($values['fees']), 'category_id' => $data['category_id'] ?? null,
             ]);
             $client = $receipt->destinations()->where('kind', 'client')->sole();

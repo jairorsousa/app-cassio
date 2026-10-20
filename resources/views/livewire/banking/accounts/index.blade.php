@@ -8,6 +8,19 @@ new #[Layout('layouts.app')] class extends Component
 {
     public bool $showFormModal = false;
 
+    public ?int $repasseAccountId = null;
+
+    public function manageRepasses(int $id): void
+    {
+        $this->repasseAccountId = BankAccount::where('type', 'repasse')->findOrFail($id)->id;
+    }
+
+    #[\Livewire\Attributes\On('repasses-closed')]
+    public function closeRepasses(): void
+    {
+        $this->repasseAccountId = null;
+    }
+
     public ?int $editingId = null;
 
     public string $name = '';
@@ -124,9 +137,11 @@ new #[Layout('layouts.app')] class extends Component
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav />
 
+    <p class="text-sm text-mono-600">As contas de repasse controlam valores de terceiros: o saldo negativo indica quanto ainda deve ser repassado. O dinheiro permanece na conta bancária até o pagamento.</p>
+
     <x-fx.card>
         <div class="mb-space-4 flex items-center justify-between">
-            <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Contas bancárias</h3>
+            <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Contas</h3>
             <x-jr.button type="button" size="sm" wire:click="create">
                 <span class="material-icons-outlined text-[18px]">add</span>
                 Nova conta
@@ -152,6 +167,9 @@ new #[Layout('layouts.app')] class extends Component
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Dinheiro','repasse'=>'Repasse'][$a->type] }}</td>
                         <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $a->balance() >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">R$ {{ number_format($a->balance(), 2, ',', '.') }}</td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
+                            @if ($a->type === 'repasse')
+                                <button type="button" class="mr-3 text-fs-12 font-semibold text-primary-600" wire:click="manageRepasses({{ $a->id }})">Gerenciar repasses</button>
+                            @endif
                             <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3" wire:click="edit({{ $a->id }})">Editar</button>
                             <button class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $a->id }})" wire:confirm="Excluir conta?">Excluir</button>
                         </td>
@@ -160,6 +178,10 @@ new #[Layout('layouts.app')] class extends Component
             </x-fx.table>
         @endif
     </x-fx.card>
+
+    @if ($repasseAccountId)
+        <livewire:banking.accounts.repasses :account-id="$repasseAccountId" :key="'repasses-'.$repasseAccountId" />
+    @endif
 
     @if ($showFormModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">

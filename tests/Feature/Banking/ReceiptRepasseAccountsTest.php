@@ -33,43 +33,43 @@ class ReceiptRepasseAccountsTest extends TestCase
         return [$receipt, $source, $client, $office, $broker, $data];
     }
 
-    public function test_client_and_fixed_office_are_transferred_without_inflating_income_or_expenses(): void
+    public function test_client_and_fixed_office_are_reserved_without_moving_bank_cash_or_inflating_income_or_expenses(): void
     {
         [$receipt, $source, $client, $office, , $data] = $this->example();
         $data['office_name'] = 'Outro escritório enviado por uma tela antiga';
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])->set('form', $data)
             ->assertDontSee('Nome do escritório')->assertSee('Mota e Silva Advogados')->call('save')->assertHasNoErrors();
-        $this->assertSame(5500.0, $source->fresh()->balance());
-        $this->assertSame(24000.0, $client->fresh()->balance());
-        $this->assertSame(1500.0, $office->fresh()->balance());
-        $this->assertSame(31000.0, BankAccount::all()->sum(fn ($account) => $account->balance()));
-        $this->assertSame(4, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(31000.0, $source->fresh()->balance());
+        $this->assertSame(-24000.0, $client->fresh()->balance());
+        $this->assertSame(-1500.0, $office->fresh()->balance());
+        $this->assertSame(5500.0, BankAccount::all()->sum(fn ($account) => $account->balance()));
+        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
         $this->assertSame(1, Transaction::where('type', 'income')->count());
         $this->assertSame(0, Transaction::where('type', 'expense')->count());
         $this->assertSame('Mota e Silva Advogados', $receipt->destinations()->where('kind', 'office')->sole()->beneficiary);
-        $this->assertEquals(0, Transaction::where('type', 'transfer')->sum('amount'));
+        $this->assertEquals(-25500, Transaction::where('type', 'transfer')->sum('amount'));
         $report = Volt::test('banking.reports.cashflow')->set('month', $receipt->date->format('Y-m'));
         $this->assertEquals(30000, $report->viewData('totalIncome'));
         $this->assertEquals(0, $report->viewData('totalExpense'));
         $this->assertEquals(3000, $report->viewData('ownIncome'));
-        Volt::test('banking.transactions.index')->set('account', $client->id)->assertSee('Distribuição entre contas')->assertSee('Ver recebimento');
+        Volt::test('banking.transactions.index')->set('account', $client->id)->assertSee('Valor a repassar')->assertSee('Ver recebimento');
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Conta de repasse:')->assertDontSee('Registrar repasse')->assertDontSee('Pendente:');
     }
 
-    public function test_recovered_expenses_reduce_the_client_credit_and_undo_updates_both_sides(): void
+    public function test_recovered_expenses_reduce_the_client_obligation_and_undo_does_not_move_bank_cash(): void
     {
         [$receipt, $source, $client, $office, $broker, $data] = $this->example();
         $expense = app(BrokerProcessExpenseService::class)->save($broker, ['date' => now()->toDateString(), 'amount' => '500', 'description' => 'Passagem', 'bank_account_id' => $source->id]);
         $data['expenses'] = [$expense->id => '500'];
         $service = app(ProcessReceiptService::class);
         $service->save($receipt, $data);
-        $this->assertSame(23500.0, $client->fresh()->balance());
-        $this->assertSame(5500.0, $source->fresh()->balance());
-        $this->assertSame(1500.0, $office->fresh()->balance());
+        $this->assertSame(-23500.0, $client->fresh()->balance());
+        $this->assertSame(30500.0, $source->fresh()->balance());
+        $this->assertSame(-1500.0, $office->fresh()->balance());
         $service->undoRecovery($receipt, $expense->recoveries()->sole()->id);
-        $this->assertSame(24000.0, $client->fresh()->balance());
-        $this->assertSame(5000.0, $source->fresh()->balance());
-        $this->assertSame(4, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(-24000.0, $client->fresh()->balance());
+        $this->assertSame(30500.0, $source->fresh()->balance());
+        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
         $this->assertSame(1, Transaction::where('type', 'expense')->count());
         $this->assertSame(50000, $expense->fresh()->remainingCents());
     }
@@ -80,15 +80,15 @@ class ReceiptRepasseAccountsTest extends TestCase
         $service = app(ProcessReceiptService::class);
         $service->save($receipt, $data);
         $service->save($receipt, $data);
-        $this->assertSame(5500.0, $source->fresh()->balance());
-        $this->assertSame(24000.0, $client->fresh()->balance());
-        $this->assertSame(1500.0, $office->fresh()->balance());
+        $this->assertSame(31000.0, $source->fresh()->balance());
+        $this->assertSame(-24000.0, $client->fresh()->balance());
+        $this->assertSame(-1500.0, $office->fresh()->balance());
         $data['fees'] = '30';
         $service->save($receipt, $data);
-        $this->assertSame(7750.0, $source->fresh()->balance());
-        $this->assertSame(21000.0, $client->fresh()->balance());
-        $this->assertSame(2250.0, $office->fresh()->balance());
-        $this->assertSame(4, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(31000.0, $source->fresh()->balance());
+        $this->assertSame(-21000.0, $client->fresh()->balance());
+        $this->assertSame(-2250.0, $office->fresh()->balance());
+        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
         $this->assertDatabaseCount('broker_commissions', 1);
     }
 
@@ -145,8 +145,8 @@ class ReceiptRepasseAccountsTest extends TestCase
         } catch (\DomainException $e) {
             $this->assertStringContainsString('ativa', $e->getMessage());
         }
-        $this->assertSame(5500.0, $source->fresh()->balance());
-        $this->assertSame(4, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(31000.0, $source->fresh()->balance());
+        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
     }
 
     public function test_assigned_account_can_be_renamed_and_keeps_its_identity(): void
@@ -157,7 +157,7 @@ class ReceiptRepasseAccountsTest extends TestCase
         $client->update(['name' => 'Valores de clientes']);
         $service->save($receipt, $data);
         $this->assertSame($client->id, $receipt->destinations()->where('kind', 'client')->sole()->repasse_account_id);
-        $this->assertSame(24000.0, $client->fresh()->balance());
+        $this->assertSame(-24000.0, $client->fresh()->balance());
     }
 
     public function test_fully_recovered_client_share_creates_no_zero_transfer_and_can_be_restored(): void
@@ -170,10 +170,10 @@ class ReceiptRepasseAccountsTest extends TestCase
         $part = $receipt->destinations()->where('kind', 'client')->sole();
         $this->assertNull($part->allocation_transaction_id);
         $this->assertSame($client->id, $part->repasse_account_id);
-        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(1, Transaction::where('type', 'transfer')->count());
         $service->undoRecovery($receipt, $expense->recoveries()->sole()->id);
-        $this->assertSame(24000.0, $client->fresh()->balance());
-        $this->assertSame(4, Transaction::where('type', 'transfer')->count());
+        $this->assertSame(-24000.0, $client->fresh()->balance());
+        $this->assertSame(2, Transaction::where('type', 'transfer')->count());
     }
 
     public function test_mid_allocation_failure_rolls_back_all_generated_records(): void

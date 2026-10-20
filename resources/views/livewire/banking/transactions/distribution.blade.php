@@ -156,7 +156,7 @@ new class extends Component {
             @else
                 @if ($processReceipt)
                     <div class="rounded-xl bg-mono-50 p-4 text-sm text-mono-900">
-                        <p>Corretor: <strong>{{ $processReceipt->broker->name }}</strong></p>
+                        <p>Corretor: <strong>{{ $processReceipt->broker?->name ?? 'Sem corretor' }}</strong></p>
                         <p>Honorários: <strong>R$ {{ number_format((float) $processReceipt->fees_amount, 2, ',', '.') }}</strong> · Cliente bruto: <strong>R$ {{ number_format((float) $receipt->amount - (float) $processReceipt->fees_amount, 2, ',', '.') }}</strong></p>
                         <p>Despesas recuperadas: <strong>R$ {{ number_format($recoveredAmount, 2, ',', '.') }}</strong></p>
                         <p>Categoria da minha receita: <strong>{{ $processReceipt->category?->name ?? 'Sem categoria' }}</strong></p>
@@ -165,7 +165,7 @@ new class extends Component {
                 <div class="grid gap-3 md:grid-cols-3">
                     <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Minha receita<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
                     <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Cliente líquido<strong class="mt-1 block text-xl">R$ {{ number_format($parts->where('kind', 'client')->sum('amount') - $recoveredAmount, 2, ',', '.') }}</strong></div>
-                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Comissões de corretor e escritório<strong class="mt-1 block text-xl">R$ {{ number_format($parts->whereIn('kind', ['broker', 'office'])->sum('amount'), 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{{ $parts->contains('kind', 'broker') ? 'Comissões de corretor e escritório' : 'Comissão do escritório' }}<strong class="mt-1 block text-xl">R$ {{ number_format($parts->whereIn('kind', ['broker', 'office'])->sum('amount'), 2, ',', '.') }}</strong></div>
                 </div>
                 @foreach ($parts as $part)
                     <div class="space-y-3 rounded-xl border border-mono-100 p-4">
@@ -173,7 +173,8 @@ new class extends Component {
                             <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha receita'][$part->kind] }}@if ($part->kind !== 'own') · {{ $part->beneficiary }}@endif</strong>
                                 <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>
                                 @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Valor líquido do cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
-                                @if ($part->repasseAccount)<p class="mt-1 text-sm text-mono-600">Conta de repasse: <strong>{{ $part->repasseAccount->name }}</strong> · R$ {{ number_format((float) $part->amount - ($part->kind === 'client' ? $part->recoveredCents() / 100 : 0), 2, ',', '.') }}</p>@endif
+                                @if ($part->repasseAccount)<p class="mt-1 text-sm text-mono-600">Conta de repasse: <strong>{{ $part->repasseAccount->name }}</strong> · Valor reservado: R$ {{ number_format((float) $part->amount - ($part->kind === 'client' ? $part->recoveredCents() / 100 : 0), 2, ',', '.') }}</p>@endif
+                                @if ($part->repasseAccount)<a href="{{ route('banking.accounts.index') }}" class="mt-1 inline-block text-sm font-semibold text-primary-600">Gerenciar repasses em Contas</a>@endif
                                 @if ($part->commission)<p class="mt-1 text-sm text-mono-600">{{ $part->commission->caseType?->name }} · {{ $part->commission->name }}</p>@endif
                                 @if ($part->commission?->broker?->contact_id)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker->contact_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
                             </div>
@@ -184,7 +185,7 @@ new class extends Component {
                         @endforeach
                         @foreach ($part->kind === 'broker' ? collect() : $part->payments as $payment)
                             <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600">
-                                <span>{{ $payment->transaction?->date->format('d/m/Y') }} · R$ {{ number_format((float) $payment->transaction?->amount, 2, ',', '.') }} · {{ $payment->transaction_created ? 'Repasse registrado' : 'Saída vinculada' }}</span>
+                                <span>{{ $payment->transaction?->date->format('d/m/Y') }} · R$ {{ number_format(abs((float) $payment->transaction?->amount), 2, ',', '.') }} · {{ $payment->transaction_created ? 'Repasse registrado' : 'Saída vinculada' }}</span>
                                 <button type="button" wire:click="undoPayment({{ $payment->id }})" wire:confirm="{{ $payment->transaction_created ? 'Desfazer este repasse e remover a saída registrada?' : 'Desvincular este repasse? A saída original será preservada.' }}" class="text-error">{{ $payment->transaction_created ? 'Desfazer repasse' : 'Desvincular' }}</button>
                             </div>
                         @endforeach

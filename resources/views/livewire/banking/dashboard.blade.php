@@ -30,7 +30,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         $summary = Cache::remember('banking.dashboard.summary', 300, function () {
             $accounts = BankAccount::active()->get();
-            $totalBalance = $accounts->sum(fn ($a) => $a->balance());
+            $totalBalance = $accounts->where('type', '!=', 'repasse')->sum(fn ($a) => $a->balance());
+            $repasseBalance = $accounts->where('type', 'repasse')->sum(fn ($a) => $a->balance());
 
             $upcomingInvoices = CreditCardInvoice::with('creditCard')
                 ->whereIn('status', ['open', 'closed', 'partially_paid'])
@@ -58,10 +59,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 ->limit(10)
                 ->get();
 
-            return compact('accounts', 'totalBalance', 'upcomingInvoices', 'monthIncome', 'monthExpense', 'pending');
+            return compact('accounts', 'totalBalance', 'repasseBalance', 'upcomingInvoices', 'monthIncome', 'monthExpense', 'pending');
         });
 
-        return $summary + ['result' => $summary['monthIncome'] - $summary['monthExpense']];
+        return $summary + ['repasseBalance' => 0] + ['result' => $summary['monthIncome'] - $summary['monthExpense']];
     }
 }; ?>
 
@@ -71,9 +72,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     <x-banking.subnav />
     <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
         <x-fx.card>
-            <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Saldo total</div>
+            <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Saldo nas contas bancárias</div>
             <div class="text-fs-24 font-bold text-cryptex-text-primary font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalBalance, 2, ',', '.') }}</div>
-            <div class="text-fs-12 text-cryptex-text-secondary mt-space-1 font-mono"><span class="text-cryptex-brand-400">{{ $accounts->count() }}</span> contas ativas</div>
+            <div class="text-fs-12 text-cryptex-text-secondary mt-space-1 font-mono"><span class="text-cryptex-brand-400">{{ $accounts->where('type', '!=', 'repasse')->count() }}</span> contas ativas</div>
+            <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Cliente e escritório a repassar: R$ {{ number_format(max(0, -$repasseBalance), 2, ',', '.') }}</div>
         </x-fx.card>
         <x-fx.card>
             <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Receita mês</div>

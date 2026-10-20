@@ -58,7 +58,7 @@ class ProcessReceiptTest extends TestCase
         $data['advances'] = [$advance->id => '300.00'];
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])->set('form', $data)->call('save')->assertHasNoErrors()->assertDispatched('process-receipt-saved');
         $this->assertSame(3, Transaction::where('type', '!=', 'transfer')->count());
-        $this->assertSame(29800.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
+        $this->assertSame(29800.0, $account->fresh()->balance());
         $this->assertSame('6000.00', $receipt->fresh()->processReceipt->fees_amount);
         $this->assertSame($category->id, $receipt->fresh()->processReceipt->category_id);
         $client = $receipt->destinations()->where('kind', 'client')->sole();
@@ -192,7 +192,7 @@ class ProcessReceiptTest extends TestCase
         app(ProcessReceiptService::class)->undoRecovery($receipt, $expense->recoveries()->sole()->id);
         $component->call('delete', $expense->id)->assertHasNoErrors();
         $this->assertDatabaseCount('broker_process_expenses', 0);
-        $this->assertSame(31000.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
+        $this->assertSame(31000.0, $account->fresh()->balance());
     }
 
     public function test_undo_releases_offsets_and_cascade_deletion_preserves_original_expenses_and_advances(): void
@@ -214,7 +214,7 @@ class ProcessReceiptTest extends TestCase
         $this->assertDatabaseCount('receipt_destinations', 0);
         $this->assertDatabaseCount('broker_commissions', 0);
         $this->assertSame(50000, $expense->fresh()->remainingCents());
-        $this->assertSame(-200.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
+        $this->assertSame(-200.0, $account->fresh()->balance());
     }
 
     public function test_manual_offsets_survive_payment_edits_and_protect_the_original_advance(): void
@@ -290,7 +290,7 @@ class ProcessReceiptTest extends TestCase
         $this->assertDatabaseCount('broker_commission_payments', 0);
         $this->assertDatabaseCount('receipt_destination_payments', 0);
         $this->assertSame(1, Transaction::where('type', '!=', 'transfer')->count());
-        $this->assertSame(31000.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
+        $this->assertSame(31000.0, $account->fresh()->balance());
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
             ->assertSee('Recebimento de processo')->assertSee('Cliente ou processo de exemplo')
             ->assertDontSee('Pendente:')->assertDontSee('Quitado')->assertDontSee('Registrar repasse')->assertDontSee('Ainda a repassar')

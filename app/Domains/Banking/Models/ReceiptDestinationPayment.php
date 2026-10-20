@@ -7,13 +7,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReceiptDestinationPayment extends Model
 {
-    protected $fillable = ['destination_id', 'transaction_id', 'transaction_created'];
+    protected $fillable = ['destination_id', 'transaction_id', 'transaction_created', 'settlement_transaction_id', 'request_key'];
 
     protected $casts = ['transaction_created' => 'boolean'];
 
     public function destination(): BelongsTo
     {
         return $this->belongsTo(ReceiptDestination::class, 'destination_id');
+    }
+
+    public function settlementTransaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'settlement_transaction_id');
     }
 
     public function transaction(): BelongsTo
