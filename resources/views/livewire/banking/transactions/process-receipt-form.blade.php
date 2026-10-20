@@ -92,7 +92,7 @@ new class extends Component {
     <p class="text-sm text-mono-600">Separe o valor do cliente e os honorários. Escolha os descontos pelo corretor, sem vincular a um processo específico. A comissão será lançada automaticamente no cadastro do corretor.</p>
     <div class="grid gap-4 md:grid-cols-2">
         <div><label for="process-broker" class="mb-2 block text-sm text-mono-600">Corretor *</label><select id="process-broker" wire:model.live="form.broker_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar corretor</option>@foreach ($brokers as $broker)<option value="{{ $broker->id }}">{{ $broker->name }}</option>@endforeach</select></div>
-        <x-jr.input label="Nome do cliente *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
+        <x-jr.input label="Cliente ou processo *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
     </div>
     <section class="space-y-4 rounded-xl border border-mono-100 bg-mono-50 p-4">
         <h4 class="font-semibold text-mono-900">1. Cliente e honorários</h4>
