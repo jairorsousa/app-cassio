@@ -1,21 +1,5 @@
 import './bootstrap';
-
-// --- Helpers de moeda BRL ---
-function formatBRL(value) {
-    const num = parseFloat(value);
-    if (isNaN(num)) return '';
-    return new Intl.NumberFormat('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(num);
-}
-
-function parseBRL(value) {
-    if (value === null || value === undefined || value === '') return 0;
-    const s = String(value);
-    if (s.includes(',')) return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
-    return parseFloat(s) || 0;
-}
+import { bindMoneyInput, centsToModel, parseToCents } from './money-mask';
 
 // --- Diretiva Alpine x-cpf-cnpj ---
 function maskCpfCnpj(val) {
@@ -58,6 +42,31 @@ function maskProcessNumber(val) {
         .replace(/^(\d{7}-\d{2}\.\d{4}\.\d\.\d{2})(\d)/, '$1.$2');
 }
 
+function wireModelBinding(el) {
+    for (const attribute of el.attributes) {
+        if (attribute.name === 'wire:model' || attribute.name.startsWith('wire:model.')) {
+            const debounce = attribute.name.match(/debounce\.(\d+)ms/);
+
+            return {
+                expression: attribute.value,
+                live: attribute.name.includes('.live'),
+                debounce: debounce ? Number(debounce[1]) : (attribute.name.includes('.live') ? 150 : null),
+            };
+        }
+    }
+
+    return null;
+}
+
+function componentWire(el) {
+    const root = el.closest('[wire\\:id]');
+    if (!root || !window.Livewire) {
+        return null;
+    }
+
+    return window.Livewire.find(root.getAttribute('wire:id'));
+}
+
 document.addEventListener('alpine:init', () => {
     Alpine.directive('cpf-cnpj', (el, {}, { cleanup }) => {
         if (el.value) el.value = maskCpfCnpj(el.value);
@@ -85,68 +94,123 @@ document.addEventListener('alpine:init', () => {
         cleanup(() => el.removeEventListener('input', onInput));
     });
 
-    // --- x-money: máscara de real em tempo real ---
+    // x-money: o que aparece é 1.234,56. O Livewire recebe 1234.56.
+    // O valor digitado não volta cru para o campo enquanto a pessoa digita.
     Alpine.directive('money', (el, {}, { cleanup }) => {
-        el.type = 'text';
-        el.autocomplete = 'off';
-        el.placeholder = '0,00';
+        let commitTimer = null;
+        let mask;
 
-        // Formata valor inicial do servidor ("1234.56" → "1.234,56", "0" → "0,00")
-        if (el.value !== '') {
-            const n = parseFloat(el.value);
-            if (!isNaN(n)) el.value = formatBRL(n);
-        } else {
-            el.value = '0,00';
-        }
+        const syncWire = () => {
+            const binding = wireModelBinding(el);
+            const wire = binding ? componentWire(el) : null;
+            if (!binding || !wire || binding.expression === '' || !mask) {
+                return;
+            }
 
-        let submitting = false;
+            const modelValue = mask.isTouched() && mask.getCents() === 0
+                ? ''
+                : (mask.isTouched() ? centsToModel(mask.getCents()) : null);
 
-        const rawValue = () => {
-            const digits = el.value.replace(/\D/g, '').slice(0, 11);
-            return String(digits ? parseInt(digits, 10) / 100 : 0);
+            if (modelValue === null) {
+                return;
+            }
+
+            const current = wire.get(binding.expression);
+            if (String(current ?? '') !== modelValue) {
+                wire.set(binding.expression, modelValue, false);
+            }
+
+            if (binding.live) {
+                clearTimeout(commitTimer);
+                commitTimer = setTimeout(() => wire.$commit(), binding.debounce);
+            }
         };
 
-        const onInput = () => {
-            if (submitting) return;
+        mask = bindMoneyInput(el, { onChange: syncWire });
+        el._moneyMask = mask;
+        let disposed = false;
 
-            const num = parseFloat(rawValue());
-            el.dataset.moneyRaw = String(num);
-            el.value = formatBRL(num);
-            el.setSelectionRange(el.value.length, el.value.length);
+        const applyExternal = (value) => {
+            const incoming = Math.abs(parseToCents(value));
+            if (mask.isTouched() && document.activeElement === el && incoming !== mask.getCents()) {
+                queueMicrotask(syncWire);
+                return;
+            }
+
+            mask.setFromExternal(value);
         };
 
-        // Antes do submit: garante valor bruto para wire:model diferido
+        const wrapModel = () => {
+            if (disposed || !el._x_forceModelUpdate || el._moneyWrapped) {
+                return;
+            }
+
+            el._moneyOriginalForce = el._x_forceModelUpdate;
+            el._moneyWrapped = true;
+            el._x_forceModelUpdate = (value) => {
+                applyExternal(value);
+            };
+        };
+
+        wrapModel();
+        queueMicrotask(() => {
+            if (disposed) {
+                return;
+            }
+
+            wrapModel();
+            if (mask.isTouched() && document.activeElement === el) {
+                return;
+            }
+
+            const source = el._x_model ? el._x_model.get() : el.value;
+            mask.setFromExternal(source ?? '');
+        });
+
         const form = el.closest('form');
         const onSubmit = () => {
-            submitting = true;
-            el.value = rawValue();
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            submitting = false;
+            syncWire();
+            if (!wireModelBinding(el)) {
+                el.value = mask.getCents() === 0 ? '' : centsToModel(mask.getCents());
+            }
         };
 
-        el.addEventListener('input', onInput);
-        if (form) form.addEventListener('submit', onSubmit, { capture: true });
+        if (form) {
+            form.addEventListener('submit', onSubmit, { capture: true });
+        }
 
         cleanup(() => {
-            el.removeEventListener('input', onInput);
-            if (form) form.removeEventListener('submit', onSubmit, { capture: true });
+            disposed = true;
+            clearTimeout(commitTimer);
+            mask.cleanup();
+            if (form) {
+                form.removeEventListener('submit', onSubmit, { capture: true });
+            }
+            if (el._moneyOriginalForce) {
+                el._x_forceModelUpdate = el._moneyOriginalForce;
+            }
+            el._moneyWrapped = false;
+            delete el._moneyMask;
         });
     });
 });
 
-// Após re-renders do Livewire: reformata valores que voltaram como float bruto (ex: "0.01").
-// Não toca no campo em edição para preservar o cursor e evitar travar a digitação rápida.
+// Se um re-render devolver o número cru em um campo sem foco, formata de novo.
 document.addEventListener('livewire:initialized', () => {
     Livewire.hook('commit', ({ succeed }) => {
         succeed(() => {
             requestAnimationFrame(() => {
-                document.querySelectorAll('[x-money]').forEach(el => {
-                    if (document.activeElement === el) return;
+                document.querySelectorAll('[x-money]').forEach((el) => {
+                    const mask = el._moneyMask;
+                    if (!mask || (el.value && el.value.includes(','))) {
+                        return;
+                    }
 
-                    // Já formatado (tem vírgula)
-                    if (el.value && el.value.includes(',')) return;
-                    const num = parseFloat(el.value);
-                    if (!isNaN(num)) el.value = formatBRL(num);
+                    if (document.activeElement === el && mask.isTouched()) {
+                        return;
+                    }
+
+                    mask.setFromExternal(el.value);
                 });
             });
         });
