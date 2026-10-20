@@ -9,13 +9,14 @@ use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
 use App\Domains\Brokers\Models\BrokerProcessExpense;
-use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Models\ProcessExpenseRecovery;
 use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Domains\Brokers\Services\BrokerProfileService;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ProcessReceiptService
 {
@@ -78,6 +79,8 @@ class ProcessReceiptService
     {
         Validator::make($data, [
             'broker_id' => ['required', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
+            'case_type_id' => ['nullable', 'integer', Rule::exists('case_types', 'id')->where('status', true)],
+            'commission_name' => 'nullable|string|max:160',
             'client_name' => 'required|string|max:200', 'office_name' => 'nullable|string|max:200',
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('type', 'income')->where('status', true)],
             'fees_mode' => 'required|in:amount,percent', 'commission_mode' => 'required|in:amount,percent',
@@ -92,6 +95,10 @@ class ProcessReceiptService
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $this->destinations->eligible($receipt);
             $broker = Broker::lockForUpdate()->findOrFail($data['broker_id']);
+            $contact = app(BrokerProfileService::class)->contactForBroker($broker);
+            if (! $contact || ! $contact->status) {
+                throw new \DomainException('Selecione um contato ativo do tipo corretor.');
+            }
             $values = $this->calculate($receipt, $data);
             if ($values['office'] > 0 && trim($data['office_name'] ?? '') === '') {
                 throw new \DomainException('Informe o nome do escritório.');
@@ -101,9 +108,14 @@ class ProcessReceiptService
                 ['kind' => 'own', 'amount' => $this->money($values['own'])],
             ];
             if ($values['broker'] > 0) {
-                // A general commission classification, with no process/client record attached.
-                $type = CaseType::firstOrCreate(['name' => 'Recebimento de processo'], ['status' => true]);
-                $rows[] = ['kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $type->id, 'amount' => $this->money($values['broker'])];
+                if (empty($data['case_type_id'])) {
+                    throw ValidationException::withMessages(['case_type_id' => 'Selecione o tipo de caso da comissão do corretor.']);
+                }
+                $rows[] = [
+                    'kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $data['case_type_id'],
+                    'commission_name' => trim($data['commission_name'] ?? '') ?: mb_substr(trim($data['client_name']), 0, 160),
+                    'amount' => $this->money($values['broker']),
+                ];
             }
             if ($values['office'] > 0) {
                 $rows[] = ['kind' => 'office', 'beneficiary' => trim($data['office_name']), 'amount' => $this->money($values['office'])];

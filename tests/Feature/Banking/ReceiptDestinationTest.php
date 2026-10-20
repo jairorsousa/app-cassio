@@ -44,7 +44,7 @@ class ReceiptDestinationTest extends TestCase
         [$receipt, $account, $broker, $case, $rows] = $this->example();
         $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
             ->set('rows', $rows)->call('save')->assertHasNoErrors()->assertSet('editing', false)
-            ->assertSee('R$ 6.998,36')->assertViewHas('reservedAmount', 25533.23);
+            ->assertSee('R$ 6.998,36')->assertDontSee('Registrar repasse')->assertDontSee('Pendente:');
         $this->assertDatabaseCount('transactions', 1);
         $this->assertDatabaseCount('receipt_destinations', 4);
         $this->assertDatabaseCount('broker_commissions', 1);
@@ -70,19 +70,22 @@ class ReceiptDestinationTest extends TestCase
         $service->replace($receipt, $rows);
         $client = $receipt->destinations()->where('kind', 'client')->sole();
         $office = $receipt->destinations()->where('kind', 'office')->sole();
-        $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
-            ->call('startPayment', $client->id)->set('payAmount', '1000.00')->call('pay')->assertHasNoErrors()
-            ->assertViewHas('canEdit', false);
+        $service->pay($client, '1000.00', now()->toDateString(), $account->id);
+        $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertViewHas('canEdit', false);
         $this->assertSame(1438744, $client->fresh()->remainingCents());
         $this->assertDatabaseCount('transactions', 2);
         $this->assertSame(32531.59, $account->fresh()->balance());
-        $component->call('startPayment', $client->id)->set('payAmount', '20000.00')->call('pay')->assertHasErrors(['payment']);
+        try {
+            $service->pay($client, '20000.00', now()->toDateString(), $account->id);
+            $this->fail('Repasse excessivo foi aceito.');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('saldo', $e->getMessage());
+        }
         $this->assertDatabaseCount('transactions', 2);
 
         $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now()->toDateString(), 'amount' => '6998.36', 'description' => 'Pix ao escritório', 'bank_account_id' => $account->id, 'ofx_fitid' => 'expense-imported']);
         $before = $account->fresh()->balance();
-        $component->call('startPayment', $office->id)->set('payMode', 'existing')->set('payExistingId', $expense->id)
-            ->call('pay')->assertHasNoErrors();
+        $service->pay($office, (string) $expense->amount, now()->toDateString(), $account->id, $expense->id);
         $this->assertSame(0, $office->fresh()->remainingCents());
         $this->assertDatabaseCount('transactions', 3);
         $this->assertSame($before, $account->fresh()->balance());
@@ -99,8 +102,8 @@ class ReceiptDestinationTest extends TestCase
         [$receipt, $account, , , $rows] = $this->example();
         app(ReceiptDestinationService::class)->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
-        $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
-            ->call('startPayment', $part->id)->set('payAmount', '1000.00')->call('pay')->assertHasNoErrors();
+        app(BrokerCommissionService::class)->payAmount($part->commission, 1000, now()->toDateString(), $account->id);
+        $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id]);
         $this->assertDatabaseCount('broker_commission_payments', 1);
         $this->assertDatabaseCount('transactions', 2);
         $this->assertSame(214743, $part->fresh()->remainingCents());
@@ -220,9 +223,8 @@ class ReceiptDestinationTest extends TestCase
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
         $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now(), 'amount' => '3147.43', 'description' => 'Pix ao corretor', 'bank_account_id' => $account->id, 'ofx_fitid' => 'broker-ofx']);
         $balance = $account->fresh()->balance();
-        Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
-            ->call('startPayment', $part->id)->set('payMode', 'existing')->set('payExistingId', $expense->id)
-            ->call('pay')->assertHasNoErrors()->assertSee('Saída vinculada ao corretor');
+        $service->pay($part, (string) $expense->amount, now()->toDateString(), $account->id, $expense->id);
+        Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Saída vinculada ao corretor');
         $this->assertSame(0, $part->fresh()->remainingCents());
         $this->assertSame('paid', $part->commission->fresh()->status);
         $this->assertDatabaseCount('transactions', 2);

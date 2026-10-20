@@ -1,13 +1,8 @@
 <?php
 
-use App\Domains\Banking\Models\BankAccount;
-use App\Domains\Banking\Models\ReceiptDestination;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\ReceiptDestinationService;
-use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
-use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
@@ -18,16 +13,9 @@ new class extends Component {
     public int $receiptId;
     public array $rows = [];
     public bool $editing = false;
-    #[Locked]
-    public ?int $payPartId = null;
-    public string $payMode = 'new';
-    public string $payAmount = '';
-    public string $payDate = '';
-    public ?int $payAccountId = null;
-    public ?int $payExistingId = null;
-
     public function mount(int $receiptId): void
     {
+        app(\App\Domains\Brokers\Services\BrokerProfileService::class)->synchronizeDirectory();
         $this->receiptId = $receiptId;
         app(ReceiptDestinationService::class)->eligible($this->receipt());
         $this->loadRows();
@@ -68,7 +56,6 @@ new class extends Component {
     {
         $this->loadRows();
         $this->editing = true;
-        $this->payPartId = null;
     }
 
     public function save(ReceiptDestinationService $service): void
@@ -115,39 +102,10 @@ new class extends Component {
         $this->dispatch('receipt-destination-updated');
     }
 
-    public function startPayment(int $id): void
-    {
-        $part = $this->receipt()->destinations()->findOrFail($id);
-        abort_if($part->kind === 'own', 422);
-        $this->payPartId = $part->id;
-        $this->payMode = 'new';
-        $this->payExistingId = null;
-        $this->payAmount = number_format($part->remainingCents() / 100, 2, '.', '');
-        $this->payDate = now('America/Sao_Paulo')->format('Y-m-d');
-        $this->payAccountId = $this->receipt()->bank_account_id;
-        $this->resetValidation();
-    }
-
-    public function pay(ReceiptDestinationService $service): void
-    {
-        $this->validate([
-            'payMode' => 'required|in:new,existing', 'payAmount' => 'required|numeric|min:0.01',
-            'payDate' => 'required|date|before_or_equal:'.now('America/Sao_Paulo')->format('Y-m-d'),
-            'payAccountId' => 'required|integer|exists:bank_accounts,id',
-            'payExistingId' => [$this->payMode === 'existing' ? 'required' : 'nullable', 'integer', 'exists:transactions,id'],
-        ]);
-        $part = $this->receipt()->destinations()->findOrFail($this->payPartId);
-        try { $service->pay($part, $this->payAmount, $this->payDate, $this->payAccountId, $this->payMode === 'existing' ? $this->payExistingId : null); }
-        catch (\DomainException $e) { $this->addError('payment', $e->getMessage()); return; }
-        $this->payPartId = null;
-        $this->dispatch('receipt-destination-updated');
-    }
-
     public function undoPayment(int $id, ReceiptDestinationService $service): void
     {
         $payment = \App\Domains\Banking\Models\ReceiptDestinationPayment::whereHas('destination', fn ($q) => $q->where('receipt_id', $this->receiptId))->findOrFail($id);
         $service->undo($payment);
-        $this->payPartId = null;
         $this->dispatch('receipt-destination-updated');
     }
 
@@ -157,7 +115,6 @@ new class extends Component {
         $payment = BrokerCommissionPayment::whereIn('commission_id', $ids)->findOrFail($id);
         $service->deletePayment($payment);
         $this->receipt()->touch();
-        $this->payPartId = null;
         $this->dispatch('receipt-destination-updated');
     }
 
@@ -166,29 +123,16 @@ new class extends Component {
         $this->dispatch('receipt-destination-closed');
     }
 
-    public function cancelPayment(): void
-    {
-        $this->payPartId = null;
-        $this->resetValidation();
-    }
-
     public function with(): array
     {
         $receipt = $this->receipt();
-        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.settlements.advance', 'recoveries.expense')->get();
+        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense')->get();
         return [
             'receipt' => $receipt, 'parts' => $parts,
             'processReceipt' => $receipt->processReceipt,
             'recoveredAmount' => $parts->sum(fn ($part) => $part->recoveredCents()) / 100,
             'canEdit' => ! $parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty()),
             'ownAmount' => $parts->where('kind', 'own')->sum('amount'),
-            'reservedAmount' => $parts->sum(fn ($part) => $part->remainingCents()) / 100,
-            'brokers' => Broker::active()->orderBy('name')->get(),
-            'caseTypes' => CaseType::active()->orderBy('name')->get(),
-            'commissions' => BrokerCommission::with('broker')->whereDoesntHave('receiptDestination', fn ($q) => $q->where('receipt_id', '!=', $this->receiptId))->orderByDesc('reference_date')->get(),
-            'accounts' => BankAccount::active()->orderBy('name')->get(),
-            'payPart' => $parts->firstWhere('id', $this->payPartId),
-            'existingExpenses' => $this->payPartId && $this->payMode === 'existing' ? Transaction::where('type', 'expense')->where('status', 'settled')->where('amount', '>', 0)->where('bank_account_id', $this->payAccountId)->whereNull('credit_card_id')->whereNull('source_type')->whereDoesntHave('destinationPayment')->orderByDesc('date')->limit(100)->get() : collect(),
         ];
     }
 }; ?>
@@ -219,19 +163,19 @@ new class extends Component {
                 @endif
                 <div class="grid gap-3 md:grid-cols-3">
                     <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Minha receita<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
-                    <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Ainda a repassar<strong class="mt-1 block text-xl">R$ {{ number_format($reservedAmount, 2, ',', '.') }}</strong></div>
-                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Repassado, compensado ou recuperado<strong class="mt-1 block text-xl">R$ {{ number_format($parts->sum(fn ($part) => $part->paidCents()) / 100, 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Cliente líquido<strong class="mt-1 block text-xl">R$ {{ number_format($parts->where('kind', 'client')->sum('amount') - $recoveredAmount, 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Comissões de corretor e escritório<strong class="mt-1 block text-xl">R$ {{ number_format($parts->whereIn('kind', ['broker', 'office'])->sum('amount'), 2, ',', '.') }}</strong></div>
                 </div>
                 @foreach ($parts as $part)
                     <div class="space-y-3 rounded-xl border border-mono-100 p-4">
                         <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
                             <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha receita'][$part->kind] }}@if ($part->kind !== 'own') · {{ $part->beneficiary }}@endif</strong>
-                                <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }} @if ($part->kind !== 'own') · Pendente: R$ {{ number_format($part->remainingCents() / 100, 2, ',', '.') }}@endif</p>
-                                @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Repasse líquido ao cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
+                                <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>
+                                @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Valor líquido do cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
+                                @if ($part->commission)<p class="mt-1 text-sm text-mono-600">{{ $part->commission->caseType?->name }} · {{ $part->commission->name }}</p>@endif
                                 @if ($part->commission?->broker?->contact_id)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker->contact_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
                             </div>
-                            @if ($part->remainingCents() > 0)<button type="button" wire:click="startPayment({{ $part->id }})" class="h-10 rounded-pill bg-primary-50 px-4 font-semibold text-primary-600">Registrar repasse</button>
-                            @elseif ($part->kind !== 'own')<span class="font-semibold text-green-600">Quitado</span>@endif
+
                         </div>
                         @foreach ($part->recoveries as $recovery)
                             <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Despesa recuperada · {{ $recovery->expense->description }} · R$ {{ number_format((float) $recovery->amount, 2, ',', '.') }}</span><button type="button" wire:click="undoRecovery({{ $recovery->id }})" wire:confirm="Desfazer este desconto? O valor voltará ao saldo do cliente e ficará disponível para recuperação." class="text-error">Desfazer desconto</button></div>
@@ -247,29 +191,16 @@ new class extends Component {
                                 <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>{{ $payment->paid_at->format('d/m/Y') }} · R$ {{ number_format((float) $payment->amount, 2, ',', '.') }} · {{ $payment->transaction?->destinationPayment ? 'Saída vinculada ao corretor' : 'Repasse ao corretor' }}</span><button type="button" wire:click="undoBrokerPayment({{ $payment->id }})" wire:confirm="{{ $payment->transaction?->destinationPayment ? 'Desvincular este repasse? A saída original será preservada.' : 'Desfazer o repasse ao corretor e remover a saída registrada?' }}" class="text-error">{{ $payment->transaction?->destinationPayment ? 'Desvincular' : 'Desfazer repasse' }}</button></div>
                             @endforeach
                             @foreach ($part->commission->settlements as $settlement)
-                                <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Adiantamento compensado · {{ $settlement->advance?->date->format('d/m/Y') }} · R$ {{ number_format((float) $settlement->amount_offset, 2, ',', '.') }}</span><button type="button" wire:click="undoAdvance({{ $settlement->id }})" wire:confirm="Desfazer esta compensação e reabrir o saldo da comissão?" class="text-error">Desfazer compensação</button></div>
+                                <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Adiantamento compensado · {{ $settlement->advance?->date->format('d/m/Y') }} · R$ {{ number_format((float) $settlement->amount_offset, 2, ',', '.') }}</span><button type="button" wire:click="undoAdvance({{ $settlement->id }})" wire:confirm="Desfazer esta compensação?" class="text-error">Desfazer compensação</button></div>
                             @endforeach
                         @endif
                     </div>
                 @endforeach
                 @if ($canEdit)
                     <div class="flex flex-wrap gap-4"><button type="button" wire:click="editDivision" class="text-sm font-semibold text-primary-600">Editar divisão</button><button type="button" wire:click="clear" wire:confirm="Remover a divisão deste recebimento? Comissões criadas por ela e ainda sem repasses também serão removidas." class="text-sm text-error">Remover divisão</button></div>
-                @else<p class="text-xs text-mono-600">A divisão fica protegida enquanto houver repasses, compensações ou descontos de despesas. Desfaça-os antes de alterar os beneficiários ou valores.</p>@endif
+                @else<p class="text-xs text-mono-600">Para editar a divisão, desfaça os descontos e compensações usados. Movimentações financeiras anteriores também precisam ser desvinculadas.</p>@endif
             @endif
-            @if ($payPart)
-                <form wire:submit="pay" class="space-y-4 rounded-xl border border-primary-100 bg-primary-50 p-4">
-                    <h4 class="font-semibold text-mono-900">Repasse · {{ $payPart->beneficiary }}</h4>
-                                            <div><label for="receipt-pay-mode" class="mb-2 block text-sm text-mono-600">Como registrar</label><select id="receipt-pay-mode" wire:model.live="payMode" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="new">Registrar uma nova saída na conta</option><option value="existing">Vincular uma saída já cadastrada ou importada</option></select></div>
-                    <div><label for="receipt-pay-account" class="mb-2 block text-sm text-mono-600">Conta do repasse *</label><select id="receipt-pay-account" wire:model.live="payAccountId" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar conta</option>@foreach ($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></div>
-                    @if ($payMode === 'existing')
-                        <div><label for="receipt-pay-existing" class="mb-2 block text-sm text-mono-600">Saída paga *</label><select id="receipt-pay-existing" wire:model="payExistingId" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar saída</option>@foreach ($existingExpenses as $expense)<option value="{{ $expense->id }}">{{ $expense->date->format('d/m/Y') }} · {{ $expense->description }} · R$ {{ number_format((float) $expense->amount, 2, ',', '.') }}</option>@endforeach</select><p class="mt-2 text-xs text-mono-600">A saída selecionada será vinculada pelo valor integral. Nenhuma nova despesa será criada.</p></div>
-                    @else
-                        <div class="grid gap-3 md:grid-cols-2"><x-jr.input label="Valor do repasse (R$) *" name="payAmount" type="number" min="0.01" step="0.01" wire:model="payAmount" required /><x-jr.input label="Data do pagamento *" name="payDate" type="date" wire:model="payDate" required /></div>
-                    @endif
-                    @foreach ($errors->getMessages() as $field => $messages) @if ($field === 'payment' || str_starts_with($field, 'pay'))<p class="text-sm text-error" role="alert">{{ $messages[0] }}</p>@endif @endforeach
-                    <div class="flex gap-3"><button type="submit" wire:loading.attr="disabled" class="h-11 rounded-pill bg-primary-500 px-5 text-sm font-semibold text-white disabled:opacity-50">Confirmar repasse</button><button type="button" wire:click="cancelPayment" class="text-sm text-mono-600">Cancelar</button></div>
-                </form>
-            @endif
+
         </div>
         <div class="flex justify-end border-t border-mono-100 px-6 py-4"><button type="button" wire:click="close" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900">Fechar</button></div>
     </div>

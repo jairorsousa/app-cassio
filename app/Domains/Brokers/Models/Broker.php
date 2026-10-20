@@ -56,6 +56,11 @@ class Broker extends Model
         return $this->morphMany(Transaction::class, 'source');
     }
 
+    public function scopeSelectable($query)
+    {
+        return $query->active()->whereHas('contact', fn ($contacts) => $contacts->where('type', 'corretor')->active());
+    }
+
     public function scopeActive($query)
     {
         return $query->where('status', true);

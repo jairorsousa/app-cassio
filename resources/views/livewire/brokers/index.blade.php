@@ -38,6 +38,11 @@ new #[Layout('layouts.app')] class extends Component {
     public ?int $launch_bank_account_id = null;
     public string $launch_notes = '';
 
+    public function mount(BrokerProfileService $profiles): void
+    {
+        $profiles->synchronizeDirectory();
+    }
+
     public function openLaunchModal(?int $contactId = null, string $type = 'advance'): void
     {
         $this->resetLaunchForm();

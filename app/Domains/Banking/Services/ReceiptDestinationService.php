@@ -114,7 +114,7 @@ class ReceiptDestinationService
                         $commission = app(BrokerCommissionService::class)->registerFixedAmount([
                             'broker_id' => $broker->id, 'case_type_id' => $row['case_type_id'],
                             'commission_amount' => (float) $row['amount'], 'reference_date' => $receipt->date->format('Y-m-d'),
-                            'name' => mb_substr($receipt->description, 0, 200), 'bank_account_id' => $receipt->bank_account_id,
+                            'name' => mb_substr($row['commission_name'] ?? $receipt->description, 0, 200), 'bank_account_id' => $receipt->bank_account_id,
                             'notes' => 'Recebimento de processo #'.$receipt->id,
                         ]);
                         $commission->update(['manual_advances' => ! $automaticAdvances]);

@@ -783,9 +783,8 @@ new #[Layout('layouts.app')] class extends Component
                                 <x-fx.badge variant="neutral">Recebimento de processo</x-fx.badge>
                                 <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
                                     <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
-                                    <div>Ainda a repassar: <strong>R$ {{ number_format($t->destinations->sum(fn ($part) => $part->remainingCents()) / 100, 2, ',', '.') }}</strong></div>
                                     <details><summary class="cursor-pointer text-primary-600">Ver beneficiários</summary>
-                                        @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }} @if ($part->kind !== 'own') · {{ $part->remainingCents() === 0 ? 'Quitado' : 'Repasse pendente' }}@endif</p>@endforeach
+                                        @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>@endforeach
                                     </details>
                                 </div>
                             @endif
