@@ -4,6 +4,7 @@ namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\ReceiptDestinationPayment;
 use App\Domains\Banking\Models\Transaction;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class TransactionService
@@ -21,6 +22,10 @@ class TransactionService
     {
         if ($transaction->destinationPayment()->exists()) {
             throw new \DomainException('Desvincule este pagamento da divisão do recebimento antes de alterar o lançamento.');
+        }
+        if (array_key_exists('date', $data) && $transaction->destinations()->whereNotNull('allocation_transaction_id')->exists()
+            && Carbon::parse($data['date'])->toDateString() !== $transaction->date->toDateString()) {
+            throw new \DomainException('Remova a divisão antes de alterar a data do recebimento e suas transferências de repasse.');
         }
         if ($transaction->destinations()->exists()) {
             foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {

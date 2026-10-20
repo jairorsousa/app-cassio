@@ -65,6 +65,11 @@ class Transaction extends Model
         return $this->hasOne(ReceiptDestinationPayment::class, 'transaction_id');
     }
 
+    public function distributionPart(): HasOne
+    {
+        return $this->hasOne(ReceiptDestination::class, 'allocation_transaction_id');
+    }
+
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);

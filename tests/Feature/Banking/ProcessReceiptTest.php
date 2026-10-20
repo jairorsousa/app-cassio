@@ -34,11 +34,12 @@ class ProcessReceiptTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $account = BankAccount::create(['name' => 'BB', 'initial_balance' => 1000, 'status' => true]);
+        BankAccount::create(['name' => 'Cliente', 'type' => 'repasse', 'initial_balance' => 0, 'status' => true]);
+        BankAccount::create(['name' => 'Mota e Silva Advogados', 'type' => 'repasse', 'initial_balance' => 0, 'status' => true]);
         $broker = Broker::create(['name' => 'Corretor', 'status' => true]);
         $category = Category::create(['name' => 'Honorários próprios', 'type' => 'income', 'status' => true]);
         $receipt = Transaction::create(['type' => 'income', 'amount' => '30000.00', 'date' => now()->toDateString(), 'description' => 'Recebimento', 'status' => 'settled', 'bank_account_id' => $account->id]);
-        $caseType = CaseType::create(['name' => 'Previdenciário', 'status' => true]);
-        $data = ['case_type_id' => $caseType->id, 'broker_id' => $broker->id, 'client_name' => 'Cliente', 'office_name' => 'Escritório', 'fees' => '20', 'fees_mode' => 'percent', 'broker_amount' => '25', 'office_amount' => '25', 'commission_mode' => 'percent', 'category_id' => $category->id, 'expenses' => [], 'advances' => []];
+        $data = ['broker_id' => $broker->id, 'client_name' => 'Cliente', 'office_name' => 'Escritório', 'fees' => '20', 'fees_mode' => 'percent', 'broker_amount' => '25', 'office_amount' => '25', 'commission_mode' => 'percent', 'category_id' => $category->id, 'expenses' => [], 'advances' => []];
 
         return [$receipt, $broker, $account, $category, $data];
     }
@@ -56,8 +57,8 @@ class ProcessReceiptTest extends TestCase
         $data['expenses'] = [$expense->id => '200.00'];
         $data['advances'] = [$advance->id => '300.00'];
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])->set('form', $data)->call('save')->assertHasNoErrors()->assertDispatched('process-receipt-saved');
-        $this->assertDatabaseCount('transactions', 3);
-        $this->assertSame(29800.0, $account->fresh()->balance());
+        $this->assertSame(3, Transaction::where('type', '!=', 'transfer')->count());
+        $this->assertSame(29800.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
         $this->assertSame('6000.00', $receipt->fresh()->processReceipt->fees_amount);
         $this->assertSame($category->id, $receipt->fresh()->processReceipt->category_id);
         $client = $receipt->destinations()->where('kind', 'client')->sole();
@@ -191,7 +192,7 @@ class ProcessReceiptTest extends TestCase
         app(ProcessReceiptService::class)->undoRecovery($receipt, $expense->recoveries()->sole()->id);
         $component->call('delete', $expense->id)->assertHasNoErrors();
         $this->assertDatabaseCount('broker_process_expenses', 0);
-        $this->assertSame(31000.0, $account->fresh()->balance());
+        $this->assertSame(31000.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
     }
 
     public function test_undo_releases_offsets_and_cascade_deletion_preserves_original_expenses_and_advances(): void
@@ -213,7 +214,7 @@ class ProcessReceiptTest extends TestCase
         $this->assertDatabaseCount('receipt_destinations', 0);
         $this->assertDatabaseCount('broker_commissions', 0);
         $this->assertSame(50000, $expense->fresh()->remainingCents());
-        $this->assertSame(-200.0, $account->fresh()->balance());
+        $this->assertSame(-200.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
     }
 
     public function test_manual_offsets_survive_payment_edits_and_protect_the_original_advance(): void
@@ -272,67 +273,75 @@ class ProcessReceiptTest extends TestCase
         ]);
     }
 
-    public function test_selected_case_and_name_create_a_standard_commission_without_payment_tracking_in_the_receipt(): void
+    public function test_default_case_and_client_name_create_a_standard_commission_without_extra_fields_or_payment_tracking(): void
     {
         [$receipt, $broker, $account, , $data] = $this->example();
         $contact = app(BrokerProfileService::class)->contactForBroker($broker);
-        $data['commission_name'] = 'Cliente da comissão';
+        $data['client_name'] = 'Cliente ou processo de exemplo';
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
-            ->set('form', $data)->assertSee('Tipo de caso da comissão')->call('save')->assertHasNoErrors();
+            ->set('form', $data)->assertDontSee('Tipo de caso da comissão')->assertDontSee('Nome da comissão')->call('save')->assertHasNoErrors();
         $commission = BrokerCommission::sole();
-        $this->assertSame($data['case_type_id'], $commission->case_type_id);
-        $this->assertSame('Cliente da comissão', $commission->name);
+        $this->assertSame('Recebimento de processo', $commission->caseType->name);
+        $this->assertSame('Cliente ou processo de exemplo', $commission->name);
         $this->assertSame('1500.00', $commission->commission_amount);
         $this->assertSame($account->id, $commission->bank_account_id);
         $this->assertSame($receipt->date->toDateString(), $commission->reference_date->toDateString());
         $this->assertSame('pending', $commission->status);
         $this->assertDatabaseCount('broker_commission_payments', 0);
         $this->assertDatabaseCount('receipt_destination_payments', 0);
-        $this->assertDatabaseCount('transactions', 1);
-        $this->assertSame(31000.0, $account->fresh()->balance());
+        $this->assertSame(1, Transaction::where('type', '!=', 'transfer')->count());
+        $this->assertSame(31000.0, BankAccount::all()->sum(fn ($bankAccount) => $bankAccount->balance()));
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
-            ->assertSee('Previdenciário')->assertSee('Cliente da comissão')
+            ->assertSee('Recebimento de processo')->assertSee('Cliente ou processo de exemplo')
             ->assertDontSee('Pendente:')->assertDontSee('Quitado')->assertDontSee('Registrar repasse')->assertDontSee('Ainda a repassar')
             ->assertSee(route('brokers.show', $contact->id), false);
         Volt::test('banking.transactions.index')->assertDontSee('Repasse pendente')->assertDontSee('Ainda a repassar');
         Volt::test('banking.reports.cashflow')->set('month', $receipt->date->format('Y-m'))->assertDontSee('Ainda a repassar');
-        $this->get(route('brokers.show', ['broker' => $contact->id, 'records_tab' => 'commissions']))->assertOk()->assertSee('Previdenciário')->assertSee('Cliente da comissão');
+        $this->get(route('brokers.show', ['broker' => $contact->id, 'records_tab' => 'commissions']))->assertOk()->assertSee('Recebimento de processo')->assertSee('Cliente ou processo de exemplo');
     }
 
-    public function test_commission_case_type_is_required_and_must_be_active(): void
+    public function test_default_case_is_reused_and_enabled_without_requiring_a_manual_choice(): void
     {
         [$receipt, , , , $data] = $this->example();
-        $inactive = CaseType::create(['name' => 'Inativo', 'status' => false]);
-        foreach ([null, $inactive->id] as $id) {
-            $data['case_type_id'] = $id;
-            Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
-                ->set('form', $data)->call('save')->assertHasErrors('case_type_id');
-            $this->assertDatabaseCount('broker_commissions', 0);
-            $this->assertDatabaseCount('process_receipts', 0);
-            $this->assertDatabaseCount('receipt_destinations', 0);
-        }
-        $data['broker_amount'] = '0';
-        $data['case_type_id'] = null;
-        app(ProcessReceiptService::class)->save($receipt, $data);
-        $this->assertDatabaseCount('broker_commissions', 0);
-        $this->assertDatabaseCount('process_receipts', 1);
+        $caseType = CaseType::create(['name' => 'Recebimento de processo', 'status' => false]);
+        $service = app(ProcessReceiptService::class);
+        $service->save($receipt, $data);
+        $this->assertSame($caseType->id, BrokerCommission::sole()->case_type_id);
+        $this->assertTrue($caseType->fresh()->status);
+        $service->save($receipt, $data);
+        $this->assertDatabaseCount('case_types', 1);
+        $this->assertDatabaseCount('broker_commissions', 1);
     }
 
-    public function test_commission_name_defaults_to_client_and_is_not_duplicated_when_reediting(): void
+    public function test_commission_metadata_is_derived_from_client_or_process_when_reediting(): void
     {
         [$receipt, , , , $data] = $this->example();
+        $other = CaseType::create(['name' => 'Cível', 'status' => true]);
+        $data['case_type_id'] = $other->id;
+        $data['commission_name'] = 'Nome enviado por uma tela antiga';
         $service = app(ProcessReceiptService::class);
         $service->save($receipt, $data);
         $this->assertSame($data['client_name'], BrokerCommission::sole()->name);
-        $other = CaseType::create(['name' => 'Cível', 'status' => true]);
+        $this->assertSame('Recebimento de processo', BrokerCommission::sole()->caseType->name);
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
-            ->assertSet('form.case_type_id', $data['case_type_id'])->assertSet('form.commission_name', $data['client_name']);
-        $data['case_type_id'] = $other->id;
+            ->assertDontSee('Tipo de caso da comissão')->assertDontSee('Nome da comissão');
+        $data['client_name'] = 'Processo atualizado';
         $data['broker_amount'] = '30';
         $service->save($receipt, $data);
         $this->assertDatabaseCount('broker_commissions', 1);
-        $this->assertSame($other->id, BrokerCommission::sole()->case_type_id);
+        $this->assertSame('Recebimento de processo', BrokerCommission::sole()->caseType->name);
+        $this->assertSame('Processo atualizado', BrokerCommission::sole()->name);
         $this->assertSame('1800.00', BrokerCommission::sole()->commission_amount);
-        $this->assertDatabaseCount('transactions', 1);
+        $this->assertSame(1, Transaction::where('type', '!=', 'transfer')->count());
+    }
+
+    public function test_zero_broker_commission_does_not_create_a_case_type_or_commission(): void
+    {
+        [$receipt, , , , $data] = $this->example();
+        $data['broker_amount'] = '0';
+        app(ProcessReceiptService::class)->save($receipt, $data);
+        $this->assertDatabaseCount('broker_commissions', 0);
+        $this->assertDatabaseCount('case_types', 0);
+        $this->assertDatabaseCount('process_receipts', 1);
     }
 }

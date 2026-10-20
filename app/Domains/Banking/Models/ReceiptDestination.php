@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ReceiptDestination extends Model
 {
-    protected $fillable = ['receipt_id', 'kind', 'beneficiary', 'amount', 'commission_id', 'commission_created'];
+    protected $fillable = ['receipt_id', 'kind', 'beneficiary', 'amount', 'commission_id', 'commission_created', 'repasse_account_id', 'allocation_transaction_id'];
 
     protected $casts = ['amount' => 'decimal:2', 'commission_created' => 'boolean'];
 
@@ -22,6 +22,16 @@ class ReceiptDestination extends Model
     public function commission(): BelongsTo
     {
         return $this->belongsTo(BrokerCommission::class, 'commission_id');
+    }
+
+    public function repasseAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class, 'repasse_account_id')->withTrashed();
+    }
+
+    public function allocationTransaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class, 'allocation_transaction_id');
     }
 
     public function payments(): HasMany

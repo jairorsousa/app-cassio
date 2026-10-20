@@ -93,6 +93,7 @@ class ReceiptDestinationService
                     throw new \DomainException('Selecione o tipo de caso para criar a comissão do corretor.');
                 }
             }
+            app(ReceiptAccountAllocationService::class)->clear($receipt);
             $receipt->destinations()->delete();
             $receipt->processReceipt()->delete();
             foreach ($old->where('commission_created', true) as $part) {
@@ -143,6 +144,7 @@ class ReceiptDestinationService
             if ($parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty())) {
                 throw new \DomainException('Desfaça os repasses ou compensações antes de remover a divisão do recebimento.');
             }
+            app(ReceiptAccountAllocationService::class)->clear($receipt);
             $receipt->destinations()->delete();
             $receipt->processReceipt()->delete();
             foreach ($parts->where('commission_created', true) as $part) {
@@ -160,6 +162,7 @@ class ReceiptDestinationService
             $parts = $receipt->destinations()->lockForUpdate()->get();
             $ledger = app(BrokerLedgerDeletionService::class);
 
+            app(ReceiptAccountAllocationService::class)->clear($receipt);
             $receipt->processReceipt()->delete();
             foreach ($parts as $part) {
                 $commission = $part->commission_id

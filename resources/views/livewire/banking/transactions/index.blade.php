@@ -642,7 +642,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
+        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -768,7 +768,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <span class="text-fs-12 text-cryptex-text-tertiary ml-1 font-mono">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
                             @endif
                             @if ($t->isReadOnly())
-                                <x-fx.badge variant="neutral" class="ml-space-2">{{ $t->source_type === \App\Domains\Banking\Models\ReceiptDestinationPayment::class ? 'Repasse vinculado' : 'origem: '.class_basename($t->source_type) }}</x-fx.badge>
+                                <x-fx.badge variant="neutral" class="ml-space-2">{{ match ($t->source_type) { \App\Domains\Banking\Models\ReceiptDestinationPayment::class => 'Repasse vinculado', \App\Domains\Banking\Models\ReceiptDestination::class => 'Distribuição entre contas', default => 'origem: '.class_basename($t->source_type) } }}</x-fx.badge>
                             @endif
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
@@ -810,6 +810,10 @@ new #[Layout('layouts.app')] class extends Component
                             R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
                         </td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
+                            @if ($t->source_type === \App\Domains\Banking\Models\ReceiptDestination::class)
+                                @php $distributionPart = $t->distributionPart ?? $t->related?->distributionPart; @endphp
+                                @if ($distributionPart)<button type="button" wire:click="openDistribution({{ $distributionPart->receipt_id }})" class="mr-3 text-fs-12 font-medium text-primary-600">Ver recebimento</button>@endif
+                            @endif
                             @if ($t->destinationPayment?->destination)
                                 <button type="button" wire:click="openDistribution({{ $t->destinationPayment->destination->receipt_id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Ver recebimento</button>
                             @endif
@@ -846,7 +850,7 @@ new #[Layout('layouts.app')] class extends Component
                     <p class="rounded-xl bg-mono-50 p-3 text-mono-900"><strong>{{ $deletingTransaction->description }}</strong><br>R$ {{ number_format(abs((float) $deletingTransaction->amount), 2, ',', '.') }}</p>
                     <div id="transaction-delete-description">
                         @if ($deletingTransaction->destinations_count > 0)
-                            <p>Ao excluir este lançamento, todas as divisões vinculadas também serão excluídas, junto dos repasses e das comissões gerados exclusivamente por este recebimento.</p>
+                            <p>Ao excluir este lançamento, todas as divisões vinculadas também serão excluídas, junto dos repasses, das transferências para as contas de repasse e das comissões gerados exclusivamente por este recebimento.</p>
                             <p class="mt-3">Comissões preexistentes e seus pagamentos, assim como saídas apenas vinculadas, serão preservados. As compensações das comissões excluídas serão desfeitas, preservando os adiantamentos originais. Os descontos de despesas serão liberados, mantendo as despesas originais disponíveis para recuperação.</p>
                         @elseif ($deletingTransaction->destinationPayment)
                             <p>O lançamento será excluído e seu pagamento será desfeito na divisão vinculada. O valor voltará a ficar pendente de repasse.</p>

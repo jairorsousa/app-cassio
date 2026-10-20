@@ -33,7 +33,7 @@ new #[Layout('layouts.app')] class extends Component
             'bank' => 'nullable|string|max:120',
             'agency' => 'nullable|string|max:20',
             'number' => 'nullable|string|max:30',
-            'type' => 'required|in:checking,savings,investment,cash',
+            'type' => 'required|in:checking,savings,investment,cash,repasse',
             'initial_balance' => 'required|numeric',
             'status' => 'boolean',
             'notes' => 'nullable|string',
@@ -66,11 +66,20 @@ new #[Layout('layouts.app')] class extends Component
     {
         $data = $this->validate();
 
-        if ($this->editingId) {
-            BankAccount::find($this->editingId)?->update($data);
-        } else {
-            BankAccount::create($data);
-        }
+        $saved = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+            if ($this->editingId) {
+                $account = BankAccount::lockForUpdate()->findOrFail($this->editingId);
+                if ($data['type'] !== 'repasse' && \App\Domains\Banking\Models\ReceiptDestination::where('repasse_account_id', $account->id)->exists()) {
+                    $this->addError('type', 'Remova as divisões vinculadas antes de alterar o tipo desta conta de repasse.');
+                    return false;
+                }
+                $account->update($data);
+            } else {
+                BankAccount::create($data);
+            }
+            return true;
+        });
+        if (! $saved) { return; }
 
         $this->resetForm();
         session()->flash('status', 'Conta salva.');
@@ -83,8 +92,16 @@ new #[Layout('layouts.app')] class extends Component
 
     public function delete(int $id): void
     {
-        BankAccount::find($id)?->delete();
-        session()->flash('status', 'Conta excluída.');
+        $deleted = \Illuminate\Support\Facades\DB::transaction(function () use ($id) {
+            $account = BankAccount::lockForUpdate()->find($id);
+            if (\App\Domains\Banking\Models\ReceiptDestination::where('repasse_account_id', $id)->exists()) {
+                session()->flash('error', 'Remova as divisões vinculadas antes de excluir esta conta de repasse.');
+                return false;
+            }
+            $account?->delete();
+            return true;
+        });
+        if ($deleted) { session()->flash('status', 'Conta excluída.'); }
     }
 
     private function resetForm(): void
@@ -120,7 +137,7 @@ new #[Layout('layouts.app')] class extends Component
             <x-fx.empty-state
                 icon="🏦"
                 title="Nenhuma conta cadastrada"
-                description="Cadastre suas contas correntes, poupança e caixa para começar a registrar lançamentos.">
+                description="Cadastre suas contas correntes, poupança, dinheiro e repasse para começar a registrar lançamentos.">
                 <x-jr.button type="button" class="mt-space-4" wire:click="create">
                     <span class="material-icons-outlined text-[18px]">add</span>
                     Nova conta
@@ -132,7 +149,7 @@ new #[Layout('layouts.app')] class extends Component
                     <tr>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-primary whitespace-nowrap">{{ $a->name }} @unless($a->status)<span class="text-fs-12 text-cryptex-text-secondary ml-1">(inativa)</span>@endunless</td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $a->bank }}</td>
-                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Caixa'][$a->type] }}</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Dinheiro','repasse'=>'Repasse'][$a->type] }}</td>
                         <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $a->balance() >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">R$ {{ number_format($a->balance(), 2, ',', '.') }}</td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
                             <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3" wire:click="edit({{ $a->id }})">Editar</button>
@@ -176,7 +193,8 @@ new #[Layout('layouts.app')] class extends Component
                                             <option value="checking">Corrente</option>
                                             <option value="savings">Poupança</option>
                                             <option value="investment">Investimento</option>
-                                            <option value="cash">Caixa</option>
+                                            <option value="cash">Dinheiro</option>
+                                            <option value="repasse">Repasse</option>
                                         </select>
                                         @error('type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>

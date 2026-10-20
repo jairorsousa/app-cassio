@@ -4,7 +4,6 @@ use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Services\ProcessReceiptService;
 use App\Domains\Brokers\Models\Broker;
-use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerProcessExpense;
 use Livewire\Attributes\Locked;
@@ -14,8 +13,7 @@ new class extends Component {
     #[Locked]
     public int $receiptId;
     public array $form = [
-        'case_type_id' => null, 'commission_name' => '',
-        'broker_id' => null, 'client_name' => '', 'office_name' => '', 'category_id' => null,
+        'broker_id' => null, 'client_name' => '', 'category_id' => null,
         'fees' => '0.00', 'fees_mode' => 'amount', 'broker_amount' => '0.00', 'office_amount' => '0.00',
         'commission_mode' => 'amount', 'expenses' => [], 'advances' => [],
     ];
@@ -29,11 +27,8 @@ new class extends Component {
         $parts = $receipt->destinations()->with('commission')->get();
         $process = $receipt->processReceipt;
         $this->form = array_replace($this->form, [
-            'case_type_id' => $parts->firstWhere('kind', 'broker')?->commission?->case_type_id,
-            'commission_name' => $parts->firstWhere('kind', 'broker')?->commission?->name ?? '',
             'broker_id' => $process?->broker_id ?? $parts->firstWhere('kind', 'broker')?->commission?->broker_id,
             'client_name' => $parts->firstWhere('kind', 'client')?->beneficiary ?? '',
-            'office_name' => $parts->firstWhere('kind', 'office')?->beneficiary ?? '',
             'category_id' => $process?->category_id,
             'fees' => $process ? (string) $process->fees_amount : number_format($parts->whereIn('kind', ['own', 'broker', 'office'])->sum('amount'), 2, '.', ''),
             'broker_amount' => number_format($parts->where('kind', 'broker')->sum('amount'), 2, '.', ''),
@@ -82,7 +77,6 @@ new class extends Component {
         $offset = collect($this->form['advances'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
         return compact('preview', 'previewError', 'expenses', 'advances', 'recovered', 'offset') + [
             'brokers' => Broker::selectable()->orderBy('name')->get(),
-            'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'categories' => Category::active()->where('type', 'income')->orderBy('name')->get(),
         ];
     }
@@ -110,21 +104,12 @@ new class extends Component {
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('commission_mode', '{{ $mode }}')" aria-pressed="{{ $form['commission_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['commission_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
         <p class="text-xs text-mono-600">Os percentuais das comissões são calculados sobre os honorários.</p>
-        @if (($preview['broker'] ?? 0) > 0)
-            <div class="grid gap-4 md:grid-cols-2">
-                <div>
-                    <label for="process-case-type" class="mb-2 block text-sm text-mono-600">Tipo de caso da comissão *</label>
-                    <select id="process-case-type" wire:model="form.case_type_id" class="h-12 w-full rounded-xl border-mono-200 text-sm" required><option value="">Selecione</option>@foreach ($caseTypes as $caseType)<option value="{{ $caseType->id }}">{{ $caseType->name }}</option>@endforeach</select>
-                    @if ($caseTypes->isEmpty())<p class="mt-2 text-xs text-mono-600">Cadastre um <a href="{{ route('brokers.tipos-caso.index') }}" class="font-semibold text-primary-600">tipo de caso</a> para lançar a comissão.</p>@endif
-                </div>
-                <div><x-jr.input label="Nome da comissão" name="form.commission_name" wire:model="form.commission_name" maxlength="160" placeholder="Nome do cliente" /><p class="mt-2 text-xs text-mono-600">Se deixar em branco, será usado o nome do cliente.</p></div>
-            </div>
-            <p class="text-xs text-mono-600">Ao salvar, a comissão será criada na aba Comissões deste corretor com o tipo de caso selecionado.</p>
-        @endif
+        <p class="text-sm text-mono-600">Ao salvar, o valor líquido do cliente será transferido para a conta <strong>Cliente</strong> e a parte do escritório para <strong>Mota e Silva Advogados</strong>. Cadastre essas contas com o tipo <strong>Repasse</strong> em <a href="{{ route('banking.accounts.index') }}" class="font-semibold text-primary-600">Contas</a>.</p>
+
         <div class="grid gap-4 md:grid-cols-2">
             <x-jr.input :label="$form['commission_mode'] === 'percent' ? 'Comissão do corretor (%)' : 'Comissão do corretor (R$)'" name="form.broker_amount" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.broker_amount" required />
             <x-jr.input :label="$form['commission_mode'] === 'percent' ? 'Comissão do escritório (%)' : 'Comissão do escritório (R$)'" name="form.office_amount" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.office_amount" required />
-            <x-jr.input label="Nome do escritório" name="form.office_name" wire:model="form.office_name" maxlength="200" />
+            <div class="rounded-xl bg-white p-3 text-sm text-mono-600">Escritório<strong class="mt-1 block text-mono-900">Mota e Silva Advogados</strong></div>
             <x-banking.category-picker :categories="$categories" model="form.category_id" id="process-category" label="Categoria da minha receita" />
         </div>
     </section>

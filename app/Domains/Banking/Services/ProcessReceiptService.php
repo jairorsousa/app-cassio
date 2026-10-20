@@ -9,6 +9,7 @@ use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
 use App\Domains\Brokers\Models\BrokerProcessExpense;
+use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Models\ProcessExpenseRecovery;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerProfileService;
@@ -16,7 +17,6 @@ use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class ProcessReceiptService
 {
@@ -79,9 +79,7 @@ class ProcessReceiptService
     {
         Validator::make($data, [
             'broker_id' => ['required', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
-            'case_type_id' => ['nullable', 'integer', Rule::exists('case_types', 'id')->where('status', true)],
-            'commission_name' => 'nullable|string|max:160',
-            'client_name' => 'required|string|max:200', 'office_name' => 'nullable|string|max:200',
+            'client_name' => 'required|string|max:200',
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('type', 'income')->where('status', true)],
             'fees_mode' => 'required|in:amount,percent', 'commission_mode' => 'required|in:amount,percent',
             'fees' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
@@ -100,25 +98,27 @@ class ProcessReceiptService
                 throw new \DomainException('Selecione um contato ativo do tipo corretor.');
             }
             $values = $this->calculate($receipt, $data);
-            if ($values['office'] > 0 && trim($data['office_name'] ?? '') === '') {
-                throw new \DomainException('Informe o nome do escritório.');
+            $allocations = app(ReceiptAccountAllocationService::class);
+            $targets = [];
+            foreach (['client', 'office'] as $kind) {
+                if ($values[$kind] > 0) {
+                    $targets[$kind] = $allocations->target($receipt, $kind);
+                }
             }
             $rows = [
                 ['kind' => 'client', 'beneficiary' => trim($data['client_name']), 'amount' => $this->money($values['client'])],
                 ['kind' => 'own', 'amount' => $this->money($values['own'])],
             ];
             if ($values['broker'] > 0) {
-                if (empty($data['case_type_id'])) {
-                    throw ValidationException::withMessages(['case_type_id' => 'Selecione o tipo de caso da comissão do corretor.']);
-                }
+                $caseType = CaseType::updateOrCreate(['name' => 'Recebimento de processo'], ['status' => true]);
                 $rows[] = [
-                    'kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $data['case_type_id'],
-                    'commission_name' => trim($data['commission_name'] ?? '') ?: mb_substr(trim($data['client_name']), 0, 160),
+                    'kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $caseType->id,
+                    'commission_name' => mb_substr(trim($data['client_name']), 0, 160),
                     'amount' => $this->money($values['broker']),
                 ];
             }
             if ($values['office'] > 0) {
-                $rows[] = ['kind' => 'office', 'beneficiary' => trim($data['office_name']), 'amount' => $this->money($values['office'])];
+                $rows[] = ['kind' => 'office', 'beneficiary' => ReceiptAccountAllocationService::OFFICE_ACCOUNT, 'amount' => $this->money($values['office'])];
             }
             $this->destinations->replace($receipt, $rows, automaticAdvances: false);
             ProcessReceipt::create([
@@ -175,6 +175,10 @@ class ProcessReceiptService
             if ($commission) {
                 app(BrokerCommissionService::class)->syncStatus($commission->fresh());
             }
+            foreach ($targets as $kind => $target) {
+                $part = $receipt->destinations()->where('kind', $kind)->sole();
+                $allocations->sync($part, $target);
+            }
             $receipt->touch();
         });
     }
@@ -185,7 +189,12 @@ class ProcessReceiptService
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $recovery = ProcessExpenseRecovery::whereHas('destination', fn ($q) => $q->where('receipt_id', $receipt->id))->findOrFail($id);
             BrokerProcessExpense::lockForUpdate()->findOrFail($recovery->expense_id);
+            $part = $recovery->destination;
             $recovery->delete();
+            if ($part->repasse_account_id) {
+                $allocations = app(ReceiptAccountAllocationService::class);
+                $allocations->sync($part->fresh(), $allocations->target($receipt, 'client'));
+            }
             $receipt->touch();
         });
     }

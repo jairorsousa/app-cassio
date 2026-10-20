@@ -84,7 +84,8 @@ new class extends Component {
 
     public function undoRecovery(int $id, \App\Domains\Banking\Services\ProcessReceiptService $service): void
     {
-        $service->undoRecovery($this->receipt(), $id);
+        try { $service->undoRecovery($this->receipt(), $id); }
+        catch (\DomainException $e) { $this->addError('division', $e->getMessage()); return; }
         $this->dispatch('receipt-destination-updated');
     }
 
@@ -126,7 +127,7 @@ new class extends Component {
     public function with(): array
     {
         $receipt = $this->receipt();
-        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense')->get();
+        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense', 'repasseAccount')->get();
         return [
             'receipt' => $receipt, 'parts' => $parts,
             'processReceipt' => $receipt->processReceipt,
@@ -172,6 +173,7 @@ new class extends Component {
                             <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha receita'][$part->kind] }}@if ($part->kind !== 'own') · {{ $part->beneficiary }}@endif</strong>
                                 <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>
                                 @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Valor líquido do cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
+                                @if ($part->repasseAccount)<p class="mt-1 text-sm text-mono-600">Conta de repasse: <strong>{{ $part->repasseAccount->name }}</strong> · R$ {{ number_format((float) $part->amount - ($part->kind === 'client' ? $part->recoveredCents() / 100 : 0), 2, ',', '.') }}</p>@endif
                                 @if ($part->commission)<p class="mt-1 text-sm text-mono-600">{{ $part->commission->caseType?->name }} · {{ $part->commission->name }}</p>@endif
                                 @if ($part->commission?->broker?->contact_id)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker->contact_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
                             </div>
