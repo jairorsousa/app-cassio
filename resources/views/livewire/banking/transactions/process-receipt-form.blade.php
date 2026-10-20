@@ -94,7 +94,13 @@ new class extends Component {
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('fees_mode', '{{ $mode }}')" aria-pressed="{{ $form['fees_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['fees_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
         <div class="grid items-end gap-4 md:grid-cols-2">
-            <x-jr.input :label="$form['fees_mode'] === 'percent' ? 'Honorários (% do recebimento)' : 'Honorários (R$)'" name="form.fees" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.fees" required />
+            <div wire:key="process-fees-{{ $form['fees_mode'] }}">
+                @if ($form['fees_mode'] === 'percent')
+                    <x-jr.input label="Honorários (% do recebimento)" name="form.fees" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.fees" required />
+                @else
+                    <x-jr.input label="Honorários (R$)" name="form.fees" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fees" required />
+                @endif
+            </div>
             @if ($preview)<p class="pb-3 text-sm text-mono-900">Valor bruto do cliente: <strong>R$ {{ number_format($preview['client'] / 100, 2, ',', '.') }}</strong></p>@endif
         </div>
     </section>
@@ -107,8 +113,20 @@ new class extends Component {
         <p class="text-sm text-mono-600">Ao salvar, o valor líquido do cliente será transferido para a conta <strong>Cliente</strong> e a parte do escritório para <strong>Mota e Silva Advogados</strong>. Cadastre essas contas com o tipo <strong>Repasse</strong> em <a href="{{ route('banking.accounts.index') }}" class="font-semibold text-primary-600">Contas</a>.</p>
 
         <div class="grid gap-4 md:grid-cols-2">
-            <x-jr.input :label="$form['commission_mode'] === 'percent' ? 'Comissão do corretor (%)' : 'Comissão do corretor (R$)'" name="form.broker_amount" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.broker_amount" required />
-            <x-jr.input :label="$form['commission_mode'] === 'percent' ? 'Comissão do escritório (%)' : 'Comissão do escritório (R$)'" name="form.office_amount" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.office_amount" required />
+            <div wire:key="process-broker-amount-{{ $form['commission_mode'] }}">
+                @if ($form['commission_mode'] === 'percent')
+                    <x-jr.input label="Comissão do corretor (%)" name="form.broker_amount" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.broker_amount" required />
+                @else
+                    <x-jr.input label="Comissão do corretor (R$)" name="form.broker_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.broker_amount" required />
+                @endif
+            </div>
+            <div wire:key="process-office-amount-{{ $form['commission_mode'] }}">
+                @if ($form['commission_mode'] === 'percent')
+                    <x-jr.input label="Comissão do escritório (%)" name="form.office_amount" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.office_amount" required />
+                @else
+                    <x-jr.input label="Comissão do escritório (R$)" name="form.office_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.office_amount" required />
+                @endif
+            </div>
             <div class="rounded-xl bg-white p-3 text-sm text-mono-600">Escritório<strong class="mt-1 block text-mono-900">Mota e Silva Advogados</strong></div>
             <x-banking.category-picker :categories="$categories" model="form.category_id" id="process-category" label="Categoria da minha receita" />
         </div>
@@ -119,7 +137,7 @@ new class extends Component {
         @forelse ($expenses as $expense)
             <div wire:key="expense-choice-{{ $expense->id }}" class="grid items-center gap-3 border-t border-mono-100 pt-3 sm:grid-cols-[1fr_180px]">
                 <div class="text-sm"><strong>{{ $expense->description }}</strong><p class="text-mono-600">{{ $expense->date->format('d/m/Y') }} · Disponível: R$ {{ number_format($expense->remainingCents() / 100, 2, ',', '.') }}</p></div>
-                <x-jr.input label="Descontar (R$)" :name="'form.expenses.'.$expense->id" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.expenses.{{ $expense->id }}" />
+                <x-jr.input label="Descontar (R$)" :name="'form.expenses.'.$expense->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.expenses.{{ $expense->id }}" />
             </div>
         @empty<p class="text-sm text-mono-500">{{ $form['broker_id'] ? 'Nenhuma despesa disponível para este corretor.' : 'Selecione o corretor para consultar as despesas.' }}</p>@endforelse
     </section>
@@ -129,7 +147,7 @@ new class extends Component {
         @forelse ($advances as $advance)
             <div wire:key="advance-choice-{{ $advance->id }}" class="grid items-center gap-3 border-t border-mono-100 pt-3 sm:grid-cols-[1fr_180px]">
                 <div class="text-sm"><strong>Adiantamento de {{ $advance->date->format('d/m/Y') }}</strong><p class="text-mono-600">{{ $advance->notes }} · Disponível: R$ {{ number_format($advance->remainingBalance(), 2, ',', '.') }}</p></div>
-                <x-jr.input label="Compensar (R$)" :name="'form.advances.'.$advance->id" type="number" min="0" step="0.01" wire:model.live.debounce.300ms="form.advances.{{ $advance->id }}" />
+                <x-jr.input label="Compensar (R$)" :name="'form.advances.'.$advance->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.advances.{{ $advance->id }}" />
             </div>
         @empty<p class="text-sm text-mono-500">{{ $form['broker_id'] ? 'Nenhum adiantamento disponível para este corretor.' : 'Selecione o corretor para consultar os adiantamentos.' }}</p>@endforelse
     </section>

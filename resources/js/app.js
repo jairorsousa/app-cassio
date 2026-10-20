@@ -107,13 +107,11 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
-            const modelValue = mask.isTouched() && mask.getCents() === 0
-                ? ''
-                : (mask.isTouched() ? centsToModel(mask.getCents()) : null);
-
-            if (modelValue === null) {
+            if (!mask.isTouched()) {
                 return;
             }
+
+            const modelValue = centsToModel(mask.getCents());
 
             const current = wire.get(binding.expression);
             if (String(current ?? '') !== modelValue) {
