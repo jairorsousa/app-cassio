@@ -346,6 +346,9 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
+    #[\Livewire\Attributes\On('broker-process-expenses-updated')]
+    public function refreshProcessExpenses(): void {}
+
     public function with(BrokerBalanceCalculator $calc, BrokerStatementService $statementService): array
     {
         $advanceBalance = [
@@ -755,6 +758,9 @@ new #[Layout('layouts.app')] class extends Component
                     <span class="material-icons-outlined text-[18px]">percent</span>
                     Comissões
                 </button>
+                <button type="button" wire:click="$set('records_tab', 'process_expenses')" class="{{ $tab }} {{ $records_tab === 'process_expenses' ? $activeTab : $inactiveTab }}">
+                    <span class="material-icons-outlined text-[18px]">receipt_long</span>Despesas de processos
+                </button>
                 <button type="button" wire:click="$set('records_tab', 'payments')" class="{{ $tab }} {{ $records_tab === 'payments' ? $activeTab : $inactiveTab }}">
                     <span class="material-icons-outlined text-[18px]">payments</span>
                     Repasses
@@ -808,6 +814,8 @@ new #[Layout('layouts.app')] class extends Component
                     </table>
                 </div>
             @endif
+        @elseif ($records_tab === 'process_expenses')
+            @if ($financialBroker)<livewire:brokers.process-expenses :broker-id="$financialBroker->id" :key="'broker-expenses-'.$financialBroker->id" />@endif
         @elseif ($records_tab === 'advances')
             @if ($allAdvances->isEmpty())
                 <div class="flex min-h-24 items-center justify-center gap-sm rounded-lg bg-mono-50 px-sm py-md">

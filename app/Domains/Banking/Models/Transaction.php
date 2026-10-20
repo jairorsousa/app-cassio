@@ -5,6 +5,7 @@ namespace App\Domains\Banking\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
@@ -49,12 +50,17 @@ class Transaction extends Model
         return $this->hasMany(TransactionAllocation::class);
     }
 
+    public function processReceipt(): HasOne
+    {
+        return $this->hasOne(ProcessReceipt::class, 'receipt_id');
+    }
+
     public function destinations(): HasMany
     {
         return $this->hasMany(ReceiptDestination::class, 'receipt_id');
     }
 
-    public function destinationPayment(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function destinationPayment(): HasOne
     {
         return $this->hasOne(ReceiptDestinationPayment::class, 'transaction_id');
     }

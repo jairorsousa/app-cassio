@@ -64,6 +64,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $distributingId = null;
 
+    #[\Livewire\Attributes\Locked]
+    public ?int $deletingId = null;
+
     public function openDistribution(int $id): void
     {
         try {
@@ -132,6 +135,8 @@ new #[Layout('layouts.app')] class extends Component
     public bool $formAllocationEnabled = false;
 
     public bool $formDestinateAfterSave = false;
+    #[\Livewire\Attributes\Locked]
+    public bool $editingProcessReceipt = false;
 
     public array $formAllocationRows = [];
 
@@ -284,6 +289,8 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->resetForm();
         $this->editingId = $transaction->id;
+        $this->editingProcessReceipt = $transaction->processReceipt()->exists();
+        $this->formDestinateAfterSave = $this->editingProcessReceipt;
         $this->editingHasAllocations = $transaction->allocations_count > 0;
         $this->formAllocationEnabled = $this->editingHasAllocations;
         $this->formAllocationRows = $transaction->allocations->map(fn ($row) => [
@@ -446,6 +453,12 @@ new #[Layout('layouts.app')] class extends Component
             $this->formCreditCardId = null;
         }
 
+        if ($this->editingProcessReceipt) { $this->formDestinateAfterSave = true; }
+        if ($this->formType === 'income' && $this->formDestinateAfterSave) {
+            $this->formAllocationEnabled = false;
+            $this->formCategoryId = null;
+        }
+
         $data = $this->validate([
             'formType' => 'required|in:income,expense,transfer',
             'formDate' => 'required|date',
@@ -579,7 +592,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
-            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave',
+            'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave', 'editingProcessReceipt',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -588,13 +601,38 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetValidation();
     }
 
-    public function delete(int $id, TransactionService $service): void
+    public function delete(int $id): void
     {
+        $transaction = Transaction::with('destinationPayment')->findOrFail($id);
+        if ($transaction->isReadOnly() && ! ($transaction->destinationPayment && $transaction->source_type === \App\Domains\Banking\Models\ReceiptDestinationPayment::class)) {
+            session()->flash('error', 'Lançamento gerado por outro módulo é somente leitura.');
+            return;
+        }
+        $this->resetValidation('deletion');
+        $this->deletingId = $id;
+    }
+
+    public function cancelDeletion(): void
+    {
+        $this->deletingId = null;
+        $this->resetValidation('deletion');
+    }
+
+    public function confirmDeletion(TransactionService $service): void
+    {
+        if ($this->deletingId === null) {
+            return;
+        }
         try {
-            $service->delete(Transaction::findOrFail($id));
+            $service->deleteWithDestinations(Transaction::findOrFail($this->deletingId));
+            if ($this->distributingId === $this->deletingId) {
+                $this->distributingId = null;
+            }
+            $this->cancelDeletion();
+            $this->resetPage();
             session()->flash('status', 'Lançamento excluído.');
-        } catch (DomainException $e) {
-            session()->flash('error', $e->getMessage());
+        } catch (\DomainException $e) {
+            $this->addError('deletion', $e->getMessage());
         }
     }
 
@@ -604,7 +642,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
+        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -614,8 +652,9 @@ new #[Layout('layouts.app')] class extends Component
         }
         if ($this->category) {
             $q->where(function ($query) {
-                $query->where('category_id', $this->category)
-                    ->orWhereHas('allocations', fn ($allocations) => $allocations->where('category_id', $this->category));
+                $query->where(fn ($q) => $q->whereDoesntHave('processReceipt')->where('category_id', $this->category))
+                    ->orWhereHas('processReceipt', fn ($q) => $q->where('category_id', $this->category))
+                    ->orWhere(fn ($q) => $q->whereDoesntHave('processReceipt')->whereHas('allocations', fn ($allocations) => $allocations->where('category_id', $this->category)));
             });
         }
         if ($this->account) {
@@ -629,6 +668,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return [
+            'deletingTransaction' => $this->deletingId ? Transaction::withCount('destinations')->with('destinationPayment')->find($this->deletingId) : null,
             'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(25),
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
@@ -733,15 +773,16 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
                             @endif
-                            @if ($t->allocations->isNotEmpty())
+                            @if ($t->allocations->isNotEmpty() && ! $t->processReceipt)
                                 <x-fx.badge variant="neutral" class="ml-space-2">rateado</x-fx.badge>
                             @endif
                             @if ($t->status === 'pending')
                                 <x-fx.badge variant="warning" class="ml-space-2">pendente</x-fx.badge>
                             @endif
                             @if ($t->destinations->isNotEmpty())
+                                <x-fx.badge variant="neutral">Recebimento de processo</x-fx.badge>
                                 <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
-                                    <div>Sua parte: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
+                                    <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
                                     <div>Ainda a repassar: <strong>R$ {{ number_format($t->destinations->sum(fn ($part) => $part->remainingCents()) / 100, 2, ',', '.') }}</strong></div>
                                     <details><summary class="cursor-pointer text-primary-600">Ver beneficiários</summary>
                                         @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }} @if ($part->kind !== 'own') · {{ $part->remainingCents() === 0 ? 'Quitado' : 'Repasse pendente' }}@endif</p>@endforeach
@@ -750,7 +791,9 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                         </td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">
-                            @if ($t->allocations->isNotEmpty())
+                            @if ($t->processReceipt)
+                                {{ $t->processReceipt->category?->name ?? 'Sem categoria' }}<span class="block text-xs">Somente minha receita</span>
+                            @elseif ($t->allocations->isNotEmpty())
                                 <details>
                                     <summary class="cursor-pointer text-primary-600">{{ $t->allocations->count() }} categorias</summary>
                                     <div class="mt-2 space-y-1">
@@ -773,14 +816,17 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                             @unless ($t->isReadOnly())
                                 @if ($t->type === 'income' && $t->status === 'settled' && $t->bank_account_id)
-                                    <button type="button" wire:click="openDistribution({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->destinations->isNotEmpty() ? 'Ver destinação' : 'Destinar recebimento' }}</button>
+                                    <button type="button" wire:click="openDistribution({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->destinations->isNotEmpty() ? 'Ver recebimento de processo' : 'Recebimento de processo' }}</button>
                                 @endif
                                 <button type="button" wire:click="edit({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Editar</button>
-                                @if (in_array($t->type, ['income', 'expense'], true))
+                                @if (in_array($t->type, ['income', 'expense'], true) && ! $t->processReceipt)
                                     <button type="button" wire:click="openAllocation({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->allocations->isNotEmpty() ? 'Editar rateio' : 'Ratear' }}</button>
                                 @endif
-                                <button class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $t->id }})" wire:confirm="Excluir lançamento?">Excluir</button>
+                                <button type="button" class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $t->id }})">Excluir</button>
                             @endunless
+                            @if ($t->isReadOnly() && $t->source_type === \App\Domains\Banking\Models\ReceiptDestinationPayment::class && $t->destinationPayment)
+                                <button type="button" class="text-cryptex-red-400 hover:text-cryptex-red-500 font-medium text-fs-12 transition-colors" wire:click="delete({{ $t->id }})">Excluir</button>
+                            @endif
                         </td>
                     </tr>
                 @endforeach
@@ -788,6 +834,36 @@ new #[Layout('layouts.app')] class extends Component
             <div class="mt-space-4">{{ $transactions->links() }}</div>
         @endif
     </x-fx.card>
+
+    @if ($deletingTransaction)
+        <div class="fixed inset-0 z-modal flex items-center justify-center px-4 py-6" x-data @keydown.escape.window="$wire.cancelDeletion()">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelDeletion" aria-label="Cancelar exclusão"></button>
+            <div role="alertdialog" aria-modal="true" aria-labelledby="transaction-delete-title" aria-describedby="transaction-delete-description" x-trap.inert.noscroll="true" class="relative w-full max-w-lg rounded-2xl border border-mono-100 bg-white shadow-elevated">
+                <div class="flex items-center justify-between border-b border-mono-100 px-6 py-4">
+                    <h3 id="transaction-delete-title" class="text-lg font-bold text-mono-900">Excluir lançamento?</h3>
+                    <button type="button" wire:click="cancelDeletion" aria-label="Cancelar exclusão" class="text-mono-400"><span class="material-icons-outlined">close</span></button>
+                </div>
+                <div class="space-y-4 px-6 py-5 text-sm text-mono-600">
+                    <p class="rounded-xl bg-mono-50 p-3 text-mono-900"><strong>{{ $deletingTransaction->description }}</strong><br>R$ {{ number_format(abs((float) $deletingTransaction->amount), 2, ',', '.') }}</p>
+                    <div id="transaction-delete-description">
+                        @if ($deletingTransaction->destinations_count > 0)
+                            <p>Ao excluir este lançamento, todas as divisões vinculadas também serão excluídas, junto dos repasses e das comissões gerados exclusivamente por este recebimento.</p>
+                            <p class="mt-3">Comissões preexistentes e seus pagamentos, assim como saídas apenas vinculadas, serão preservados. As compensações das comissões excluídas serão desfeitas, preservando os adiantamentos originais. Os descontos de despesas serão liberados, mantendo as despesas originais disponíveis para recuperação.</p>
+                        @elseif ($deletingTransaction->destinationPayment)
+                            <p>O lançamento será excluído e seu pagamento será desfeito na divisão vinculada. O valor voltará a ficar pendente de repasse.</p>
+                        @else
+                            <p>Confirma a exclusão deste lançamento?</p>
+                        @endif
+                    </div>
+                    @error('deletion') <p class="font-medium text-error" role="alert">{{ $message }}</p> @enderror
+                </div>
+                <div class="flex flex-col-reverse justify-end gap-3 border-t border-mono-100 px-6 py-4 sm:flex-row">
+                    <button type="button" wire:click="cancelDeletion" class="h-11 rounded-pill bg-mono-100 px-5 text-sm font-semibold text-mono-900">Cancelar</button>
+                    <button type="button" wire:click="confirmDeletion" wire:loading.attr="disabled" wire:target="confirmDeletion" class="h-11 rounded-pill bg-error px-5 text-sm font-semibold text-white disabled:opacity-50">{{ $deletingTransaction->destinations_count > 0 ? 'Excluir lançamento e divisões' : 'Excluir lançamento' }}</button>
+                </div>
+            </div>
+        </div>
+    @endif
 
     @if ($distributingId)
         <livewire:banking.transactions.distribution :receipt-id="$distributingId" :key="'receipt-destination-'.$distributingId" />
@@ -990,6 +1066,14 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
                             </section>
 
+                            @if ($formType === 'income')
+                                <div class="rounded-xl bg-blue-50 p-4">
+                                    <label class="flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model.live="formDestinateAfterSave" @disabled($editingProcessReceipt) class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">Recebimento de processo</label>
+                                    <p class="mt-2 text-xs text-mono-600">Separe cliente e honorários, distribua as comissões e escolha os descontos do corretor após salvar. Disponível para valores já recebidos em conta.</p>
+                                    @if ($editingProcessReceipt)<p class="mt-2 text-xs text-mono-600">Para desmarcar, remova a divisão em Ver recebimento de processo.</p>@endif
+                                </div>
+                            @endif
+
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                     <span class="material-icons-outlined text-[20px] text-primary-500">account_balance_wallet</span>
@@ -997,7 +1081,7 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    @if (in_array($formType, ['income', 'expense'], true))
+                                    @if (in_array($formType, ['income', 'expense'], true) && ! ($formType === 'income' && $formDestinateAfterSave))
                                         @if (! $formIsCardRefund)
                                         <div class="md:col-span-2">
                                             <label class="inline-flex min-h-10 cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900">
@@ -1124,12 +1208,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <textarea id="formNotes" name="formNotes" wire:model="formNotes" class="w-full rounded-2xl border border-mono-200 bg-mono-white px-4 py-3 text-sm text-mono-900 placeholder:text-mono-300 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]" rows="3" placeholder="Informações adicionais sobre o lançamento"></textarea>
                                 @error('formNotes') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                             </section>
-                            @if ($formType === 'income')
-                                <div class="rounded-xl bg-blue-50 p-4">
-                                    <label class="flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model="formDestinateAfterSave" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">Definir destinação após salvar</label>
-                                    <p class="mt-2 text-xs text-mono-600">Para receitas já recebidas em conta: separe cliente, corretor, escritório e sua parte. A divisão abrirá após o cadastro.</p>
-                                </div>
-                            @endif
+
                         </div>
                     </div>
 

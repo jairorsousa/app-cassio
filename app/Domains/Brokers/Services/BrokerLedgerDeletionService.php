@@ -2,6 +2,7 @@
 
 namespace App\Domains\Brokers\Services;
 
+use App\Domains\Banking\Models\ReceiptDestination;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Brokers\Models\Broker;
@@ -15,8 +16,7 @@ class BrokerLedgerDeletionService
     public function __construct(
         private TransactionService $transactions,
         private BrokerCommissionService $commissions,
-    ) {
-    }
+    ) {}
 
     /**
      * Exclui um adiantamento, desfaz compensações e remove a despesa no Banking.
@@ -26,6 +26,9 @@ class BrokerLedgerDeletionService
         DB::transaction(function () use ($advance) {
             $advance = BrokerAdvance::with('settlements')->lockForUpdate()->findOrFail($advance->id);
 
+            if ($advance->settlements()->whereHas('commission', fn ($q) => $q->where('manual_advances', true))->exists()) {
+                throw new \DomainException('Desfaça a compensação no recebimento de processo antes de alterar ou excluir este adiantamento.');
+            }
             $affectedCommissionIds = $advance->settlements()->pluck('commission_id')->unique()->all();
 
             // Settlements cascateiam no FK, mas removemos explicitamente para
@@ -73,8 +76,8 @@ class BrokerLedgerDeletionService
      */
     public function deleteCommission(BrokerCommission $commission): void
     {
-        if (\App\Domains\Banking\Models\ReceiptDestination::where('commission_id', $commission->id)->exists()) {
-            throw new \DomainException('Remova o vínculo na destinação do recebimento antes de excluir esta comissão.');
+        if (ReceiptDestination::where('commission_id', $commission->id)->exists()) {
+            throw new \DomainException('Remova o vínculo na divisão do recebimento antes de excluir esta comissão.');
         }
         DB::transaction(function () use ($commission) {
             $commission = BrokerCommission::with('payments.transaction', 'settlements')

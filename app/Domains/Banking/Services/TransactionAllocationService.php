@@ -54,6 +54,7 @@ class TransactionAllocationService
             $row['amount'] = intdiv($parts[$index], 100).'.'.str_pad((string) ($parts[$index] % 100), 2, '0', STR_PAD_LEFT);
         }
         unset($row);
+
         return $rows;
     }
 
@@ -85,6 +86,7 @@ class TransactionAllocationService
             $row['percentage'] = intdiv($parts[$index], 100).'.'.str_pad((string) ($parts[$index] % 100), 2, '0', STR_PAD_LEFT);
         }
         unset($row);
+
         return $rows;
     }
 
@@ -93,6 +95,10 @@ class TransactionAllocationService
     {
         DB::transaction(function () use ($transaction, $rows) {
             $transaction = Transaction::query()->lockForUpdate()->findOrFail($transaction->id);
+
+            if ($transaction->processReceipt()->exists()) {
+                throw new \DomainException('Categorize somente sua receita na divisão do recebimento de processo.');
+            }
 
             if ($transaction->isReadOnly() || ! in_array($transaction->type, ['income', 'expense'], true)) {
                 throw new \DomainException('Este lançamento não pode ser rateado.');

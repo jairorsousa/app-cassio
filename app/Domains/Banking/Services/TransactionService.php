@@ -2,6 +2,7 @@
 
 namespace App\Domains\Banking\Services;
 
+use App\Domains\Banking\Models\ReceiptDestinationPayment;
 use App\Domains\Banking\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 
@@ -19,12 +20,12 @@ class TransactionService
     public function update(Transaction $transaction, array $data): Transaction
     {
         if ($transaction->destinationPayment()->exists()) {
-            throw new \DomainException('Desvincule este pagamento da destinação antes de alterar o lançamento.');
+            throw new \DomainException('Desvincule este pagamento da divisão do recebimento antes de alterar o lançamento.');
         }
         if ($transaction->destinations()->exists()) {
             foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {
                 if (array_key_exists($field, $data) && (string) $data[$field] !== (string) $transaction->$field && ($field !== 'amount' || round((float) $data[$field] * 100) !== round((float) $transaction->$field * 100))) {
-                    throw new \DomainException('Remova a destinação antes de alterar o valor, o tipo, a conta ou o status do recebimento.');
+                    throw new \DomainException('Remova a divisão do recebimento antes de alterar o valor, o tipo, a conta ou o status do recebimento.');
                 }
             }
         }
@@ -63,7 +64,7 @@ class TransactionService
     public function delete(Transaction $transaction): void
     {
         if ($transaction->destinations()->exists() || $transaction->destinationPayment()->exists()) {
-            throw new \DomainException('Remova a destinação ou desvincule o repasse antes de excluir este lançamento.');
+            throw new \DomainException('Remova a divisão do recebimento ou desvincule o repasse antes de excluir este lançamento.');
         }
         if ($transaction->isReadOnly()) {
             throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
@@ -81,6 +82,33 @@ class TransactionService
             }
 
             $transaction->delete();
+        });
+    }
+
+    /** Explicitly confirmed deletion from the financial transaction list. */
+    public function deleteWithDestinations(Transaction $transaction): void
+    {
+        DB::transaction(function () use ($transaction) {
+            $transaction = Transaction::lockForUpdate()->findOrFail($transaction->id);
+            $payment = $transaction->destinationPayment()->lockForUpdate()->first();
+
+            if ($transaction->isReadOnly() && ! ($payment && $transaction->source_type === ReceiptDestinationPayment::class)) {
+                throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
+            }
+
+            $destinations = app(ReceiptDestinationService::class);
+            if ($payment) {
+                $destinations->undo($payment);
+            }
+            if ($transaction->destinations()->exists()) {
+                $destinations->removeForReceiptDeletion($transaction);
+            }
+
+            // Undoing a generated repasse may already have removed this transaction.
+            $remaining = Transaction::find($transaction->id);
+            if ($remaining) {
+                $this->delete($remaining);
+            }
         });
     }
 

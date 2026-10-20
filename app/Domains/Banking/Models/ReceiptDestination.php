@@ -3,6 +3,7 @@
 namespace App\Domains\Banking\Models;
 
 use App\Domains\Brokers\Models\BrokerCommission;
+use App\Domains\Brokers\Models\ProcessExpenseRecovery;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -28,6 +29,16 @@ class ReceiptDestination extends Model
         return $this->hasMany(ReceiptDestinationPayment::class, 'destination_id');
     }
 
+    public function recoveries(): HasMany
+    {
+        return $this->hasMany(ProcessExpenseRecovery::class, 'destination_id');
+    }
+
+    public function recoveredCents(): int
+    {
+        return (int) round((float) $this->recoveries->sum('amount') * 100);
+    }
+
     public function paidCents(): int
     {
         if ($this->kind === 'own') {
@@ -35,9 +46,11 @@ class ReceiptDestination extends Model
         }
         if ($this->commission_id) {
             $commission = $this->commission;
+
             return $commission ? (int) round(($commission->paidAmount() + $commission->settledAmount()) * 100) : 0;
         }
-        return $this->payments->sum(fn ($payment) => (int) round((float) $payment->transaction?->amount * 100));
+
+        return $this->recoveredCents() + $this->payments->sum(fn ($payment) => (int) round((float) $payment->transaction?->amount * 100));
     }
 
     public function remainingCents(): int

@@ -19,7 +19,7 @@ class ReceiptDestinationService
     public function eligible(Transaction $receipt): void
     {
         if ($receipt->type !== 'income' || $receipt->status !== 'settled' || ! $receipt->bank_account_id || $receipt->isReadOnly() || $receipt->trashed()) {
-            throw new \DomainException('Selecione uma receita recebida em conta bancária para definir a destinação.');
+            throw new \DomainException('Selecione uma receita recebida em conta bancária para definir a divisão do recebimento.');
         }
     }
 
@@ -33,6 +33,7 @@ class ReceiptDestinationService
         if (! $allowZero && $cents <= 0) {
             throw new \DomainException('Cada repasse deve ter valor maior que zero.');
         }
+
         return $cents;
     }
 
@@ -41,9 +42,9 @@ class ReceiptDestinationService
         return intdiv($cents, 100).'.'.str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 
-    public function replace(Transaction $receipt, array $rows): void
+    public function replace(Transaction $receipt, array $rows, bool $automaticAdvances = true): void
     {
-        DB::transaction(function () use ($receipt, $rows) {
+        DB::transaction(function () use ($receipt, $rows, $automaticAdvances) {
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $this->eligible($receipt);
             if (count($rows) < 2 || count($rows) > 20) {
@@ -52,9 +53,9 @@ class ReceiptDestinationService
             $sum = $own = 0;
             foreach ($rows as $row) {
                 if (! in_array($row['kind'] ?? '', ['client', 'broker', 'office', 'own'], true)) {
-                    throw new \DomainException('Selecione uma destinação válida para cada parte.');
+                    throw new \DomainException('Selecione uma divisão do recebimento válida para cada parte.');
                 }
-                $sum += $this->cents((string) ($row['amount'] ?? ''), $row['kind'] === 'own');
+                $sum += $this->cents((string) ($row['amount'] ?? ''), $row['kind'] === 'own' || (! $automaticAdvances && $row['kind'] === 'client'));
                 $own += $row['kind'] === 'own' ? 1 : 0;
                 if ($row['kind'] !== 'broker' && $row['kind'] !== 'own' && trim($row['beneficiary'] ?? '') === '') {
                     throw new \DomainException('Informe o nome do cliente ou escritório beneficiário.');
@@ -66,7 +67,7 @@ class ReceiptDestinationService
             $old = $receipt->destinations()->with('commission', 'payments.transaction')->get();
             $this->guardCommissionPayments($old);
             if ($old->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty())) {
-                throw new \DomainException('Desfaça os repasses ou compensações antes de alterar a destinação.');
+                throw new \DomainException('Desfaça os repasses ou compensações antes de alterar a divisão do recebimento.');
             }
             // Valida e bloqueia comissões existentes antes de desfazer a divisão anterior.
             $commissionIds = [];
@@ -93,6 +94,7 @@ class ReceiptDestinationService
                 }
             }
             $receipt->destinations()->delete();
+            $receipt->processReceipt()->delete();
             foreach ($old->where('commission_created', true) as $part) {
                 if (! in_array($part->commission_id, $commissionIds, true)) {
                     app(BrokerLedgerDeletionService::class)->deleteCommission($part->commission);
@@ -113,9 +115,12 @@ class ReceiptDestinationService
                             'broker_id' => $broker->id, 'case_type_id' => $row['case_type_id'],
                             'commission_amount' => (float) $row['amount'], 'reference_date' => $receipt->date->format('Y-m-d'),
                             'name' => mb_substr($receipt->description, 0, 200), 'bank_account_id' => $receipt->bank_account_id,
-                            'notes' => 'Destinação do recebimento #'.$receipt->id,
+                            'notes' => 'Recebimento de processo #'.$receipt->id,
                         ]);
-                        app(BrokerCommissionService::class)->settleWithAdvances($commission);
+                        $commission->update(['manual_advances' => ! $automaticAdvances]);
+                        if ($automaticAdvances) {
+                            app(BrokerCommissionService::class)->settleWithAdvances($commission);
+                        }
                         $created = true;
                     }
                 }
@@ -136,13 +141,53 @@ class ReceiptDestinationService
             $parts = $receipt->destinations()->with('commission', 'payments.transaction')->get();
             $this->guardCommissionPayments($parts);
             if ($parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty())) {
-                throw new \DomainException('Desfaça os repasses ou compensações antes de remover a destinação.');
+                throw new \DomainException('Desfaça os repasses ou compensações antes de remover a divisão do recebimento.');
             }
             $receipt->destinations()->delete();
+            $receipt->processReceipt()->delete();
             foreach ($parts->where('commission_created', true) as $part) {
                 app(BrokerLedgerDeletionService::class)->deleteCommission($part->commission);
             }
             $receipt->touch();
+        });
+    }
+
+    /** Remove the receipt's dependent records as part of a confirmed transaction deletion. */
+    public function removeForReceiptDeletion(Transaction $receipt): void
+    {
+        DB::transaction(function () use ($receipt) {
+            $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
+            $parts = $receipt->destinations()->lockForUpdate()->get();
+            $ledger = app(BrokerLedgerDeletionService::class);
+
+            $receipt->processReceipt()->delete();
+            foreach ($parts as $part) {
+                $commission = $part->commission_id
+                    ? BrokerCommission::lockForUpdate()->findOrFail($part->commission_id)
+                    : null;
+
+                if ($commission && $part->commission_created) {
+                    // This also preserves imported expenses which were only linked to a payment.
+                    foreach ($commission->payments()->lockForUpdate()->get() as $payment) {
+                        $ledger->deletePayment($payment);
+                    }
+                }
+
+                foreach ($part->payments()->with('transaction')->lockForUpdate()->get() as $payment) {
+                    $transaction = $payment->transaction;
+                    $created = $payment->transaction_created;
+                    $payment->delete();
+                    if ($created && $transaction) {
+                        app(TransactionService::class)->deleteGenerated($transaction);
+                    }
+                }
+
+                $part->delete();
+                if ($commission && $part->commission_created) {
+                    // The commission's advance offsets are released; the advances themselves remain.
+                    $ledger->deleteCommission($commission);
+                }
+            }
         });
     }
 
@@ -180,7 +225,7 @@ class ReceiptDestinationService
                         'broker_id' => $part->commission->broker_id, 'commission_id' => $part->commission_id,
                         'paid_at' => $transaction->date, 'amount' => $transaction->amount,
                         'bank_account_id' => $accountId, 'transaction_id' => $transaction->id,
-                        'notes' => 'Saída vinculada pela destinação do recebimento #'.$part->receipt_id,
+                        'notes' => 'Saída vinculada pela divisão do recebimento #'.$part->receipt_id,
                     ]);
                     $part->payments()->create(['transaction_id' => $transaction->id, 'transaction_created' => false]);
                     app(BrokerCommissionService::class)->syncStatus($part->commission);
@@ -207,7 +252,7 @@ class ReceiptDestinationService
         foreach ($parts->whereNotNull('commission_id') as $part) {
             $commission = BrokerCommission::lockForUpdate()->findOrFail($part->commission_id);
             if ($commission->payments()->lockForUpdate()->exists() || $commission->settlements()->lockForUpdate()->exists()) {
-                throw new \DomainException('Desfaça os repasses ou compensações antes de alterar a destinação.');
+                throw new \DomainException('Desfaça os repasses ou compensações antes de alterar a divisão do recebimento.');
             }
         }
     }
@@ -221,6 +266,7 @@ class ReceiptDestinationService
                 $brokerPayment = BrokerCommissionPayment::where('commission_id', $payment->destination->commission_id)->where('transaction_id', $payment->transaction_id)->firstOrFail();
                 app(BrokerLedgerDeletionService::class)->deletePayment($brokerPayment);
                 $receipt->touch();
+
                 return;
             }
             $transaction = $payment->transaction;

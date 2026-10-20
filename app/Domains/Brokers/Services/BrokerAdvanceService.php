@@ -72,6 +72,9 @@ class BrokerAdvanceService
             $advance = BrokerAdvance::with('broker', 'transaction', 'settlements')
                 ->lockForUpdate()
                 ->findOrFail($advance->id);
+            if ($advance->settlements()->whereHas('commission', fn ($q) => $q->where('manual_advances', true))->exists()) {
+                throw new \DomainException('Desfaça a compensação no recebimento de processo antes de alterar ou excluir este adiantamento.');
+            }
             $amount = round((float) $data['amount'], 2);
 
             if ($amount <= 0) {

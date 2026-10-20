@@ -27,12 +27,22 @@ new #[Layout('layouts.app')] class extends Component {
             $start = Carbon::createFromFormat('Y-m-d', $month.'-01')->startOfMonth();
             $end = (clone $start)->endOfMonth();
 
-            $byCategory = Transaction::with(['category', 'allocations.category'])
+            $byCategory = Transaction::with(['category', 'allocations.category', 'processReceipt.category', 'destinations.recoveries'])
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereIn('type', ['income', 'expense', 'invoice_payment'])
                 ->get()
-                ->flatMap(fn ($transaction) => $transaction->allocations->isNotEmpty()
+                ->flatMap(function ($transaction) {
+                    if ($transaction->processReceipt) {
+                        $own = (float) $transaction->destinations->where('kind', 'own')->sum('amount');
+                        $recovered = $transaction->destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
+                        return [
+                            ['category' => $transaction->processReceipt->category?->name ?? '— sem categoria —', 'type' => 'income', 'amount' => $own],
+                            ['category' => 'Valores para repasse', 'type' => 'income', 'amount' => (float) $transaction->amount - $own - $recovered],
+                            ['category' => 'Recuperação de despesas', 'type' => 'income', 'amount' => $recovered],
+                        ];
+                    }
+                    return $transaction->allocations->isNotEmpty()
                     ? $transaction->allocations->map(fn ($allocation) => [
                         'category' => $allocation->category?->name ?? '— sem categoria —',
                         'type' => $transaction->type,
@@ -42,7 +52,8 @@ new #[Layout('layouts.app')] class extends Component {
                         'category' => $transaction->category?->name ?? '— sem categoria —',
                         'type' => $transaction->type,
                         'amount' => (float) $transaction->amount,
-                    ]])
+                    ]];
+                })
                 ->groupBy('category')
                 ->map(fn ($group) => [
                     'income' => $group->where('type', 'income')->sum('amount'),
@@ -68,12 +79,13 @@ new #[Layout('layouts.app')] class extends Component {
             return compact('byCategory', 'byAccount', 'totalIncome', 'totalExpense');
         });
 
-        $destinations = ReceiptDestination::with('commission', 'payments.transaction')->whereHas('receipt', fn ($q) => $q->where('type', 'income')->where('status', 'settled')->whereBetween('date', [Carbon::parse($month.'-01')->startOfMonth(), Carbon::parse($month.'-01')->endOfMonth()]))->get();
-        $thirdPartyIncome = $destinations->where('kind', '!=', 'own')->sum('amount');
-        $ownIncome = round($data['totalIncome'] - $thirdPartyIncome, 2);
+        $destinations = ReceiptDestination::with('commission', 'payments.transaction', 'recoveries')->whereHas('receipt', fn ($q) => $q->where('type', 'income')->where('status', 'settled')->whereBetween('date', [Carbon::parse($month.'-01')->startOfMonth(), Carbon::parse($month.'-01')->endOfMonth()]))->get();
+        $recoveredExpenses = $destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
+        $thirdPartyIncome = $destinations->where('kind', '!=', 'own')->sum('amount') - $recoveredExpenses;
+        $ownIncome = round($data['totalIncome'] - $thirdPartyIncome - $recoveredExpenses, 2);
         $pendingRepasses = $destinations->sum(fn ($part) => $part->remainingCents()) / 100;
 
-        return $data + compact('thirdPartyIncome', 'ownIncome', 'pendingRepasses') + ['result' => $data['totalIncome'] - $data['totalExpense']];
+        return $data + compact('thirdPartyIncome', 'ownIncome', 'pendingRepasses', 'recoveredExpenses') + ['result' => $data['totalIncome'] - $data['totalExpense']];
     }
 }; ?>
 
@@ -105,13 +117,14 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     <x-fx.card>
-        <h3 class="text-md font-semibold mb-sm">Destinação dos recebimentos do mês</h3>
+        <h3 class="text-md font-semibold mb-sm">Recebimentos de processo do mês</h3>
         <div class="grid gap-4 md:grid-cols-3 text-sm">
             <div>Receitas após separar terceiros<strong class="mt-1 block text-lg text-system-up">R$ {{ number_format($ownIncome, 2, ',', '.') }}</strong></div>
-            <div>Destinado a clientes, corretores e escritórios<strong class="mt-1 block text-lg">R$ {{ number_format($thirdPartyIncome, 2, ',', '.') }}</strong></div>
+            <div>Valores de clientes, corretores e escritórios<strong class="mt-1 block text-lg">R$ {{ number_format($thirdPartyIncome, 2, ',', '.') }}</strong></div>
+            <div>Despesas recuperadas<strong class="mt-1 block text-lg">R$ {{ number_format($recoveredExpenses, 2, ',', '.') }}</strong></div>
             <div>Ainda a repassar destes recebimentos<strong class="mt-1 block text-lg">R$ {{ number_format($pendingRepasses, 2, ',', '.') }}</strong></div>
         </div>
-        <p class="mt-3 text-xs text-mono-600">Recebimentos sem destinação são considerados receitas próprias. O resultado de caixa acima acompanha entradas e saídas efetivas.</p>
+        <p class="mt-3 text-xs text-mono-600">Entradas não identificadas como recebimento de processo são considerados receitas próprias. O resultado de caixa acima acompanha entradas e saídas efetivas.</p>
     </x-fx.card>
 
     <x-fx.card>

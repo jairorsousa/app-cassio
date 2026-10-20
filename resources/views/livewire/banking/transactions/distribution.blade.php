@@ -89,6 +89,24 @@ new class extends Component {
         $this->dispatch('receipt-destination-updated');
     }
 
+    #[\Livewire\Attributes\On('process-receipt-saved')]
+    public function processSaved(int $receiptId): void
+    {
+        if ($receiptId === $this->receiptId) { $this->loadRows(); $this->resetValidation(); }
+    }
+
+    public function undoRecovery(int $id, \App\Domains\Banking\Services\ProcessReceiptService $service): void
+    {
+        $service->undoRecovery($this->receipt(), $id);
+        $this->dispatch('receipt-destination-updated');
+    }
+
+    public function undoAdvance(int $id, \App\Domains\Banking\Services\ProcessReceiptService $service): void
+    {
+        $service->undoAdvance($this->receipt(), $id);
+        $this->dispatch('receipt-destination-updated');
+    }
+
     public function clear(ReceiptDestinationService $service): void
     {
         try { $service->clear($this->receipt()); }
@@ -157,9 +175,11 @@ new class extends Component {
     public function with(): array
     {
         $receipt = $this->receipt();
-        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker')->get();
+        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.settlements.advance', 'recoveries.expense')->get();
         return [
             'receipt' => $receipt, 'parts' => $parts,
+            'processReceipt' => $receipt->processReceipt,
+            'recoveredAmount' => $parts->sum(fn ($part) => $part->recoveredCents()) / 100,
             'canEdit' => ! $parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty()),
             'ownAmount' => $parts->where('kind', 'own')->sum('amount'),
             'reservedAmount' => $parts->sum(fn ($part) => $part->remainingCents()) / 100,
@@ -174,10 +194,10 @@ new class extends Component {
 }; ?>
 
 <div class="fixed inset-0 z-modal flex items-center justify-center px-4 py-6" x-data @keydown.escape.window="$wire.close()">
-    <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="close" aria-label="Fechar destinação"></button>
+    <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="close" aria-label="Fechar recebimento"></button>
     <div role="dialog" aria-modal="true" aria-labelledby="receipt-destination-title" x-trap.inert.noscroll="true" class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-elevated">
         <div class="flex items-center justify-between border-b border-mono-100 px-6 py-4">
-            <h3 id="receipt-destination-title" class="text-lg font-bold text-mono-900">Destinação do recebimento</h3>
+            <h3 id="receipt-destination-title" class="text-lg font-bold text-mono-900">Recebimento de processo</h3>
             <button type="button" wire:click="close" aria-label="Fechar"><span class="material-icons-outlined text-mono-400">close</span></button>
         </div>
         <div class="space-y-5 overflow-y-auto px-6 py-5">
@@ -187,71 +207,35 @@ new class extends Component {
             </div>
             @error('division') <p class="text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
             @if ($editing)
-                <p class="text-sm text-mono-600">Defina de quem é cada parte. Separar o valor não gera saída da conta: os repasses serão registrados quando forem pagos.</p>
-                <form wire:submit="save" class="space-y-3">
-                    @foreach ($rows as $index => $row)
-                        <div wire:key="destination-row-{{ $row['key'] }}-{{ $index }}" class="space-y-3 rounded-xl border border-mono-100 bg-mono-50 p-4">
-                            <div class="grid grid-cols-1 items-end gap-3 md:grid-cols-[180px_1fr_160px_36px]">
-                                <div><label class="mb-2 block text-sm text-mono-600" for="destination-kind-{{ $index }}">Destinação</label>
-                                    <select id="destination-kind-{{ $index }}" wire:model.live="rows.{{ $index }}.kind" class="h-12 w-full rounded-xl border-mono-200 text-sm">
-                                        @foreach (['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha parte'] as $kind => $name)<option value="{{ $kind }}">{{ $name }}</option>@endforeach
-                                    </select>
-                                </div>
-                                @if ($row['kind'] === 'broker')
-                                    <div><label class="mb-2 block text-sm text-mono-600" for="destination-broker-{{ $index }}">Corretor cadastrado *</label>
-                                        <select id="destination-broker-{{ $index }}" wire:model.live="rows.{{ $index }}.broker_id" class="h-12 w-full rounded-xl border-mono-200 text-sm">
-                                            <option value="">Selecionar corretor</option>@foreach ($brokers as $broker)<option value="{{ $broker->id }}">{{ $broker->name }}</option>@endforeach
-                                        </select>
-                                    </div>
-                                @elseif ($row['kind'] === 'own')
-                                    <p class="flex h-12 items-center text-sm text-mono-600">Valor que pertence a você</p>
-                                @else
-                                    <x-jr.input :label="$row['kind'] === 'client' ? 'Nome do cliente *' : 'Nome do escritório *'" :name="'rows.'.$index.'.beneficiary'" wire:model="rows.{{ $index }}.beneficiary" maxlength="200" required />
-                                @endif
-                                <x-jr.input label="Valor (R$) *" :name="'rows.'.$index.'.amount'" type="number" min="{{ $row['kind'] === 'own' ? '0' : '0.01' }}" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="rows.{{ $index }}.amount" required />
-                                <button type="button" wire:click="removeRow({{ $index }})" @disabled($row['kind'] === 'own' || count($rows) <= 2) aria-label="Remover parte {{ $index + 1 }}" class="h-12 text-mono-400 disabled:opacity-30"><span class="material-icons-outlined">close</span></button>
-                            </div>
-                            @if ($row['kind'] === 'broker')
-                                <div class="grid gap-3 md:grid-cols-2">
-                                    <div><label class="mb-2 block text-sm text-mono-600" for="destination-commission-{{ $index }}">Comissão</label>
-                                        <select id="destination-commission-{{ $index }}" wire:model.live="rows.{{ $index }}.commission_id" class="h-12 w-full rounded-xl border-mono-200 text-sm">
-                                            <option value="">Criar comissão pelo valor desta parte</option>
-                                            @foreach ($commissions->where('broker_id', $row['broker_id']) as $commission)<option value="{{ $commission->id }}">#{{ $commission->id }} {{ $commission->name }} · R$ {{ number_format((float) $commission->commission_amount, 2, ',', '.') }}</option>@endforeach
-                                        </select>
-                                    </div>
-                                    @if (empty($row['commission_id']))
-                                        <div><label class="mb-2 block text-sm text-mono-600" for="destination-case-{{ $index }}">Tipo de caso *</label>
-                                            <select id="destination-case-{{ $index }}" wire:model="rows.{{ $index }}.case_type_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar</option>@foreach ($caseTypes as $caseType)<option value="{{ $caseType->id }}">{{ $caseType->name }}</option>@endforeach</select>
-                                        </div>
-                                    @endif
-                                </div>
-                            @endif
-                        </div>
-                    @endforeach
-                    @foreach ($errors->getMessages() as $field => $messages)
-                        @if (str_starts_with($field, 'rows'))<p class="text-sm text-error" role="alert">{{ $messages[0] }}</p>@endif
-                    @endforeach
-                    <button type="button" wire:click="addRow" @disabled(count($rows) >= 20) class="text-sm font-semibold text-primary-600 disabled:opacity-50">+ Adicionar beneficiário</button>
-                    @php $remaining = (float) $receipt->amount - collect($rows)->sum(fn ($row) => is_numeric($row['amount'] ?? '') ? (float) $row['amount'] : 0); @endphp
-                    <p class="text-sm {{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">{{ $remaining < -0.005 ? 'Excedente' : 'Restante' }}: <strong>R$ {{ number_format(abs($remaining), 2, ',', '.') }}</strong></p>
-                    <button type="submit" wire:loading.attr="disabled" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white disabled:opacity-50">Salvar destinação</button>
-                </form>
+                <livewire:banking.transactions.process-receipt-form :receipt-id="$receiptId" :key="'process-form-'.$receiptId" />
             @else
+                @if ($processReceipt)
+                    <div class="rounded-xl bg-mono-50 p-4 text-sm text-mono-900">
+                        <p>Corretor: <strong>{{ $processReceipt->broker->name }}</strong></p>
+                        <p>Honorários: <strong>R$ {{ number_format((float) $processReceipt->fees_amount, 2, ',', '.') }}</strong> · Cliente bruto: <strong>R$ {{ number_format((float) $receipt->amount - (float) $processReceipt->fees_amount, 2, ',', '.') }}</strong></p>
+                        <p>Despesas recuperadas: <strong>R$ {{ number_format($recoveredAmount, 2, ',', '.') }}</strong></p>
+                        <p>Categoria da minha receita: <strong>{{ $processReceipt->category?->name ?? 'Sem categoria' }}</strong></p>
+                    </div>
+                @endif
                 <div class="grid gap-3 md:grid-cols-3">
-                    <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Sua parte neste recebimento<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Minha receita<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
                     <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Ainda a repassar<strong class="mt-1 block text-xl">R$ {{ number_format($reservedAmount, 2, ',', '.') }}</strong></div>
-                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Repassado ou compensado<strong class="mt-1 block text-xl">R$ {{ number_format($parts->sum(fn ($part) => $part->paidCents()) / 100, 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">Repassado, compensado ou recuperado<strong class="mt-1 block text-xl">R$ {{ number_format($parts->sum(fn ($part) => $part->paidCents()) / 100, 2, ',', '.') }}</strong></div>
                 </div>
                 @foreach ($parts as $part)
                     <div class="space-y-3 rounded-xl border border-mono-100 p-4">
                         <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-                            <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha parte'][$part->kind] }} · {{ $part->beneficiary }}</strong>
+                            <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha receita'][$part->kind] }}@if ($part->kind !== 'own') · {{ $part->beneficiary }}@endif</strong>
                                 <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }} @if ($part->kind !== 'own') · Pendente: R$ {{ number_format($part->remainingCents() / 100, 2, ',', '.') }}@endif</p>
-                                @if ($part->commission)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
+                                @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Repasse líquido ao cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
+                                @if ($part->commission?->broker?->contact_id)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker->contact_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
                             </div>
                             @if ($part->remainingCents() > 0)<button type="button" wire:click="startPayment({{ $part->id }})" class="h-10 rounded-pill bg-primary-50 px-4 font-semibold text-primary-600">Registrar repasse</button>
                             @elseif ($part->kind !== 'own')<span class="font-semibold text-green-600">Quitado</span>@endif
                         </div>
+                        @foreach ($part->recoveries as $recovery)
+                            <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Despesa recuperada · {{ $recovery->expense->description }} · R$ {{ number_format((float) $recovery->amount, 2, ',', '.') }}</span><button type="button" wire:click="undoRecovery({{ $recovery->id }})" wire:confirm="Desfazer este desconto? O valor voltará ao saldo do cliente e ficará disponível para recuperação." class="text-error">Desfazer desconto</button></div>
+                        @endforeach
                         @foreach ($part->kind === 'broker' ? collect() : $part->payments as $payment)
                             <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600">
                                 <span>{{ $payment->transaction?->date->format('d/m/Y') }} · R$ {{ number_format((float) $payment->transaction?->amount, 2, ',', '.') }} · {{ $payment->transaction_created ? 'Repasse registrado' : 'Saída vinculada' }}</span>
@@ -262,13 +246,15 @@ new class extends Component {
                             @foreach ($part->commission->payments as $payment)
                                 <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>{{ $payment->paid_at->format('d/m/Y') }} · R$ {{ number_format((float) $payment->amount, 2, ',', '.') }} · {{ $payment->transaction?->destinationPayment ? 'Saída vinculada ao corretor' : 'Repasse ao corretor' }}</span><button type="button" wire:click="undoBrokerPayment({{ $payment->id }})" wire:confirm="{{ $payment->transaction?->destinationPayment ? 'Desvincular este repasse? A saída original será preservada.' : 'Desfazer o repasse ao corretor e remover a saída registrada?' }}" class="text-error">{{ $payment->transaction?->destinationPayment ? 'Desvincular' : 'Desfazer repasse' }}</button></div>
                             @endforeach
-                            @if ($part->commission->settledAmount() > 0)<p class="text-xs text-mono-600">Compensado por adiantamentos: R$ {{ number_format($part->commission->settledAmount(), 2, ',', '.') }}. As compensações são gerenciadas no cadastro do corretor.</p>@endif
+                            @foreach ($part->commission->settlements as $settlement)
+                                <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Adiantamento compensado · {{ $settlement->advance?->date->format('d/m/Y') }} · R$ {{ number_format((float) $settlement->amount_offset, 2, ',', '.') }}</span><button type="button" wire:click="undoAdvance({{ $settlement->id }})" wire:confirm="Desfazer esta compensação e reabrir o saldo da comissão?" class="text-error">Desfazer compensação</button></div>
+                            @endforeach
                         @endif
                     </div>
                 @endforeach
                 @if ($canEdit)
-                    <div class="flex flex-wrap gap-4"><button type="button" wire:click="editDivision" class="text-sm font-semibold text-primary-600">Editar divisão</button><button type="button" wire:click="clear" wire:confirm="Remover esta destinação? Comissões criadas por ela e ainda sem repasses também serão removidas." class="text-sm text-error">Remover destinação</button></div>
-                @else<p class="text-xs text-mono-600">A divisão fica protegida enquanto houver repasses ou compensações. Desfaça-os antes de alterar os beneficiários ou valores.</p>@endif
+                    <div class="flex flex-wrap gap-4"><button type="button" wire:click="editDivision" class="text-sm font-semibold text-primary-600">Editar divisão</button><button type="button" wire:click="clear" wire:confirm="Remover a divisão deste recebimento? Comissões criadas por ela e ainda sem repasses também serão removidas." class="text-sm text-error">Remover divisão</button></div>
+                @else<p class="text-xs text-mono-600">A divisão fica protegida enquanto houver repasses, compensações ou descontos de despesas. Desfaça-os antes de alterar os beneficiários ou valores.</p>@endif
             @endif
             @if ($payPart)
                 <form wire:submit="pay" class="space-y-4 rounded-xl border border-primary-100 bg-primary-50 p-4">

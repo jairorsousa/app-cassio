@@ -2,6 +2,7 @@
 
 namespace App\Domains\Brokers\Services;
 
+use App\Domains\Banking\Models\ReceiptDestination;
 use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
@@ -84,11 +85,14 @@ class BrokerCommissionService
             $commission = BrokerCommission::with('broker', 'settlements', 'payments.transaction')
                 ->lockForUpdate()
                 ->findOrFail($commission->id);
+            if ($commission->manual_advances) {
+                throw new \DomainException('Edite a divisão no recebimento de processo para alterar esta comissão.');
+            }
             $commissionAmount = round((float) $data['commission_amount'], 2);
             $paidAmount = $commission->paidAmount();
 
-            if (\App\Domains\Banking\Models\ReceiptDestination::where('commission_id', $commission->id)->exists() && round($commissionAmount * 100) !== round((float) $commission->commission_amount * 100)) {
-                throw new \DomainException('Altere a destinação do recebimento antes de mudar o valor desta comissão.');
+            if (ReceiptDestination::where('commission_id', $commission->id)->exists() && round($commissionAmount * 100) !== round((float) $commission->commission_amount * 100)) {
+                throw new \DomainException('Altere a divisão do recebimento antes de mudar o valor desta comissão.');
             }
 
             if ($commissionAmount <= 0) {
@@ -139,6 +143,10 @@ class BrokerCommissionService
     public function settleWithAdvances(BrokerCommission $commission): float
     {
         return DB::transaction(function () use ($commission) {
+            $commission = BrokerCommission::lockForUpdate()->findOrFail($commission->id);
+            if ($commission->manual_advances) {
+                return 0.0;
+            }
             $remaining = $commission->remainingAmount();
             if ($remaining <= 0) {
                 return 0.0;
@@ -147,6 +155,7 @@ class BrokerCommissionService
             // Buscar adiantamentos do mesmo broker com saldo restante, mais antigos primeiro
             $advances = BrokerAdvance::where('broker_id', $commission->broker_id)
                 ->orderBy('date')
+                ->lockForUpdate()
                 ->get();
 
             $totalSettled = 0.0;
@@ -156,7 +165,7 @@ class BrokerCommissionService
                     break;
                 }
 
-                $advanceRemaining = $advance->remainingBalance();
+                $advanceRemaining = round((float) $advance->amount - (float) $advance->settlements()->lockForUpdate()->get()->sum('amount_offset'), 2);
                 if ($advanceRemaining <= 0) {
                     continue;
                 }
@@ -195,6 +204,7 @@ class BrokerCommissionService
             }
 
             $commissions = BrokerCommission::where('broker_id', $advance->broker_id)
+                ->where('manual_advances', false)
                 ->with('settlements', 'payments')
                 ->orderBy('reference_date')
                 ->orderBy('id')
@@ -309,7 +319,7 @@ class BrokerCommissionService
                 ->findOrFail($payment->commission_id);
             $amount = round($amount, 2);
             $otherPayments = round($commission->paidAmount() - (float) $payment->amount, 2);
-            $maximumAmount = round((float) $commission->commission_amount - $otherPayments, 2);
+            $maximumAmount = round((float) $commission->commission_amount - $otherPayments - ($commission->manual_advances ? $commission->settledAmount() : 0), 2);
 
             if ($amount <= 0) {
                 throw new \DomainException('O valor do repasse deve ser maior que zero.');
@@ -322,8 +332,10 @@ class BrokerCommissionService
                 );
             }
 
-            $affectedAdvanceIds = $commission->settlements()->pluck('advance_id')->unique()->all();
-            $commission->settlements()->delete();
+            $affectedAdvanceIds = $commission->manual_advances ? [] : $commission->settlements()->pluck('advance_id')->unique()->all();
+            if (! $commission->manual_advances) {
+                $commission->settlements()->delete();
+            }
 
             $payment->update([
                 'paid_at' => $paidAt ?: now()->toDateString(),

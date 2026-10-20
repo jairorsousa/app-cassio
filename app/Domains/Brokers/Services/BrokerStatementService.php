@@ -7,6 +7,7 @@ use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
+use App\Domains\Brokers\Models\BrokerProcessExpense;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -59,6 +60,8 @@ class BrokerStatementService
             ->get()
             ->sum(fn (BrokerCommission $commission) => $commission->remainingAmount());
 
+        $expensesPeriod = (float) $this->applyPeriod(BrokerProcessExpense::where('broker_id', $broker->id), 'date', $startDate, $endDate)->sum('amount');
+
         return [
             'advanced_period' => round($advancedPeriod, 2),
             'advance_pending' => round($advancePending, 2),
@@ -66,7 +69,8 @@ class BrokerStatementService
             'settled_period' => round($settledPeriod, 2),
             'repassed_period' => round($repassedPeriod, 2),
             'commission_pending' => round($commissionPending, 2),
-            'cash_out_period' => round($advancedPeriod + $repassedPeriod, 2),
+            'process_expenses_period' => round($expensesPeriod, 2),
+            'cash_out_period' => round($advancedPeriod + $repassedPeriod + $expensesPeriod, 2),
         ];
     }
 
@@ -133,7 +137,13 @@ class BrokerStatementService
             'icon' => 'payments',
         ]);
 
+        $expenses = $this->applyPeriod(BrokerProcessExpense::where('broker_id', $broker->id), 'date', $startDate, $endDate)->get()->map(fn ($expense) => [
+            'date' => $expense->date, 'type' => 'Despesa de processos', 'description' => $expense->description,
+            'amount' => (float) $expense->amount, 'tone' => 'down', 'icon' => 'receipt_long',
+        ]);
+
         return $advances
+            ->concat($expenses)
             ->concat($commissions)
             ->concat($settlements)
             ->concat($payments)
