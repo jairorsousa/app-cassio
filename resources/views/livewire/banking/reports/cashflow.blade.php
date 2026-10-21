@@ -27,7 +27,7 @@ new #[Layout('layouts.app')] class extends Component {
             $start = Carbon::createFromFormat('Y-m-d', $month.'-01')->startOfMonth();
             $end = (clone $start)->endOfMonth();
 
-            $byCategory = Transaction::with(['category', 'allocations.category', 'processReceipt.category', 'destinations.recoveries'])
+            $byCategory = Transaction::with(['category', 'allocations.category', 'processReceipt.category', 'destinations.recoveries', 'destinations.payments'])
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereIn('type', ['income', 'expense', 'invoice_payment'])
@@ -36,9 +36,11 @@ new #[Layout('layouts.app')] class extends Component {
                     if ($transaction->processReceipt) {
                         $own = (float) $transaction->destinations->where('kind', 'own')->sum('amount');
                         $recovered = $transaction->destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
+                        $acquired = $transaction->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount'));
                         return [
                             ['category' => $transaction->processReceipt->category?->name ?? '— sem categoria —', 'type' => 'income', 'amount' => $own],
-                            ['category' => 'Valores para repasse', 'type' => 'income', 'amount' => (float) $transaction->amount - $own - $recovered],
+                            ['category' => 'Valores para repasse', 'type' => 'income', 'amount' => (float) $transaction->amount - $own - $recovered - $acquired],
+                            ['category' => 'Requisitórios adquiridos', 'type' => 'income', 'amount' => $acquired],
                             ['category' => 'Recuperação de despesas', 'type' => 'income', 'amount' => $recovered],
                         ];
                     }
@@ -82,7 +84,8 @@ new #[Layout('layouts.app')] class extends Component {
 
         $destinations = ReceiptDestination::with('commission', 'payments.transaction', 'recoveries')->whereHas('receipt', fn ($q) => $q->where('type', 'income')->where('status', 'settled')->whereBetween('date', [Carbon::parse($month.'-01')->startOfMonth(), Carbon::parse($month.'-01')->endOfMonth()]))->get();
         $recoveredExpenses = $destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
-        $thirdPartyIncome = $destinations->where('kind', '!=', 'own')->sum('amount') - $recoveredExpenses;
+        $acquiredReceipts = $destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount'));
+        $thirdPartyIncome = $destinations->where('kind', '!=', 'own')->sum('amount') - $recoveredExpenses - $acquiredReceipts;
         $ownIncome = round($data['totalIncome'] - $thirdPartyIncome - $recoveredExpenses, 2);
         $pendingRepasses = $destinations->sum(fn ($part) => $part->remainingCents()) / 100;
 

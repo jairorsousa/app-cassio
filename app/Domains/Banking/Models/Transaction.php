@@ -2,6 +2,7 @@
 
 namespace App\Domains\Banking\Models;
 
+use App\Domains\Writs\Models\Writ;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -68,6 +69,16 @@ class Transaction extends Model
     public function distributionPart(): HasOne
     {
         return $this->hasOne(ReceiptDestination::class, 'allocation_transaction_id');
+    }
+
+    public function writLinks(): HasMany
+    {
+        return $this->hasMany(ReceiptDestinationPayment::class, 'writ_income_id');
+    }
+
+    public function sourceWrit(): BelongsTo
+    {
+        return $this->belongsTo(Writ::class, 'source_id');
     }
 
     public function bankAccount(): BelongsTo

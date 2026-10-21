@@ -38,6 +38,24 @@ Editar ou remover uma divisão desfaz suas reservas. Desfazer um desconto de des
 
 A migração `2026_10_20_040000` converte as antigas distribuições já vinculadas às contas de repasse: desfaz apenas as transferências automáticas anteriores, restaura o saldo bancário e cria as obrigações negativas. Pagamentos anteriores recebem sua baixa correspondente na conta fictícia sem outra saída bancária. Mantém o crédito e FITID originais, comissões e movimentações independentes. A conversão pode ser retomada sem duplicar registros. Divisões antigas sem conta de repasse vinculada continuam legadas e não são associadas por suposição.
 
+## Requisitório adquirido vinculado ao valor do cliente
+
+Quando a parte inicialmente separada para o cliente corresponde a um requisitório que já foi comprado, use **Contas → Cliente → Gerenciar repasses → Registrar repasse → Vincular a requisitório recebido**. Selecione o requisitório pelo processo e cedente e informe o valor integral ou parcial a vincular. A opção fica disponível somente para a parte do cliente; o pagamento comum continua funcionando.
+
+A seleção mostra somente requisitórios **Recebidos**, com valor de compra registrado, entrada bancária recebida até a data atual de São Paulo, saldo disponível e a mesma conta bancária do recebimento de processo. Não há seleção de banco pagador ou data de pagamento: não ocorreu um novo pagamento. O vínculo representa a mesma entrada bancária já registrada no recebimento de processo.
+
+Ao confirmar, o valor deixa de compor a obrigação do cliente e é creditado apenas na conta fictícia Cliente. A entrada automática do requisitório é reduzida exatamente pelo valor vinculado, pois estava duplicando uma parcela do crédito do recebimento de processo. O crédito original do processo e seu FITID são preservados. A entrada do requisitório permanece registrada, inclusive em zero se totalmente vinculada; novos eventos de Recebido não geram outra entrada. Sua linha financeira informa quanto está vinculado e mostra apenas o valor restante a contabilizar.
+
+Exemplo: o banco já possui uma entrada de processo de R$ 10.000 e uma entrada automática do requisitório de R$ 7.000 que representa parte dos mesmos R$ 10.000. O saldo negativo do cliente é R$ 7.000. Vincular os R$ 7.000 zera Cliente e ajusta a entrada duplicada do requisitório para zero. O banco contabiliza os R$ 10.000 uma única vez, sem criar saída bancária. O valor total recebido, custo de compra, datas e lucro do requisitório permanecem no seu cadastro.
+
+O valor vinculado não pode superar nem o saldo do cliente nem a entrada disponível do requisitório. Vínculos parciais e pagamentos comuns compartilham o mesmo saldo do cliente. Reenvios da mesma confirmação não duplicam a baixa. Os registros usam transação e bloqueios para impedir que confirmações simultâneas consumam o mesmo saldo.
+
+O histórico identifica **Requisitório adquirido**, valor e processo, com link para o cadastro e **Desvincular requisitório**. Desvincular restaura exatamente a entrada do requisitório e a obrigação do cliente. A exclusão confirmada do recebimento de processo também desfaz seus vínculos, preservando o requisitório e sua aquisição anterior. Enquanto houver vínculo, alterações do recebimento do requisitório, regressões de etapa e sua exclusão ficam protegidas; desvincule primeiro para corrigi-lo.
+
+Na listagem e no relatório, o valor vinculado aparece separadamente como **Requisitórios adquiridos**, compondo os recebimentos próprios. A categoria escolhida para os honorários continua aplicada somente aos honorários próprios. O montante adquirido não é identificado como lucro integral: o custo de aquisição e o resultado continuam no módulo de requisitórios. Saldos, entradas mensais e movimentos bancários aproveitam a entrada do processo sem duplicá-la.
+
+A migração `2026_10_20_050000_add_writ_links_to_receipt_payments` acrescenta os vínculos e valores, sem alterar recebimentos existentes automaticamente. Execute `php artisan migrate --force` antes de disponibilizar a atualização. O rollback exige desvincular os requisitórios primeiro.
+
 ## Saldos e alterações
 
 - Despesas e adiantamentos podem ser usados parcialmente em vários recebimentos do mesmo corretor. Cada utilização reduz o saldo disponível. Não é possível usar registros de outro corretor, ultrapassar o saldo disponível, o valor do cliente ou a comissão.

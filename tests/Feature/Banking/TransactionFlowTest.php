@@ -36,7 +36,7 @@ class TransactionFlowTest extends TestCase
                 ->call('create', $type)
                 ->assertSet('showFormModal', true)
                 ->assertSet('formType', $type)
-                ->assertSet('formDate', now()->format('Y-m-d'))
+                ->assertSet('formDate', now('America/Sao_Paulo')->format('Y-m-d'))
                 ->assertSet('formDescription', '')
                 ->assertSee($title)
                 ->assertDontSeeHtml('wire:model.live="formType"')

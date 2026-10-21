@@ -198,7 +198,7 @@ class ReceiptDestinationService
             $part = ReceiptDestination::lockForUpdate()->findOrFail($part->id);
             // A retried form submission must not create a second partial payment.
             if ($requestKey && ($existing = ReceiptDestinationPayment::where('request_key', $requestKey)->first())) {
-                if ($existing->destination_id !== $part->id) {
+                if ($existing->destination_id !== $part->id || $existing->writ_income_id) {
                     throw new \DomainException('Esta confirmação já foi usada em outro repasse.');
                 }
 
@@ -271,6 +271,7 @@ class ReceiptDestinationService
 
     private function removePaymentEntries(ReceiptDestinationPayment $payment): void
     {
+        app(ReceiptWritLinkService::class)->restoreIncome($payment);
         $transaction = $payment->transaction;
         $settlement = $payment->settlementTransaction;
         $created = $payment->transaction_created;

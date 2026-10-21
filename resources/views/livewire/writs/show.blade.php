@@ -6,7 +6,6 @@ use App\Domains\Writs\Services\WritProfitabilityCalculator;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
-use Spatie\Activitylog\Models\Activity;
 
 new #[Layout('layouts.app')] class extends Component
 {
@@ -44,7 +43,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Writ $writ): void
     {
-        $this->writ = $writ->load('history.user', 'transactions', 'assignors.contact');
+        $this->writ = $writ->load('history.user', 'transactions.writLinks', 'assignors.contact');
         $this->transition_monitoring_at = now()->format('Y-m-d\TH:i');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
         $this->transition_paid_at = now()->format('Y-m-d');
@@ -132,19 +131,12 @@ new #[Layout('layouts.app')] class extends Component
 
     public function delete(): void
     {
-        // Remove transações bancárias vinculadas (polymorphic)
-        $this->writ->transactions()->delete();
-
-        // Remove histórico de etapas
-        $this->writ->history()->delete();
-
-        // Remove logs de atividade (Spatie)
-        Activity::where('subject_type', Writ::class)
-            ->where('subject_id', $this->writ->id)
-            ->delete();
-
-        // Exclui permanentemente o requisitório
-        $this->writ->forceDelete();
+        try {
+            app(WritService::class)->delete($this->writ);
+        } catch (DomainException $e) {
+            session()->flash('error', $e->getMessage());
+            return;
+        }
 
         session()->flash('status', 'Requisitório excluído com sucesso.');
         $this->redirectRoute('writs.kanban', navigate: true);
@@ -605,7 +597,9 @@ new #[Layout('layouts.app')] class extends Component
                                         {{ $t->type === 'income' ? 'Receita' : 'Despesa' }}
                                     </span>
                                 </td>
-                                <td class="px-4 py-4 text-mono-900">{{ $t->description }}</td>
+                                <td class="px-4 py-4 text-mono-900">{{ $t->description }}
+                                    @if ($t->writLinks->isNotEmpty())<p class="mt-1 text-xs text-mono-500">R$ {{ number_format((float) $t->writLinks->sum('writ_amount'), 2, ',', '.') }} vinculados a recebimentos de processo. O valor desta linha é a entrada restante.</p>@endif
+                                </td>
                                 <td class="px-4 py-4 text-right font-bold {{ $t->type === 'income' ? 'text-mono-900' : 'text-mono-900' }}">
                                     R$ {{ number_format($t->amount, 2, ',', '.') }}
                                 </td>

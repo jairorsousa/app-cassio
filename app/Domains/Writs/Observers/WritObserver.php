@@ -2,13 +2,24 @@
 
 namespace App\Domains\Writs\Observers;
 
+use App\Domains\Banking\Services\ReceiptWritLinkService;
 use App\Domains\Dashboard\Support\DashboardRefreshTrigger;
 use App\Domains\Writs\Models\Writ;
 
 class WritObserver
 {
-    public function __construct(private DashboardRefreshTrigger $trigger)
+    public function __construct(private DashboardRefreshTrigger $trigger) {}
+
+    public function updating(Writ $writ): void
     {
+        if ($writ->isDirty(['stage', 'actual_receipt_amount', 'destination_bank_account_id', 'finalized_at', 'paid_amount'])) {
+            app(ReceiptWritLinkService::class)->guardWrit($writ);
+        }
+    }
+
+    public function deleting(Writ $writ): void
+    {
+        app(ReceiptWritLinkService::class)->guardWrit($writ);
     }
 
     public function saved(Writ $writ): void
@@ -30,6 +41,7 @@ class WritObserver
         foreach ($relevantFields as $f) {
             if ($writ->wasChanged($f)) {
                 ($this->trigger)();
+
                 return;
             }
         }

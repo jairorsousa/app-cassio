@@ -294,7 +294,16 @@ new #[Layout('layouts.app')] class extends Component
             $previousCessionAt = $this->writ->cession_at;
             $previousPetitionedAt = $this->writ->petitioned_at;
             $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at;
-            $this->writ->update($data);
+            try {
+                $this->writ = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
+                    $record = Writ::lockForUpdate()->findOrFail($this->writ->id);
+                    $record->update($data);
+                    return $record;
+                });
+            } catch (\DomainException $e) {
+                $this->addError('actual_receipt_amount', $e->getMessage());
+                return;
+            }
             $writ = $this->writ->fresh();
 
             if ($previousStage !== $writ->stage) {

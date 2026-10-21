@@ -14,7 +14,6 @@ use Livewire\Attributes\Lazy;
 use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
-use Spatie\Activitylog\Models\Activity;
 
 new #[Layout('layouts.app')] #[Lazy] class extends Component
 {
@@ -596,12 +595,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
     public function delete(int $id): void
     {
         $writ = Writ::findOrFail($id);
-        $writ->transactions()->delete();
-        $writ->history()->delete();
-        Activity::where('subject_type', Writ::class)
-            ->where('subject_id', $writ->id)
-            ->delete();
-        $writ->forceDelete();
+        try {
+            app(WritService::class)->delete($writ);
+        } catch (DomainException $e) {
+            session()->flash('error', $e->getMessage());
+            return;
+        }
         session()->flash('status', 'Requisitório excluído.');
     }
 

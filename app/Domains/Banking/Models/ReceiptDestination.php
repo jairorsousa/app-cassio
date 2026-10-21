@@ -60,7 +60,7 @@ class ReceiptDestination extends Model
             return $commission ? (int) round(($commission->paidAmount() + $commission->settledAmount()) * 100) : 0;
         }
 
-        return $this->recoveredCents() + $this->payments->sum(fn ($payment) => abs((int) round((float) $payment->transaction?->amount * 100)));
+        return $this->recoveredCents() + $this->payments->sum(fn ($payment) => $payment->writ_income_id ? (int) round((float) $payment->writ_amount * 100) : abs((int) round((float) $payment->transaction?->amount * 100)));
     }
 
     public function remainingCents(): int

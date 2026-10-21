@@ -2,6 +2,8 @@
 
 namespace App\Domains\Writs\Services;
 
+use App\Domains\Banking\Services\ReceiptWritLinkService;
+use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Writs\Events\WritMovedToFinalized;
 use App\Domains\Writs\Events\WritMovedToPaid;
 use App\Domains\Writs\Models\Writ;
@@ -9,6 +11,7 @@ use App\Domains\Writs\Models\WritStageHistory;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Spatie\Activitylog\Models\Activity;
 
 class WritService
 {
@@ -65,6 +68,7 @@ class WritService
         }
 
         $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
+            $writ = Writ::lockForUpdate()->findOrFail($writ->id);
             $patch = ['stage' => $newStage];
 
             if ($newStage === 'monitoring' && isset($context['monitoring_at'])) {
@@ -137,6 +141,20 @@ class WritService
         app(WritGoogleCalendarSyncDispatcher::class)->sync($updatedWrit);
 
         return $updatedWrit;
+    }
+
+    public function delete(Writ $writ): void
+    {
+        DB::transaction(function () use ($writ) {
+            $writ = Writ::lockForUpdate()->findOrFail($writ->id);
+            app(ReceiptWritLinkService::class)->guardWrit($writ);
+            foreach ($writ->transactions()->lockForUpdate()->get() as $transaction) {
+                app(TransactionService::class)->deleteGenerated($transaction);
+            }
+            $writ->history()->delete();
+            Activity::where('subject_type', Writ::class)->where('subject_id', $writ->id)->delete();
+            $writ->forceDelete();
+        });
     }
 
     public function recordCessionDateChange(Writ $writ, ?CarbonInterface $previousCessionAt, CarbonInterface $newCessionAt): void

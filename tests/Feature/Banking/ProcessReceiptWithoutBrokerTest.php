@@ -21,6 +21,13 @@ class ProcessReceiptWithoutBrokerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Keep the business date equal in UTC and São Paulo, including midnight CI runs.
+        $this->travelTo(now()->setTime(12, 0));
+    }
+
     private function example(): array
     {
         $this->actingAs(User::factory()->create());

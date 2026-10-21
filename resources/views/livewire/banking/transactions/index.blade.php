@@ -642,7 +642,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination']);
+        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -770,6 +770,9 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->isReadOnly())
                                 <x-fx.badge variant="neutral" class="ml-space-2">{{ match ($t->source_type) { \App\Domains\Banking\Models\ReceiptDestinationPayment::class => 'Repasse vinculado', \App\Domains\Banking\Models\ReceiptDestination::class => 'Valor a repassar', default => 'origem: '.class_basename($t->source_type) } }}</x-fx.badge>
                             @endif
+                            @if ($t->writLinks->isNotEmpty())
+                                <p class="mt-1 text-xs text-cryptex-text-secondary">R$ {{ number_format((float) $t->writLinks->sum('writ_amount'), 2, ',', '.') }} vinculados a recebimentos de processo. Valor desta linha: entrada restante, para contar o dinheiro uma única vez.</p>
+                            @endif
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
                             @endif
@@ -783,6 +786,8 @@ new #[Layout('layouts.app')] class extends Component
                                 <x-fx.badge variant="neutral">Recebimento de processo</x-fx.badge>
                                 <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
                                     <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
+                                    @php $writOwn = $t->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount')); @endphp
+                                    @if ($writOwn > 0)<div>Requisitórios adquiridos: <strong>R$ {{ number_format($writOwn, 2, ',', '.') }}</strong></div>@endif
                                     <details><summary class="cursor-pointer text-primary-600">Ver beneficiários</summary>
                                         @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>@endforeach
                                     </details>
@@ -814,6 +819,9 @@ new #[Layout('layouts.app')] class extends Component
                                 @php $distributionPart = $t->distributionPart ?? $t->related?->distributionPart; @endphp
                                 @if ($distributionPart)<button type="button" wire:click="openDistribution({{ $distributionPart->receipt_id }})" class="mr-3 text-fs-12 font-medium text-primary-600">Ver recebimento</button>@endif
                             @endif
+                            @foreach ($t->writLinks->unique(fn ($link) => $link->destination->receipt_id) as $link)
+                                <button type="button" wire:click="openDistribution({{ $link->destination->receipt_id }})" class="mr-3 text-fs-12 font-medium text-primary-600">Ver recebimento vinculado</button>
+                            @endforeach
                             @if ($t->destinationPayment?->destination)
                                 <button type="button" wire:click="openDistribution({{ $t->destinationPayment->destination->receipt_id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Ver recebimento</button>
                             @endif

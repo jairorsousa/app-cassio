@@ -4,6 +4,7 @@ namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\ReceiptDestinationPayment;
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Writs\Models\Writ;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -123,6 +124,7 @@ class TransactionService
      */
     public function updateGenerated(Transaction $transaction, array $data): Transaction
     {
+        $this->guardWritLink($transaction);
         if (! $transaction->isReadOnly()) {
             return $this->update($transaction, $data);
         }
@@ -140,6 +142,7 @@ class TransactionService
      */
     public function deleteGenerated(Transaction $transaction): void
     {
+        $this->guardWritLink($transaction);
         if (! $transaction->isReadOnly()) {
             $this->delete($transaction);
 
@@ -147,5 +150,12 @@ class TransactionService
         }
 
         $transaction->delete();
+    }
+
+    private function guardWritLink(Transaction $transaction): void
+    {
+        if ($transaction->source_type === Writ::class && $transaction->writLinks()->exists()) {
+            throw new \DomainException('Desvincule o requisitório em Contas → Gerenciar repasses antes de alterar ou excluir este lançamento.');
+        }
     }
 }

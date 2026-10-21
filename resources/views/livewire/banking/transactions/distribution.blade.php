@@ -127,7 +127,7 @@ new class extends Component {
     public function with(): array
     {
         $receipt = $this->receipt();
-        $parts = $receipt->destinations()->with('payments.transaction', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense', 'repasseAccount')->get();
+        $parts = $receipt->destinations()->with('payments.transaction', 'payments.writIncome.sourceWrit', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense', 'repasseAccount')->get();
         return [
             'receipt' => $receipt, 'parts' => $parts,
             'processReceipt' => $receipt->processReceipt,
@@ -185,8 +185,13 @@ new class extends Component {
                         @endforeach
                         @foreach ($part->kind === 'broker' ? collect() : $part->payments as $payment)
                             <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600">
+                                @if ($payment->writ_income_id)
+                                    <span>Requisitório adquirido · <a class="font-semibold text-primary-600 hover:underline" href="{{ route('writs.show', $payment->writIncome->source_id) }}">{{ $payment->writIncome?->sourceWrit?->process_number ?: '#'.$payment->writIncome->source_id }}</a> · R$ {{ number_format((float) $payment->writ_amount, 2, ',', '.') }} · Valor próprio</span>
+                                    <button type="button" wire:click="undoPayment({{ $payment->id }})" wire:confirm="Desvincular este requisitório? O saldo do cliente e a entrada do requisitório serão restaurados." class="text-error">Desvincular requisitório</button>
+                                @else
                                 <span>{{ $payment->transaction?->date->format('d/m/Y') }} · R$ {{ number_format(abs((float) $payment->transaction?->amount), 2, ',', '.') }} · {{ $payment->transaction_created ? 'Repasse registrado' : 'Saída vinculada' }}</span>
                                 <button type="button" wire:click="undoPayment({{ $payment->id }})" wire:confirm="{{ $payment->transaction_created ? 'Desfazer este repasse e remover a saída registrada?' : 'Desvincular este repasse? A saída original será preservada.' }}" class="text-error">{{ $payment->transaction_created ? 'Desfazer repasse' : 'Desvincular' }}</button>
+                                @endif
                             </div>
                         @endforeach
                         @if ($part->commission)

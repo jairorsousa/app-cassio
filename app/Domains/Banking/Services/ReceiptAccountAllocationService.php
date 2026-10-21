@@ -74,15 +74,15 @@ class ReceiptAccountAllocationService
         if (! $part->repasse_account_id || $payment->settlement_transaction_id) {
             return;
         }
-        $out = $payment->transaction;
+        $out = $payment->writ_income_id ? $payment->writIncome : $payment->transaction;
         if (! $out) {
             return;
         }
         $data = [
             'type' => 'transfer', 'date' => $out->date->toDateString(), 'status' => 'settled',
-            'amount' => $this->money(abs((int) round((float) $out->amount * 100))),
+            'amount' => $payment->writ_income_id ? $payment->writ_amount : $this->money(abs((int) round((float) $out->amount * 100))),
             'bank_account_id' => $part->repasse_account_id,
-            'description' => mb_substr('Repasse realizado · '.$part->beneficiary, 0, 200),
+            'description' => mb_substr(($payment->writ_income_id ? 'Requisitório adquirido · ' : 'Repasse realizado · ').$part->beneficiary, 0, 200),
             'source_type' => ReceiptDestinationPayment::class, 'source_id' => $payment->id,
             'notes' => 'Baixa da obrigação do recebimento #'.$part->receipt_id,
             'related_transaction_id' => $payment->transaction_created && $out->type === 'transfer' ? $out->id : null,
