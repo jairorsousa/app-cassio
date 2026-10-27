@@ -215,7 +215,7 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-6">
     <x-banking.subnav active="receivables" />
     @if (session('status')) <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert> @endif
-    @if ($errors->any())
+    @if (! $creating && $errors->any())
         <x-jr.alert variant="error"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
     @endif
     <div class="flex flex-wrap items-center justify-between gap-4">
@@ -227,49 +227,6 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.card><div class="text-xs font-medium uppercase tracking-wide text-mono-600">{{ $label }}</div><div class="mt-2 text-2xl font-bold tabular-nums {{ $label === 'Vencidos' && $value ? 'text-down' : 'text-mono-900' }}">R$ {{ number_format($value / 100, 2, ',', '.') }}</div></x-fx.card>
         @endforeach
     </div>
-
-    @if ($creating)
-        <x-fx.card>
-            <form wire:submit="save" class="space-y-5">
-                <h3 class="text-lg font-bold text-mono-900">Novo valor a receber</h3>
-                <div class="grid gap-4 md:grid-cols-2">
-                    <div><label for="origin" class="mb-2 block text-sm text-mono-600">Origem do pagamento</label><select id="origin" wire:model.live="form.origin" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="bank">Registrar nova saída bancária</option><option value="card">Registrar nova compra no cartão</option><option value="existing">Vincular lançamento existente</option></select></div>
-                    @if ($form['origin'] === 'existing')
-                        <div><x-jr.input label="Buscar lançamento por descrição" name="sourceSearch" wire:model.live.debounce.300ms="sourceSearch" /><label for="source" class="mb-2 block text-sm text-mono-600">Lançamento existente</label><select id="source" wire:model="form.transaction_id" wire:change="loadSource" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($sources as $source)<option value="{{ $source->id }}">#{{ $source->id }} · {{ $source->date->format('d/m/Y') }} · {{ $source->description }} · R$ {{ number_format($source->amount, 2, ',', '.') }}</option>@endforeach</select><p class="mt-2 text-xs text-mono-600">Para compras parceladas, todas as parcelas da compra serão vinculadas. Não será criada outra saída.</p></div>
-                    @elseif ($form['origin'] === 'bank')
-                        <div><label for="new-account" class="mb-2 block text-sm text-mono-600">Conta de saída</label><select id="new-account" wire:model="form.bank_account_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($accounts as $a)<option value="{{ $a->id }}">{{ $a->name }}</option>@endforeach</select></div>
-                    @else
-                        <div><label for="new-card" class="mb-2 block text-sm text-mono-600">Cartão utilizado</label><select id="new-card" wire:model="form.credit_card_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($cards as $card)<option value="{{ $card->id }}">{{ $card->name }}</option>@endforeach</select></div>
-                    @endif
-                    <x-jr.input label="Descrição" name="form.description" wire:model="form.description" />
-                    <x-jr.input label="Data do pagamento ou da compra" name="form.date" type="date" wire:model="form.date" />
-                    <x-jr.input label="Valor total do pagamento (R$)" name="form.amount" x-money inputmode="numeric" wire:model="form.amount" :readonly="$form['origin'] === 'existing'" />
-                    <x-jr.input label="Número de parcelas" name="form.installments" type="number" min="1" max="120" wire:model="form.installments" helper="No cartão, cria as parcelas na fatura. Na saída bancária, divide as devoluções." />
-                </div>
-                <div class="space-y-3 rounded-lg bg-mono-50 p-4">
-                    <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="font-semibold text-mono-900">Quem deve devolver?</h4><button type="button" wire:click="addPerson" class="text-sm font-semibold text-primary-500">Adicionar pessoa</button></div>
-                    @foreach ($form['people'] as $index => $person)
-                        <div class="grid items-end gap-3 md:grid-cols-[1fr_1fr_auto]" wire:key="person-{{ $index }}-{{ $createKey }}">
-                            <div><label for="person-{{ $index }}" class="mb-2 block text-sm text-mono-600">Pessoa</label><select id="person-{{ $index }}" wire:model="form.people.{{ $index }}.contact_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($contacts as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select></div>
-                            <x-jr.input label="Parte a devolver (R$)" :name="'form.people.'.$index.'.amount'" x-money inputmode="numeric" wire:model="form.people.{{ $index }}.amount" />
-                            @if (count($form['people']) > 1)<x-jr.button variant="standard" wire:click="removePerson({{ $index }})">Remover</x-jr.button>@endif
-                        </div>
-                    @endforeach
-                    <p class="text-xs text-mono-600">O restante do pagamento será a despesa própria do Dr. Cássio. Para um adiantamento integral, informe o valor total na parte da pessoa.</p>
-                    <div class="flex flex-wrap items-end gap-3"><x-jr.input label="Novo contato pessoal" name="newContactName" wire:model="newContactName" placeholder="Nome do amigo ou familiar" /><x-jr.button variant="standard" wire:click="createPersonalContact">Cadastrar e selecionar</x-jr.button></div>
-                </div>
-                <div class="grid gap-4 md:grid-cols-2">
-                    <div><label for="repayment" class="mb-2 block text-sm text-mono-600">Quando deve devolver?</label><select id="repayment" wire:model.live="form.repayment_mode" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="dated">Em data combinada / parcelas mensais</option><option value="process">No recebimento do processo</option><option value="undated">Sem data definida</option></select></div>
-                    @if ($form['repayment_mode'] === 'dated' && $isCardOrigin)<label class="flex items-center gap-2 text-sm text-mono-600"><input type="checkbox" wire:model.live="form.use_invoice_dates" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500" />Devoluções nos vencimentos das faturas</label>@endif
-                    @if ($form['repayment_mode'] === 'dated' && ! ($form['use_invoice_dates'] ?? false))<x-jr.input label="Primeiro vencimento" name="form.first_due_date" type="date" wire:model="form.first_due_date" />@endif
-                    <x-jr.input label="Referência do processo (opcional)" name="form.process_reference" wire:model="form.process_reference" />
-                    <div><label for="receivable-writ" class="mb-2 block text-sm text-mono-600">Requisitório vinculado (opcional)</label><select id="receivable-writ" wire:model="form.writ_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Sem vínculo</option>@foreach ($writs as $writ)<option value="{{ $writ->id }}">{{ $writ->process_number ?: $writ->assignor_name }}</option>@endforeach</select></div>
-                    <x-jr.input label="Observações" name="form.notes" wire:model="form.notes" />
-                </div>
-                <div class="flex justify-end gap-3"><x-jr.button variant="standard" wire:click="cancelCreate">Cancelar</x-jr.button><x-jr.button type="submit" wire:loading.attr="disabled" wire:target="save">Salvar</x-jr.button></div>
-            </form>
-        </x-fx.card>
-    @endif
 
     @if ($selected)
         <x-fx.card>
@@ -332,4 +289,73 @@ new #[Layout('layouts.app')] class extends Component {
         </tbody></table></div>
         <div class="mt-4">{{ $records->links() }}</div>
     </x-fx.card>
+
+    @if ($creating)
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6" x-data @keydown.escape.window="$wire.cancelCreate()">
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancelCreate" aria-label="Fechar modal"></button>
+
+            <div role="dialog" aria-modal="true" aria-labelledby="receivable-form-title" x-trap.inert.noscroll="true" class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
+                <div class="flex h-[66px] shrink-0 items-center justify-between border-b border-mono-100 px-6">
+                    <h3 id="receivable-form-title" class="flex items-center gap-3 text-lg font-bold text-mono-900">
+                        <span class="material-icons-outlined text-[24px] text-primary-500" aria-hidden="true">request_quote</span>
+                        Novo valor a receber
+                    </h3>
+                    <button type="button" class="flex h-9 w-9 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-mono-600" wire:click="cancelCreate" aria-label="Fechar">
+                        <span class="material-icons-outlined text-[22px]" aria-hidden="true">close</span>
+                    </button>
+                </div>
+
+                <form wire:submit="save" class="flex min-h-0 flex-1 flex-col">
+                    <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                        @if ($errors->any())
+                            <div class="mb-5" role="alert">
+                                <x-jr.alert variant="error" :dismissible="false"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
+                            </div>
+                        @endif
+                        <div class="space-y-5">
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <div><label for="origin" class="mb-2 block text-sm text-mono-600">Origem do pagamento</label><select id="origin" wire:model.live="form.origin" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="bank">Registrar nova saída bancária</option><option value="card">Registrar nova compra no cartão</option><option value="existing">Vincular lançamento existente</option></select></div>
+                                @if ($form['origin'] === 'existing')
+                                    <div><x-jr.input label="Buscar lançamento por descrição" name="sourceSearch" wire:model.live.debounce.300ms="sourceSearch" /><label for="source" class="mb-2 block text-sm text-mono-600">Lançamento existente</label><select id="source" wire:model="form.transaction_id" wire:change="loadSource" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($sources as $source)<option value="{{ $source->id }}">#{{ $source->id }} · {{ $source->date->format('d/m/Y') }} · {{ $source->description }} · R$ {{ number_format($source->amount, 2, ',', '.') }}</option>@endforeach</select><p class="mt-2 text-xs text-mono-600">Para compras parceladas, todas as parcelas da compra serão vinculadas. Não será criada outra saída.</p></div>
+                                @elseif ($form['origin'] === 'bank')
+                                    <div><label for="new-account" class="mb-2 block text-sm text-mono-600">Conta de saída</label><select id="new-account" wire:model="form.bank_account_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($accounts as $a)<option value="{{ $a->id }}">{{ $a->name }}</option>@endforeach</select></div>
+                                @else
+                                    <div><label for="new-card" class="mb-2 block text-sm text-mono-600">Cartão utilizado</label><select id="new-card" wire:model="form.credit_card_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($cards as $card)<option value="{{ $card->id }}">{{ $card->name }}</option>@endforeach</select></div>
+                                @endif
+                                <x-jr.input label="Descrição" name="form.description" wire:model="form.description" />
+                                <x-jr.input label="Data do pagamento ou da compra" name="form.date" type="date" wire:model="form.date" />
+                                <x-jr.input label="Valor total do pagamento (R$)" name="form.amount" x-money inputmode="numeric" wire:model="form.amount" :readonly="$form['origin'] === 'existing'" />
+                                <x-jr.input label="Número de parcelas" name="form.installments" type="number" min="1" max="120" wire:model="form.installments" helper="No cartão, cria as parcelas na fatura. Na saída bancária, divide as devoluções." />
+                            </div>
+                            <div class="space-y-3 rounded-lg bg-mono-50 p-4">
+                                <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="font-semibold text-mono-900">Quem deve devolver?</h4><button type="button" wire:click="addPerson" class="text-sm font-semibold text-primary-500">Adicionar pessoa</button></div>
+                                @foreach ($form['people'] as $index => $person)
+                                    <div class="grid items-end gap-3 md:grid-cols-[1fr_1fr_auto]" wire:key="person-{{ $index }}-{{ $createKey }}">
+                                        <div><label for="person-{{ $index }}" class="mb-2 block text-sm text-mono-600">Pessoa</label><select id="person-{{ $index }}" wire:model="form.people.{{ $index }}.contact_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($contacts as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select></div>
+                                        <x-jr.input label="Parte a devolver (R$)" :name="'form.people.'.$index.'.amount'" x-money inputmode="numeric" wire:model="form.people.{{ $index }}.amount" />
+                                        @if (count($form['people']) > 1)<x-jr.button variant="standard" wire:click="removePerson({{ $index }})">Remover</x-jr.button>@endif
+                                    </div>
+                                @endforeach
+                                <p class="text-xs text-mono-600">O restante do pagamento será a despesa própria do Dr. Cássio. Para um adiantamento integral, informe o valor total na parte da pessoa.</p>
+                                <div class="flex flex-wrap items-end gap-3"><x-jr.input label="Novo contato pessoal" name="newContactName" wire:model="newContactName" placeholder="Nome do amigo ou familiar" /><x-jr.button variant="standard" wire:click="createPersonalContact">Cadastrar e selecionar</x-jr.button></div>
+                            </div>
+                            <div class="grid gap-4 md:grid-cols-2">
+                                <div><label for="repayment" class="mb-2 block text-sm text-mono-600">Quando deve devolver?</label><select id="repayment" wire:model.live="form.repayment_mode" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="dated">Em data combinada / parcelas mensais</option><option value="process">No recebimento do processo</option><option value="undated">Sem data definida</option></select></div>
+                                @if ($form['repayment_mode'] === 'dated' && $isCardOrigin)<label class="flex items-center gap-2 text-sm text-mono-600"><input type="checkbox" wire:model.live="form.use_invoice_dates" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500" />Devoluções nos vencimentos das faturas</label>@endif
+                                @if ($form['repayment_mode'] === 'dated' && ! ($form['use_invoice_dates'] ?? false))<x-jr.input label="Primeiro vencimento" name="form.first_due_date" type="date" wire:model="form.first_due_date" />@endif
+                                <x-jr.input label="Referência do processo (opcional)" name="form.process_reference" wire:model="form.process_reference" />
+                                <div><label for="receivable-writ" class="mb-2 block text-sm text-mono-600">Requisitório vinculado (opcional)</label><select id="receivable-writ" wire:model="form.writ_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Sem vínculo</option>@foreach ($writs as $writ)<option value="{{ $writ->id }}">{{ $writ->process_number ?: $writ->assignor_name }}</option>@endforeach</select></div>
+                                <x-jr.input label="Observações" name="form.notes" wire:model="form.notes" />
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex shrink-0 justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
+                        <x-jr.button variant="standard" wire:click="cancelCreate">Cancelar</x-jr.button>
+                        <x-jr.button type="submit" wire:loading.attr="disabled" wire:target="save">Salvar</x-jr.button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
 </div>
