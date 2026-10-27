@@ -115,12 +115,7 @@ new #[Layout('layouts.app')] class extends Component {
             <h3 class="text-md font-semibold mb-sm">Pagar fatura</h3>
             <form wire:submit="pay" class="grid grid-cols-1 md:grid-cols-4 gap-sm items-end">
                 <div>
-                    <label class="block text-xxs text-mono-600 mb-xxxs">Conta</label>
-                    <select wire:model="payment_account_id" class="fx-form-field">
-                        @foreach ($accounts as $a)
-                            <option value="{{ $a->id }}">{{ $a->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-banking.account-picker :accounts="$accounts" :selected-id="$payment_account_id" model="payment_account_id" id="invoice-payment-account" label="Conta" />
                 </div>
                 <x-fx.input label="Valor" type="text" x-money wire:model="payment_amount" />
                 <x-fx.input label="Data" type="date" wire:model="payment_date" />

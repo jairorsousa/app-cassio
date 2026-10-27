@@ -240,23 +240,11 @@ new #[Layout('layouts.app')] class extends Component
                                     </div>
                                     <x-jr.input label="Valor *" icon="payments" name="amount" wire:model="amount" x-money required />
                                     <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
-                                        <select wire:model="category_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                            <option value="">Sem categoria</option>
-                                            @foreach ($categories as $categoryOption)
-                                                <option value="{{ $categoryOption->id }}">{{ $categoryOption->name }}</option>
-                                            @endforeach
-                                        </select>
+                                        <x-banking.category-picker :categories="$categories" :selected-id="$category_id" model="category_id" id="recurring-category" />
                                         @error('category_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
                                     <div>
-                                        <label class="mb-2 block text-sm font-medium text-mono-600">Conta</label>
-                                        <select wire:model="bank_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                            <option value="">Nenhuma</option>
-                                            @foreach ($accounts as $accountOption)
-                                                <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
-                                            @endforeach
-                                        </select>
+                                        <x-banking.account-picker :accounts="$accounts" :selected-id="$bank_account_id" model="bank_account_id" id="recurring-account" label="Conta" placeholder="Nenhuma" />
                                         @error('bank_account_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
                                 </div>

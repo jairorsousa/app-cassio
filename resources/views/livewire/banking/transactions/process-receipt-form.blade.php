@@ -144,7 +144,7 @@ new class extends Component {
                 @endif
             </div>
             <div class="rounded-xl bg-white p-3 text-sm text-mono-600">Escritório<strong class="mt-1 block text-mono-900">Mota e Silva Advogados</strong></div>
-            <x-banking.category-picker :categories="$categories" model="form.category_id" id="process-category" label="Categoria da minha receita" />
+            <x-banking.category-picker :categories="$categories" :selected-id="$form['category_id'] ?? null" model="form.category_id" id="process-category" label="Categoria da minha receita" />
         </div>
     </section>
     @if (! empty($form['broker_id']))

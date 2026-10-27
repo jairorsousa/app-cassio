@@ -144,7 +144,7 @@ class TransactionFlowTest extends TestCase
             $options = $xpath->query('//*[@id="transaction-category-options"]/button[@role="option"]');
             $values = [];
             foreach ($options as $option) {
-                $values[] = $option->getAttribute('data-category-id');
+                $values[] = $option->getAttribute('data-option-id');
             }
             $this->assertEquals(['', (string) $expected->id], $values);
 
@@ -200,16 +200,16 @@ class TransactionFlowTest extends TestCase
             $document = new \DOMDocument;
             @$document->loadHTML(mb_convert_encoding($component->html(), 'HTML-ENTITIES', 'UTF-8'));
             $xpath = new \DOMXPath($document);
-            $lists = $xpath->query('//*[@role="listbox"]');
+            $lists = $xpath->query('//*[@role="dialog"]//*[@role="listbox" and (@id="transaction-category-options" or starts-with(@id, "form-allocation-"))]');
             $this->assertCount($allocation ? 2 : 1, $lists);
             foreach ($lists as $list) {
                 $values = [];
                 foreach ($xpath->query('./button[@role="option"]', $list) as $option) {
-                    $values[] = $option->getAttribute('data-category-id');
+                    $values[] = $option->getAttribute('data-option-id');
                 }
                 $this->assertEquals($expected, $values);
-                $this->assertSame('Moradia / Condomínio', $xpath->query('./button[@data-category-id="'.$condo->id.'"]', $list)->item(0)->getAttribute('aria-label'));
-                $this->assertSame('Transporte / Combustível', $xpath->query('./button[@data-category-id="'.$fuel->id.'"]', $list)->item(0)->getAttribute('aria-label'));
+                $this->assertSame('Moradia / Condomínio', $xpath->query('./button[@data-option-id="'.$condo->id.'"]', $list)->item(0)->getAttribute('aria-label'));
+                $this->assertSame('Transporte / Combustível', $xpath->query('./button[@data-option-id="'.$fuel->id.'"]', $list)->item(0)->getAttribute('aria-label'));
             }
         }
     }

@@ -181,13 +181,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
             <div class="flex flex-col gap-space-1">
-                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Categoria</label>
-                <select wire:model="category_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors" @disabled($hasAllocations)>
-                    <option value="">— sem categoria —</option>
-                    @foreach ($categories as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->type === 'income' ? 'R' : 'D' }})</option>
-                    @endforeach
-                </select>
+                <x-banking.category-picker :categories="$categories" :selected-id="$category_id" model="category_id" id="transaction-page-category" :disabled="$hasAllocations" />
                 @if ($hasAllocations)
                     <p class="text-xs text-mono-600">Categoria definida no rateio. Altere pela lista de lançamentos.</p>
                 @endif
@@ -204,34 +198,16 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($type === 'transfer')
             <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
                 <div class="flex flex-col gap-space-1">
-                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Origem</label>
-                    <select wire:model="bank_account_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
-                        <option value="">—</option>
-                        @foreach ($accounts as $a)
-                            <option value="{{ $a->id }}">{{ $a->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-banking.account-picker :accounts="$accounts" :selected-id="$bank_account_id" model="bank_account_id" id="transaction-page-account" label="Conta bancária" placeholder="Nenhuma" />
                 </div>
                 <div class="flex flex-col gap-space-1">
-                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Destino</label>
-                    <select wire:model="transfer_to_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
-                        <option value="">—</option>
-                        @foreach ($accounts as $a)
-                            <option value="{{ $a->id }}">{{ $a->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-banking.account-picker :accounts="$accounts" :selected-id="$transfer_to_id" model="transfer_to_id" id="transaction-page-transfer" label="Destino" />
                 </div>
             </div>
         @else
             <div class="grid grid-cols-1 md:grid-cols-2 gap-space-4">
                 <div class="flex flex-col gap-space-1">
-                    <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Conta bancária</label>
-                    <select wire:model.live="bank_account_id" class="w-full h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
-                        <option value="">— nenhuma —</option>
-                        @foreach ($accounts as $a)
-                            <option value="{{ $a->id }}">{{ $a->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-banking.account-picker :accounts="$accounts" :selected-id="$bank_account_id" model="bank_account_id" id="transaction-page-account" label="Conta bancária" placeholder="Nenhuma" />
                 </div>
                 @if ($type === 'expense')
                     <div class="flex flex-col gap-space-1">

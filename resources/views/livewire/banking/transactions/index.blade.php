@@ -718,22 +718,10 @@ new #[Layout('layouts.app')] class extends Component
                 </select>
             </div>
             <div class="flex flex-col gap-space-1">
-                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Categoria</label>
-                <select wire:model.live="category" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
-                    <option value="">Todas</option>
-                    @foreach ($categories as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                    @endforeach
-                </select>
+                <x-banking.category-picker :categories="$categories" :selected-id="$category" model="category" id="transaction-category-filter" placeholder="Todas" clear-value="" />
             </div>
             <div class="flex flex-col gap-space-1">
-                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Conta</label>
-                <select wire:model.live="account" class="h-[48px] px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
-                    <option value="">Todas</option>
-                    @foreach ($accounts as $a)
-                        <option value="{{ $a->id }}">{{ $a->name }}</option>
-                    @endforeach
-                </select>
+                <x-banking.account-picker :accounts="$accounts" :selected-id="$account" model="account" id="transaction-account-filter" label="Conta" placeholder="Todas" clear-value="" />
             </div>
             <div class="flex flex-col gap-space-1">
                 <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Status</label>
@@ -918,13 +906,7 @@ new #[Layout('layouts.app')] class extends Component
                     @else
                     <p class="text-sm text-mono-600">Escolha a conta de destino e confira os lançamentos antes de cadastrar. Reimportações da mesma conta são ignoradas pelo identificador do OFX. Confira possíveis lançamentos manuais equivalentes antes de confirmar.</p>
                     <div>
-                        <label for="ofx-account" class="mb-2 block text-sm font-medium text-mono-600">Conta bancária *</label>
-                        <select id="ofx-account" wire:model.live="ofxAccountId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
-                            <option value="">Selecione a conta</option>
-                            @foreach ($activeAccounts as $accountOption)
-                                <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
-                            @endforeach
-                        </select>
+                        <x-banking.account-picker :accounts="$activeAccounts" :selected-id="$ofxAccountId" model="ofxAccountId" id="ofx-account" label="Conta bancária *" placeholder="Selecione a conta" />
                         @error('ofxAccountId') <p class="mt-2 text-xs text-error">{{ $message }}</p> @enderror
                     </div>
                     @endif
@@ -1118,7 +1100,7 @@ new #[Layout('layouts.app')] class extends Component
                                                 @foreach ($formAllocationRows as $index => $row)
                                                     <div wire:key="form-allocation-{{ $row['key'] }}-{{ $index }}-{{ $formAllocationMode }}" class="grid grid-cols-1 gap-3 rounded-xl bg-white p-3 sm:grid-cols-[1fr_160px_40px] sm:items-end">
                                                         <x-banking.category-picker :categories="$activeCategories->where('type', $formType)"
-                                                            :model="'formAllocationRows.'.$index.'.category_id'" :id="'form-allocation-'.$row['key']" :label="'Categoria '.($index + 1)" />
+                                                            :selected-id="$row['category_id'] ?? null" :model="'formAllocationRows.'.$index.'.category_id'" :id="'form-allocation-'.$row['key']" :label="'Categoria '.($index + 1)" />
                                                         @if ($formAllocationMode === 'percentage')
                                                             <x-jr.input label="Percentual (%)" :name="'formAllocationRows.'.$index.'.percentage'" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.percentage" :helper="'R$ '.number_format((float) ($formAllocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.')" required />
                                                         @else
@@ -1147,7 +1129,7 @@ new #[Layout('layouts.app')] class extends Component
                                             </div>
                                         @else
                                             <div>
-                                                <x-banking.category-picker :categories="$activeCategories->where('type', $formType)" />
+                                                <x-banking.category-picker :categories="$activeCategories->where('type', $formType)" :selected-id="$formCategoryId" />
                                                 @error('formCategoryId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                             </div>
                                         @endif
@@ -1155,24 +1137,12 @@ new #[Layout('layouts.app')] class extends Component
 
                                     @if ($formType === 'transfer')
                                         <div>
-                                            <label class="mb-2 block text-sm font-medium text-mono-600">Conta de origem *</label>
-                                            <select wire:model="formBankAccountId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                                <option value="">Selecionar</option>
-                                                @foreach ($activeAccounts as $accountOption)
-                                                    <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
-                                                @endforeach
-                                            </select>
+                                            <x-banking.account-picker :accounts="$activeAccounts" :selected-id="$formBankAccountId" model="formBankAccountId" id="transaction-bank-account" label="Conta de origem *" placeholder="Selecionar" />
                                             @error('formBankAccountId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
 
                                         <div>
-                                            <label class="mb-2 block text-sm font-medium text-mono-600">Conta de destino *</label>
-                                            <select wire:model="formTransferToId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                                <option value="">Selecionar</option>
-                                                @foreach ($activeAccounts as $accountOption)
-                                                    <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
-                                                @endforeach
-                                            </select>
+                                            <x-banking.account-picker :accounts="$activeAccounts" :selected-id="$formTransferToId" model="formTransferToId" id="transaction-transfer-account" label="Conta de destino *" placeholder="Selecionar" />
                                             @error('formTransferToId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
 
@@ -1204,13 +1174,7 @@ new #[Layout('layouts.app')] class extends Component
                                         @endif
                                     @else
                                         <div>
-                                            <label class="mb-2 block text-sm font-medium text-mono-600">Conta bancária</label>
-                                            <select wire:model="formBankAccountId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                                <option value="">Nenhuma</option>
-                                                @foreach ($activeAccounts as $accountOption)
-                                                    <option value="{{ $accountOption->id }}">{{ $accountOption->name }}</option>
-                                                @endforeach
-                                            </select>
+                                            <x-banking.account-picker :accounts="$activeAccounts" :selected-id="$formBankAccountId" model="formBankAccountId" id="transaction-bank-account" label="Conta bancária" placeholder="Nenhuma" />
                                             @error('formBankAccountId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
 
