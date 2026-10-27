@@ -41,6 +41,13 @@ new #[Layout('layouts.app')] class extends Component
     @endif
 
     @php
+        $receivables = $contact->receivables()->with('installments.settlements')->get();
+    @endphp
+    @if ($receivables->isNotEmpty())
+        <x-jr.card><div class="flex flex-wrap items-center justify-between gap-4"><div><p class="text-sm text-mono-600">Valores a receber desta pessoa</p><p class="mt-1 text-2xl font-bold text-mono-900">R$ {{ number_format($receivables->sum(fn ($row) => $row->remainingCents()) / 100, 2, ',', '.') }}</p><p class="mt-1 text-xs text-mono-600">{{ $receivables->filter(fn ($row) => $row->remainingCents() > 0)->count() }} registro(s) em aberto</p></div><x-jr.button :href="route('banking.receivables.index', ['contact' => $contact->id])">Gerenciar valores a receber</x-jr.button></div></x-jr.card>
+    @endif
+
+    @php
         $phoneList = array_values(array_filter($contact->phones ?: [$contact->phone]));
         $emailList = array_values(array_filter($contact->emails ?: [$contact->email]));
         $statusVariant = $contact->status ? 'success' : 'neutral';

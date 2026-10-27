@@ -125,12 +125,15 @@ class DashboardSnapshotBuilder
                 'amount' => round((float) $c->amount, 2),
             ])->values();
 
+        $thirdPartyReceivable = \App\Domains\Banking\Models\Receivable::with('installments.settlements')->get()->sum(fn ($row) => $row->remainingCents()) / 100;
+
         // ---- Patrimônio total ----
         $patrimony = round(
             $totalBalance
             + $portfolioMarketValue
             + $partnershipNetExposed
             + $writsCapitalAtRisk
+            + $thirdPartyReceivable
             - $openInvoicesTotal,
             2
         );
@@ -145,6 +148,7 @@ class DashboardSnapshotBuilder
             ->concat([
                 ['label' => 'Sociedade (capital exposto)', 'value' => round($partnershipNetExposed, 2)],
                 ['label' => 'Requisitórios em aberto', 'value' => round($writsCapitalAtRisk, 2)],
+                ['label' => 'Valores a receber de terceiros', 'value' => round($thirdPartyReceivable, 2)],
             ])
             ->filter(fn ($r) => $r['value'] > 0)
             ->values();
@@ -158,6 +162,7 @@ class DashboardSnapshotBuilder
                 'portfolio_market_value' => round($portfolioMarketValue, 2),
                 'partnership_exposed' => round($partnershipNetExposed, 2),
                 'writs_capital_at_risk' => round($writsCapitalAtRisk, 2),
+                'third_party_receivable' => round($thirdPartyReceivable, 2),
                 'open_invoices_total' => round($openInvoicesTotal, 2),
             ],
             'distribution' => $distribution,
@@ -209,17 +214,8 @@ class DashboardSnapshotBuilder
      */
     private function incomeExpenseFor(Carbon $start, Carbon $end): array
     {
-        $income = (float) Transaction::where('type', 'income')
-            ->where('status', 'settled')
-            ->whereBetween('date', [$start, $end])
-            ->sum('amount');
-
-        $expense = (float) Transaction::whereIn('type', ['expense', 'invoice_payment'])
-            ->where('status', 'settled')
-            ->whereBetween('date', [$start, $end])
-            ->sum('amount');
-
-        return [$income, $expense];
+        $totals = app(\App\Domains\Banking\Services\OwnFinancialService::class)->totals($start, $end);
+        return [$totals['income'], $totals['expense']];
     }
 
     /**

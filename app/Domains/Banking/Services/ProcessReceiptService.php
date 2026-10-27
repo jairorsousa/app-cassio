@@ -3,6 +3,7 @@
 namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\ProcessReceipt;
+use App\Domains\Banking\Models\Receivable;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
@@ -16,6 +17,7 @@ use App\Domains\Brokers\Services\BrokerProfileService;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ProcessReceiptService
@@ -85,6 +87,9 @@ class ProcessReceiptService
         }
         Validator::make($data, [
             'broker_id' => ['nullable', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
+            'client_contact_id' => ['nullable', 'integer', Rule::exists('contacts', 'id')->where('status', true)->whereNull('deleted_at')],
+            'receivables' => 'sometimes|array|max:200',
+            'receivables.*' => ['nullable', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
             'client_name' => 'required|string|max:200',
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('type', 'income')->where('status', true)],
             'fees_mode' => 'required|in:amount,percent', 'commission_mode' => 'required|in:amount,percent',
@@ -115,7 +120,7 @@ class ProcessReceiptService
                 }
             }
             $rows = [
-                ['kind' => 'client', 'beneficiary' => trim($data['client_name']), 'amount' => $this->money($values['client'])],
+                ['kind' => 'client', 'contact_id' => $data['client_contact_id'] ?? null, 'beneficiary' => trim($data['client_name']), 'amount' => $this->money($values['client'])],
                 ['kind' => 'own', 'amount' => $this->money($values['own'])],
             ];
             if ($values['broker'] > 0) {
@@ -187,6 +192,13 @@ class ProcessReceiptService
             foreach ($targets as $kind => $target) {
                 $part = $receipt->destinations()->where('kind', $kind)->sole();
                 $allocations->sync($part, $target);
+            }
+            foreach (($data['receivables'] ?? []) as $id => $amount) {
+                if ($amount === null || $amount === '' || $this->destinations->cents((string) $amount, true) === 0) {
+                    continue;
+                }
+                $receivable = Receivable::findOrFail($id);
+                app(ReceivableService::class)->offset($receivable, $client->fresh(), (string) $amount, (string) Str::uuid());
             }
             $receipt->touch();
         });

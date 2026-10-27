@@ -642,7 +642,7 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
+        $q = Transaction::with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -825,7 +825,16 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->destinationPayment?->destination)
                                 <button type="button" wire:click="openDistribution({{ $t->destinationPayment->destination->receipt_id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">Ver recebimento</button>
                             @endif
+                            @if ($t->receivableInstallments->isNotEmpty())
+                                <a href="{{ route('banking.receivables.index', ['contact' => $t->receivableInstallments->first()->receivable->contact_id]) }}" class="mr-3 text-fs-12 font-medium text-primary-500">Valores a receber</a>
+                            @endif
+                            @if ($t->receivableSettlements->isNotEmpty())
+                                <a href="{{ route('banking.receivables.index', ['status' => '']) }}" class="mr-3 text-fs-12 font-medium text-primary-500">Devolução de adiantamento</a>
+                            @endif
                             @unless ($t->isReadOnly())
+                                @if ($t->type === 'expense' && $t->status === 'settled' && (float) $t->amount > 0 && ! $t->destinationPayment)
+                                    <a href="{{ route('banking.receivables.index', ['transaction' => $t->id]) }}" class="mr-3 text-fs-12 font-medium text-primary-500">Dividir com terceiros</a>
+                                @endif
                                 @if ($t->type === 'income' && $t->status === 'settled' && $t->bank_account_id)
                                     <button type="button" wire:click="openDistribution({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->destinations->isNotEmpty() ? 'Ver recebimento de processo' : 'Recebimento de processo' }}</button>
                                 @endif

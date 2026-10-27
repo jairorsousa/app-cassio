@@ -79,7 +79,7 @@ new #[Layout('layouts.app')] class extends Component
     public function rules(): array
     {
         return [
-            'type' => 'required|in:cedente,advogado,corretor',
+            'type' => 'required|in:cedente,advogado,corretor,pessoal',
             'name' => 'required|string|max:200',
             'document' => 'nullable|string|max:30',
             'birth_date' => 'nullable|date',
@@ -248,6 +248,7 @@ new #[Layout('layouts.app')] class extends Component
                         <option value="cedente">Cedente</option>
                         <option value="advogado">Advogado</option>
                         <option value="corretor">Corretor</option>
+                        <option value="pessoal">Pessoal (amigos e familiares)</option>
                     </select>
                 </div>
                 <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />

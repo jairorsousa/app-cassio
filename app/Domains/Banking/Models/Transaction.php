@@ -46,6 +46,18 @@ class Transaction extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /** @return HasMany<ReceivableInstallment, $this> */
+    public function receivableInstallments(): HasMany
+    {
+        return $this->hasMany(ReceivableInstallment::class);
+    }
+
+    /** @return HasMany<ReceivableSettlement, $this> */
+    public function receivableSettlements(): HasMany
+    {
+        return $this->hasMany(ReceivableSettlement::class);
+    }
+
     public function allocations(): HasMany
     {
         return $this->hasMany(TransactionAllocation::class);
@@ -56,11 +68,13 @@ class Transaction extends Model
         return $this->hasOne(ProcessReceipt::class, 'receipt_id');
     }
 
+    /** @return HasMany<ReceiptDestination, $this> */
     public function destinations(): HasMany
     {
         return $this->hasMany(ReceiptDestination::class, 'receipt_id');
     }
 
+    /** @return HasOne<ReceiptDestinationPayment, $this> */
     public function destinationPayment(): HasOne
     {
         return $this->hasOne(ReceiptDestinationPayment::class, 'transaction_id');
@@ -81,6 +95,7 @@ class Transaction extends Model
         return $this->belongsTo(Writ::class, 'source_id');
     }
 
+    /** @return BelongsTo<BankAccount, $this> */
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);
@@ -91,6 +106,7 @@ class Transaction extends Model
         return $this->belongsTo(CreditCard::class);
     }
 
+    /** @return BelongsTo<CreditCardInvoice, $this> */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(CreditCardInvoice::class, 'credit_card_invoice_id');

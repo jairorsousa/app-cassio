@@ -12,6 +12,7 @@ use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
+use App\Domains\Contacts\Models\Contact;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -19,7 +20,7 @@ class ReceiptDestinationService
 {
     public function eligible(Transaction $receipt): void
     {
-        if ($receipt->type !== 'income' || $receipt->status !== 'settled' || ! $receipt->bank_account_id || $receipt->isReadOnly() || $receipt->trashed() || $receipt->bankAccount?->type === 'repasse') {
+        if ($receipt->type !== 'income' || $receipt->status !== 'settled' || ! $receipt->bank_account_id || $receipt->isReadOnly() || $receipt->receivableSettlements()->exists() || $receipt->trashed() || $receipt->bankAccount?->type === 'repasse') {
             throw new \DomainException('Selecione uma receita recebida em conta bancária para definir a divisão do recebimento.');
         }
     }
@@ -55,6 +56,9 @@ class ReceiptDestinationService
             foreach ($rows as $row) {
                 if (! in_array($row['kind'] ?? '', ['client', 'broker', 'office', 'own'], true)) {
                     throw new \DomainException('Selecione uma divisão do recebimento válida para cada parte.');
+                }
+                if (! empty($row['contact_id']) && ! Contact::active()->whereKey($row['contact_id'])->exists()) {
+                    throw new \DomainException('Selecione um contato ativo para o cliente.');
                 }
                 $sum += $this->cents((string) ($row['amount'] ?? ''), $row['kind'] === 'own' || (! $automaticAdvances && $row['kind'] === 'client'));
                 $own += $row['kind'] === 'own' ? 1 : 0;
@@ -129,6 +133,7 @@ class ReceiptDestinationService
                 $receipt->destinations()->create([
                     'kind' => $row['kind'], 'beneficiary' => $row['kind'] === 'own' ? 'Minha parte' : $beneficiary,
                     'amount' => $this->money($this->cents((string) $row['amount'], true)),
+                    'contact_id' => $row['kind'] === 'client' ? (($row['contact_id'] ?? null) ?: null) : null,
                     'commission_id' => $commission?->id, 'commission_created' => $created,
                 ]);
             }
@@ -161,6 +166,9 @@ class ReceiptDestinationService
         DB::transaction(function () use ($receipt) {
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $parts = $receipt->destinations()->lockForUpdate()->get();
+            if ($parts->contains(fn ($part) => $part->receivableOffsets()->exists())) {
+                throw new \DomainException('Estorne as compensações de valores a receber antes de excluir este recebimento.');
+            }
             $ledger = app(BrokerLedgerDeletionService::class);
 
             app(ReceiptAccountAllocationService::class)->clear($receipt);
@@ -219,7 +227,7 @@ class ReceiptDestinationService
             }
             if ($existingTransactionId) {
                 $transaction = Transaction::lockForUpdate()->findOrFail($existingTransactionId);
-                if ($transaction->type !== 'expense' || $transaction->status !== 'settled' || $transaction->isReadOnly() || $transaction->bank_account_id !== $accountId || $transaction->credit_card_id || $transaction->destinationPayment()->exists() || BrokerCommissionPayment::where('transaction_id', $transaction->id)->exists()) {
+                if ($transaction->type !== 'expense' || $transaction->status !== 'settled' || $transaction->isReadOnly() || $transaction->bank_account_id !== $accountId || $transaction->credit_card_id || $transaction->destinationPayment()->exists() || $transaction->receivableInstallments()->exists() || BrokerCommissionPayment::where('transaction_id', $transaction->id)->exists()) {
                     throw new \DomainException('Selecione uma despesa paga nesta conta e ainda não vinculada a outro repasse.');
                 }
                 $cents = $this->cents((string) $transaction->amount);

@@ -283,7 +283,7 @@ class ReceiptWritLinkTest extends TestCase
         $this->assertEquals(1000, $report->viewData('byCategory')->get('Honorários próprios')['income']);
         $this->assertEquals(['in' => 10000, 'out' => 0], $report->viewData('byAccount')->get('CEF'));
         Livewire::withoutLazyLoading();
-        $this->assertEquals(10000, Volt::test('banking.dashboard')->viewData('monthIncome'));
+        $this->assertEquals(8000, Volt::test('banking.dashboard')->viewData('monthIncome'));
         $this->assertSame(3000.0, $writ->fresh()->actualProfit());
     }
 

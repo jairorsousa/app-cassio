@@ -21,37 +21,38 @@ class TransactionService
 
     public function update(Transaction $transaction, array $data): Transaction
     {
-        if ($transaction->destinationPayment()->exists()) {
-            throw new \DomainException('Desvincule este pagamento da divisão do recebimento antes de alterar o lançamento.');
-        }
-        if (array_key_exists('date', $data) && $transaction->destinations()->whereNotNull('allocation_transaction_id')->exists()
-            && Carbon::parse($data['date'])->toDateString() !== $transaction->date->toDateString()) {
-            throw new \DomainException('Remova a divisão antes de alterar a data do recebimento e seus valores reservados para repasse.');
-        }
-        if ($transaction->destinations()->exists()) {
-            foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {
-                if (array_key_exists($field, $data) && (string) $data[$field] !== (string) $transaction->$field && ($field !== 'amount' || round((float) $data[$field] * 100) !== round((float) $transaction->$field * 100))) {
-                    throw new \DomainException('Remova a divisão do recebimento antes de alterar o valor, o tipo, a conta ou o status do recebimento.');
+        return DB::transaction(function () use ($transaction, $data) {
+            $transaction = Transaction::lockForUpdate()->findOrFail($transaction->id);
+            if ($transaction->destinationPayment()->exists()) {
+                throw new \DomainException('Desvincule este pagamento da divisão do recebimento antes de alterar o lançamento.');
+            }
+            if (array_key_exists('date', $data) && $transaction->destinations()->whereNotNull('allocation_transaction_id')->exists()
+                && Carbon::parse($data['date'])->toDateString() !== $transaction->date->toDateString()) {
+                throw new \DomainException('Remova a divisão antes de alterar a data do recebimento e seus valores reservados para repasse.');
+            }
+            if ($transaction->destinations()->exists()) {
+                foreach (['amount', 'type', 'status', 'bank_account_id'] as $field) {
+                    if (array_key_exists($field, $data) && (string) $data[$field] !== (string) $transaction->$field && ($field !== 'amount' || round((float) $data[$field] * 100) !== round((float) $transaction->$field * 100))) {
+                        throw new \DomainException('Remova a divisão do recebimento antes de alterar o valor, o tipo, a conta ou o status do recebimento.');
+                    }
                 }
             }
-        }
-        if ($transaction->isReadOnly()) {
-            throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
-        }
-
-        if ($transaction->allocations()->exists()) {
-            if (isset($data['amount']) && round((float) $data['amount'] * 100) !== round((float) $transaction->amount * 100)) {
-                throw new \DomainException('Ajuste ou remova o rateio antes de alterar o valor total.');
+            if ($transaction->isReadOnly()) {
+                throw new \DomainException('Lançamento gerado por outro módulo é somente leitura.');
             }
 
-            if (isset($data['type']) && $data['type'] !== $transaction->type) {
-                throw new \DomainException('Remova o rateio antes de alterar o tipo do lançamento.');
+            if ($transaction->allocations()->exists()) {
+                if (isset($data['amount']) && round((float) $data['amount'] * 100) !== round((float) $transaction->amount * 100)) {
+                    throw new \DomainException('Ajuste ou remova o rateio antes de alterar o valor total.');
+                }
+
+                if (isset($data['type']) && $data['type'] !== $transaction->type) {
+                    throw new \DomainException('Remova o rateio antes de alterar o tipo do lançamento.');
+                }
+
+                $data['category_id'] = null;
             }
 
-            $data['category_id'] = null;
-        }
-
-        return DB::transaction(function () use ($transaction, $data) {
             $oldInvoice = $transaction->invoice;
             $transaction->update($data);
 
@@ -77,6 +78,13 @@ class TransactionService
         }
 
         DB::transaction(function () use ($transaction) {
+            $transaction = Transaction::lockForUpdate()->findOrFail($transaction->id);
+            if ($transaction->installment_group_id) {
+                Transaction::where('installment_group_id', $transaction->installment_group_id)->orderBy('id')->lockForUpdate()->get();
+            }
+            if ($transaction->receivableInstallments()->exists() || $transaction->receivableSettlements()->exists() || ($transaction->installment_group_id && Transaction::where('installment_group_id', $transaction->installment_group_id)->whereHas('receivableInstallments')->exists())) {
+                throw new \DomainException('Remova o vínculo em Valores a receber antes de excluir este lançamento ou suas parcelas.');
+            }
             if ($transaction->related_transaction_id) {
                 Transaction::where('id', $transaction->related_transaction_id)->delete();
             }

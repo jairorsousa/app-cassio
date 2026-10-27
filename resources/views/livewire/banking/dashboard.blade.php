@@ -44,15 +44,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $monthStart = now()->startOfMonth();
             $monthEnd = now()->endOfMonth();
 
-            $monthIncome = (float) Transaction::where('type', 'income')
-                ->whereBetween('date', [$monthStart, $monthEnd])
-                ->where('status', 'settled')
-                ->sum('amount');
-
-            $monthExpense = (float) Transaction::whereIn('type', ['expense', 'invoice_payment'])
-                ->whereBetween('date', [$monthStart, $monthEnd])
-                ->where('status', 'settled')
-                ->sum('amount');
+            $own = app(\App\Domains\Banking\Services\OwnFinancialService::class)->totals($monthStart, $monthEnd);
+            $monthIncome = $own['income'];
+            $monthExpense = $own['expense'];
 
             $pending = Transaction::with(['category', 'bankAccount'])
                 ->where('status', 'pending')
@@ -75,7 +69,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Resultado do período</span>
-                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Receitas recebidas menos despesas pagas no mês atual." aria-label="Receitas recebidas menos despesas pagas no mês atual.">info</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Receitas próprias menos despesas próprias do mês atual, incluindo perdas reconhecidas." aria-label="Receitas próprias menos despesas próprias do mês atual, incluindo perdas reconhecidas.">info</span>
             </div>
             <div class="mt-space-2 text-fs-24 font-bold font-mono [font-variant-numeric:tabular-nums] {{ $result >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">{{ $result < 0 ? '-R$' : 'R$' }} {{ number_format(abs($result), 2, ',', '.') }}</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
@@ -83,7 +77,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Receitas</span>
-                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Total de receitas recebidas no mês atual." aria-label="Total de receitas recebidas no mês atual.">info</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Receitas próprias recebidas no mês atual. Devoluções de adiantamentos e valores de terceiros não são receitas próprias." aria-label="Receitas próprias recebidas no mês atual. Devoluções de adiantamentos e valores de terceiros não são receitas próprias.">info</span>
             </div>
             <div class="mt-space-2 text-fs-24 font-bold text-cryptex-green-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthIncome, 2, ',', '.') }}</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
@@ -91,7 +85,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Despesas</span>
-                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Despesas e pagamentos de faturas registrados como pagos no mês atual." aria-label="Despesas e pagamentos de faturas registrados como pagos no mês atual.">info</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Despesas próprias pagas no mês atual, incluindo a parte própria das faturas. Valores adiantados a terceiros não entram como despesa. Inclui perdas reconhecidas explicitamente." aria-label="Despesas próprias pagas no mês atual, incluindo a parte própria das faturas. Valores adiantados a terceiros não entram como despesa. Inclui perdas reconhecidas explicitamente.">info</span>
             </div>
             <div class="mt-space-2 text-fs-24 font-bold text-cryptex-red-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthExpense, 2, ',', '.') }}</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>

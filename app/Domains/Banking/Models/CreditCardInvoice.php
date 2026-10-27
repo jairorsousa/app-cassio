@@ -26,6 +26,7 @@ class CreditCardInvoice extends Model
         return $this->belongsTo(CreditCard::class);
     }
 
+    /** @return HasMany<Transaction, $this> */
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);

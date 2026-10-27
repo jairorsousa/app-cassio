@@ -2,6 +2,8 @@
 
 namespace App\Domains\Contacts\Models;
 
+use App\Domains\Banking\Models\ReceiptDestination;
+use App\Domains\Banking\Models\Receivable;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Writs\Models\WritAssignor;
@@ -29,6 +31,11 @@ class Contact extends Model
         'emails' => 'array',
         'status' => 'boolean',
     ];
+
+    public function receivables(): HasMany
+    {
+        return $this->hasMany(Receivable::class);
+    }
 
     public function scopeActive($query)
     {
@@ -60,6 +67,7 @@ class Contact extends Model
         return match ($this->type) {
             'advogado' => 'Advogado',
             'corretor' => 'Corretor',
+            'pessoal' => 'Pessoal',
             default => 'Cedente',
         };
     }
@@ -85,6 +93,7 @@ class Contact extends Model
             ?: Broker::whereNull('contact_id')->where('name', $this->name)->first();
 
         return array_filter([
+            'valores_a_receber' => $this->receivables()->count() + ReceiptDestination::where('contact_id', $this->id)->count(),
             'requisitorios' => $this->writAssignors()->count(),
             'lancamentos' => $this->transactions()->count() + ($broker?->transactions()->count() ?? 0),
             'adiantamentos' => $broker?->advances()->count() ?? 0,
@@ -106,6 +115,9 @@ class Contact extends Model
         }
 
         $labels = [];
+        if (($blockers['valores_a_receber'] ?? 0) > 0) {
+            $labels[] = $blockers['valores_a_receber'].' vínculo(s) de valores a receber ou repasses';
+        }
 
         if (($blockers['requisitorios'] ?? 0) > 0) {
             $labels[] = $blockers['requisitorios'].' requisitório(s)';

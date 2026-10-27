@@ -12,6 +12,7 @@ new class extends Component {
     #[Locked]
     public int $receiptId;
     public array $rows = [];
+    public array $clientContacts = [];
     public bool $editing = false;
     public function mount(int $receiptId): void
     {
@@ -119,6 +120,20 @@ new class extends Component {
         $this->dispatch('receipt-destination-updated');
     }
 
+    public function linkClient(int $id): void
+    {
+        $part = $this->receipt()->destinations()->where('kind', 'client')->findOrFail($id);
+        $contactId = $this->clientContacts[$id] ?? null;
+        $this->validate(['clientContacts.'.$id => 'required|integer|exists:contacts,id']);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($part, $contactId) {
+            Transaction::lockForUpdate()->findOrFail($this->receiptId);
+            $part = \App\Domains\Banking\Models\ReceiptDestination::lockForUpdate()->findOrFail($part->id);
+            if ($part->receivableOffsets()->exists()) { $this->addError('division', 'Estorne as compensações antes de trocar o contato.'); return; }
+            $part->update(['contact_id' => $contactId]);
+        });
+        $this->dispatch('receipt-destination-updated');
+    }
+
     public function close(): void
     {
         $this->dispatch('receipt-destination-closed');
@@ -130,6 +145,8 @@ new class extends Component {
         $parts = $receipt->destinations()->with('payments.transaction', 'payments.writIncome.sourceWrit', 'commission.payments.transaction.destinationPayment', 'commission.broker', 'commission.caseType', 'commission.settlements.advance', 'recoveries.expense', 'repasseAccount')->get();
         return [
             'receipt' => $receipt, 'parts' => $parts,
+            'contacts' => \App\Domains\Contacts\Models\Contact::active()->orderBy('name')->get(),
+            'clientOffsetAmount' => $parts->sum(fn ($part) => $part->offsetCents()) / 100,
             'processReceipt' => $receipt->processReceipt,
             'recoveredAmount' => $parts->sum(fn ($part) => $part->recoveredCents()) / 100,
             'canEdit' => ! $parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty()),
@@ -164,7 +181,7 @@ new class extends Component {
                 @endif
                 <div class="grid gap-3 md:grid-cols-3">
                     <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Minha receita<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
-                    <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Cliente líquido<strong class="mt-1 block text-xl">R$ {{ number_format($parts->where('kind', 'client')->sum('amount') - $recoveredAmount, 2, ',', '.') }}</strong></div>
+                    <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Cliente líquido<strong class="mt-1 block text-xl">R$ {{ number_format($parts->where('kind', 'client')->sum('amount') - $recoveredAmount - $clientOffsetAmount, 2, ',', '.') }}</strong></div>
                     <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{{ $parts->contains('kind', 'broker') ? 'Comissões de corretor e escritório' : 'Comissão do escritório' }}<strong class="mt-1 block text-xl">R$ {{ number_format($parts->whereIn('kind', ['broker', 'office'])->sum('amount'), 2, ',', '.') }}</strong></div>
                 </div>
                 @foreach ($parts as $part)
@@ -172,14 +189,22 @@ new class extends Component {
                         <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
                             <div><strong class="text-mono-900">{{ ['client' => 'Cliente', 'broker' => 'Corretor', 'office' => 'Escritório', 'own' => 'Minha receita'][$part->kind] }}@if ($part->kind !== 'own') · {{ $part->beneficiary }}@endif</strong>
                                 <p class="mt-1 text-mono-600">R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>
-                                @if ($part->kind === 'client' && $part->recoveredCents() > 0)<p class="mt-1 text-sm text-mono-900">Valor líquido do cliente: <strong>R$ {{ number_format((float) $part->amount - $part->recoveredCents() / 100, 2, ',', '.') }}</strong></p>@endif
-                                @if ($part->repasseAccount)<p class="mt-1 text-sm text-mono-600">Conta de repasse: <strong>{{ $part->repasseAccount->name }}</strong> · Valor reservado: R$ {{ number_format((float) $part->amount - ($part->kind === 'client' ? $part->recoveredCents() / 100 : 0), 2, ',', '.') }}</p>@endif
+                                @if ($part->kind === 'client' && ($part->recoveredCents() + $part->offsetCents()) > 0)<p class="mt-1 text-sm text-mono-900">Valor líquido do cliente: <strong>R$ {{ number_format((float) $part->amount - ($part->recoveredCents() + $part->offsetCents()) / 100, 2, ',', '.') }}</strong></p>@endif
+                                @if ($part->repasseAccount)<p class="mt-1 text-sm text-mono-600">Conta de repasse: <strong>{{ $part->repasseAccount->name }}</strong> · Valor reservado: R$ {{ number_format((float) $part->amount - ($part->kind === 'client' ? ($part->recoveredCents() + $part->offsetCents()) / 100 : 0), 2, ',', '.') }}</p>@endif
                                 @if ($part->repasseAccount)<a href="{{ route('banking.accounts.index') }}" class="mt-1 inline-block text-sm font-semibold text-primary-600">Gerenciar repasses em Contas</a>@endif
                                 @if ($part->commission)<p class="mt-1 text-sm text-mono-600">{{ $part->commission->caseType?->name }} · {{ $part->commission->name }}</p>@endif
                                 @if ($part->commission?->broker?->contact_id)<a class="text-primary-600 hover:underline" href="{{ route('brokers.show', $part->commission->broker->contact_id) }}">Comissão #{{ $part->commission_id }} · Ver corretor</a>@endif
                             </div>
 
                         </div>
+                        @if ($part->kind === 'client')
+                            @if (! $part->contact_id)
+                                <div class="flex flex-wrap items-center gap-2"><select aria-label="Contato do cliente" wire:model="clientContacts.{{ $part->id }}" class="h-10 rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Vincular contato para descontar adiantamentos</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select><button type="button" class="text-sm font-semibold text-primary-500" wire:click="linkClient({{ $part->id }})">Vincular</button></div>
+                            @else
+                                <a href="{{ route('banking.receivables.index', ['contact' => $part->contact_id]) }}" class="inline-block text-sm font-semibold text-primary-500">Gerenciar adiantamentos deste cliente</a>
+                            @endif
+                            @if ($part->offsetCents())<p class="text-sm text-mono-600">Adiantamentos descontados: R$ {{ number_format($part->offsetCents() / 100, 2, ',', '.') }}</p>@endif
+                        @endif
                         @foreach ($part->recoveries as $recovery)
                             <div class="flex flex-wrap justify-between gap-2 rounded-lg bg-mono-50 p-3 text-xs text-mono-600"><span>Despesa recuperada · {{ $recovery->expense->description }} · R$ {{ number_format((float) $recovery->amount, 2, ',', '.') }}</span><button type="button" wire:click="undoRecovery({{ $recovery->id }})" wire:confirm="Desfazer este desconto? O valor voltará ao saldo do cliente e ficará disponível para recuperação." class="text-error">Desfazer desconto</button></div>
                         @endforeach

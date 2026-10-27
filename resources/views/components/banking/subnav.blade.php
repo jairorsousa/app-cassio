@@ -31,6 +31,10 @@
             Prévia OFX
         </a>
     @endif
+    <a href="{{ route('banking.receivables.index') }}" class="{{ $tab }} {{ ($active === 'receivables' || request()->routeIs('banking.receivables.*')) ? $activeTab : $inactiveTab }}">
+        <span class="material-icons-outlined text-[18px]">request_quote</span>
+        Valores a receber
+    </a>
     <a
         href="{{ route('banking.accounts.index') }}"
         class="{{ $tab }} {{ request()->routeIs('banking.accounts.*') ? $activeTab : $inactiveTab }}"
