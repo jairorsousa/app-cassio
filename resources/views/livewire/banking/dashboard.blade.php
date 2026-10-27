@@ -13,7 +13,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         return <<<'HTML'
         <div class="flex flex-col gap-space-5 animate-pulse">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
+                <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
@@ -70,23 +71,39 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
-        <x-fx.card>
-            <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Saldo nas contas bancárias</div>
-            <div class="text-fs-24 font-bold text-cryptex-text-primary font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalBalance, 2, ',', '.') }}</div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
+        <x-fx.card class="min-w-0">
+            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
+                <span class="uppercase tracking-[0.05em]">Resultado do período</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Receitas recebidas menos despesas pagas no mês atual." aria-label="Receitas recebidas menos despesas pagas no mês atual.">info</span>
+            </div>
+            <div class="mt-space-2 text-fs-24 font-bold font-mono [font-variant-numeric:tabular-nums] {{ $result >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">{{ $result < 0 ? '-R$' : 'R$' }} {{ number_format(abs($result), 2, ',', '.') }}</div>
+            <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
+        </x-fx.card>
+        <x-fx.card class="min-w-0">
+            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
+                <span class="uppercase tracking-[0.05em]">Receitas</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Total de receitas recebidas no mês atual." aria-label="Total de receitas recebidas no mês atual.">info</span>
+            </div>
+            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-green-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthIncome, 2, ',', '.') }}</div>
+            <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
+        </x-fx.card>
+        <x-fx.card class="min-w-0">
+            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
+                <span class="uppercase tracking-[0.05em]">Despesas</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Despesas e pagamentos de faturas registrados como pagos no mês atual." aria-label="Despesas e pagamentos de faturas registrados como pagos no mês atual.">info</span>
+            </div>
+            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-red-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthExpense, 2, ',', '.') }}</div>
+            <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
+        </x-fx.card>
+        <x-fx.card class="min-w-0">
+            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
+                <span class="uppercase tracking-[0.05em]">Saldo em conta</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Saldo atual das contas ativas, sem incluir contas de repasse. Não se limita ao mês atual." aria-label="Saldo atual das contas ativas, sem incluir contas de repasse. Não se limita ao mês atual.">info</span>
+            </div>
+            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-text-primary font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalBalance, 2, ',', '.') }}</div>
             <div class="text-fs-12 text-cryptex-text-secondary mt-space-1 font-mono"><span class="text-cryptex-brand-400">{{ $accounts->where('type', '!=', 'repasse')->count() }}</span> contas ativas</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Cliente e escritório a repassar: R$ {{ number_format(max(0, -$repasseBalance), 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Receita mês</div>
-            <div class="text-fs-24 font-bold text-cryptex-green-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthIncome, 2, ',', '.') }}</div>
-        </x-fx.card>
-        <x-fx.card>
-            <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Despesa mês</div>
-            <div class="text-fs-24 font-bold text-cryptex-red-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthExpense, 2, ',', '.') }}</div>
-            <div class="text-fs-12 mt-space-1 font-mono [font-variant-numeric:tabular-nums] {{ $result >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">
-                Resultado: R$ {{ number_format($result, 2, ',', '.') }}
-            </div>
         </x-fx.card>
     </div>
 
