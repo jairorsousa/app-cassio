@@ -69,9 +69,17 @@ new #[Layout('layouts.app')] class extends Component {
     public function createPersonalContact(): void
     {
         $this->validate(['newContactName' => 'required|string|max:200']);
+        $index = collect($this->form['people'])->search(fn ($person) => empty($person['contact_id']));
+        if ($index === false) {
+            if (count($this->form['people']) >= 20) {
+                $this->addError('newContactName', 'O limite é de 20 pessoas por pagamento.');
+                return;
+            }
+            $this->addPerson();
+            $index = count($this->form['people']) - 1;
+        }
         $contact = Contact::create(['name' => trim($this->newContactName), 'type' => 'pessoal', 'status' => true]);
-        $last = count($this->form['people']) - 1;
-        $this->form['people'][$last]['contact_id'] = $contact->id;
+        $this->form['people'][$index]['contact_id'] = $contact->id;
         $this->newContactName = '';
     }
 
@@ -276,7 +284,7 @@ new #[Layout('layouts.app')] class extends Component {
     <x-fx.card>
         <div class="mb-5 grid gap-4 md:grid-cols-3">
             <x-jr.input label="Buscar" name="search" placeholder="Pessoa ou descrição" wire:model.live.debounce.300ms="search" />
-            <div><label for="filter-contact" class="mb-2 block text-sm text-mono-600">Pessoa</label><select id="filter-contact" wire:model.live="contact" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Todas</option>@foreach ($contacts as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select></div>
+            <x-banking.contact-picker :contacts="$contacts" :selected-id="$contact" model="contact" id="filter-contact" placeholder="Todas" clear-value="" />
             <div><label for="filter-status" class="mb-2 block text-sm text-mono-600">Situação</label><select id="filter-status" wire:model.live="status" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="open">Em aberto</option><option value="overdue">Vencidos</option><option value="paid">Encerrados</option><option value="">Todos</option></select></div>
         </div>
         <div class="overflow-x-auto"><table class="fx-table w-full text-sm"><thead><tr><th>Pessoa / descrição</th><th>Valor original</th><th>Baixado</th><th>Saldo</th><th>Próximo vencimento</th><th>Situação</th><th></th></tr></thead><tbody>
@@ -331,13 +339,13 @@ new #[Layout('layouts.app')] class extends Component {
                                 <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="font-semibold text-mono-900">Quem deve devolver?</h4><button type="button" wire:click="addPerson" class="text-sm font-semibold text-primary-500">Adicionar pessoa</button></div>
                                 @foreach ($form['people'] as $index => $person)
                                     <div class="grid items-end gap-3 md:grid-cols-[1fr_1fr_auto]" wire:key="person-{{ $index }}-{{ $createKey }}">
-                                        <div><label for="person-{{ $index }}" class="mb-2 block text-sm text-mono-600">Pessoa</label><select id="person-{{ $index }}" wire:model="form.people.{{ $index }}.contact_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Selecione</option>@foreach ($contacts as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select></div>
+                                        <x-banking.contact-picker :contacts="$contacts" :selected-id="$person['contact_id']" :model="'form.people.'.$index.'.contact_id'" :id="'person-'.$index" />
                                         <x-jr.input label="Parte a devolver (R$)" :name="'form.people.'.$index.'.amount'" x-money inputmode="numeric" wire:model="form.people.{{ $index }}.amount" />
                                         @if (count($form['people']) > 1)<x-jr.button variant="standard" wire:click="removePerson({{ $index }})">Remover</x-jr.button>@endif
                                     </div>
                                 @endforeach
                                 <p class="text-xs text-mono-600">O restante do pagamento será a despesa própria do Dr. Cássio. Para um adiantamento integral, informe o valor total na parte da pessoa.</p>
-                                <div class="flex flex-wrap items-end gap-3"><x-jr.input label="Novo contato pessoal" name="newContactName" wire:model="newContactName" placeholder="Nome do amigo ou familiar" /><x-jr.button variant="standard" wire:click="createPersonalContact">Cadastrar e selecionar</x-jr.button></div>
+                                <div class="flex flex-wrap items-end gap-3"><x-jr.input label="Novo contato pessoal" name="newContactName" wire:model="newContactName" placeholder="Nome do amigo ou familiar" /><x-jr.button variant="standard" wire:click="createPersonalContact" wire:loading.attr="disabled" wire:target="createPersonalContact">Cadastrar e selecionar</x-jr.button></div>
                             </div>
                             <div class="grid gap-4 md:grid-cols-2">
                                 <div><label for="repayment" class="mb-2 block text-sm text-mono-600">Quando deve devolver?</label><select id="repayment" wire:model.live="form.repayment_mode" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="dated">Em data combinada / parcelas mensais</option><option value="process">No recebimento do processo</option><option value="undated">Sem data definida</option></select></div>

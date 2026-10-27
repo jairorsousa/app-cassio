@@ -354,9 +354,28 @@ class ReceivableTest extends TestCase
 
     public function test_inline_contact_creation_keeps_the_payment_draft_and_marks_contact_as_personal(): void
     {
-        Volt::test('banking.receivables.index')->call('startCreate')->set('form.description', 'Jantar')
+        $component = Volt::test('banking.receivables.index')->call('startCreate')->set('form.description', 'Jantar')
+            ->set('form.people.0.amount', '200.00')
             ->set('newContactName', 'Amigo novo')->call('createPersonalContact')->assertHasNoErrors()
-            ->assertSet('form.description', 'Jantar')->assertSee('Amigo novo');
-        $this->assertSame('pessoal', Contact::where('name', 'Amigo novo')->sole()->type);
+            ->assertSet('form.description', 'Jantar')->assertSet('form.people.0.amount', '200.00')->assertSee('Amigo novo');
+        $contact = Contact::where('name', 'Amigo novo')->sole();
+        $this->assertSame('pessoal', $contact->type);
+        $component->assertSet('form.people.0.contact_id', $contact->id)->assertSet('newContactName', '');
+    }
+
+    public function test_new_contact_uses_an_empty_person_row_and_preserves_people_already_selected(): void
+    {
+        $component = Volt::test('banking.receivables.index')->call('startCreate')
+            ->set('form.people.0.contact_id', $this->person->id)->set('form.people.0.amount', '150.00')
+            ->call('addPerson')->set('form.people.1.amount', '200.00')
+            ->set('newContactName', 'Segundo amigo')->call('createPersonalContact')->assertHasNoErrors();
+        $contact = Contact::where('name', 'Segundo amigo')->sole();
+        $component->assertSet('form.people.0.contact_id', $this->person->id)
+            ->assertSet('form.people.0.amount', '150.00')
+            ->assertSet('form.people.1.contact_id', $contact->id)->assertSet('form.people.1.amount', '200.00');
+        $component->set('newContactName', 'Terceiro amigo')->call('createPersonalContact')->assertHasNoErrors();
+        $third = Contact::where('name', 'Terceiro amigo')->sole();
+        $component->assertSet('form.people.0.contact_id', $this->person->id)
+            ->assertSet('form.people.1.contact_id', $contact->id)->assertSet('form.people.2.contact_id', $third->id);
     }
 }
