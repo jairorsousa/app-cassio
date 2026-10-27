@@ -1,3 +1,5 @@
+@props(['active' => null])
+
 @php
     $tab = 'inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors';
     $activeTab = 'border-primary-500 text-primary-500';
@@ -7,7 +9,8 @@
 <nav class="flex flex-wrap gap-6 border-b border-mono-100">
     <a
         href="{{ route('banking.dashboard') }}"
-        class="{{ $tab }} {{ request()->routeIs('banking.dashboard') ? $activeTab : $inactiveTab }}"
+        class="{{ $tab }} {{ ($active === 'overview' || request()->routeIs('banking.dashboard')) ? $activeTab : $inactiveTab }}"
+        @if ($active === 'overview' || request()->routeIs('banking.dashboard')) aria-current="page" @endif
     >
         <span class="material-icons-outlined text-[18px]">dashboard</span>
         Visão geral

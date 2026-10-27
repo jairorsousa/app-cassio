@@ -69,7 +69,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 <x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-space-5">
-    <x-banking.subnav />
+    <x-banking.subnav active="overview" />
     <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
         <x-fx.card>
             <div class="text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium">Saldo nas contas bancárias</div>
@@ -132,10 +132,4 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-fx.card>
     </div>
 
-    <div class="flex gap-space-3">
-        <x-fx.button href="{{ route('banking.transactions.index') }}" variant="primary">Lançamentos</x-fx.button>
-        <x-fx.button href="{{ route('banking.accounts.index') }}" variant="secondary">Contas</x-fx.button>
-        <x-fx.button href="{{ route('banking.cards.index') }}" variant="secondary">Cartões</x-fx.button>
-        <x-fx.button href="{{ route('banking.reports.cashflow') }}" variant="secondary">Fluxo</x-fx.button>
-    </div>
 </div>
