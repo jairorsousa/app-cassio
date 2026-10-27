@@ -2,6 +2,7 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\CreditCardInvoice;
+use App\Domains\Banking\Models\Receivable;
 use App\Domains\Banking\Models\Transaction;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Layout;
@@ -13,7 +14,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     {
         return <<<'HTML'
         <div class="flex flex-col gap-space-5 animate-pulse">
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-space-5">
+                <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
                 <div class="h-[96px] bg-cryptex-bg-tertiary rounded-md"></div>
@@ -57,7 +59,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             return compact('accounts', 'totalBalance', 'repasseBalance', 'upcomingInvoices', 'monthIncome', 'monthExpense', 'pending');
         });
 
-        return $summary + ['repasseBalance' => 0] + ['result' => $summary['monthIncome'] - $summary['monthExpense']];
+        $totalReceivable = Receivable::with('installments.settlements')->get()->sum(fn ($receivable) => $receivable->remainingCents()) / 100;
+
+        return $summary + ['repasseBalance' => 0, 'totalReceivable' => $totalReceivable] + ['result' => $summary['monthIncome'] - $summary['monthExpense']];
     }
 }; ?>
 
@@ -65,7 +69,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
-    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-space-5">
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Resultado do período</span>
@@ -98,6 +102,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             <div class="mt-space-2 text-fs-24 font-bold text-cryptex-text-primary font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalBalance, 2, ',', '.') }}</div>
             <div class="text-fs-12 text-cryptex-text-secondary mt-space-1 font-mono"><span class="text-cryptex-brand-400">{{ $accounts->where('type', '!=', 'repasse')->count() }}</span> contas ativas</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Cliente e escritório a repassar: R$ {{ number_format(max(0, -$repasseBalance), 2, ',', '.') }}</div>
+        </x-fx.card>
+        <x-fx.card class="min-w-0">
+            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
+                <span class="uppercase tracking-[0.05em]">Total a receber</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Saldo em aberto de adiantamentos e pagamentos feitos em nome de terceiros, incluindo parcelas futuras e valores sem data definida." aria-label="Saldo em aberto de adiantamentos e pagamentos feitos em nome de terceiros, incluindo parcelas futuras e valores sem data definida.">info</span>
+            </div>
+            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-brand-400 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalReceivable, 2, ',', '.') }}</div>
+            <a href="{{ route('banking.receivables.index') }}" class="mt-space-1 inline-block text-fs-12 font-medium text-cryptex-brand-400 hover:underline">Ver valores a receber</a>
         </x-fx.card>
     </div>
 
