@@ -105,10 +105,10 @@ class CashPositionTest extends TestCase
         $this->get(route('banking.transactions.index', ['novo' => 'income']))
             ->assertOk()
             ->assertSee('Recebimento de processo')
-            ->assertSee('Rateio entre categorias');
+            ->assertSee('Dividir este lançamento em categorias');
 
         $this->get(route('banking.transactions.index', ['novo' => 'expense']))
             ->assertOk()
-            ->assertSee('Rateio entre categorias');
+            ->assertSee('Dividir este lançamento em categorias');
     }
 }

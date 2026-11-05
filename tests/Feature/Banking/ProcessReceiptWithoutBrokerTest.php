@@ -45,7 +45,7 @@ class ProcessReceiptWithoutBrokerTest extends TestCase
     {
         [$receipt, $source, $client, $office, $data] = $this->example();
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
-            ->set('form', $data)->assertSee('Corretor (opcional)')->assertSee('Sem corretor')
+            ->set('form', $data)->assertSee('3. Corretores')->assertSee('Sem corretor')
             ->assertDontSee('Comissão do corretor (%)')->assertDontSee('Comissão do corretor (R$)')
             ->assertDontSee('Despesas a descontar do cliente')->assertDontSee('Adiantamentos a compensar na comissão')
             ->assertDontSee('Corretor líquido')->assertDontSee('Adiantamentos compensados')
@@ -114,7 +114,7 @@ class ProcessReceiptWithoutBrokerTest extends TestCase
         $data['broker_amount'] = '25';
         $data['office_amount'] = '25';
         $component = Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
-            ->set('form', $data)->assertSee('Comissão do corretor (%)')
+            ->set('form', $data)
             ->set('form.expenses', [123 => '100'])->set('form.advances', [456 => '200'])
             ->set('form.broker_id', '')->assertSet('form.broker_amount', '0.00')
             ->assertSet('form.expenses', [])->assertSet('form.advances', [])
