@@ -14,10 +14,11 @@ use Spatie\Activitylog\Support\LogOptions;
 class Receivable extends Model
 {
     use LogsActivity;
+    use \App\Support\HidesTestRecords;
 
-    protected $fillable = ['contact_id', 'writ_id', 'description', 'date', 'repayment_mode', 'process_reference', 'notes', 'request_key'];
+    protected $fillable = ['is_test', 'contact_id', 'writ_id', 'description', 'date', 'repayment_mode', 'process_reference', 'notes', 'request_key'];
 
-    protected $casts = ['date' => 'date'];
+    protected $casts = ['is_test' => 'boolean', 'date' => 'date'];
 
     public function getActivitylogOptions(): LogOptions
     {

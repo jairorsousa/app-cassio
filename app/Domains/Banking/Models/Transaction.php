@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Support\HidesTestRecords;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
@@ -14,6 +16,7 @@ use Spatie\Activitylog\Support\LogOptions;
 class Transaction extends Model
 {
     use LogsActivity;
+    use HidesTestRecords;
     use SoftDeletes;
 
     public function getActivitylogOptions(): LogOptions
@@ -32,6 +35,7 @@ class Transaction extends Model
         'related_transaction_id', 'source_type', 'source_id',
         'ofx_fitid',
         'installment_group_id', 'installment_number', 'installment_total',
+        'is_test',
     ];
 
     protected $casts = [
@@ -39,7 +43,33 @@ class Transaction extends Model
         'amount' => 'decimal:2',
         'installment_number' => 'integer',
         'installment_total' => 'integer',
+        'is_test' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        // Transferência entre contas próprias recebe sempre a categoria de sistema.
+        static::saving(function (Transaction $transaction) {
+            if ($transaction->type === 'transfer') {
+                $transaction->category_id = Category::transferCategoryId();
+            }
+        });
+    }
+
+    /** Exclui lançamentos anteriores ao saldo inicial datado da conta (históricos). */
+    public function scopeNotHistorical(Builder $query): Builder
+    {
+        $table = $this->getTable();
+
+        return $query->where(fn ($q) => $q->whereNull($table.'.bank_account_id')
+            ->orWhereHas('bankAccount', fn ($a) => $a->withTrashed()->where(fn ($a) => $a->whereNull('initial_balance_date')
+                ->orWhereColumn('bank_accounts.initial_balance_date', '<=', $table.'.date'))));
+    }
+
+    public function isHistorical(): bool
+    {
+        return (bool) $this->bankAccount?->isHistoricalDate($this->date);
+    }
 
     public function category(): BelongsTo
     {

@@ -16,8 +16,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Contact extends Model
 {
     use SoftDeletes;
+    use \App\Support\HidesTestRecords;
 
-    protected $fillable = [
+    protected $fillable = ['is_test', 
         'name', 'type', 'document', 'birth_date',
         'phone', 'phones', 'email', 'emails', 'address',
         'zip_code', 'street', 'neighborhood', 'number', 'complement', 'city', 'state',
@@ -25,7 +26,7 @@ class Contact extends Model
         'status', 'notes',
     ];
 
-    protected $casts = [
+    protected $casts = ['is_test' => 'boolean', 
         'birth_date' => 'date',
         'phones' => 'array',
         'emails' => 'array',

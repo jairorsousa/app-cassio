@@ -12,7 +12,49 @@ class Category extends Model
 
     protected $casts = [
         'status' => 'boolean',
+        'is_system' => 'boolean',
     ];
+
+    public const TRANSFER_KEY = 'transfer';
+
+    private static ?int $transferId = null;
+
+    protected static function booted(): void
+    {
+        static::updating(function (Category $category) {
+            if ($category->getOriginal('is_system')) {
+                throw new \DomainException('Categoria de sistema não pode ser alterada.');
+            }
+        });
+        static::deleting(function (Category $category) {
+            if ($category->is_system) {
+                throw new \DomainException('Categoria de sistema não pode ser excluída.');
+            }
+        });
+    }
+
+    /** Categoria fixa "Transferência entre contas" (fora de receita, despesa e resultado). */
+    public static function transferCategoryId(): int
+    {
+        if (self::$transferId && self::whereKey(self::$transferId)->exists()) {
+            return self::$transferId;
+        }
+        $id = self::where('system_key', self::TRANSFER_KEY)->value('id');
+        if (! $id) {
+            $category = new self(['name' => 'Transferência entre contas', 'type' => 'transfer', 'status' => true]);
+            $category->is_system = true;
+            $category->system_key = self::TRANSFER_KEY;
+            $category->save();
+            $id = $category->id;
+        }
+
+        return self::$transferId = (int) $id;
+    }
+
+    public function scopeSelectable($query)
+    {
+        return $query->where('is_system', false);
+    }
 
     public function parent(): BelongsTo
     {
