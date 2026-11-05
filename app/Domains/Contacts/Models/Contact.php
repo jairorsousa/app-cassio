@@ -7,6 +7,8 @@ use App\Domains\Banking\Models\Receivable;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Writs\Models\WritAssignor;
+use App\Support\BrazilianDocuments;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -18,20 +20,50 @@ class Contact extends Model
     use SoftDeletes;
     use \App\Support\HidesTestRecords;
 
-    protected $fillable = ['is_test', 
-        'name', 'type', 'document', 'birth_date',
+    public const ROLE_OPTIONS = [
+        'cedente' => 'Cedente',
+        'corretor' => 'Corretor',
+        'advogado' => 'Advogado',
+        'pessoal' => 'Pessoal',
+        'cliente' => 'Cliente',
+    ];
+
+    protected $fillable = [
+        'is_test',
+        'name', 'type', 'roles', 'document', 'birth_date',
         'phone', 'phones', 'email', 'emails', 'address',
         'zip_code', 'street', 'neighborhood', 'number', 'complement', 'city', 'state',
         'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key', 'pix_key_type',
         'status', 'notes',
     ];
 
-    protected $casts = ['is_test' => 'boolean', 
+    protected $casts = [
+        'is_test' => 'boolean',
         'birth_date' => 'date',
         'phones' => 'array',
         'emails' => 'array',
+        'roles' => 'array',
         'status' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Contact $contact) {
+            $roles = array_values(array_unique(array_filter((array) $contact->roles)));
+            if ($roles === [] && $contact->type) {
+                $roles = [$contact->type];
+            }
+            $roles = array_values(array_filter($roles, fn ($role) => array_key_exists($role, self::ROLE_OPTIONS)));
+            if ($roles === []) {
+                $roles = ['cedente'];
+            }
+            $contact->roles = $roles;
+            // type continua sendo o papel principal (compatibilidade com filtros antigos).
+            if (! in_array($contact->type, $roles, true)) {
+                $contact->type = $roles[0];
+            }
+        });
+    }
 
     public function receivables(): HasMany
     {
@@ -58,19 +90,51 @@ class Contact extends Model
         return $this->hasOne(Broker::class);
     }
 
+    /**
+     * Compatível com o type legado e com roles (JSON).
+     * Aceita contatos cujo type OU algum papel em roles corresponda.
+     */
     public function scopeOfType($query, string $type)
     {
-        return $query->where('type', $type);
+        return $query->where(function (Builder $inner) use ($type) {
+            $inner->where('type', $type)
+                ->orWhereJsonContains('roles', $type);
+        });
+    }
+
+    public function scopeWithRole($query, string $role)
+    {
+        return $query->ofType($role);
+    }
+
+    public function hasRole(string $role): bool
+    {
+        if ($this->type === $role) {
+            return true;
+        }
+
+        return in_array($role, (array) $this->roles, true);
+    }
+
+    /** @return list<string> */
+    public function roleList(): array
+    {
+        $roles = array_values(array_unique(array_filter((array) $this->roles)));
+        if ($roles === [] && $this->type) {
+            $roles = [$this->type];
+        }
+
+        return $roles === [] ? ['cedente'] : $roles;
     }
 
     public function typeLabel(): string
     {
-        return match ($this->type) {
-            'advogado' => 'Advogado',
-            'corretor' => 'Corretor',
-            'pessoal' => 'Pessoal',
-            default => 'Cedente',
-        };
+        $labels = array_map(
+            fn ($role) => self::ROLE_OPTIONS[$role] ?? ucfirst($role),
+            $this->roleList(),
+        );
+
+        return implode(', ', $labels);
     }
 
     public function pixKeyTypeLabel(): string
@@ -82,6 +146,51 @@ class Contact extends Model
             'aleatoria' => 'Aleatória',
             default => '—',
         };
+    }
+
+    /**
+     * Cadastros incompletos / inválidos (avisos, sem apagar).
+     *
+     * @return list<string>
+     */
+    public function incompletenessIssues(): array
+    {
+        $issues = [];
+        $roles = $this->roleList();
+
+        if (in_array('cedente', $roles, true)) {
+            $doc = trim((string) $this->document);
+            if ($doc === '') {
+                $issues[] = 'CPF/CNPJ obrigatório para cedente';
+            } elseif (! BrazilianDocuments::isValidCpfOrCnpj($doc)) {
+                $issues[] = 'CPF/CNPJ inválido';
+            }
+        } elseif (trim((string) $this->document) !== '' && ! BrazilianDocuments::isValidCpfOrCnpj($this->document)) {
+            $issues[] = 'CPF/CNPJ inválido';
+        }
+
+        $phones = array_values(array_filter($this->phones ?: [$this->phone]));
+        foreach ($phones as $phone) {
+            if (! BrazilianDocuments::isValidPhone($phone)) {
+                $issues[] = 'Telefone em formato inválido';
+                break;
+            }
+        }
+
+        if (in_array('corretor', $roles, true)) {
+            $hasPix = trim((string) $this->pix_key) !== '';
+            $hasBank = trim((string) $this->bank_name) !== '' && trim((string) $this->bank_account) !== '';
+            if (! $hasPix && ! $hasBank) {
+                $issues[] = 'Corretor sem PIX nem dados bancários';
+            }
+        }
+
+        return $issues;
+    }
+
+    public function isIncomplete(): bool
+    {
+        return $this->incompletenessIssues() !== [];
     }
 
     /**
