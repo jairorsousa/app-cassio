@@ -3,6 +3,7 @@
 namespace App\Domains\Writs\Models;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Brokers\Models\WritDefaultBroker;
 use App\Domains\Banking\Models\Transaction;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
@@ -98,6 +99,12 @@ class Writ extends Model
     {
         return $this->hasMany(WritAssignor::class)->with('contact');
     }
+
+    public function defaultBrokers(): HasMany
+    {
+        return $this->hasMany(WritDefaultBroker::class);
+    }
+
 
     public function sourceAccount(): BelongsTo
     {

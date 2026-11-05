@@ -19,11 +19,13 @@ class Broker extends Model
         'phone', 'email', 'address',
         'bank_name', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key',
         'status', 'notes',
+        'default_mode', 'default_rate_or_amount', 'default_base',
     ];
 
     protected $casts = [
         'birth_date' => 'date',
         'status' => 'boolean',
+        'default_rate_or_amount' => 'decimal:3',
     ];
 
     public function contact(): BelongsTo
@@ -34,6 +36,11 @@ class Broker extends Model
     public function advances(): HasMany
     {
         return $this->hasMany(BrokerAdvance::class);
+    }
+
+    public function personalAdvances(): HasMany
+    {
+        return $this->advances()->where('kind', 'personal');
     }
 
     public function commissionRules(): HasMany
@@ -51,6 +58,11 @@ class Broker extends Model
         return $this->hasMany(BrokerCommissionPayment::class);
     }
 
+    public function processExpenses(): HasMany
+    {
+        return $this->hasMany(BrokerProcessExpense::class);
+    }
+
     public function transactions(): MorphMany
     {
         return $this->morphMany(Transaction::class, 'source');
@@ -58,11 +70,24 @@ class Broker extends Model
 
     public function scopeSelectable($query)
     {
-        return $query->active()->whereHas('contact', fn ($contacts) => $contacts->where('type', 'corretor')->active());
+        return $query->active()->whereHas('contact', function ($contacts) {
+            $contacts->where(function ($inner) {
+                $inner->where('type', 'corretor')->orWhereJsonContains('roles', 'corretor');
+            })->active();
+        });
     }
 
     public function scopeActive($query)
     {
         return $query->where('status', true);
+    }
+
+    /** Exclui corretores cujo contato está marcado como teste. */
+    public function scopeWithoutTestContacts($query)
+    {
+        return $query->where(function ($inner) {
+            $inner->whereNull('contact_id')
+                ->orWhereHas('contact', fn ($contacts) => $contacts->where('is_test', false));
+        });
     }
 }

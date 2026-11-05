@@ -4,13 +4,19 @@ namespace App\Domains\Brokers\Models;
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Contacts\Models\Contact;
+use App\Domains\Writs\Models\Writ;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BrokerProcessExpense extends Model
 {
-    protected $fillable = ['broker_id', 'date', 'amount', 'description', 'bank_account_id', 'transaction_id'];
+    protected $fillable = [
+        'broker_id', 'date', 'amount', 'description',
+        'process_ref', 'writ_id', 'contact_id',
+        'bank_account_id', 'transaction_id',
+    ];
 
     protected $casts = ['date' => 'date', 'amount' => 'decimal:2'];
 
@@ -27,6 +33,16 @@ class BrokerProcessExpense extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    public function writ(): BelongsTo
+    {
+        return $this->belongsTo(Writ::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
     }
 
     public function recoveries(): HasMany
