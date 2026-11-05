@@ -14,6 +14,8 @@ use App\Domains\Brokers\Models\CaseType;
 use App\Domains\Brokers\Models\ProcessExpenseRecovery;
 use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerProfileService;
+use App\Domains\Writs\Models\Writ;
+use App\Domains\Writs\Services\WritService;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -46,8 +48,61 @@ class ProcessReceiptService
         return $value;
     }
 
-    /** All percentages for commissions are based on fees, never on the client's share. */
+    /**
+     * Linhas de corretores do recebimento. Formato novo: $data['brokers'] = [[broker_id, base (fees|gross), mode (percent|fixed), value, advances => [id => valor]]].
+     * Formato antigo (um corretor: broker_id, broker_amount, commission_mode, advances) continua aceito.
+     */
+    public function brokerRows(array $data): array
+    {
+        if (array_key_exists('brokers', $data)) {
+            return array_values(array_filter((array) $data['brokers'], fn ($row) => is_array($row) && ! empty($row['broker_id'])));
+        }
+        if (empty($data['broker_id'])) {
+            return [];
+        }
+
+        return [[
+            'broker_id' => $data['broker_id'], 'base' => 'fees',
+            'mode' => ($data['commission_mode'] ?? 'amount') === 'percent' ? 'percent' : 'fixed',
+            'value' => (string) ($data['broker_amount'] ?? '0'), 'advances' => $data['advances'] ?? [],
+        ]];
+    }
+
+    /** Valor de um corretor: % sobre honorários, % sobre o valor bruto ou valor fixo (arredondamento meio para cima). */
+    public function brokerAmount(array $row, int $fees, int $total): int
+    {
+        $base = ($row['base'] ?? 'fees') === 'gross' ? $total : $fees;
+        $mode = ($row['mode'] ?? 'fixed') === 'percent' ? 'percent' : 'amount';
+        if (! in_array($row['base'] ?? 'fees', ['fees', 'gross'], true) || ! in_array($row['mode'] ?? 'fixed', ['percent', 'fixed'], true)) {
+            throw new \DomainException('Escolha a base (honorários ou valor bruto) e o modo (percentual ou fixo) de cada corretor.');
+        }
+
+        return $this->portion((string) ($row['value'] ?? '0'), $mode, $base);
+    }
+
+    /** All percentages for commissions are based on fees, never on the client's share (salvo corretor com base no valor bruto). */
     public function calculate(Transaction $receipt, array $data): array
+    {
+        if (! array_key_exists('brokers', $data)) {
+            return $this->calculateLegacy($receipt, $data);
+        }
+        $total = $this->destinations->cents((string) $receipt->amount);
+        $fees = $this->portion((string) ($data['fees'] ?? '0'), $data['fees_mode'] ?? 'amount', $total);
+        if ($fees > $total) {
+            throw new \DomainException('Os honorários não podem superar a entrada.');
+        }
+        $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
+        $brokers = array_map(fn ($row) => $this->brokerAmount($row, $fees, $total), $this->brokerRows($data));
+        $sum = array_sum($brokers);
+        if ($office + $sum > $fees) {
+            throw new \DomainException('Escritório + corretores (R$ '.number_format(($office + $sum) / 100, 2, ',', '.').') superam os honorários (R$ '.number_format($fees / 100, 2, ',', '.').'). Minha receita não pode ficar negativa.');
+        }
+
+        return ['total' => $total, 'fees' => $fees, 'client' => $total - $fees, 'broker' => $sum, 'brokers' => $brokers, 'office' => $office, 'own' => $fees - $sum - $office];
+    }
+
+    /** All percentages for commissions are based on fees, never on the client's share. */
+    private function calculateLegacy(Transaction $receipt, array $data): array
     {
         $total = $this->destinations->cents((string) $receipt->amount);
         $fees = $this->portion((string) ($data['fees'] ?? '0'), $data['fees_mode'] ?? 'amount', $total);
@@ -74,44 +129,79 @@ class ProcessReceiptService
             throw new \DomainException('Os honorários não podem superar a entrada, e as comissões não podem superar os honorários.');
         }
 
-        return ['total' => $total, 'fees' => $fees, 'client' => $total - $fees, 'broker' => $broker, 'office' => $office, 'own' => $fees - $broker - $office];
+        return ['total' => $total, 'fees' => $fees, 'client' => $total - $fees, 'broker' => $broker, 'brokers' => $broker > 0 ? [$broker] : [], 'office' => $office, 'own' => $fees - $broker - $office];
     }
 
     public function save(Transaction $receipt, array $data): void
     {
-        if (empty($data['broker_id'])) {
+        $legacy = ! array_key_exists('brokers', $data);
+        if ($legacy && empty($data['broker_id'])) {
             $data['broker_id'] = null;
             $data['broker_amount'] = '0.00';
             $data['expenses'] = [];
             $data['advances'] = [];
         }
-        Validator::make($data, [
+        $data['expenses'] ??= [];
+        $data['advances'] ??= [];
+        $rows = $this->brokerRows($data);
+        if ($rows === []) {
+            $data['expenses'] = [];
+        }
+        $money = ['regex:/^\d{1,13}(?:\.\d{1,2})?$/'];
+        Validator::make($data + ['broker_rows' => $rows], [
             'broker_id' => ['nullable', 'integer', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
+            'broker_rows' => 'array|max:10',
+            'broker_rows.*.broker_id' => ['required', 'integer', 'distinct', Rule::exists('brokers', 'id')->where('status', true)->whereNull('deleted_at')],
+            'broker_rows.*.base' => 'required|in:fees,gross',
+            'broker_rows.*.mode' => 'required|in:percent,fixed',
+            'broker_rows.*.value' => ['required', ...$money],
+            'broker_rows.*.advances' => 'sometimes|array|max:200',
+            'broker_rows.*.advances.*' => ['nullable', ...$money],
             'client_contact_id' => ['nullable', 'integer', Rule::exists('contacts', 'id')->where('status', true)->whereNull('deleted_at')],
             'receivables' => 'sometimes|array|max:200',
-            'receivables.*' => ['nullable', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
+            'receivables.*' => ['nullable', ...$money],
             'client_name' => 'required|string|max:200',
+            'process_ref' => 'nullable|string|max:120',
+            'includes_writ' => 'sometimes|boolean',
+            'writ_id' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', 'integer', Rule::exists('writs', 'id')->whereNull('deleted_at')],
+            'writ_amount' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', ...$money],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('type', 'income')->where('status', true)],
             'fees_mode' => 'required|in:amount,percent', 'commission_mode' => 'required|in:amount,percent',
-            'fees' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
-            'broker_amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
-            'office_amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
+            'fees' => ['required', ...$money],
+            'broker_amount' => [Rule::requiredIf($legacy), ...$money],
+            'office_amount' => ['required', ...$money],
             'expenses' => 'present|array|max:200', 'advances' => 'present|array|max:200',
-            'expenses.*' => ['nullable', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
-            'advances.*' => ['nullable', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
+            'expenses.*' => ['nullable', ...$money],
+            'advances.*' => ['nullable', ...$money],
+        ], [
+            'broker_rows.*.broker_id.distinct' => 'Cada corretor deve aparecer uma única vez no recebimento.',
+            'writ_id.required' => 'Selecione o requisitório comprado incluído neste recebimento.',
+            'writ_amount.required' => 'Informe o valor do crédito do requisitório comprado.',
         ])->validate();
-        DB::transaction(function () use ($receipt, $data) {
+        DB::transaction(function () use ($receipt, $data, $rows) {
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
             $this->destinations->eligible($receipt);
-            $broker = null;
-            if ($data['broker_id'] !== null) {
-                $broker = Broker::lockForUpdate()->findOrFail($data['broker_id']);
+            $brokers = [];
+            foreach ($rows as $row) {
+                $broker = Broker::lockForUpdate()->findOrFail($row['broker_id']);
                 $contact = app(BrokerProfileService::class)->contactForBroker($broker);
                 if (! $contact || ! $contact->status) {
-                    throw new \DomainException('Selecione um contato ativo do tipo corretor.');
+                    throw new \DomainException('Selecione um contato ativo do tipo corretor ('.$broker->name.').');
                 }
+                $brokers[] = $broker;
             }
             $values = $this->calculate($receipt, $data);
+            $brokerIds = array_map(fn ($broker) => $broker->id, $brokers);
+            if (count($values['brokers']) !== count($brokers)) {
+                // Formato antigo: corretor selecionado com comissão zero não gera parte nem comissão.
+                $brokers = [];
+                $rows = [];
+            }
+            foreach ($values['brokers'] as $index => $cents) {
+                if ($cents <= 0) {
+                    throw new \DomainException('Informe a comissão do corretor '.$brokers[$index]->name.' (valor maior que zero) ou remova-o.');
+                }
+            }
             $allocations = app(ReceiptAccountAllocationService::class);
             $targets = [];
             foreach (['client', 'office'] as $kind) {
@@ -119,27 +209,31 @@ class ProcessReceiptService
                     $targets[$kind] = $allocations->target($receipt, $kind);
                 }
             }
-            $rows = [
+            $destRows = [
                 ['kind' => 'client', 'contact_id' => $data['client_contact_id'] ?? null, 'beneficiary' => trim($data['client_name']), 'amount' => $this->money($values['client'])],
                 ['kind' => 'own', 'amount' => $this->money($values['own'])],
             ];
-            if ($values['broker'] > 0) {
+            if ($brokers !== []) {
                 $caseType = CaseType::updateOrCreate(['name' => 'Recebimento de processo'], ['status' => true]);
-                $rows[] = [
-                    'kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $caseType->id,
-                    'commission_name' => mb_substr(trim($data['client_name']), 0, 160),
-                    'amount' => $this->money($values['broker']),
-                ];
+                foreach ($brokers as $index => $broker) {
+                    $destRows[] = [
+                        'kind' => 'broker', 'broker_id' => $broker->id, 'case_type_id' => $caseType->id,
+                        'commission_name' => mb_substr(trim($data['client_name']), 0, 160),
+                        'amount' => $this->money($values['brokers'][$index]),
+                    ];
+                }
             }
             if ($values['office'] > 0) {
-                $rows[] = ['kind' => 'office', 'beneficiary' => ReceiptAccountAllocationService::OFFICE_ACCOUNT, 'amount' => $this->money($values['office'])];
+                $destRows[] = ['kind' => 'office', 'beneficiary' => ReceiptAccountAllocationService::OFFICE_ACCOUNT, 'amount' => $this->money($values['office'])];
             }
-            $this->destinations->replace($receipt, $rows, automaticAdvances: false);
-            ProcessReceipt::create([
-                'receipt_id' => $receipt->id, 'broker_id' => $broker?->id,
+            $this->destinations->replace($receipt, $destRows, automaticAdvances: false);
+            $process = ProcessReceipt::create([
+                'receipt_id' => $receipt->id, 'broker_id' => $brokers[0]->id ?? null,
+                'process_ref' => trim((string) ($data['process_ref'] ?? '')) ?: null,
                 'fees_amount' => $this->money($values['fees']), 'category_id' => $data['category_id'] ?? null,
             ]);
             $client = $receipt->destinations()->where('kind', 'client')->sole();
+            $brokerParts = $receipt->destinations()->where('kind', 'broker')->orderBy('id')->get()->values();
             $recovered = 0;
             $expenses = $data['expenses'];
             ksort($expenses);
@@ -151,9 +245,9 @@ class ProcessReceiptService
                 if (! $cents) {
                     continue;
                 }
-                $expense = BrokerProcessExpense::where('broker_id', $broker->id)->lockForUpdate()->find($id);
+                $expense = BrokerProcessExpense::whereIn('broker_id', $brokerIds)->lockForUpdate()->find($id);
                 if (! $expense || $cents > $expense->remainingCents()) {
-                    throw new \DomainException('Uma despesa selecionada não pertence ao corretor ou não possui saldo suficiente. Atualize os valores.');
+                    throw new \DomainException('Uma despesa selecionada não pertence aos corretores ou não possui saldo suficiente. Atualize os valores.');
                 }
                 $recovered += $cents;
                 if ($recovered > $values['client']) {
@@ -161,37 +255,49 @@ class ProcessReceiptService
                 }
                 $client->recoveries()->create(['expense_id' => $expense->id, 'amount' => $this->money($cents)]);
             }
-            $commission = $receipt->destinations()->where('kind', 'broker')->first()?->commission;
-            $offset = 0;
-            $advances = $data['advances'];
-            ksort($advances);
-            foreach ($advances as $id => $amount) {
-                if ($amount === '' || $amount === null) {
-                    continue;
+            foreach ($rows as $index => $row) {
+                $commission = $brokerParts[$index]->commission ?? null;
+                $offset = 0;
+                $advances = (array) ($row['advances'] ?? []);
+                ksort($advances);
+                foreach ($advances as $id => $amount) {
+                    if ($amount === '' || $amount === null) {
+                        continue;
+                    }
+                    $cents = $this->destinations->cents((string) $amount, true);
+                    if (! $cents) {
+                        continue;
+                    }
+                    // Compensa somente adiantamentos deste corretor; nunca de outro.
+                    $advance = BrokerAdvance::where('broker_id', $brokers[$index]->id)->lockForUpdate()->find($id);
+                    if (! $commission || ! $advance || $cents > (int) round(((float) $advance->amount - (float) $advance->settlements()->lockForUpdate()->get()->sum('amount_offset')) * 100)) {
+                        throw new \DomainException('Um adiantamento selecionado não pertence ao corretor '.$brokers[$index]->name.' ou não possui saldo suficiente.');
+                    }
+                    $offset += $cents;
+                    if ($offset > $values['brokers'][$index]) {
+                        throw new \DomainException('Os adiantamentos não podem superar a comissão do corretor '.$brokers[$index]->name.'.');
+                    }
+                    BrokerCommissionSettlement::create([
+                        'commission_id' => $commission->id, 'advance_id' => $advance->id,
+                        'amount_offset' => $this->money($cents), 'settled_at' => $receipt->date,
+                    ]);
                 }
-                $cents = $this->destinations->cents((string) $amount, true);
-                if (! $cents) {
-                    continue;
+                if ($commission) {
+                    app(BrokerCommissionService::class)->syncStatus($commission->fresh());
                 }
-                $advance = BrokerAdvance::where('broker_id', $broker->id)->lockForUpdate()->find($id);
-                if (! $commission || ! $advance || $cents > (int) round(((float) $advance->amount - (float) $advance->settlements()->lockForUpdate()->get()->sum('amount_offset')) * 100)) {
-                    throw new \DomainException('Um adiantamento selecionado não pertence ao corretor ou não possui saldo suficiente.');
-                }
-                $offset += $cents;
-                if ($offset > $values['broker']) {
-                    throw new \DomainException('Os adiantamentos não podem superar a comissão do corretor.');
-                }
-                BrokerCommissionSettlement::create([
-                    'commission_id' => $commission->id, 'advance_id' => $advance->id,
-                    'amount_offset' => $this->money($cents), 'settled_at' => $receipt->date,
+                $process->brokerShares()->create([
+                    'broker_id' => $brokers[$index]->id, 'base' => $row['base'] ?? 'fees', 'mode' => $row['mode'] ?? 'fixed',
+                    'rate_or_amount' => $this->money($this->destinations->cents((string) ($row['value'] ?? '0'), true)),
+                    'calculated_amount' => $this->money($values['brokers'][$index]),
+                    'compensated_amount' => $this->money($offset), 'commission_id' => $commission?->id,
                 ]);
-            }
-            if ($commission) {
-                app(BrokerCommissionService::class)->syncStatus($commission->fresh());
             }
             foreach ($targets as $kind => $target) {
                 $part = $receipt->destinations()->where('kind', $kind)->sole();
                 $allocations->sync($part, $target);
+            }
+            if (! empty($data['includes_writ']) && ! empty($data['writ_id'])) {
+                $this->settleWrit($receipt, $client->fresh(), $process, (int) $data['writ_id'], (string) $data['writ_amount']);
             }
             foreach (($data['receivables'] ?? []) as $id => $amount) {
                 if ($amount === null || $amount === '' || $this->destinations->cents((string) $amount, true) === 0) {
@@ -200,8 +306,47 @@ class ProcessReceiptService
                 $receivable = Receivable::findOrFail($id);
                 app(ReceivableService::class)->offset($receivable, $client->fresh(), (string) $amount, (string) Str::uuid());
             }
-            $receipt->touch();
+            $links = array_filter([
+                'link_contact_id' => $receipt->link_contact_id ?: ($data['client_contact_id'] ?? null),
+                'link_process' => $receipt->link_process ?: ($process->process_ref ?? null),
+                'link_writ_id' => $receipt->link_writ_id ?: ($process->writ_id ?? null),
+            ]);
+            $links ? $receipt->forceFill($links)->save() : $receipt->touch();
         });
+    }
+
+    /**
+     * Crédito do cliente que já foi comprado como requisitório: baixa o requisitório como Recebido
+     * (data e valor reais; o prazo real sai de paid_at → finalized_at) e vincula a parte do cliente
+     * à entrada do requisitório, zerando-a, para que o dinheiro conte uma única vez e não vire repasse.
+     */
+    private function settleWrit(Transaction $receipt, \App\Domains\Banking\Models\ReceiptDestination $client, ProcessReceipt $process, int $writId, string $amount): void
+    {
+        $cents = $this->destinations->cents($amount);
+        if ($cents > $client->remainingCents()) {
+            throw new \DomainException('O crédito do requisitório (R$ '.number_format($cents / 100, 2, ',', '.').') não pode superar a parte do cliente (R$ '.number_format($client->remainingCents() / 100, 2, ',', '.').').');
+        }
+        $writ = Writ::lockForUpdate()->findOrFail($writId);
+        if ((float) $writ->paid_amount <= 0) {
+            throw new \DomainException('O requisitório selecionado não tem valor de aquisição pago; só requisitórios comprados podem ser baixados aqui.');
+        }
+        if ($writ->stage !== 'finalized') {
+            try {
+                $writ = app(WritService::class)->transitionTo($writ, 'finalized', [
+                    'finalized_at' => $receipt->date->toDateString(), 'actual_receipt_amount' => $this->money($cents),
+                    'destination_bank_account_id' => $receipt->bank_account_id,
+                    'notes' => 'Baixa pelo recebimento de processo #'.$receipt->id,
+                ]);
+            } catch (\DomainException $e) {
+                throw new \DomainException('Não foi possível baixar o requisitório como Recebido a partir da etapa "'.$writ->stageLabel().'". '.$e->getMessage());
+            }
+        }
+        $income = $writ->transactions()->where('type', 'income')->orderBy('id')->first();
+        if (! $income) {
+            throw new \DomainException('O requisitório está como Recebido, mas sem valor de recebimento. Informe o valor recebido no requisitório.');
+        }
+        app(ReceiptWritLinkService::class)->link($client, $income->id, $this->money($cents));
+        $process->update(['writ_id' => $writ->id, 'writ_amount' => $this->money($cents)]);
     }
 
     public function undoRecovery(Transaction $receipt, int $id): void

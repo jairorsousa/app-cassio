@@ -6,6 +6,8 @@ use App\Domains\Banking\Services\ProcessReceiptService;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerProcessExpense;
+use App\Domains\Writs\Models\Writ;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
@@ -13,9 +15,10 @@ new class extends Component {
     #[Locked]
     public int $receiptId;
     public array $form = [
-        'client_contact_id' => null, 'receivables' => [], 'broker_id' => null, 'client_name' => '', 'category_id' => null,
-        'fees' => '0.00', 'fees_mode' => 'amount', 'broker_amount' => '0.00', 'office_amount' => '0.00',
-        'commission_mode' => 'amount', 'expenses' => [], 'advances' => [],
+        'client_contact_id' => null, 'receivables' => [], 'client_name' => '', 'process_ref' => '', 'category_id' => null,
+        'fees' => '0.00', 'fees_mode' => 'amount', 'office_amount' => '0.00',
+        'commission_mode' => 'amount', 'expenses' => [], 'brokers' => [],
+        'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '',
     ];
 
     public function mount(int $receiptId): void
@@ -24,16 +27,22 @@ new class extends Component {
         $this->receiptId = $receiptId;
         $receipt = Transaction::findOrFail($receiptId);
         app(\App\Domains\Banking\Services\ReceiptDestinationService::class)->eligible($receipt);
-        $parts = $receipt->destinations()->with('commission')->get();
-        $process = $receipt->processReceipt;
+        $parts = $receipt->destinations()->with('commission')->orderBy('id')->get();
+        $process = $receipt->processReceipt()->with('brokerShares')->first();
+        $brokers = $process && $process->brokerShares->isNotEmpty()
+            ? $process->brokerShares->map(fn ($share) => ['key' => (string) Str::uuid(), 'broker_id' => $share->broker_id, 'base' => $share->base, 'mode' => $share->mode, 'value' => (string) $share->rate_or_amount, 'advances' => []])->all()
+            : $parts->where('kind', 'broker')->filter(fn ($part) => $part->commission)->map(fn ($part) => ['key' => (string) Str::uuid(), 'broker_id' => $part->commission->broker_id, 'base' => 'fees', 'mode' => 'fixed', 'value' => (string) $part->amount, 'advances' => []])->values()->all();
         $this->form = array_replace($this->form, [
-            'broker_id' => $process?->broker_id ?? $parts->firstWhere('kind', 'broker')?->commission?->broker_id,
-            'client_contact_id' => $parts->firstWhere('kind', 'client')?->contact_id,
+            'brokers' => $brokers,
+            'client_contact_id' => $parts->firstWhere('kind', 'client')?->contact_id ?? $receipt->link_contact_id,
             'client_name' => $parts->firstWhere('kind', 'client')?->beneficiary ?? '',
+            'process_ref' => $process?->process_ref ?? (string) $receipt->link_process,
             'category_id' => $process?->category_id,
             'fees' => $process ? (string) $process->fees_amount : number_format($parts->whereIn('kind', ['own', 'broker', 'office'])->sum('amount'), 2, '.', ''),
-            'broker_amount' => number_format($parts->where('kind', 'broker')->sum('amount'), 2, '.', ''),
             'office_amount' => number_format($parts->where('kind', 'office')->sum('amount'), 2, '.', ''),
+            'includes_writ' => (bool) $process?->writ_id,
+            'writ_id' => $process?->writ_id,
+            'writ_amount' => $process?->writ_amount ? (string) $process->writ_amount : '',
         ]);
     }
 
@@ -43,13 +52,33 @@ new class extends Component {
             $this->form['receivables'] = [];
             if ($this->form['client_contact_id'] && $this->form['client_name'] === '') { $this->form['client_name'] = \App\Domains\Contacts\Models\Contact::find($this->form['client_contact_id'])?->name ?? ''; }
         }
-        if ($key === 'broker_id') { $this->form['expenses'] = []; $this->form['advances'] = []; }
-        if (empty($this->form['broker_id'])) {
-            $this->form['broker_amount'] = '0.00';
-            $this->form['expenses'] = [];
-            $this->form['advances'] = [];
+        if ($key && preg_match('/^brokers\.(\d+)\.broker_id$/', $key, $m)) { $this->form['brokers'][$m[1]]['advances'] = []; $this->form['expenses'] = []; }
+        if ($key === 'includes_writ' && ! $this->form['includes_writ']) { $this->form['writ_id'] = null; $this->form['writ_amount'] = ''; }
+        if ($key === 'writ_id' && $this->form['writ_id'] && $this->form['writ_amount'] === '') {
+            $writ = Writ::find($this->form['writ_id']);
+            if ($writ && $writ->estimated_receipt_amount) { $this->form['writ_amount'] = number_format((float) $writ->estimated_receipt_amount, 2, '.', ''); }
+        }
+        if (array_key_exists('broker_id', $this->form)) {
+            // Formato antigo (um corretor), mantido para integrações e testes existentes.
+            if ($key === 'broker_id') { $this->form['expenses'] = []; $this->form['advances'] = []; }
+            if (empty($this->form['broker_id'])) { $this->form['broker_amount'] = '0.00'; $this->form['expenses'] = []; $this->form['advances'] = []; }
         }
         $this->resetValidation();
+    }
+
+    public function addBroker(): void
+    {
+        if (count($this->form['brokers']) < 10) {
+            $this->form['brokers'][] = ['key' => (string) Str::uuid(), 'broker_id' => null, 'base' => 'fees', 'mode' => 'percent', 'value' => '', 'advances' => []];
+        }
+    }
+
+    public function removeBroker(int $index): void
+    {
+        if (isset($this->form['brokers'][$index])) {
+            array_splice($this->form['brokers'], $index, 1);
+            $this->form['expenses'] = [];
+        }
     }
 
     public function setMode(string $field, string $mode, ProcessReceiptService $service): void
@@ -57,18 +86,35 @@ new class extends Component {
         if (! in_array($field, ['fees_mode', 'commission_mode'], true) || ! in_array($mode, ['amount', 'percent'], true)) { return; }
         if ($this->form[$field] === $mode) { return; }
         try {
-            $values = $service->calculate(Transaction::findOrFail($this->receiptId), $this->form);
+            $values = $service->calculate(Transaction::findOrFail($this->receiptId), $this->payload());
             $base = $field === 'fees_mode' ? $values['total'] : $values['fees'];
-            foreach ($field === 'fees_mode' ? ['fees' => 'fees'] : ['broker_amount' => 'broker', 'office_amount' => 'office'] as $input => $result) {
+            $legacy = array_key_exists('broker_id', $this->form);
+            foreach ($field === 'fees_mode' ? ['fees' => 'fees'] : ($legacy ? ['broker_amount' => 'broker', 'office_amount' => 'office'] : ['office_amount' => 'office']) as $input => $result) {
                 $this->form[$input] = $mode === 'amount' ? $service->money($values[$result]) : number_format($base ? $values[$result] * 100 / $base : 0, 2, '.', '');
             }
             $this->form[$field] = $mode;
         } catch (\DomainException $e) { $this->addError('division', $e->getMessage()); }
     }
 
+    /** Dados enviados ao serviço: corretores sem linha vazia e valor zero quando não preenchido. */
+    private function payload(): array
+    {
+        $data = $this->form;
+        $data['includes_writ'] = (bool) ($data['includes_writ'] ?? false);
+        if (array_key_exists('broker_id', $data)) {
+            unset($data['brokers']);
+
+            return $data;
+        }
+        $data['brokers'] = array_values(array_map(fn ($row) => array_replace($row, ['value' => ($row['value'] ?? '') === '' ? '0' : (string) $row['value']]), array_filter($data['brokers'], fn ($row) => ! empty($row['broker_id']))));
+        $data['advances'] = [];
+
+        return $data;
+    }
+
     public function save(ProcessReceiptService $service): void
     {
-        try { $service->save(Transaction::findOrFail($this->receiptId), $this->form); }
+        try { $service->save(Transaction::findOrFail($this->receiptId), $this->payload()); }
         catch (\DomainException $e) { $this->addError('division', $e->getMessage()); return; }
         $this->dispatch('process-receipt-saved', receiptId: $this->receiptId);
         $this->dispatch('receipt-destination-updated');
@@ -79,29 +125,44 @@ new class extends Component {
         $receipt = Transaction::findOrFail($this->receiptId);
         $preview = null;
         $previewError = null;
-        try { $preview = $service->calculate($receipt, $this->form); }
+        try { $preview = $service->calculate($receipt, $this->payload()); }
         catch (\DomainException $e) { $previewError = $e->getMessage(); }
-        $expenses = $this->form['broker_id'] ? BrokerProcessExpense::where('broker_id', $this->form['broker_id'])->orderBy('date')->get()->filter(fn ($expense) => $expense->remainingCents() > 0) : collect();
-        $advances = $this->form['broker_id'] ? BrokerAdvance::where('broker_id', $this->form['broker_id'])->orderBy('date')->get()->filter(fn ($advance) => $advance->remainingBalance() > 0) : collect();
-        $recovered = empty($this->form['broker_id']) ? 0 : collect($this->form['expenses'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
-        $offset = empty($this->form['broker_id']) ? 0 : collect($this->form['advances'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
-        return compact('preview', 'previewError', 'expenses', 'advances', 'recovered', 'offset') + [
+        $this->form += ['brokers' => [], 'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '', 'process_ref' => '', 'expenses' => []];
+        $brokerIds = collect($this->form['brokers'])->pluck('broker_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $expenses = $brokerIds->isEmpty() ? collect() : BrokerProcessExpense::with('broker')->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($expense) => $expense->remainingCents() > 0);
+        $advances = $brokerIds->isEmpty() ? collect() : BrokerAdvance::whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($advance) => $advance->remainingBalance() > 0)->groupBy('broker_id');
+        $recovered = collect($this->form['expenses'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
+        $offset = collect($this->form['brokers'])->sum(fn ($row) => collect($row['advances'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0));
+        $writCents = $this->form['includes_writ'] && is_numeric($this->form['writ_amount']) ? (int) round((float) $this->form['writ_amount'] * 100) : 0;
+        return compact('preview', 'previewError', 'expenses', 'advances', 'recovered', 'offset', 'writCents') + [
             'contacts' => \App\Domains\Contacts\Models\Contact::active()->orderBy('name')->get(),
             'clientAdvances' => empty($this->form['client_contact_id']) ? collect() : \App\Domains\Banking\Models\Receivable::with('installments.settlements')->where('contact_id', $this->form['client_contact_id'])->get()->filter(fn ($row) => $row->remainingCents() > 0),
             'clientOffset' => collect($this->form['receivables'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (float) $amount : 0),
             'brokers' => Broker::selectable()->orderBy('name')->get(),
+            'writs' => Writ::where('paid_amount', '>', 0)->where(fn ($q) => $q->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt'])->orWhere('id', $this->form['writ_id'] ?: 0))->orderBy('assignor_name')->get(),
             'categories' => Category::active()->where('type', 'income')->orderBy('name')->get(),
         ];
     }
 }; ?>
 
 <form wire:submit="save" class="space-y-5">
-    <p class="text-sm text-mono-600">Separe o valor do cliente e os honorários. Sem corretor, os honorários são divididos entre você e o escritório. Se houver corretor, selecione-o para lançar a comissão e escolher os descontos disponíveis.</p>
+    <p class="text-sm text-mono-600">Uma única entrada no banco, com o valor bruto. Separe a parte do cliente (ou do requisitório que você comprou) e os honorários; os honorários são divididos entre escritório, um ou mais corretores e a sua receita.</p>
     <div class="grid gap-4 md:grid-cols-2">
-        <div><label for="process-broker" class="mb-2 block text-sm text-mono-600">Corretor (opcional)</label><select id="process-broker" wire:model.live="form.broker_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Sem corretor</option>@foreach ($brokers as $broker)<option value="{{ $broker->id }}">{{ $broker->name }}</option>@endforeach</select></div>
-        <div><label for="process-client-contact" class="mb-2 block text-sm text-mono-600">Contato do cliente (para descontar adiantamentos)</label><select id="process-client-contact" wire:model.live="form.client_contact_id" class="h-12 w-full rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Não vinculado</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
-        <x-jr.input label="Cliente ou processo *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
+        <div><label for="process-client-contact" class="mb-2 block text-sm text-mono-600">Contato do cliente</label><select id="process-client-contact" wire:model.live="form.client_contact_id" class="h-12 w-full rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Não vinculado</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
+        <x-jr.input label="Cliente (nome no repasse) *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
+        <x-jr.input label="Processo (número)" name="form.process_ref" wire:model="form.process_ref" maxlength="120" placeholder="0000000-00.0000.0.00.0000" />
     </div>
+    <section class="space-y-3 rounded-xl border border-mono-100 p-4">
+        <label class="inline-flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model.live="form.includes_writ" class="rounded border-mono-200 text-primary-500"> Este valor inclui crédito que eu já comprei (requisitório)</label>
+        @if ($form['includes_writ'])
+            <p class="text-xs text-mono-600">Essa parte não é receita nem repasse ao cliente: o requisitório passa para <strong>Recebido</strong> na data desta entrada, com o valor informado, e o prazo real é calculado desde o pagamento da aquisição. A entrada continua única no banco.</p>
+            <div class="grid gap-4 md:grid-cols-2">
+                <div><label for="process-writ" class="mb-2 block text-sm text-mono-600">Requisitório comprado *</label><select id="process-writ" wire:model.live="form.writ_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar</option>@foreach ($writs as $writ)<option value="{{ $writ->id }}">{{ $writ->assignor_name }} · {{ $writ->process_number ?: '#'.$writ->id }} · {{ $writ->stageLabel() }}</option>@endforeach</select></div>
+                <x-jr.input label="Valor do crédito do requisitório (R$) *" name="form.writ_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.writ_amount" />
+            </div>
+            @if ($writs->isEmpty())<p class="text-xs text-error">Nenhum requisitório comprado (Pago, Peticionar ou Aguardando recebimento) disponível.</p>@endif
+        @endif
+    </section>
     <section class="space-y-4 rounded-xl border border-mono-100 bg-mono-50 p-4">
         <h4 class="font-semibold text-mono-900">1. Cliente e honorários</h4>
         <div class="flex gap-2" role="group" aria-label="Informar honorários por">
@@ -123,19 +184,10 @@ new class extends Component {
         <div class="flex gap-2" role="group" aria-label="Informar comissões por">
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('commission_mode', '{{ $mode }}')" aria-pressed="{{ $form['commission_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['commission_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
-        <p class="text-xs text-mono-600">Os percentuais das comissões são calculados sobre os honorários.</p>
+        <p class="text-xs text-mono-600">Este seletor vale para a comissão do escritório (percentual sobre os honorários). Cada corretor tem a própria base e modo abaixo.</p>
         <p class="text-sm text-mono-600">Ao salvar, o valor líquido do cliente ficará negativo na conta <strong>Cliente</strong> e a parte do escritório na conta <strong>Mota e Silva Advogados</strong>, indicando os valores a repassar. O dinheiro permanece na conta bancária até o pagamento. Registre pagamentos totais ou parciais em <strong>Contas → Gerenciar repasses</strong>. Cadastre essas contas com o tipo <strong>Repasse</strong> em <a href="{{ route('banking.accounts.index') }}" class="font-semibold text-primary-600">Contas</a>.</p>
 
         <div class="grid gap-4 md:grid-cols-2">
-            @if (! empty($form['broker_id']))
-            <div wire:key="process-broker-amount-{{ $form['commission_mode'] }}">
-                @if ($form['commission_mode'] === 'percent')
-                    <x-jr.input label="Comissão do corretor (%)" name="form.broker_amount" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.broker_amount" required />
-                @else
-                    <x-jr.input label="Comissão do corretor (R$)" name="form.broker_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.broker_amount" required />
-                @endif
-            </div>
-            @endif
             <div wire:key="process-office-amount-{{ $form['commission_mode'] }}">
                 @if ($form['commission_mode'] === 'percent')
                     <x-jr.input label="Comissão do escritório (%)" name="form.office_amount" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.office_amount" required />
@@ -147,26 +199,42 @@ new class extends Component {
             <x-banking.category-picker :categories="$categories" :selected-id="$form['category_id'] ?? null" model="form.category_id" id="process-category" label="Categoria da minha receita" />
         </div>
     </section>
-    @if (! empty($form['broker_id']))
     <section class="space-y-4 rounded-xl border border-mono-100 p-4">
-        <h4 class="font-semibold text-mono-900">3. Despesas a descontar do cliente <span class="text-sm font-normal text-mono-500">(opcional)</span></h4>
-        <p class="text-sm text-mono-600">Despesas disponíveis do corretor. Informe quanto recuperar de cada uma; deixe em branco para não descontar.</p>
-        @forelse ($expenses as $expense)
+        <div class="flex items-center justify-between"><h4 class="font-semibold text-mono-900">3. Corretores <span class="text-sm font-normal text-mono-500">(opcional)</span></h4><button type="button" wire:click="addBroker" class="text-sm font-semibold text-primary-600">+ Adicionar corretor</button></div>
+        <p class="text-xs text-mono-600">Cada corretor gera uma comissão própria no módulo Corretores. Percentual sobre os honorários (padrão) ou sobre o valor bruto, ou valor fixo. A compensação de adiantamento é opcional e abate só daquele corretor.</p>
+        @forelse ($form['brokers'] as $index => $row)
+            <div wire:key="broker-row-{{ $row['key'] ?? $index }}" class="space-y-3 rounded-xl border border-mono-100 bg-mono-50 p-3">
+                <div class="grid items-end gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_auto]">
+                    <div><label class="mb-1 block text-xs text-mono-600" for="broker-{{ $index }}">Corretor {{ $index + 1 }}</label><select id="broker-{{ $index }}" wire:model.live="form.brokers.{{ $index }}.broker_id" class="h-11 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar</option>@foreach ($brokers as $broker)<option value="{{ $broker->id }}">{{ $broker->name }}</option>@endforeach</select></div>
+                    <div><label class="mb-1 block text-xs text-mono-600" for="broker-base-{{ $index }}">Base</label><select id="broker-base-{{ $index }}" wire:model.live="form.brokers.{{ $index }}.base" class="h-11 w-full rounded-xl border-mono-200 text-sm"><option value="fees">Honorários</option><option value="gross">Valor bruto</option></select></div>
+                    <div><label class="mb-1 block text-xs text-mono-600" for="broker-mode-{{ $index }}">Modo</label><select id="broker-mode-{{ $index }}" wire:model.live="form.brokers.{{ $index }}.mode" class="h-11 w-full rounded-xl border-mono-200 text-sm"><option value="percent">Percentual (%)</option><option value="fixed">Valor fixo (R$)</option></select></div>
+                    <div><label class="mb-1 block text-xs text-mono-600" for="broker-value-{{ $index }}">{{ ($row['mode'] ?? 'percent') === 'percent' ? 'Percentual (%)' : 'Valor (R$)' }}</label><input id="broker-value-{{ $index }}" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="form.brokers.{{ $index }}.value" class="h-11 w-full rounded-xl border-mono-200 text-sm"></div>
+                    <button type="button" wire:click="removeBroker({{ $index }})" class="h-11 px-2 text-sm text-error" aria-label="Remover corretor {{ $index + 1 }}">Remover</button>
+                </div>
+                <p class="text-sm text-mono-900">Valor calculado: <strong>R$ {{ number_format(($preview['brokers'][collect($form['brokers'])->take($index + 1)->filter(fn ($r) => ! empty($r['broker_id']))->count() - 1] ?? 0) / 100, 2, ',', '.') }}</strong></p>
+                @if (! empty($row['broker_id']) && ($advances[(int) $row['broker_id']] ?? collect())->isNotEmpty())
+                    <details class="text-sm"><summary class="cursor-pointer text-primary-600">Compensar adiantamento deste corretor (opcional)</summary>
+                        @foreach ($advances[(int) $row['broker_id']] as $advance)
+                            <div wire:key="advance-choice-{{ $index }}-{{ $advance->id }}" class="mt-2 grid items-center gap-3 sm:grid-cols-[1fr_180px]">
+                                <div><strong>Adiantamento de {{ $advance->date->format('d/m/Y') }}</strong><p class="text-mono-600">{{ $advance->notes }} · Disponível: R$ {{ number_format($advance->remainingBalance(), 2, ',', '.') }}</p></div>
+                                <x-jr.input label="Compensar (R$)" :name="'form.brokers.'.$index.'.advances.'.$advance->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.brokers.{{ $index }}.advances.{{ $advance->id }}" />
+                            </div>
+                        @endforeach
+                    </details>
+                @endif
+            </div>
+        @empty<p class="text-sm text-mono-500">Sem corretor. Os honorários ficam entre você e o escritório.</p>@endforelse
+    </section>
+    @if ($expenses->isNotEmpty())
+    <section class="space-y-4 rounded-xl border border-mono-100 p-4">
+        <h4 class="font-semibold text-mono-900">4. Despesas a descontar do cliente <span class="text-sm font-normal text-mono-500">(opcional)</span></h4>
+        <p class="text-sm text-mono-600">Despesas disponíveis dos corretores selecionados. Informe quanto recuperar de cada uma; deixe em branco para não descontar.</p>
+        @foreach ($expenses as $expense)
             <div wire:key="expense-choice-{{ $expense->id }}" class="grid items-center gap-3 border-t border-mono-100 pt-3 sm:grid-cols-[1fr_180px]">
-                <div class="text-sm"><strong>{{ $expense->description }}</strong><p class="text-mono-600">{{ $expense->date->format('d/m/Y') }} · Disponível: R$ {{ number_format($expense->remainingCents() / 100, 2, ',', '.') }}</p></div>
+                <div class="text-sm"><strong>{{ $expense->description }}</strong><p class="text-mono-600">{{ $expense->broker?->name }} · {{ $expense->date->format('d/m/Y') }} · Disponível: R$ {{ number_format($expense->remainingCents() / 100, 2, ',', '.') }}</p></div>
                 <x-jr.input label="Descontar (R$)" :name="'form.expenses.'.$expense->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.expenses.{{ $expense->id }}" />
             </div>
-        @empty<p class="text-sm text-mono-500">{{ $form['broker_id'] ? 'Nenhuma despesa disponível para este corretor.' : 'Selecione o corretor para consultar as despesas.' }}</p>@endforelse
-    </section>
-    <section class="space-y-4 rounded-xl border border-mono-100 p-4">
-        <h4 class="font-semibold text-mono-900">4. Adiantamentos a compensar na comissão <span class="text-sm font-normal text-mono-500">(opcional)</span></h4>
-        <p class="text-sm text-mono-600">Escolha quanto abater da comissão do corretor. Nenhum adiantamento será utilizado automaticamente neste recebimento.</p>
-        @forelse ($advances as $advance)
-            <div wire:key="advance-choice-{{ $advance->id }}" class="grid items-center gap-3 border-t border-mono-100 pt-3 sm:grid-cols-[1fr_180px]">
-                <div class="text-sm"><strong>Adiantamento de {{ $advance->date->format('d/m/Y') }}</strong><p class="text-mono-600">{{ $advance->notes }} · Disponível: R$ {{ number_format($advance->remainingBalance(), 2, ',', '.') }}</p></div>
-                <x-jr.input label="Compensar (R$)" :name="'form.advances.'.$advance->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.advances.{{ $advance->id }}" />
-            </div>
-        @empty<p class="text-sm text-mono-500">{{ $form['broker_id'] ? 'Nenhum adiantamento disponível para este corretor.' : 'Selecione o corretor para consultar os adiantamentos.' }}</p>@endforelse
+        @endforeach
     </section>
     @endif
     <section class="space-y-3 rounded-xl border border-mono-100 bg-mono-50 p-4">
@@ -178,7 +246,19 @@ new class extends Component {
     </section>
     @if ($preview)
         <div class="grid gap-3 rounded-xl bg-primary-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-3" aria-live="polite">
-            @foreach (['Cliente líquido' => $preview['client'] - $recovered - (int) round($clientOffset * 100), 'Despesas recuperadas' => $recovered, ...(! empty($form['broker_id']) ? ['Corretor líquido' => $preview['broker'] - $offset, 'Adiantamentos compensados' => $offset] : []), 'Comissão do escritório' => $preview['office'], 'Minha receita' => $preview['own']] as $label => $value)
+            @php
+                $summary = ['Entrada bruta' => $preview['total']];
+                if ($writCents > 0) { $summary['Requisitório comprado (não é receita)'] = $writCents; }
+                $summary['Cliente líquido a repassar'] = $preview['client'] - $writCents - $recovered - (int) round($clientOffset * 100);
+                if ($recovered) { $summary['Despesas recuperadas'] = $recovered; }
+                $summary['Honorários'] = $preview['fees'];
+                $summary['Comissão do escritório'] = $preview['office'];
+                $brokerNames = $brokers->keyBy('id');
+                foreach (collect($form['brokers'])->filter(fn ($r) => ! empty($r['broker_id']))->values() as $i => $r) { $summary['Corretor · '.($brokerNames[(int) $r['broker_id']]->name ?? '#'.$r['broker_id'])] = $preview['brokers'][$i] ?? 0; }
+                if ($offset) { $summary['Adiantamentos compensados'] = $offset; }
+                $summary['Minha receita'] = $preview['own'];
+            @endphp
+            @foreach ($summary as $label => $value)
                 <div class="{{ $value < 0 ? 'text-error' : 'text-mono-900' }}">{{ $label }}<strong class="mt-1 block">R$ {{ number_format($value / 100, 2, ',', '.') }}</strong></div>
             @endforeach
         </div>
