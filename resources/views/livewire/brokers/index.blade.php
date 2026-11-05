@@ -105,7 +105,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $data = $this->validate($rules);
-        $contact = Contact::where('type', 'corretor')->findOrFail($data['launch_contact_id']);
+        $contact = Contact::ofType('corretor')->findOrFail($data['launch_contact_id']);
 
         try {
             $financialBroker = $profiles->forContact($contact);
@@ -187,7 +187,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        $contact = Contact::where('type', 'corretor')->findOrFail($id);
+        $contact = Contact::ofType('corretor')->findOrFail($id);
 
         if (! $contact->canBeDeleted()) {
             session()->flash('error', $contact->deletionBlockMessage());
@@ -206,7 +206,7 @@ new #[Layout('layouts.app')] class extends Component {
         $totalRepassed = (float) BrokerCommissionPayment::sum('amount');
         $commissionPending = max($totalCommissions - $totalSettledAdvances - $totalRepassed, 0);
 
-        $q = Contact::query()->where('type', 'corretor');
+        $q = Contact::ofType('corretor');
         if ($this->search) {
             $q->where(function ($query) {
                 $query->where('name', 'like', '%'.$this->search.'%')
@@ -218,7 +218,7 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         $selectedContact = $this->launch_contact_id
-            ? Contact::where('type', 'corretor')->find($this->launch_contact_id)
+            ? Contact::ofType('corretor')->find($this->launch_contact_id)
             : null;
         $selectedFinancialBroker = $selectedContact ? $profiles->findForContact($selectedContact) : null;
         $openCommissions = collect();
@@ -253,13 +253,13 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'brokers' => $brokers,
             'brokerBalances' => $brokerBalances,
-            'brokerOptions' => Contact::where('type', 'corretor')->orderBy('name')->get(['id', 'name', 'document']),
+            'brokerOptions' => Contact::ofType('corretor')->orderBy('name')->get(['id', 'name', 'document']),
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'openCommissions' => $openCommissions,
             'summary' => [
-                'total_brokers' => Contact::where('type', 'corretor')->count(),
-                'active_brokers' => Contact::where('type', 'corretor')->where('status', true)->count(),
+                'total_brokers' => Contact::ofType('corretor')->count(),
+                'active_brokers' => Contact::ofType('corretor')->where('status', true)->count(),
                 'total_commissions' => $totalCommissions,
                 'repassed_commissions' => $totalRepassed,
                 'commission_pending' => $commissionPending,

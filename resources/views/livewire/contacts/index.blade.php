@@ -77,7 +77,7 @@ new #[Layout('layouts.app')] class extends Component
     public function rules(): array
     {
         return [
-            'type_form' => 'required|in:cedente,advogado,corretor,pessoal',
+            'type_form' => 'required|in:cedente,advogado,corretor,pessoal,cliente',
             'name' => 'required|string|max:200',
             'document' => 'nullable|string|max:30',
             'birth_date' => 'nullable|date',
@@ -138,6 +138,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->syncContactMethods();
         $data = $this->validate();
         $data['type'] = $data['type_form'];
+        $data['roles'] = [$data['type_form']];
         $data['status'] = $data['status_form'];
         $data['phones'] = $this->cleanRepeaterValues($this->phones);
         $data['emails'] = $this->cleanRepeaterValues($this->emails);
@@ -306,16 +307,17 @@ new #[Layout('layouts.app')] class extends Component
             $q->where('status', $this->status === '1');
         }
         if ($this->filterType !== '') {
-            $q->where('type', $this->filterType);
+            $q->ofType($this->filterType);
         }
 
         return [
             'contacts' => $q->orderBy('name')->paginate(25),
             'summary' => [
                 'total' => Contact::count(),
-                'cedentes' => Contact::where('type', 'cedente')->count(),
-                'advogados' => Contact::where('type', 'advogado')->count(),
-                'corretores' => Contact::where('type', 'corretor')->count(),
+                'cedentes' => Contact::ofType('cedente')->count(),
+                'advogados' => Contact::ofType('advogado')->count(),
+                'corretores' => Contact::ofType('corretor')->count(),
+                'incompletos' => Contact::query()->get()->filter->isIncomplete()->count(),
             ],
         ];
     }
@@ -431,7 +433,14 @@ new #[Layout('layouts.app')] class extends Component
                         <td class="px-4 py-4 text-sm font-medium text-mono-900">
                             <a href="{{ route('contacts.show', $contact) }}" class="transition-colors hover:text-primary-500">{{ $contact->name }}</a>
                         </td>
-                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->typeLabel() }}</td>
+                        <td class="px-4 py-4 text-sm text-mono-600">
+                            <div>{{ $contact->typeLabel() }}</div>
+                            @if ($contact->isIncomplete())
+                                <div class="mt-1 inline-flex items-center gap-1 rounded-pill bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-orange-700" title="{{ implode(' · ', $contact->incompletenessIssues()) }}">
+                                    Cadastro incompleto
+                                </div>
+                            @endif
+                        </td>
                         <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->document ?: '—' }}</td>
                         <td class="px-4 py-4 text-sm text-mono-600">
                             {{ $contact->phone ?: '—' }}

@@ -38,7 +38,7 @@ new #[Layout('layouts.app')] class extends Component
             $this->start_date,
             $this->end_date,
         );
-        $brokerOptions = Broker::query()->orderBy('name')->get(['id', 'name']);
+        $brokerOptions = Broker::query()->withoutTestContacts()->orderBy('name')->get(['id', 'name']);
         $years = range(now()->year + 2, now()->year - 3);
 
         return $report + compact('brokerOptions', 'years');
@@ -127,6 +127,28 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     </x-fx.card>
+    <x-fx.card class="mt-md">
+        <h3 class="mb-sm text-base font-semibold text-mono-900">Total anual de comissões por corretor ({{ $year }})</h3>
+        @if (empty($annualByBroker) || count($annualByBroker) === 0)
+            <p class="text-sm text-mono-600">Nenhuma comissão no ano {{ $year }}.</p>
+        @else
+            <div class="overflow-x-auto">
+                <table class="fx-table w-full text-sm">
+                    <thead><tr><th class="text-left">Corretor</th><th class="text-right">Qtd</th><th class="text-right">Total</th></tr></thead>
+                    <tbody>
+                        @foreach ($annualByBroker as $row)
+                            <tr>
+                                <td>{{ $row['broker_name'] }}</td>
+                                <td class="text-right">{{ $row['count'] }}</td>
+                                <td class="text-right font-semibold">R$ {{ number_format($row['total'], 2, ',', '.') }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </x-fx.card>
+
 
     <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
         <x-fx.card>

@@ -54,9 +54,24 @@ new class extends Component {
         }
         if ($key && preg_match('/^brokers\.(\d+)\.broker_id$/', $key, $m)) { $this->form['brokers'][$m[1]]['advances'] = []; $this->form['expenses'] = []; }
         if ($key === 'includes_writ' && ! $this->form['includes_writ']) { $this->form['writ_id'] = null; $this->form['writ_amount'] = ''; }
-        if ($key === 'writ_id' && $this->form['writ_id'] && $this->form['writ_amount'] === '') {
-            $writ = Writ::find($this->form['writ_id']);
-            if ($writ && $writ->estimated_receipt_amount) { $this->form['writ_amount'] = number_format((float) $writ->estimated_receipt_amount, 2, '.', ''); }
+        if ($key === 'writ_id' && $this->form['writ_id']) {
+            $writ = Writ::with('defaultBrokers')->find($this->form['writ_id']);
+            if ($writ && $this->form['writ_amount'] === '' && $writ->estimated_receipt_amount) {
+                $this->form['writ_amount'] = number_format((float) $writ->estimated_receipt_amount, 2, '.', '');
+            }
+            if ($writ && empty(array_filter($this->form['brokers'] ?? [], fn ($row) => ! empty($row['broker_id'])))) {
+                $defaults = $writ->defaultBrokers;
+                if ($defaults->isNotEmpty()) {
+                    $this->form['brokers'] = $defaults->map(fn ($row) => [
+                        'key' => (string) \Illuminate\Support\Str::uuid(),
+                        'broker_id' => $row->broker_id,
+                        'base' => $row->base ?: 'fees',
+                        'mode' => $row->mode === 'fixed' ? 'fixed' : 'percent',
+                        'value' => (string) $row->rate_or_amount,
+                        'advances' => [],
+                    ])->all();
+                }
+            }
         }
         if (array_key_exists('broker_id', $this->form)) {
             // Formato antigo (um corretor), mantido para integrações e testes existentes.
@@ -130,7 +145,7 @@ new class extends Component {
         $this->form += ['brokers' => [], 'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '', 'process_ref' => '', 'expenses' => []];
         $brokerIds = collect($this->form['brokers'])->pluck('broker_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $expenses = $brokerIds->isEmpty() ? collect() : BrokerProcessExpense::with('broker')->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($expense) => $expense->remainingCents() > 0);
-        $advances = $brokerIds->isEmpty() ? collect() : BrokerAdvance::whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($advance) => $advance->remainingBalance() > 0)->groupBy('broker_id');
+        $advances = $brokerIds->isEmpty() ? collect() : BrokerAdvance::personal()->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($advance) => $advance->remainingBalance() > 0)->groupBy('broker_id');
         $recovered = collect($this->form['expenses'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
         $offset = collect($this->form['brokers'])->sum(fn ($row) => collect($row['advances'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0));
         $writCents = $this->form['includes_writ'] && is_numeric($this->form['writ_amount']) ? (int) round((float) $this->form['writ_amount'] * 100) : 0;

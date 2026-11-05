@@ -30,6 +30,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public array $assignors = [['contact_id' => '', 'role' => 'parte']];
 
+    /** @var list<array{broker_id:string,base:string,mode:string,rate_or_amount:string}> */
+    public array $default_brokers = [];
+
     public string $face_value = '0';
 
     public string $negotiated_amount = '0';
@@ -96,7 +99,7 @@ new #[Layout('layouts.app')] class extends Component
     public function mount(?Writ $writ = null): void
     {
         if ($writ && $writ->exists) {
-            $this->writ = $writ->load('assignors.contact');
+            $this->writ = $writ->load('assignors.contact', 'defaultBrokers');
             foreach (['type', 'stage', 'process_number', 'court', 'debtor_entity', 'credit_nature', 'notes'] as $f) {
                 $this->{$f} = (string) ($writ->{$f} ?? '');
             }
@@ -125,8 +128,15 @@ new #[Layout('layouts.app')] class extends Component
                 'role' => $a->role,
             ])->toArray();
             $this->assignors = ! empty($existing) ? $existing : [['contact_id' => '', 'role' => 'parte']];
+            $this->default_brokers = $writ->defaultBrokers->map(fn ($row) => [
+                'broker_id' => (string) $row->broker_id,
+                'base' => $row->base ?: 'fees',
+                'mode' => $row->mode ?: 'percent',
+                'rate_or_amount' => (string) $row->rate_or_amount,
+            ])->all();
         } else {
             $this->negotiation_at = now()->format('Y-m-d\TH:i');
+            $this->default_brokers = [];
         }
     }
 
@@ -143,6 +153,16 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
+    public function addDefaultBroker(): void
+    {
+        $this->default_brokers[] = ['broker_id' => '', 'base' => 'fees', 'mode' => 'percent', 'rate_or_amount' => ''];
+    }
+
+    public function removeDefaultBroker(int $index): void
+    {
+        array_splice($this->default_brokers, $index, 1);
+    }
+
     public function rules(): array
     {
         return [
@@ -155,6 +175,11 @@ new #[Layout('layouts.app')] class extends Component
             'assignors' => 'array',
             'assignors.*.contact_id' => 'nullable|exists:contacts,id',
             'assignors.*.role' => 'nullable|in:parte,advogado',
+            'default_brokers' => 'array',
+            'default_brokers.*.broker_id' => 'nullable|exists:brokers,id',
+            'default_brokers.*.base' => 'nullable|in:fees,gross',
+            'default_brokers.*.mode' => 'nullable|in:percent,fixed',
+            'default_brokers.*.rate_or_amount' => 'nullable|numeric|min:0',
             'face_value' => 'required|numeric|min:0',
             'negotiated_amount' => 'required|numeric|min:0',
             'proposed_amount' => 'required|numeric|min:0',
@@ -280,7 +305,8 @@ new #[Layout('layouts.app')] class extends Component
 
         $data = $this->prepareDataForStage($data);
         $assignorsData = $data['assignors'] ?? [];
-        unset($data['assignors']);
+        $defaultBrokersData = $data['default_brokers'] ?? $this->default_brokers;
+        unset($data['assignors'], $data['default_brokers']);
 
         $face = $this->discountBaseValue();
         $paid = (float) $data['paid_amount'];
@@ -361,6 +387,26 @@ new #[Layout('layouts.app')] class extends Component
                     'role' => $a['role'] ?? 'parte',
                 ]);
             }
+        }
+
+        $writ->defaultBrokers()->delete();
+        $seenBrokers = [];
+        foreach ($defaultBrokersData as $row) {
+            if (empty($row['broker_id'])) {
+                continue;
+            }
+            $brokerId = (int) $row['broker_id'];
+            if (isset($seenBrokers[$brokerId])) {
+                continue;
+            }
+            $seenBrokers[$brokerId] = true;
+            \App\Domains\Brokers\Models\WritDefaultBroker::create([
+                'writ_id' => $writ->id,
+                'broker_id' => $brokerId,
+                'base' => in_array(($row['base'] ?? 'fees'), ['fees', 'gross'], true) ? ($row['base'] ?? 'fees') : 'fees',
+                'mode' => (($row['mode'] ?? 'percent') === 'fixed') ? 'fixed' : 'percent',
+                'rate_or_amount' => (float) ($row['rate_or_amount'] ?? 0),
+            ]);
         }
 
         session()->flash('status', 'Requisitório salvo.');
@@ -601,6 +647,7 @@ new #[Layout('layouts.app')] class extends Component
                         <div class="w-36">
                             <label class="block text-xxs text-mono-600 mb-xxxs">Papel</label>
                             <select wire:model="assignors.{{ $i }}.role" class="fx-form-field">
+
                                 <option value="parte">Parte</option>
                                 <option value="advogado">Advogado</option>
                             </select>
@@ -614,6 +661,44 @@ new #[Layout('layouts.app')] class extends Component
             @if ($contacts->isEmpty())
                 <p class="text-xxs text-mono-600 mt-xs">Nenhum contato ativo cadastrado. <a href="{{ route('contacts.create') }}" class="text-primary-500 hover:underline">Cadastrar contato →</a></p>
             @endif
+        </section>
+
+        <section>
+            <div class="flex flex-col gap-sm mt-md">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-md font-semibold">Corretores padrão (pré-preenche o recebimento)</h3>
+                    <button type="button" wire:click="addDefaultBroker" class="fx-btn fx-btn--text fx-btn--sm">+ Adicionar corretor</button>
+                </div>
+                <p class="text-xs text-mono-600">Opcional. Ao marcar o requisitório no recebimento de processo, a lista de corretores é pré-preenchida.</p>
+                @forelse ($default_brokers as $i => $row)
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-xs items-end" wire:key="default-broker-{{ $i }}">
+                        <div>
+                            <label class="block text-xxs text-mono-600 mb-xxxs">Corretor</label>
+                            <select wire:model="default_brokers.{{ $i }}.broker_id" class="fx-form-field">
+                                <option value="">— selecionar —</option>
+                                @foreach (\App\Domains\Brokers\Models\Broker::selectable()->orderBy('name')->get() as $brokerOption)
+                                    <option value="{{ $brokerOption->id }}">{{ $brokerOption->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xxs text-mono-600 mb-xxxs">Modo</label>
+                            <select wire:model="default_brokers.{{ $i }}.mode" class="fx-form-field">
+                                <option value="percent">Percentual</option>
+                                <option value="fixed">Valor fixo</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xxs text-mono-600 mb-xxxs">Taxa / valor</label>
+                            <input type="text" wire:model="default_brokers.{{ $i }}.rate_or_amount" class="fx-form-field" />
+                        </div>
+                        <button type="button" wire:click="removeDefaultBroker({{ $i }})" class="text-system-error text-sm px-xs h-9 hover:opacity-70" title="Remover">✕</button>
+                    </div>
+                @empty
+                    <p class="text-sm text-mono-500">Nenhum corretor padrão.</p>
+                @endforelse
+            </div>
+
         </section>
 
         <section>

@@ -65,7 +65,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Contact $broker): void
     {
-        abort_unless($broker->type === 'corretor', 404);
+        abort_unless($broker->hasRole('corretor'), 404);
 
         $this->broker = $broker;
         $this->financialBroker = app(BrokerProfileService::class)->forContact($broker);
@@ -384,8 +384,8 @@ new #[Layout('layouts.app')] class extends Component
             $advanceBalance = $calc->forBroker($this->financialBroker);
             $commissionSummary = $calc->commissionsForBroker($this->financialBroker);
             $statementSummary = $statementService->summary($this->financialBroker, $periodStart, $periodEnd);
-            $statementEntries = $statementService->entries($this->financialBroker, $periodStart, $periodEnd);
-            $allAdvances = $this->financialBroker->advances()->with('bankAccount')->orderByDesc('date')->get();
+            $statementEntries = $statementService->entries($this->financialBroker, $periodStart, $periodEnd, ascending: false);
+            $allAdvances = $this->financialBroker->advances()->personal()->with('bankAccount')->orderByDesc('date')->get();
             $allCommissions = $this->financialBroker->commissions()->with('caseType', 'bankAccount', 'settlements', 'payments')->orderByDesc('reference_date')->get();
             $allPayments = $this->financialBroker->commissionPayments()
                 ->with('commission.caseType', 'bankAccount')
@@ -419,6 +419,23 @@ new #[Layout('layouts.app')] class extends Component
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
+    }
+
+
+    public function reclassifyAdvance(int $advanceId): void
+    {
+        $this->assertFinancialBroker();
+        try {
+            $advance = \App\Domains\Brokers\Models\BrokerAdvance::where('broker_id', $this->financialBroker->id)->findOrFail($advanceId);
+            app(\App\Domains\Brokers\Services\BrokerAdvanceService::class)->reclassifyAsProcessExpense(
+                $advance,
+                description: $advance->notes ?: 'Despesa de processo',
+            );
+            session()->flash('status', 'Adiantamento reclassificado como despesa de processo.');
+            $this->records_tab = 'process_expenses';
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+        }
     }
 
     private function assertFinancialBroker(): void
@@ -629,8 +646,32 @@ new #[Layout('layouts.app')] class extends Component
                     <span class="material-icons-outlined text-2xl">request_quote</span>
                 </div>
                 <div class="min-w-0">
-                    <div class="text-xxs text-mono-600 uppercase">Saldo Corretor</div>
+                    <div class="text-xxs text-mono-600 uppercase">Saldo Corretor (a pagar)</div>
                     <div class="mt-xxs truncate text-xl font-bold {{ $statementSummary['commission_pending'] != 0 ? 'text-up' : 'text-mono-900' }}">R$ {{ number_format($statementSummary['commission_pending'], 2, ',', '.') }}</div>
+                </div>
+            </div>
+        </x-fx.card>
+        <x-fx.card>
+            <div class="flex items-center gap-sm">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-mono-200 bg-mono-50 text-mono-700">
+                    <span class="material-icons-outlined text-2xl">balance</span>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-xxs text-mono-600 uppercase">Saldo devedor</div>
+                    <div class="mt-xxs truncate text-xl font-bold {{ ($statementSummary['saldo_devedor'] ?? 0) > 0 ? 'text-down' : (($statementSummary['saldo_devedor'] ?? 0) < 0 ? 'text-up' : 'text-mono-900') }}">R$ {{ number_format($statementSummary['saldo_devedor'] ?? 0, 2, ',', '.') }}</div>
+                    <div class="text-[11px] text-mono-500">+ corretor deve · − Cassio deve</div>
+                </div>
+            </div>
+        </x-fx.card>
+        <x-fx.card>
+            <div class="flex items-center gap-sm">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-orange-100 bg-orange-50 text-orange-600">
+                    <span class="material-icons-outlined text-2xl">receipt_long</span>
+                </div>
+                <div class="min-w-0">
+                    <div class="text-xxs text-mono-600 uppercase">Despesas de processo a recuperar</div>
+                    <div class="mt-xxs truncate text-xl font-bold text-orange-700">R$ {{ number_format($statementSummary['process_expenses_open'] ?? 0, 2, ',', '.') }}</div>
+                    <div class="text-[11px] text-mono-500">Fora do saldo pessoal</div>
                 </div>
             </div>
         </x-fx.card>
@@ -792,6 +833,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <th class="text-left">Movimento</th>
                                 <th class="text-left">Descrição</th>
                                 <th class="text-right">Valor</th>
+                                <th class="text-right">Saldo</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -807,6 +849,13 @@ new #[Layout('layouts.app')] class extends Component
                                     <td class="text-mono-600">{{ $entry['description'] }}</td>
                                     <td class="text-right font-semibold {{ $entry['tone'] === 'up' ? 'text-up' : ($entry['tone'] === 'down' ? 'text-down' : 'text-mono-900') }}">
                                         R$ {{ number_format($entry['amount'], 2, ',', '.') }}
+                                    </td>
+                                    <td class="text-right font-semibold text-mono-900">
+                                        @if (!empty($entry['affects_personal']))
+                                            R$ {{ number_format($entry['running_balance'] ?? 0, 2, ',', '.') }}
+                                        @else
+                                            <span class="text-mono-400">—</span>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach
@@ -863,6 +912,15 @@ new #[Layout('layouts.app')] class extends Component
                                         </button>
                                         <button
                                             type="button"
+                                            wire:click="reclassifyAdvance({{ $adv->id }})"
+                                            wire:confirm="Reclassificar este adiantamento pessoal como despesa de processo? Ele sairá do saldo pessoal do corretor."
+                                            class="fx-btn fx-btn--text fx-btn--sm text-orange-600"
+                                            title="Reclassificar como despesa de processo"
+                                        >
+                                            <span class="material-icons-outlined text-base">swap_horiz</span>
+                                        </button>
+                                        <button
+                                            type="button"
                                             wire:click="deleteAdvance({{ $adv->id }})"
                                             wire:confirm="Excluir este adiantamento? A despesa no caixa será removida e as compensações com comissões serão desfeitas."
                                             class="fx-btn fx-btn--text fx-btn--sm text-error"
@@ -908,7 +966,7 @@ new #[Layout('layouts.app')] class extends Component
                                     <td>{{ $com->reference_date->format('d/m/Y') }}</td>
                                     <td>{{ $com->caseType?->name ?: '—' }}</td>
                                     <td class="max-w-[180px] truncate" title="{{ $com->name }}">{{ $com->name ?: '—' }}</td>
-                                    <td class="text-right font-semibold">R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</td>
+                                    <td class="text-right font-semibold"><div>R$ {{ number_format($com->commission_amount, 2, ',', '.') }}</div><div class="text-[11px] font-normal text-mono-500">{{ $com->calculationLabel() }}</div>@if($com->process_ref)<div class="text-[11px] font-normal text-mono-500">Proc. {{ $com->process_ref }}</div>@endif</td>
                                     <td class="text-right text-up">R$ {{ number_format($com->settledAmount(), 2, ',', '.') }}</td>
                                     <td class="text-right">R$ {{ number_format($com->paidAmount(), 2, ',', '.') }}</td>
                                     <td class="text-right {{ $com->remainingAmount() > 0 ? 'font-semibold text-down' : 'text-up' }}">R$ {{ number_format($com->remainingAmount(), 2, ',', '.') }}</td>

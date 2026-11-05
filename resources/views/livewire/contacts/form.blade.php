@@ -13,6 +13,9 @@ new #[Layout('layouts.app')] class extends Component
     #[Url]
     public string $type = 'cedente';
 
+    /** @var list<string> */
+    public array $roles = ['cedente'];
+
     public string $name = '';
 
     public string $document = '';
@@ -73,19 +76,39 @@ new #[Layout('layouts.app')] class extends Component
             $this->emails = $this->normalizeRepeaterValues($contact->emails ?: [$contact->email]);
             $this->birth_date = $contact->birth_date?->format('Y-m-d');
             $this->status = (bool) $contact->status;
+            $this->roles = $contact->roleList();
+            $this->type = $this->roles[0] ?? 'cedente';
+        } else {
+            $this->roles = [$this->type ?: 'cedente'];
         }
     }
 
     public function rules(): array
     {
         return [
-            'type' => 'required|in:cedente,advogado,corretor,pessoal',
+            'type' => 'required|in:cedente,advogado,corretor,pessoal,cliente',
+            'roles' => 'required|array|min:1',
+            'roles.*' => 'in:cedente,advogado,corretor,pessoal,cliente',
             'name' => 'required|string|max:200',
-            'document' => 'nullable|string|max:30',
+            'document' => [
+                in_array('cedente', (array) $this->roles, true) ? 'required' : 'nullable',
+                'string',
+                'max:30',
+                function ($attribute, $value, $fail) {
+                    $value = trim((string) $value);
+                    if ($value !== '' && ! \App\Support\BrazilianDocuments::isValidCpfOrCnpj($value)) {
+                        $fail('Informe um CPF ou CNPJ válido.');
+                    }
+                },
+            ],
             'birth_date' => 'nullable|date',
             'phone' => 'nullable|string|max:30',
             'phones' => 'array',
-            'phones.*' => 'nullable|string|max:30',
+            'phones.*' => ['nullable', 'string', 'max:30', function ($attribute, $value, $fail) {
+                if (trim((string) $value) !== '' && ! \App\Support\BrazilianDocuments::isValidPhone($value)) {
+                    $fail('Informe um telefone válido com DDD (10 ou 11 dígitos).');
+                }
+            }],
             'email' => 'nullable|email|max:200',
             'emails' => 'array',
             'emails.*' => 'nullable|email|max:200',
@@ -185,12 +208,21 @@ new #[Layout('layouts.app')] class extends Component
         $data['emails'] = $this->cleanRepeaterValues($this->emails);
         $data['phone'] = $data['phones'][0] ?? null;
         $data['email'] = $data['emails'][0] ?? null;
+        $data['roles'] = array_values(array_unique(array_filter((array) $this->roles)));
+        if ($data['roles'] === []) {
+            $data['roles'] = ['cedente'];
+        }
+        $data['type'] = in_array($this->type, $data['roles'], true) ? $this->type : $data['roles'][0];
 
         if ($this->contact) {
             $this->contact->update($data);
             $contact = $this->contact;
         } else {
             $contact = Contact::create($data);
+        }
+
+        if ($contact->hasRole('corretor')) {
+            app(\App\Domains\Brokers\Services\BrokerProfileService::class)->forContact($contact->fresh());
         }
 
         session()->flash('status', 'Contato salvo.');
@@ -242,17 +274,22 @@ new #[Layout('layouts.app')] class extends Component
                 <h3 class="text-base font-bold text-mono-900">Dados Pessoais</h3>
             </div>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-mono-600">Tipo *</label>
-                    <select wire:model="type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                        <option value="cedente">Cedente</option>
-                        <option value="advogado">Advogado</option>
-                        <option value="corretor">Corretor</option>
-                        <option value="pessoal">Pessoal (amigos e familiares)</option>
-                    </select>
+                <div class="md:col-span-2">
+                    <label class="mb-2 block text-sm font-medium text-mono-600">Papéis *</label>
+                    <div class="flex flex-wrap gap-3 rounded-2xl border border-mono-200 bg-mono-white px-4 py-3">
+                        @foreach (\App\Domains\Contacts\Models\Contact::ROLE_OPTIONS as $roleValue => $roleLabel)
+                            <label class="inline-flex items-center gap-2 text-sm text-mono-900">
+                                <input type="checkbox" value="{{ $roleValue }}" wire:model.live="roles" class="h-4 w-4 rounded border-mono-300 text-primary-500 focus:ring-primary-500">
+                                {{ $roleLabel }}
+                            </label>
+                        @endforeach
+                    </div>
+                    @error('roles') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
+                    @error('roles.*') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
+                    <p class="mt-2 text-xs text-mono-600">Um contato pode ter vários papéis. O tipo principal fica sincronizado automaticamente.</p>
                 </div>
                 <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />
-                <x-jr.input label="CPF/CNPJ" icon="article" name="document" wire:model="document" x-cpf-cnpj />
+                <x-jr.input label="CPF/CNPJ {{ in_array('cedente', $roles, true) ? '*' : '' }}" icon="article" name="document" wire:model="document" x-cpf-cnpj />
                 <x-jr.input label="Data de nascimento" icon="calendar_month" name="birth_date" type="date" wire:model="birth_date" />
             </div>
         </section>
@@ -342,9 +379,12 @@ new #[Layout('layouts.app')] class extends Component
         <section>
             <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                 <span class="material-icons-outlined text-[20px] text-primary-500">account_balance</span>
-                <h3 class="text-base font-bold text-mono-900">Dados Bancários</h3>
+                <h3 class="text-base font-bold text-mono-900">Dados Bancários @if(in_array('corretor', $roles, true))<span class="ml-2 text-xs font-semibold text-primary-500">(destaque para corretor)</span>@endif</h3>
             </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            @if(in_array('corretor', $roles, true))
+                <p class="mb-3 text-xs text-mono-600">Informe PIX ou conta bancária do corretor para facilitar os repasses.</p>
+            @endif
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3 {{ in_array('corretor', $roles, true) ? 'rounded-2xl border border-primary-100 bg-primary-50/40 p-4' : '' }}">
                 <x-jr.input label="Banco" icon="account_balance" name="bank_name" wire:model="bank_name" />
                 <x-jr.input label="Agência" icon="confirmation_number" name="bank_agency" wire:model="bank_agency" />
                 <x-jr.input label="Conta" icon="credit_card" name="bank_account" wire:model="bank_account" />

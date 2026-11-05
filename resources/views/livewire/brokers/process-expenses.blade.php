@@ -15,10 +15,12 @@ new class extends Component {
     public string $amount = '';
     public string $description = '';
     public ?int $accountId = null;
+    public string $process_ref = '';
+    public ?int $contactId = null;
 
     public function create(): void
     {
-        $this->reset('editingId', 'amount', 'description', 'accountId');
+        $this->reset('editingId', 'amount', 'description', 'accountId', 'process_ref', 'contactId');
         $this->date = now('America/Sao_Paulo')->toDateString();
         $this->showForm = true;
         $this->resetValidation();
@@ -32,6 +34,8 @@ new class extends Component {
         $this->amount = (string) $expense->amount;
         $this->description = $expense->description;
         $this->accountId = $expense->bank_account_id;
+        $this->process_ref = (string) ($expense->process_ref ?? '');
+        $this->contactId = $expense->contact_id;
         $this->showForm = true;
         $this->resetValidation();
     }
@@ -40,7 +44,7 @@ new class extends Component {
     {
         try {
             $service->save(Broker::findOrFail($this->brokerId), [
-                'date' => $this->date, 'amount' => $this->amount, 'description' => $this->description, 'bank_account_id' => $this->accountId,
+                'date' => $this->date, 'amount' => $this->amount, 'description' => $this->description, 'bank_account_id' => $this->accountId, 'process_ref' => $this->process_ref, 'contact_id' => $this->contactId,
             ], $this->editingId ? BrokerProcessExpense::where('broker_id', $this->brokerId)->findOrFail($this->editingId) : null);
         } catch (\DomainException $e) { $this->addError('expense', $e->getMessage()); return; }
         $this->showForm = false;
@@ -60,15 +64,17 @@ new class extends Component {
     public function with(): array
     {
         return [
-            'expenses' => BrokerProcessExpense::where('broker_id', $this->brokerId)->with('bankAccount', 'recoveries.destination.receipt')->orderByDesc('date')->orderByDesc('id')->get(),
+            'expenses' => BrokerProcessExpense::where('broker_id', $this->brokerId)->with('bankAccount', 'contact', 'recoveries.destination.receipt')->orderByDesc('date')->orderByDesc('id')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'contacts' => \App\Domains\Contacts\Models\Contact::active()->orderBy('name')->limit(300)->get(),
+            'openTotal' => BrokerProcessExpense::where('broker_id', $this->brokerId)->with('recoveries')->get()->sum(fn ($e) => $e->remainingCents()) / 100,
         ];
     }
 }; ?>
 
 <div class="space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-mono-600">Despesas deste corretor, disponíveis para desconto no valor do cliente ao registrar um recebimento.</p>
+        <p class="text-sm text-mono-600">Dinheiro do <strong>cliente</strong> antecipado pelo Cassio (custas etc.). Não entra no saldo pessoal do corretor. Recupera-se no recebimento do processo.</p>
         <button type="button" wire:click="create" class="h-11 rounded-pill bg-primary-500 px-5 text-sm font-semibold text-white">Nova despesa</button>
     </div>
     <div class="grid gap-3 text-sm sm:grid-cols-3">
@@ -84,6 +90,8 @@ new class extends Component {
                 <x-jr.input label="Valor (R$) *" name="amount" type="number" min="0.01" step="0.01" wire:model="amount" required />
                 <x-jr.input label="Data *" name="date" type="date" wire:model="date" required />
                 <x-jr.input label="Descrição *" name="description" wire:model="description" maxlength="200" required />
+                <x-jr.input label="Processo (número)" name="process_ref" wire:model="process_ref" maxlength="120" />
+                <div><label class="mb-2 block text-sm text-mono-600">Cliente (contato)</label><select wire:model="contactId" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">— opcional —</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
                 <div><label for="process-expense-account" class="mb-2 block text-sm text-mono-600">Conta do pagamento *</label><select id="process-expense-account" wire:model="accountId" class="h-12 w-full rounded-xl border-mono-200 text-sm" required><option value="">Selecionar</option>@foreach ($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></div>
             </div>
             <p class="text-xs text-mono-600">Ao salvar, a despesa será registrada como uma saída paga na conta selecionada.</p>

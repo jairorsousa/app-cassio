@@ -12,6 +12,10 @@ new #[Layout('layouts.app')] class extends Component {
     public ?int $case_type_id = null;
     public string $name = '';
     public string $base_amount = '';
+    public string $mode = 'percent';
+    public string $rate_or_amount = '';
+    public string $process_ref = '';
+    public ?int $writ_id = null;
     public string $reference_date = '';
     public ?int $bank_account_id = null;
     public string $notes = '';
@@ -27,7 +31,11 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'case_type_id' => 'required|exists:case_types,id',
             'name' => 'required|string|max:160',
-            'base_amount' => 'required|numeric|min:0.01',
+            'mode' => 'required|in:percent,fixed',
+            'rate_or_amount' => 'required|numeric|min:0.01',
+            'base_amount' => 'nullable|numeric|min:0.01',
+            'process_ref' => 'nullable|string|max:120',
+            'writ_id' => 'nullable|exists:writs,id',
             'reference_date' => 'required|date',
             'bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string',
@@ -37,9 +45,20 @@ new #[Layout('layouts.app')] class extends Component {
     public function save(BrokerCommissionService $service)
     {
         $data = $this->validate();
-        $data['broker_id'] = $this->broker->id;
         try {
-            $service->register($data);
+            $service->registerFlexible([
+                'broker_id' => $this->broker->id,
+                'case_type_id' => $data['case_type_id'],
+                'name' => $data['name'],
+                'mode' => $data['mode'],
+                'rate_or_amount' => $data['rate_or_amount'],
+                'base_amount' => $data['base_amount'] ?: $data['rate_or_amount'],
+                'process_ref' => $data['process_ref'] ?? null,
+                'writ_id' => $data['writ_id'] ?? null,
+                'reference_date' => $data['reference_date'],
+                'bank_account_id' => $data['bank_account_id'] ?? null,
+                'notes' => $data['notes'] ?? null,
+            ]);
             session()->flash('status', 'Comissão registrada.');
             return $this->redirectRoute('brokers.commissions.index', $this->broker, navigate: true);
         } catch (\DomainException $e) {
@@ -52,6 +71,7 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
+            'writs' => \App\Domains\Writs\Models\Writ::query()->orderByDesc('id')->limit(200)->get(['id', 'process_number', 'assignor_name']),
         ];
     }
 }; ?>
@@ -80,7 +100,27 @@ new #[Layout('layouts.app')] class extends Component {
                     @endif
                 </div>
                 <x-fx.input label="Nome *" wire:model="name" placeholder="Ex.: cliente ou processo" />
-                <x-fx.input label="Valor base *" type="text" x-money wire:model="base_amount" />
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Modo *</label>
+                    <select wire:model.live="mode" class="fx-form-field">
+                        <option value="percent">Percentual</option>
+                        <option value="fixed">Valor fixo</option>
+                    </select>
+                </div>
+                <x-fx.input label="{{ $mode === 'percent' ? 'Percentual *' : 'Valor fixo *' }}" type="text" wire:model="rate_or_amount" />
+                @if ($mode === 'percent')
+                    <x-fx.input label="Base de cálculo *" type="text" x-money wire:model="base_amount" />
+                @endif
+                <x-fx.input label="Processo (número)" wire:model="process_ref" placeholder="Ex.: 0001234-56.2024.8.10.0001" />
+                <div>
+                    <label class="block text-xxs text-mono-600 mb-xxxs">Requisitório</label>
+                    <select wire:model="writ_id" class="fx-form-field">
+                        <option value="">— opcional —</option>
+                        @foreach ($writs as $writ)
+                            <option value="{{ $writ->id }}">#{{ $writ->id }} · {{ $writ->process_number }} · {{ $writ->assignor_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <x-fx.input label="Data de referência *" type="date" wire:model="reference_date" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Conta para pagamento</label>
