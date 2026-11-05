@@ -142,6 +142,24 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $formAllocationEnabled = false;
 
+    /** Vínculos opcionais do lançamento (Etapa 2). */
+    public string $formLinkProcess = '';
+
+    public ?int $formLinkWritId = null;
+
+    public ?int $formLinkBrokerId = null;
+
+    public ?int $formLinkContactId = null;
+
+    public string $linkSearch = '';
+
+    /** Comprovante (PDF, JPG ou PNG), guardado no disco privado. */
+    public $formAttachment = null;
+
+    /** Filtro por vínculo: "writ:ID", "broker:ID", "contact:ID" ou "process:texto". */
+    #[Url]
+    public string $vinculo = '';
+
     public bool $formDestinateAfterSave = false;
     #[\Livewire\Attributes\Locked]
     public bool $editingProcessReceipt = false;
@@ -211,7 +229,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(): void
     {
-        if ($this->from === '') {
+        if ($this->from === '' && $this->vinculo === '') {
             $this->from = now()->startOfMonth()->format('Y-m-d');
             $this->to = now()->endOfMonth()->format('Y-m-d');
         }
@@ -229,7 +247,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function clearFilters(): void
     {
-        $this->reset(['from', 'to', 'category', 'account', 'status', 'type', 'testes', 'historico']);
+        $this->reset(['from', 'to', 'category', 'account', 'status', 'type', 'testes', 'historico', 'vinculo']);
         $this->from = now()->startOfMonth()->format('Y-m-d');
         $this->to = now()->endOfMonth()->format('Y-m-d');
         $this->resetPage();
@@ -314,6 +332,10 @@ new #[Layout('layouts.app')] class extends Component
         $this->formAllocationRows = $transaction->allocations->map(fn ($row) => [
             'key' => (string) Str::uuid(), 'category_id' => $row->category_id, 'amount' => (string) $row->amount,
         ])->all();
+        $this->formLinkProcess = (string) $transaction->link_process;
+        $this->formLinkWritId = $transaction->link_writ_id;
+        $this->formLinkBrokerId = $transaction->link_broker_id;
+        $this->formLinkContactId = $transaction->link_contact_id;
         $this->formType = $transaction->type;
         $this->formDate = $transaction->date->format('Y-m-d');
         $this->formAmount = (string) abs((float) $transaction->amount);
@@ -499,7 +521,14 @@ new #[Layout('layouts.app')] class extends Component
             'formTransferToId' => 'nullable|exists:bank_accounts,id|different:formBankAccountId',
             'formInstallments' => 'required|integer|min:1|max:36',
             'formAllocationMode' => 'required|in:amount,percentage',
-        ], ['formCategoryId.required' => 'Selecione a categoria. Ela é obrigatória em receitas e despesas.']);
+            'formLinkProcess' => 'nullable|string|max:120',
+            'formLinkWritId' => ['nullable', 'integer', Rule::exists('writs', 'id')->whereNull('deleted_at')],
+            'formLinkBrokerId' => ['nullable', 'integer', Rule::exists('brokers', 'id')->whereNull('deleted_at')],
+            'formLinkContactId' => ['nullable', 'integer', Rule::exists('contacts', 'id')->whereNull('deleted_at')],
+            'formAttachment' => ['nullable', 'file', 'mimes:'.\App\Domains\Banking\Models\TransactionAttachment::MIMES, 'max:'.\App\Domains\Banking\Models\TransactionAttachment::MAX_KB],
+        ], [
+            'formAttachment.mimes' => 'O comprovante deve ser PDF, JPG ou PNG.',
+            'formAttachment.max' => 'O comprovante deve ter no máximo 10 MB.','formCategoryId.required' => 'Selecione a categoria. Ela é obrigatória em receitas e despesas.']);
 
         $allocationRows = $this->formAllocationRows;
         if ($this->formAllocationEnabled) {
@@ -592,6 +621,19 @@ new #[Layout('layouts.app')] class extends Component
                 if ($this->formAllocationEnabled) {
                     $allocations->replaceForTransactions($saved, $allocationRows);
                 }
+                $links = [
+                    'link_process' => trim((string) ($data['formLinkProcess'] ?? '')) ?: null,
+                    'link_writ_id' => $data['formLinkWritId'] ?? null,
+                    'link_broker_id' => $data['formLinkBrokerId'] ?? null,
+                    'link_contact_id' => $data['formLinkContactId'] ?? null,
+                ];
+                foreach ($saved as $savedTransaction) {
+                    // Vínculos são só referência: não alteram valor, saldo ou categoria.
+                    $savedTransaction->forceFill($links)->saveQuietly();
+                }
+                if ($this->formAttachment && ($saved[0] ?? null)) {
+                    app(\App\Domains\Banking\Services\TransactionAttachmentService::class)->store($saved[0], $this->formAttachment);
+                }
                 return ['message' => $message, 'receipt_id' => ($saved[0] ?? null)?->id];
             });
         } catch (\InvalidArgumentException|\DomainException $e) {
@@ -616,12 +658,20 @@ new #[Layout('layouts.app')] class extends Component
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
             'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave', 'editingProcessReceipt',
+            'formLinkProcess', 'formLinkWritId', 'formLinkBrokerId', 'formLinkContactId', 'linkSearch', 'formAttachment',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
         $this->formStatus = 'settled';
         $this->formInstallments = 1;
         $this->resetValidation();
+    }
+
+    public function deleteAttachment(int $id): void
+    {
+        $attachment = \App\Domains\Banking\Models\TransactionAttachment::findOrFail($id);
+        app(\App\Domains\Banking\Services\TransactionAttachmentService::class)->delete($attachment);
+        session()->flash('status', 'Comprovante removido.');
     }
 
     public function delete(int $id): void
@@ -659,6 +709,43 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
+    /** Opções dos vínculos, filtradas pela busca (nome, cedente ou número do processo). */
+    private function linkOptions(): array
+    {
+        $term = trim($this->linkSearch);
+        $like = '%'.$term.'%';
+        $search = function ($model, array $columns, ?int $selected, int $limit, ?string $activeColumn = null) use ($term, $like) {
+            return $model::query()
+                ->when($term !== '', fn ($q) => $q->where(fn ($q) => collect($columns)->each(fn ($c) => $q->orWhere($c, 'like', $like))))
+                ->when($term === '' && $activeColumn, fn ($q) => $q->where($activeColumn, true))
+                ->when($selected && ($term !== '' || $activeColumn), fn ($q) => $q->orWhere('id', $selected))
+                ->orderBy($columns[0])->limit($limit)->get();
+        };
+
+        return [
+            'writs' => $search(\App\Domains\Writs\Models\Writ::class, ['assignor_name', 'process_number'], $this->formLinkWritId, 100),
+            'brokers' => $search(\App\Domains\Brokers\Models\Broker::class, ['name'], $this->formLinkBrokerId, 100, 'status'),
+            'contacts' => $search(\App\Domains\Contacts\Models\Contact::class, ['name'], $this->formLinkContactId, 150, 'status'),
+        ];
+    }
+
+    /** Somente vínculos em uso aparecem no filtro. */
+    private function linkFilterOptions(): array
+    {
+        $options = [];
+        foreach (\App\Domains\Writs\Models\Writ::whereIn('id', Transaction::whereNotNull('link_writ_id')->select('link_writ_id'))->orWhereIn('id', \App\Domains\Banking\Models\ProcessReceipt::whereNotNull('writ_id')->select('writ_id'))->orderBy('assignor_name')->get() as $w) {
+            $options['writ:'.$w->id] = 'Requisitório: '.$w->assignor_name.' · '.($w->process_number ?: '#'.$w->id);
+        }
+        foreach (\App\Domains\Brokers\Models\Broker::withTrashed()->whereIn('id', Transaction::whereNotNull('link_broker_id')->select('link_broker_id'))->orWhereIn('id', \App\Domains\Banking\Models\ProcessReceiptBroker::select('broker_id'))->orderBy('name')->get() as $b) {
+            $options['broker:'.$b->id] = 'Corretor: '.$b->name;
+        }
+        foreach (\App\Domains\Contacts\Models\Contact::whereIn('id', Transaction::whereNotNull('link_contact_id')->select('link_contact_id'))->orderBy('name')->get() as $c) {
+            $options['contact:'.$c->id] = 'Pessoa: '.$c->name;
+        }
+
+        return $options;
+    }
+
     public function with(): array
     {
         if ($this->preview === 'ofx') {
@@ -674,7 +761,18 @@ new #[Layout('layouts.app')] class extends Component
         } elseif ($this->historico === 'somente') {
             $q->whereHas('bankAccount', fn ($a) => $a->whereNotNull('initial_balance_date')->whereColumn('bank_accounts.initial_balance_date', '>', 'transactions.date'));
         }
-        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
+        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination', 'linkWrit', 'linkBroker', 'linkContact', 'attachments', 'processReceipt.brokerShares.broker', 'processReceipt.writ']);
+        if (preg_match('/^(writ|broker|contact):(\d+)$/', $this->vinculo, $m)) {
+            $column = 'link_'.$m[1].'_id';
+            $q->where(fn ($q) => $q->where($column, (int) $m[2])
+                ->when($m[1] === 'writ', fn ($q) => $q->orWhereHas('processReceipt', fn ($p) => $p->where('writ_id', (int) $m[2])))
+                ->when($m[1] === 'broker', fn ($q) => $q->orWhereHas('processReceipt.brokerShares', fn ($p) => $p->where('broker_id', (int) $m[2]))));
+        } elseif (str_starts_with($this->vinculo, 'process:') && trim(substr($this->vinculo, 8)) !== '') {
+            $term = trim(substr($this->vinculo, 8));
+            $q->where(fn ($q) => $q->where('link_process', 'like', '%'.$term.'%')->orWhereHas('processReceipt', fn ($p) => $p->where('process_ref', 'like', '%'.$term.'%')));
+        } elseif ($this->vinculo === 'com') {
+            $q->where(fn ($q) => $q->whereNotNull('link_process')->orWhereNotNull('link_writ_id')->orWhereNotNull('link_broker_id')->orWhereNotNull('link_contact_id'));
+        }
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -708,6 +806,8 @@ new #[Layout('layouts.app')] class extends Component
             'formIsHistorical' => ! $this->formIsCard && $this->formBankAccountId && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)
                 && (bool) BankAccount::find($this->formBankAccountId)?->isHistoricalDate($this->formDate),
             'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
+            'linkOptions' => $this->linkOptions(),
+            'linkFilterOptions' => $this->linkFilterOptions(),
             'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
         ];
     }
@@ -774,6 +874,12 @@ new #[Layout('layouts.app')] class extends Component
                     <option value="ocultar">Ocultar</option>
                     <option value="somente">Somente históricos</option>
                 </select>
+                <select wire:model.live="vinculo" aria-label="Filtrar por vínculo" class="ml-2 h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
+                    <option value="">Todos os vínculos</option>
+                    <option value="com">Somente com vínculo</option>
+                    @foreach ($linkFilterOptions as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
+                    @if (str_starts_with($vinculo, 'process:'))<option value="{{ $vinculo }}">Processo: {{ substr($vinculo, 8) }}</option>@endif
+                </select>
             </label>
             <label class="flex items-center gap-2 text-cryptex-text-secondary">
                 <input type="checkbox" wire:model.live="testes" value="1" true-value="1" false-value=""> Mostrar lançamentos de teste
@@ -812,6 +918,17 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->is_test)
                                 <x-fx.badge variant="warning" class="ml-space-2">Teste</x-fx.badge>
                             @endif
+                            @if ($t->hasLinks())
+                                <p class="mt-1 text-xs text-cryptex-text-secondary">
+                                    @if ($t->link_process)<span class="mr-2">Processo: <a href="{{ route('banking.transactions.index', ['vinculo' => 'process:'.$t->link_process]) }}" class="text-primary-600">{{ $t->link_process }}</a></span>@endif
+                                    @if ($t->linkWrit)<span class="mr-2">Requisitório: <a href="{{ route('banking.transactions.index', ['vinculo' => 'writ:'.$t->link_writ_id]) }}" class="text-primary-600">{{ $t->linkWrit->assignor_name }} · {{ $t->linkWrit->process_number ?: '#'.$t->link_writ_id }}</a></span>@endif
+                                    @if ($t->linkBroker)<span class="mr-2">Corretor: <a href="{{ route('banking.transactions.index', ['vinculo' => 'broker:'.$t->link_broker_id]) }}" class="text-primary-600">{{ $t->linkBroker->name }}</a></span>@endif
+                                    @if ($t->linkContact)<span class="mr-2">Pessoa: <a href="{{ route('banking.transactions.index', ['vinculo' => 'contact:'.$t->link_contact_id]) }}" class="text-primary-600">{{ $t->linkContact->name }}</a></span>@endif
+                                </p>
+                            @endif
+                            @foreach ($t->attachments as $file)
+                                <a href="{{ route('banking.transactions.attachments.download', $file) }}" class="mt-1 mr-2 inline-flex items-center gap-1 text-xs text-primary-600" title="Baixar comprovante"><span class="material-icons-outlined text-[14px]" aria-hidden="true">attach_file</span>{{ $file->original_name }}</a>
+                            @endforeach
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
                             @endif
@@ -827,6 +944,8 @@ new #[Layout('layouts.app')] class extends Component
                                     <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
                                     @php $writOwn = $t->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount')); @endphp
                                     @if ($writOwn > 0)<div>Requisitórios adquiridos: <strong>R$ {{ number_format($writOwn, 2, ',', '.') }}</strong></div>@endif
+                                    @if ($t->processReceipt?->writ)<div>Requisitório baixado: <strong>{{ $t->processReceipt->writ->process_number ?: '#'.$t->processReceipt->writ_id }}</strong> · {{ $t->processReceipt->writ->stageLabel() }}@php $realDays = app(\App\Domains\Writs\Services\WritProfitabilityCalculator::class)->realized($t->processReceipt->writ)['days_elapsed']; @endphp @if ($realDays !== null) · prazo real {{ (int) $realDays }} dias @endif</div>@endif
+                                    @if (($t->processReceipt?->brokerShares->count() ?? 0) > 0)<div>Corretores: @foreach ($t->processReceipt->brokerShares as $share){{ $share->broker?->name }} R$ {{ number_format((float) $share->calculated_amount, 2, ',', '.') }} ({{ $share->mode === 'percent' ? number_format((float) $share->rate_or_amount, 2, ',', '.').'% s/ '.($share->base === 'gross' ? 'bruto' : 'honorários') : 'fixo' }})@if (! $loop->last); @endif @endforeach</div>@endif
                                     <details><summary class="cursor-pointer text-primary-600">Ver beneficiários</summary>
                                         @foreach ($t->destinations as $part)<p class="mt-1">{{ $part->beneficiary }} · R$ {{ number_format((float) $part->amount, 2, ',', '.') }}</p>@endforeach
                                     </details>
@@ -1142,7 +1261,7 @@ new #[Layout('layouts.app')] class extends Component
                                         <div class="md:col-span-2">
                                             <label class="inline-flex min-h-10 cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900">
                                                 <input type="checkbox" wire:model.live="formAllocationEnabled" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500">
-                                                Rateio entre categorias
+                                                Dividir este lançamento em categorias
                                             </label>
                                         </div>
                                         @endif
@@ -1169,6 +1288,7 @@ new #[Layout('layouts.app')] class extends Component
                                                     $remaining = (is_numeric($formAmount) ? (float) $formAmount : 0) - $allocated;
                                                 @endphp
                                                 <div class="flex flex-wrap justify-between gap-2 text-sm text-mono-900">
+                                                    <span>Total: <strong>R$ {{ number_format(is_numeric($formAmount) ? (float) $formAmount : 0, 2, ',', '.') }}</strong></span>
                                                     <span>Rateado: <strong>R$ {{ number_format($allocated, 2, ',', '.') }}</strong></span>
                                                     <span class="{{ abs($remaining) < 0.005 ? 'text-green-600' : 'text-error' }}">{{ $remaining < -0.005 ? 'Excedente' : 'Restante' }}: <strong>R$ {{ number_format(abs($remaining), 2, ',', '.') }}</strong></span>
                                                 </div>
@@ -1235,6 +1355,33 @@ new #[Layout('layouts.app')] class extends Component
                                     @endif
                                 </div>
                             </section>
+
+                            @if ($formType !== 'transfer')
+                            <section>
+                                <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
+                                    <span class="material-icons-outlined text-[20px] text-primary-500">link</span>
+                                    <h4 class="text-base font-bold text-mono-900">Vínculos e comprovante <span class="text-sm font-normal text-mono-500">(opcionais)</span></h4>
+                                </div>
+                                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <div class="md:col-span-2"><x-jr.input label="Buscar requisitório, corretor ou pessoa" icon="search" name="linkSearch" wire:model.live.debounce.400ms="linkSearch" placeholder="Nome ou número do processo" /></div>
+                                    <x-jr.input label="Processo (número)" name="formLinkProcess" wire:model="formLinkProcess" maxlength="120" />
+                                    <div><label for="form-link-writ" class="mb-2 block text-sm font-medium text-mono-600">Requisitório</label><select id="form-link-writ" wire:model="formLinkWritId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhum</option>@foreach ($linkOptions['writs'] as $o)<option value="{{ $o->id }}">{{ $o->assignor_name }} · {{ $o->process_number ?: '#'.$o->id }}</option>@endforeach</select>@error('formLinkWritId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
+                                    <div><label for="form-link-broker" class="mb-2 block text-sm font-medium text-mono-600">Corretor</label><select id="form-link-broker" wire:model="formLinkBrokerId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhum</option>@foreach ($linkOptions['brokers'] as $o)<option value="{{ $o->id }}">{{ $o->name }}</option>@endforeach</select>@error('formLinkBrokerId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
+                                    <div><label for="form-link-contact" class="mb-2 block text-sm font-medium text-mono-600">Pessoa (contato)</label><select id="form-link-contact" wire:model="formLinkContactId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhuma</option>@foreach ($linkOptions['contacts'] as $o)<option value="{{ $o->id }}">{{ $o->name }}</option>@endforeach</select>@error('formLinkContactId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
+                                    <div class="md:col-span-2">
+                                        <label for="form-attachment" class="mb-2 block text-sm font-medium text-mono-600">Anexar comprovante (PDF, JPG ou PNG, até 10 MB)</label>
+                                        <input id="form-attachment" type="file" wire:model="formAttachment" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" class="block w-full text-sm text-mono-900">
+                                        <div wire:loading wire:target="formAttachment" class="mt-1 text-xs text-mono-600">Enviando…</div>
+                                        @error('formAttachment') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @if ($editingId)
+                                            @foreach (\App\Domains\Banking\Models\TransactionAttachment::where('transaction_id', $editingId)->orderBy('id')->get() as $file)
+                                                <p class="mt-2 text-sm" wire:key="form-attachment-{{ $file->id }}"><a href="{{ route('banking.transactions.attachments.download', $file) }}" class="font-semibold text-primary-600">{{ $file->original_name }}</a> <button type="button" wire:click="deleteAttachment({{ $file->id }})" wire:confirm="Remover este comprovante?" class="ml-2 text-xs text-error">remover</button></p>
+                                            @endforeach
+                                        @endif
+                                    </div>
+                                </div>
+                            </section>
+                            @endif
 
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
