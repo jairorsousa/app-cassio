@@ -1,16 +1,48 @@
-@props(['options', 'selectedId' => null, 'model', 'id', 'label', 'placeholder' => 'Selecione', 'clearValue' => null, 'searchLabel' => null, 'searchPlaceholder' => 'Digite para pesquisar...', 'emptyMessage' => 'Nenhum resultado encontrado.', 'disabled' => false, 'placeholderIcon' => null])
+@props([
+    'options',
+    'selectedId' => null,
+    'model',
+    'id',
+    'label',
+    'placeholder' => 'Selecione',
+    'clearValue' => null,
+    'searchLabel' => null,
+    'searchPlaceholder' => 'Digite para pesquisar...',
+    'emptyMessage' => 'Nenhum resultado encontrado.',
+    'disabled' => false,
+    'placeholderIcon' => null,
+    'typeFilters' => null,
+])
 
 @php
-    $selectedOption = $options->firstWhere('id', $selectedId);
+    $selectedOption = collect($options)->first(function ($option) use ($selectedId) {
+        return empty($option['is_header']) && (string) ($option['id'] ?? '') === (string) $selectedId;
+    });
+    $typeFilters = $typeFilters ? collect($typeFilters) : collect();
 @endphp
 
-<div wire:key="{{ $id }}-picker-{{ $options->count() }}" class="relative" x-data="{
+<div wire:key="{{ $id }}-picker-{{ collect($options)->count() }}" class="relative space-y-2" x-data="{
     open: false,
     query: '',
+    typeFilter: 'all',
     position: {},
     normalize(text) { return String(text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR') },
-    matches(name) { return this.normalize(name).includes(this.normalize(this.query.trim())) },
-    hasMatches() { return [...(this.$refs.options?.querySelectorAll('[data-option-search]') || [])].some(item => this.matches(item.dataset.optionSearch)) },
+    matchesSearch(text) { return this.normalize(text).includes(this.normalize(this.query.trim())) },
+    matchesType(type) { return this.typeFilter === 'all' || type === this.typeFilter },
+    matchesOption(el) {
+        const search = el.dataset.optionSearch || '';
+        const type = el.dataset.optionType || '';
+        return this.matchesSearch(search) && this.matchesType(type);
+    },
+    headerVisible(type) {
+        if (!this.matchesType(type)) return false;
+        const items = [...(this.$refs.options?.querySelectorAll([data-option-search]) || [])]
+            .filter(item => (item.dataset.optionType || ) === type);
+        return items.some(item => this.matchesSearch(item.dataset.optionSearch || ));
+    },
+    hasMatches() {
+        return [...(this.$refs.options?.querySelectorAll('[data-option-search]') || [])].some(item => this.matchesOption(item));
+    },
     place() {
         const rect = this.$refs.trigger.getBoundingClientRect();
         const below = window.innerHeight - rect.bottom - 24;
@@ -18,7 +50,7 @@
         const upwards = below < 280 && above > below;
         this.position = {
             left: rect.left + 'px', width: rect.width + 'px',
-            maxHeight: Math.max(80, Math.min(320, upwards ? above : below)) + 'px',
+            maxHeight: Math.max(80, Math.min(360, upwards ? above : below)) + 'px',
             ...(upwards ? { bottom: (window.innerHeight - rect.top + 8) + 'px' } : { top: (rect.bottom + 8) + 'px' })
         };
     },
@@ -45,6 +77,20 @@
     @keydown.escape="if (open) { $event.stopPropagation(); $event.preventDefault(); open = false; $refs.trigger.focus() }"
     @focusout="if (!$el.contains($event.relatedTarget)) open = false">
     <label for="{{ $id }}-trigger" class="mb-2 block text-sm font-medium text-mono-600">{{ $label }}</label>
+
+    @if ($typeFilters->isNotEmpty())
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por tipo">
+            <button type="button" @click="typeFilter = 'all'"
+                :class="typeFilter === 'all' ? 'bg-primary-500 text-white border-primary-500' : 'bg-mono-white text-mono-600 border-mono-200 hover:border-primary-300'"
+                class="rounded-pill border px-3 py-1 text-xs font-semibold transition-colors">Todas</button>
+            @foreach ($typeFilters as $filter)
+                <button type="button" @click="typeFilter = @js($filter['value'])"
+                    :class="typeFilter === @js($filter['value']) ? 'bg-primary-500 text-white border-primary-500' : 'bg-mono-white text-mono-600 border-mono-200 hover:border-primary-300'"
+                    class="rounded-pill border px-3 py-1 text-xs font-semibold transition-colors">{{ $filter['label'] }}</button>
+            @endforeach
+        </div>
+    @endif
+
     <button id="{{ $id }}-trigger" x-ref="trigger" type="button" role="combobox" aria-haspopup="listbox" aria-controls="{{ $id }}-options" :aria-expanded="open" @disabled($disabled)
         @click="open ? open = false : show()" @keydown.arrow-down.prevent="show()" @keydown.arrow-up.prevent="show()"
         class="flex h-12 w-full items-center gap-2 rounded-pill border border-mono-200 bg-mono-white px-4 text-left text-sm text-mono-900 transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-50">
@@ -64,31 +110,46 @@
                 <span class="material-icons-outlined text-[18px] text-mono-400" aria-hidden="true">search</span>
                 <input id="{{ $id }}-search" x-ref="search" x-model="query" type="search" autocomplete="off" placeholder="{{ $searchPlaceholder }}"
                     @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)"
-                    @keydown.enter.prevent="[...$refs.options.querySelectorAll('[data-option-search]')].find(item => matches(item.dataset.optionSearch))?.click()"
+                    @keydown.enter.prevent="[...$refs.options.querySelectorAll('[data-option-search]')].find(item => matchesOption(item))?.click()"
                     class="h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-mono-900 placeholder:text-mono-300 focus:ring-0" />
             </div>
         </div>
         <div id="{{ $id }}-options" x-ref="options" role="listbox" aria-label="{{ $label }}" class="min-h-0 flex-1 overflow-y-auto p-2"
             @keydown.arrow-down.prevent="move(1)" @keydown.arrow-up.prevent="move(-1)">
             <button type="button" role="option" tabindex="-1" aria-selected="{{ $selectedOption ? 'false' : 'true' }}"
-                x-show="query.trim() === ''" @click="choose(@js($clearValue))"
+                x-show="query.trim() === '' && typeFilter === 'all'" @click="choose(@js($clearValue))"
                 class="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-mono-600 hover:bg-mono-50 focus:bg-mono-50 focus:outline-none">
                 @if ($placeholderIcon)<span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-mono-50 text-mono-400"><span class="material-icons-outlined text-[20px]" aria-hidden="true">{{ $placeholderIcon }}</span></span>@endif
                 <span class="flex-1">{{ $placeholder }}</span>
                 @if (! $selectedOption)<span class="material-icons-outlined text-[18px] text-primary-500" aria-hidden="true">check</span>@endif
             </button>
             @foreach ($options as $option)
-                <button wire:key="{{ $id }}-option-{{ $option['id'] }}" type="button" role="option" tabindex="-1" data-option-id="{{ $option['id'] }}" data-option-search="{{ $option['label'] }}" aria-label="{{ $option['label'] }}"
-                    aria-selected="{{ $selectedId == $option['id'] ? 'true' : 'false' }}" x-show="matches($el.dataset.optionSearch)" @click="choose(@js($option['id']))"
-                    class="flex w-full items-center gap-2 rounded-xl {{ ! empty($option['indent']) ? 'pl-7 pr-3' : 'px-3' }} py-2 text-left text-sm text-mono-900 hover:bg-mono-50 focus:bg-mono-50 focus:outline-none">
-                    @if (! empty($option['icon']))
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style="color: {{ $option['color'] ?? '#ff6f00' }}; background-color: {{ ($option['color'] ?? '#ff6f00').'1A' }}"><span class="material-icons-outlined text-[20px]" aria-hidden="true">{{ $option['icon'] }}</span></span>
-                    @endif
-                    <span class="min-w-0 flex-1 break-words">{{ $option['name'] ?? $option['label'] }}
-                        @if (! empty($option['description']))<span class="block text-xs text-mono-400">{{ $option['description'] }}</span>@endif
-                    </span>
-                    @if ($selectedId == $option['id'])<span class="material-icons-outlined text-[18px] text-primary-500" aria-hidden="true">check</span>@endif
-                </button>
+                @if (! empty($option['is_header']))
+                    <div wire:key="{{ $id }}-header-{{ $option['id'] }}"
+                        x-show="headerVisible(@js($option['type'] ?? ''))"
+                        class="sticky top-0 z-10 mt-1 bg-mono-white px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-mono-500"
+                        role="presentation">
+                        {{ $option['label'] }}
+                    </div>
+                @else
+                    <button wire:key="{{ $id }}-option-{{ $option['id'] }}" type="button" role="option" tabindex="-1"
+                        data-option-id="{{ $option['id'] }}"
+                        data-option-search="{{ $option['search'] ?? $option['label'] }}"
+                        data-option-type="{{ $option['type'] ?? '' }}"
+                        aria-label="{{ $option['label'] }}"
+                        aria-selected="{{ $selectedId == $option['id'] ? 'true' : 'false' }}"
+                        x-show="matchesOption($el)"
+                        @click="choose(@js($option['id']))"
+                        class="flex w-full items-center gap-2 rounded-xl {{ ! empty($option['indent']) ? 'pl-7 pr-3' : 'px-3' }} py-2 text-left text-sm text-mono-900 hover:bg-mono-50 focus:bg-mono-50 focus:outline-none">
+                        @if (! empty($option['icon']))
+                            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style="color: {{ $option['color'] ?? '#ff6f00' }}; background-color: {{ ($option['color'] ?? '#ff6f00').'1A' }}"><span class="material-icons-outlined text-[20px]" aria-hidden="true">{{ $option['icon'] }}</span></span>
+                        @endif
+                        <span class="min-w-0 flex-1 break-words">{{ $option['name'] ?? $option['label'] }}
+                            @if (! empty($option['description']))<span class="block text-xs text-mono-400">{{ $option['description'] }}</span>@endif
+                        </span>
+                        @if ($selectedId == $option['id'])<span class="material-icons-outlined text-[18px] text-primary-500" aria-hidden="true">check</span>@endif
+                    </button>
+                @endif
             @endforeach
             <p x-show="!hasMatches()" role="status" class="px-3 py-4 text-sm text-mono-600">{{ $emptyMessage }}</p>
         </div>

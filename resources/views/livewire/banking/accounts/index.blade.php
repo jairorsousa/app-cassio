@@ -60,7 +60,7 @@ new #[Layout('layouts.app')] class extends Component
             'bank' => 'nullable|string|max:120',
             'agency' => 'nullable|string|max:20',
             'number' => 'nullable|string|max:30',
-            'type' => 'required|in:checking,savings,investment,cash,repasse',
+            'type' => 'required|in:checking,savings,investment,fund,cash,repasse',
             'initial_balance' => 'required|numeric',
             'initial_balance_date' => 'nullable|date_format:Y-m-d',
             'linked_account_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('bank_accounts', 'id')->whereIn('type', ['checking', 'savings'])->whereNull('deleted_at'), 'not_in:'.($this->editingId ?? 0)],
@@ -98,7 +98,7 @@ new #[Layout('layouts.app')] class extends Component
         $data = $this->validate();
         $data['initial_balance_date'] = $data['initial_balance_date'] ?: null;
         // Só conta de investimento pode ser vinculada a uma conta corrente.
-        $data['linked_account_id'] = $data['type'] === 'investment' ? ($data['linked_account_id'] ?: null) : null;
+        $data['linked_account_id'] = in_array($data['type'], ['investment', 'fund'], true) ? ($data['linked_account_id'] ?: null) : null;
 
         $saved = \Illuminate\Support\Facades\DB::transaction(function () use ($data) {
             if ($this->editingId) {
@@ -234,7 +234,7 @@ new #[Layout('layouts.app')] class extends Component
                     <tr>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-primary whitespace-nowrap">{{ $a->name }} @unless($a->status)<span class="text-fs-12 text-cryptex-text-secondary ml-1">(inativa)</span>@endunless</td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $a->bank }}</td>
-                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ ['checking'=>'Corrente','savings'=>'Poupança','investment'=>'Investimento','cash'=>'Dinheiro','repasse'=>'Repasse'][$a->type] }}@if ($a->linkedAccount)<div class="text-fs-12">vinculada a {{ $a->linkedAccount->name }}</div>@endif @if ($a->initial_balance_date)<div class="text-fs-12">saldo inicial em {{ $a->initial_balance_date->format('d/m/Y') }}</div>@endif</td>
+                        <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ \App\Domains\Banking\Models\BankAccount::TYPE_LABELS[$a->type] ?? $a->type }}@if ($a->linkedAccount)<div class="text-fs-12">vinculada a {{ $a->linkedAccount->name }}</div>@endif @if ($a->initial_balance_date)<div class="text-fs-12">saldo inicial em {{ $a->initial_balance_date->format('d/m/Y') }}</div>@endif</td>
                         <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $a->balance() >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">R$ {{ number_format($a->balance(), 2, ',', '.') }}</td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
                             @if ($a->type === 'repasse')
@@ -286,6 +286,7 @@ new #[Layout('layouts.app')] class extends Component
                                             <option value="checking">Corrente</option>
                                             <option value="savings">Poupança</option>
                                             <option value="investment">Investimento</option>
+                                            <option value="fund">Fundo (aplicação automática)</option>
                                             <option value="cash">Dinheiro</option>
                                             <option value="repasse">Repasse</option>
                                         </select>
@@ -296,7 +297,7 @@ new #[Layout('layouts.app')] class extends Component
                                         <x-jr.input label="Data do saldo inicial" icon="calendar_month" name="initial_balance_date" type="date" wire:model="initial_balance_date" />
                                         <p class="mt-1 text-xs text-mono-600">Use o saldo do extrato nessa data. Lançamentos anteriores viram histórico: ficam nos módulos, mas não alteram o saldo nem o resultado.</p>
                                     </div>
-                                    @if ($type === 'investment')
+                                    @if (in_array($type, ['investment', 'fund'], true))
                                         <div>
                                             <label class="mb-2 block text-sm font-medium text-mono-600">Conta corrente vinculada</label>
                                             <select wire:model="linked_account_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
