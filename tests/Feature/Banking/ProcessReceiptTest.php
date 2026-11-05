@@ -85,7 +85,7 @@ class ProcessReceiptTest extends TestCase
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Despesas recuperadas')->assertSee('Passagem')->assertSee('Desfazer compensação');
         $statement = app(BrokerStatementService::class)->summary($broker);
         $this->assertEquals(1200, $statement['cash_out_period']);
-        $this->assertTrue(app(BrokerStatementService::class)->entries($broker)->contains('type', 'Despesa de processos'));
+        $this->assertTrue(app(BrokerStatementService::class)->entries($broker)->contains('type', 'Despesa de processo'));
     }
 
     public function test_unselected_and_future_advances_are_not_automatically_applied(): void

@@ -1,5 +1,43 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 3: Corretores e Contatos (Auditor Fin)
+
+Base: commit `dfecaba` (fim da Etapa 2). Nenhum dado real foi apagado. Backup lógico antes: `/root/app-cassio-backups/etapa3-antes-20261105.json`.
+
+### Contatos
+- **Múltiplos papéis** por contato (`roles` JSON: Cedente, Corretor, Advogado, Pessoal, Cliente), mantendo `type` como papel principal para compatibilidade. Filtros `ofType` / `hasRole` consideram type e roles.
+- **CPF obrigatório** para cedente (validação com dígitos verificadores). Telefone BR (10/11 dígitos). Dados inválidos existentes **não são apagados**; o cadastro aparece como "Cadastro incompleto".
+- PIX/dados bancários em destaque quando o papel Corretor está marcado. Contato com papel corretor sincroniza o perfil financeiro (`BrokerProfileService`).
+
+### Corretores
+- Comissão avulsa com **percentual ou valor fixo** (`registerFlexible`), vínculo a processo (`process_ref`) e/ou requisitório (`writ_id`), com base e rótulo de cálculo na lista.
+- **Adiantamento pessoal** vs **despesa de processo** separados: despesas na aba própria (com processo/cliente), fora do saldo pessoal; adiantamentos antigos ficam `kind=personal`; opção de **reclassificar** adiantamento pessoal → despesa de processo (sem compensações).
+- Fórmulas na ficha: saldo adiantado pessoal, comissão gerada/compensada/repassada/a pagar, **saldo devedor**, despesas de processo a recuperar.
+- **Extrato com saldo corrido** linha a linha (coluna Saldo); filtro por período/ano (padrão = ano corrente).
+- Relatórios: ano padrão = ano atual; excluem contatos `is_test`; total anual de comissões por corretor; PDF mantido.
+- **Corretores padrão no requisitório** (`writ_default_brokers`): pré-preenchem a lista no recebimento ao selecionar o requisitório.
+
+### Seletor de conta (ajuste nesta etapa)
+- Novo tipo **`fund`** (Fundo — aplicação automática), distinto de Investimento. Conta "BB Fundo (aplicação automática)" migrada de `investment` → `fund`.
+- Seletor (`account-picker` / `searchable-select`): mostra **nome · tipo** (ex.: Banco do Brasil · Corrente), agrupa por tipo, filtro por chips de tipo e busca por nome/tipo — útil quando há várias contas do mesmo banco.
+
+### Migrations
+- `2026_11_05_300000_etapa3_corretores_contatos` — roles, campos de comissão/adiantamento/despesa, writ_default_brokers, defaults do corretor.
+- `2026_11_05_300100_etapa3_tipo_conta_fundo` — ENUM `fund` + migração do BB Fundo.
+
+### Testes
+- `tests/Feature/Brokers/Etapa3CorretoresContatosTest.php`: papéis, validação CPF/telefone, comissão %/fixo, separação de saldos (adiantamento 1000 + comissão 200 compensada ⇒ saldo_devedor 800; despesa 300 fora), saldo corrido, ano padrão, is_test fora do relatório, reclassificação, corretores padrão no writ.
+- `tests/Feature/Banking/AccountPickerTest.php`: rótulo nome·tipo, agrupamento e distinção Fundo/Investimento.
+
+### Pendências
+1. Confirmar com o Cassio os saldos das contas de investimento/fundo/Dinheiro/repasses na data de corte (só correntes foram informadas).
+2. Conta "XP Investimentos" (R$ 200 mil sem data) permanece intocada.
+3. Limpeza definitiva dos registros de teste — só ocultos via `is_test`.
+4. Modal rápido de Contatos (na listagem) ainda usa um único tipo; o formulário completo `/contacts/create|edit` já aceita múltiplos papéis.
+5. Prefill de corretores no recebimento depende de selecionar o requisitório com "crédito que eu já comprei"; não há cadastro de processos separado.
+
+
+
 ## 05/11/2026 — Etapa 1: limpeza e base do Financeiro (Auditor Fin)
 
 Base: commit `d828277` do Jairo (caixa unificado, resultado em regime de caixa, atalho do lançamento no modal). Nada foi excluído do banco.

@@ -76,6 +76,8 @@ class ContactManagementTest extends TestCase
 
         Volt::test('contacts.form')
             ->set('name', 'Contato com Bairro')
+            ->set('roles', ['pessoal'])
+            ->set('type', 'pessoal')
             ->set('zip_code', '65900-150')
             ->call('lookupZipCode')
             ->assertSet('neighborhood', 'Centro')
