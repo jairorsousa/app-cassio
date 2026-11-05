@@ -45,6 +45,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 <x-slot name="header">Dashboard Consolidado</x-slot>
 
 <div class="flex flex-col gap-space-5">
+    @php
+        $ownBalance = $snapshot['patrimony']['own_balance'] ?? $snapshot['patrimony']['cash_balance'];
+        $accountsBalance = $snapshot['patrimony']['accounts_balance'] ?? $ownBalance;
+        $thirdPartyBalance = $snapshot['patrimony']['third_party_balance'] ?? 0;
+    @endphp
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
@@ -66,8 +71,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-space-3 text-fs-12 text-cryptex-text-secondary md:flex-1 md:max-w-2xl">
                 <div>
-                    <div class="uppercase tracking-[0.05em] text-[10px]">Caixa</div>
-                    <div class="font-medium text-cryptex-text-primary text-fs-14 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($snapshot['patrimony']['cash_balance'], 2, ',', '.') }}</div>
+                    <div class="uppercase tracking-[0.05em] text-[10px]">Saldo próprio</div>
+                    <div class="font-medium text-cryptex-text-primary text-fs-14 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($ownBalance, 2, ',', '.') }}</div>
                 </div>
                 <div>
                     <div class="uppercase tracking-[0.05em] text-[10px]">Carteira</div>
@@ -88,6 +93,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
         </div>
     </x-fx.card>
+
+    <x-banking.cash-position
+        :accounts-balance="$accountsBalance"
+        :third-party-balance="$thirdPartyBalance"
+        :own-balance="$ownBalance"
+    />
 
     {{-- Resultado mensal + comparativos --}}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-space-5">
@@ -300,8 +311,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     {{-- Atalhos rápidos --}}
     <div class="flex flex-wrap gap-space-3 mt-space-2">
-        <x-fx.button href="{{ route('banking.transactions.create') }}" variant="primary">Lançamento</x-fx.button>
-        <x-fx.button href="{{ route('banking.transactions.create', ['type' => 'transfer']) }}" variant="secondary">Transferência</x-fx.button>
+        <x-fx.button href="{{ route('banking.transactions.index', ['novo' => 'expense']) }}" variant="primary">Lançamento</x-fx.button>
+        <x-fx.button href="{{ route('banking.transactions.index', ['novo' => 'transfer']) }}" variant="secondary">Transferência</x-fx.button>
         <x-fx.button href="{{ route('investments.operations.index') }}" variant="secondary">Operação</x-fx.button>
         <x-fx.button href="{{ route('writs.create') }}" variant="secondary">Requisitório</x-fx.button>
     </div>

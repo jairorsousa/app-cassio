@@ -56,6 +56,7 @@ class TransactionObserver
     {
         Cache::forget('banking.cashflow.'.$transaction->date->format('Y-m'));
         Cache::forget('banking.dashboard.summary');
+        Cache::forget('banking.dashboard.summary.v2');
     }
 
     private function scheduleDashboardRefresh(): void

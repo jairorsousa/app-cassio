@@ -207,6 +207,11 @@ new #[Layout('layouts.app')] class extends Component
             $this->from = now()->startOfMonth()->format('Y-m-d');
             $this->to = now()->endOfMonth()->format('Y-m-d');
         }
+
+        $novo = request()->query('novo');
+        if (is_string($novo) && in_array($novo, ['expense', 'income', 'transfer', 'card_expense'], true)) {
+            $this->create($novo);
+        }
     }
 
     public function clearFilters(): void

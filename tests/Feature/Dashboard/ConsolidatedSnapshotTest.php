@@ -89,7 +89,7 @@ class ConsolidatedSnapshotTest extends TestCase
         $payload = app(DashboardSnapshotBuilder::class)->build();
 
         $labels = collect($payload['distribution'])->pluck('label')->all();
-        $this->assertContains('Caixa em contas', $labels);
+        $this->assertContains('Saldo próprio', $labels);
         // Sem investimentos, sociedades, requisitórios → não devem aparecer
         $this->assertNotContains('Carteira · Ações', $labels);
         $this->assertNotContains('Sociedade (capital exposto)', $labels);

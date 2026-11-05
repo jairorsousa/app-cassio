@@ -19,9 +19,9 @@
         class="bg-mono-50 font-sans text-mono-900 antialiased"
         :class="{ 'overflow-hidden': sidebarOpen }"
         x-data="appShell({
-            newIncome: '{{ route('banking.transactions.create', ['type' => 'income']) }}',
-            newExpense: '{{ route('banking.transactions.create', ['type' => 'expense']) }}',
-            newTransfer: '{{ route('banking.transactions.create', ['type' => 'transfer']) }}',
+            newIncome: '{{ route('banking.transactions.index', ['novo' => 'income']) }}',
+            newExpense: '{{ route('banking.transactions.index', ['novo' => 'expense']) }}',
+            newTransfer: '{{ route('banking.transactions.index', ['novo' => 'transfer']) }}',
             newWrit: '{{ route('writs.create') }}',
             dashboard: '{{ route('dashboard') }}',
         })"

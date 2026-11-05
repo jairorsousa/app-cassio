@@ -356,6 +356,7 @@ class ReceivableService
     public function invalidate(): void
     {
         Cache::forget('banking.dashboard.summary');
+        Cache::forget('banking.dashboard.summary.v2');
         // Classification can change the own share of invoice payments from other months.
         app(DashboardSnapshotService::class)->invalidate();
     }

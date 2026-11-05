@@ -62,7 +62,14 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
     Volt::route('/cards', 'banking.cards.index')->name('cards.index');
     Volt::route('/cards/{card}/invoices', 'banking.cards.invoices')->name('cards.invoices');
     Volt::route('/transactions', 'banking.transactions.index')->name('transactions.index');
-    Volt::route('/transactions/create', 'banking.transactions.form')->name('transactions.create');
+    Route::get('/transactions/create', function () {
+        $type = request()->query('type', 'expense');
+        if (! in_array($type, ['income', 'expense', 'transfer'], true)) {
+            $type = 'expense';
+        }
+
+        return redirect()->route('banking.transactions.index', ['novo' => $type]);
+    })->name('transactions.create');
     Volt::route('/transactions/{transaction}/edit', 'banking.transactions.form')->name('transactions.edit');
     Volt::route('/receivables', 'banking.receivables.index')->name('receivables.index');
     Volt::route('/recurring', 'banking.recurring.index')->name('recurring.index');

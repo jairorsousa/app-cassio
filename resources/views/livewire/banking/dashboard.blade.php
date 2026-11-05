@@ -4,6 +4,7 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\CreditCardInvoice;
 use App\Domains\Banking\Models\Receivable;
 use App\Domains\Banking\Models\Transaction;
+use App\Domains\Banking\Services\CashPositionService;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
@@ -31,10 +32,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function with(): array
     {
-        $summary = Cache::remember('banking.dashboard.summary', 300, function () {
+        $summary = Cache::remember('banking.dashboard.summary.v2', 300, function () {
             $accounts = BankAccount::active()->get();
-            $totalBalance = $accounts->where('type', '!=', 'repasse')->sum(fn ($a) => $a->balance());
-            $repasseBalance = $accounts->where('type', 'repasse')->sum(fn ($a) => $a->balance());
+            $cash = app(CashPositionService::class)->summarize($accounts);
+            $totalBalance = $cash['accounts_balance'];
+            $repasseBalance = $cash['repasse_balance'];
+            $accountsBalance = $cash['accounts_balance'];
+            $thirdPartyBalance = $cash['third_party_balance'];
+            $ownBalance = $cash['own_balance'];
 
             $upcomingInvoices = CreditCardInvoice::with('creditCard')
                 ->whereIn('status', ['open', 'closed', 'partially_paid'])
@@ -56,12 +61,26 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 ->limit(10)
                 ->get();
 
-            return compact('accounts', 'totalBalance', 'repasseBalance', 'upcomingInvoices', 'monthIncome', 'monthExpense', 'pending');
+            return compact(
+                'accounts',
+                'totalBalance',
+                'repasseBalance',
+                'accountsBalance',
+                'thirdPartyBalance',
+                'ownBalance',
+                'upcomingInvoices',
+                'monthIncome',
+                'monthExpense',
+                'pending',
+            );
         });
 
         $totalReceivable = Receivable::with('installments.settlements')->get()->sum(fn ($receivable) => $receivable->remainingCents()) / 100;
 
-        return $summary + ['repasseBalance' => 0, 'totalReceivable' => $totalReceivable] + ['result' => $summary['monthIncome'] - $summary['monthExpense']];
+        return $summary + [
+            'totalReceivable' => $totalReceivable,
+            'result' => $summary['monthIncome'] - $summary['monthExpense'],
+        ];
     }
 }; ?>
 
@@ -69,7 +88,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-space-5">
+    <x-banking.cash-position
+        :accounts-balance="$accountsBalance"
+        :third-party-balance="$thirdPartyBalance"
+        :own-balance="$ownBalance"
+    />
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Resultado do período</span>
@@ -93,15 +117,6 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             </div>
             <div class="mt-space-2 text-fs-24 font-bold text-cryptex-red-500 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($monthExpense, 2, ',', '.') }}</div>
             <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Mês atual</div>
-        </x-fx.card>
-        <x-fx.card class="min-w-0">
-            <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
-                <span class="uppercase tracking-[0.05em]">Saldo em conta</span>
-                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Saldo atual das contas ativas, sem incluir contas de repasse. Não se limita ao mês atual." aria-label="Saldo atual das contas ativas, sem incluir contas de repasse. Não se limita ao mês atual.">info</span>
-            </div>
-            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-text-primary font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalBalance, 2, ',', '.') }}</div>
-            <div class="text-fs-12 text-cryptex-text-secondary mt-space-1 font-mono"><span class="text-cryptex-brand-400">{{ $accounts->where('type', '!=', 'repasse')->count() }}</span> contas ativas</div>
-            <div class="mt-space-1 text-fs-12 text-cryptex-text-secondary">Cliente e escritório a repassar: R$ {{ number_format(max(0, -$repasseBalance), 2, ',', '.') }}</div>
         </x-fx.card>
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">

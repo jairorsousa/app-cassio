@@ -32,14 +32,15 @@ class DashboardSnapshotService
 
     public function current(): array
     {
-        return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function () {
-            $latest = DashboardSnapshot::latest_snapshot();
-            if ($latest) {
-                return $latest->payload;
-            }
+        $cached = Cache::get(self::CACHE_KEY);
+        if (is_array($cached) && array_key_exists('own_balance', $cached['patrimony'] ?? [])) {
+            return $cached;
+        }
 
-            return $this->refresh();
-        });
+        $payload = $this->builder->build();
+        Cache::put(self::CACHE_KEY, $payload, self::CACHE_TTL);
+
+        return $payload;
     }
 
     public function invalidate(): void

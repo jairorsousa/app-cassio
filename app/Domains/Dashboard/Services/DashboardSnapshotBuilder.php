@@ -3,6 +3,7 @@
 namespace App\Domains\Dashboard\Services;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Services\CashPositionService;
 use App\Domains\Banking\Models\CreditCardInvoice;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\BrokerAdvance;
@@ -29,7 +30,8 @@ class DashboardSnapshotBuilder
 
         // ---- Banking ----
         $accounts = BankAccount::active()->get();
-        $totalBalance = $accounts->sum(fn ($a) => $a->balance());
+        $cash = app(CashPositionService::class)->summarize($accounts);
+        $ownBalance = $cash['own_balance'];
 
         $openInvoices = CreditCardInvoice::with('creditCard')
             ->whereIn('status', ['open', 'closed', 'partially_paid'])
@@ -129,7 +131,7 @@ class DashboardSnapshotBuilder
 
         // ---- Patrimônio total ----
         $patrimony = round(
-            $totalBalance
+            $ownBalance
             + $portfolioMarketValue
             + $partnershipNetExposed
             + $writsCapitalAtRisk
@@ -139,7 +141,7 @@ class DashboardSnapshotBuilder
         );
 
         $distribution = collect([
-            ['label' => 'Caixa em contas', 'value' => round($totalBalance, 2)],
+            ['label' => 'Saldo próprio', 'value' => round($ownBalance, 2)],
         ])
             ->concat($portfolioByClass->map(fn ($v, $k) => [
                 'label' => "Carteira · {$k}",
@@ -158,7 +160,10 @@ class DashboardSnapshotBuilder
             'reference_month' => $monthStart->format('Y-m'),
             'patrimony' => [
                 'total' => $patrimony,
-                'cash_balance' => round($totalBalance, 2),
+                'cash_balance' => round($ownBalance, 2),
+                'accounts_balance' => $cash['accounts_balance'],
+                'third_party_balance' => $cash['third_party_balance'],
+                'own_balance' => round($ownBalance, 2),
                 'portfolio_market_value' => round($portfolioMarketValue, 2),
                 'partnership_exposed' => round($partnershipNetExposed, 2),
                 'writs_capital_at_risk' => round($writsCapitalAtRisk, 2),
