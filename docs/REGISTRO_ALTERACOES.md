@@ -65,5 +65,5 @@ Base: commit `ee6cece` (fim da Etapa 1). Não havia commits novos do Jairo. Nenh
 ### Pendências
 1. Corretores pré-cadastrados no processo/requisitório (pré-preencher a lista) — não há cadastro de processos; fica para a etapa de Corretores.
 2. Lucro do requisitório na categoria "Juros Ganho (RPV / Precatórios)" nos relatórios: hoje o lucro aparece no requisitório; a entrada do requisitório fica zerada para não duplicar o caixa.
-3. O caso real do Antônio Sérgio (08/10/2026) já tinha sido dividido antes; não foi refeito. Conferir na tela se o requisitório 1007715-60.2023.4.01.3701 está como Recebido; se não estiver, desfazer o vínculo antigo e salvar de novo pelo recebimento.
+3. Conferido no banco: o caso real do Antônio Sérgio (recebimento #251, 08/10/2026, R$ 78.810,26) já está íntegro: requisitório #41 (1007715-60.2023.4.01.3701) em Recebido em 08/10/2026 com R$ 55.167,18, pelo vínculo anterior. Nada foi refeito.
 4. Vínculo com "bem" (Etapa 6) ainda não existe.
