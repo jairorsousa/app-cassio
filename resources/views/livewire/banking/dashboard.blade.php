@@ -32,7 +32,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function with(): array
     {
-        $summary = Cache::remember('banking.dashboard.summary.v2', 300, function () {
+        $summary = Cache::remember('banking.dashboard.summary.v2.'.\App\Domains\Banking\Services\OwnFinancialService::currentRegime(), 300, function () {
             $accounts = BankAccount::active()->get();
             $cash = app(CashPositionService::class)->summarize($accounts);
             $totalBalance = $cash['accounts_balance'];
@@ -88,6 +88,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
+    <div class="flex justify-end"><livewire:banking.regime-switch /></div>
     <x-banking.cash-position
         :accounts-balance="$accountsBalance"
         :third-party-balance="$thirdPartyBalance"

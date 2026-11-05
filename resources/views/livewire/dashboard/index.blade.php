@@ -59,7 +59,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             Última atualização:
             {{ $generatedAt ? \Illuminate\Support\Carbon::parse($generatedAt)->format('d/m/Y H:i') : '—' }}
         </div>
-        <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-semibold text-fs-12 transition-colors duration-150" wire:click="refresh">↻ Atualizar agora</button>
+        <div class="flex items-end gap-space-4">
+            <livewire:banking.regime-switch />
+            <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-semibold text-fs-12 transition-colors duration-150" wire:click="refresh">↻ Atualizar agora</button>
+        </div>
     </div>
 
     {{-- Patrimônio total --}}

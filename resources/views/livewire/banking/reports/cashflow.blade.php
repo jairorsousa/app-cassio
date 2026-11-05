@@ -21,8 +21,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function categoryRows(Transaction $transaction): array
     {
-        if (($transaction->credit_card_invoice_id && $transaction->type === 'expense') || $transaction->bankAccount?->type === 'repasse') { return []; }
-        $ownCents = app(\App\Domains\Banking\Services\OwnFinancialService::class)->ownCents($transaction);
+        $regime = \App\Domains\Banking\Services\OwnFinancialService::currentRegime();
+        $accrual = $regime === \App\Domains\Banking\Services\OwnFinancialService::ACCRUAL;
+        if (($transaction->credit_card_invoice_id && $transaction->type === 'expense' && ! $accrual) || ($accrual && $transaction->type === 'invoice_payment' && $transaction->credit_card_invoice_id) || $transaction->bankAccount?->type === 'repasse') { return []; }
+        $ownCents = app(\App\Domains\Banking\Services\OwnFinancialService::class)->ownCents($transaction, $regime);
         if ($transaction->processReceipt) {
             $own = $ownCents / 100;
             $recovered = $transaction->destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
@@ -60,6 +62,7 @@ new #[Layout('layouts.app')] class extends Component {
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereIn('type', ['income', 'expense', 'invoice_payment'])
+                ->notHistorical()
                 ->get()
                 ->flatMap(fn ($transaction) => $this->categoryRows($transaction))
                 ->groupBy('category')
@@ -77,6 +80,7 @@ new #[Layout('layouts.app')] class extends Component {
                 ->where('status', 'settled')
                 ->whereNotNull('bank_account_id')
                 ->whereHas('bankAccount', fn ($q) => $q->where('type', '!=', 'repasse'))
+                ->notHistorical()
                 ->get()
                 ->groupBy(fn ($t) => $t->bankAccount?->name ?? '—')
                 ->map(fn ($group) => [
@@ -115,6 +119,7 @@ new #[Layout('layouts.app')] class extends Component {
     <x-fx.card>
         <div class="flex items-end gap-sm">
             <x-fx.input label="Mês de referência" type="month" wire:model.live="month" />
+            <livewire:banking.regime-switch />
         </div>
     </x-fx.card>
 

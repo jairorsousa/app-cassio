@@ -25,20 +25,29 @@ class DashboardSnapshotService
             'generated_at' => now(),
         ]);
 
-        Cache::put(self::CACHE_KEY, $payload, self::CACHE_TTL);
+        Cache::put(self::regimeKey(), $payload, self::CACHE_TTL);
 
         return $payload;
     }
 
+    private static function regimeKey(): string
+    {
+        $regime = \App\Domains\Banking\Services\OwnFinancialService::currentRegime();
+
+        return $regime === 'cash' ? self::CACHE_KEY : self::CACHE_KEY.':'.$regime;
+    }
+
     public function current(): array
     {
-        $cached = Cache::get(self::CACHE_KEY);
+        // O resultado do mês depende do regime (Caixa/Competência) escolhido pelo usuário.
+        $key = self::regimeKey();
+        $cached = Cache::get($key);
         if (is_array($cached) && array_key_exists('own_balance', $cached['patrimony'] ?? [])) {
             return $cached;
         }
 
         $payload = $this->builder->build();
-        Cache::put(self::CACHE_KEY, $payload, self::CACHE_TTL);
+        Cache::put($key, $payload, self::CACHE_TTL);
 
         return $payload;
     }
@@ -47,6 +56,7 @@ class DashboardSnapshotService
     {
         try {
             Cache::forget(self::CACHE_KEY);
+            Cache::forget(self::CACHE_KEY.':accrual');
         } catch (Throwable $exception) {
             Log::warning('Failed to invalidate dashboard snapshot cache.', [
                 'exception' => $exception,

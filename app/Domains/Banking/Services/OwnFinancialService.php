@@ -6,17 +6,33 @@ use App\Domains\Banking\Models\Transaction;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Carbon;
 
-/** Own income/expenses on a cash basis; bank movements and third-party claims remain separate. */
+/**
+ * Receitas e despesas próprias. Regime de caixa (padrão): compra no cartão entra pelo pagamento da fatura.
+ * Regime de competência: compra no cartão entra pela data da compra e o pagamento da fatura não conta.
+ * Transferências, lançamentos históricos (antes do saldo inicial datado) e testes ficam fora.
+ */
 class OwnFinancialService
 {
-    public function totals(Carbon $start, Carbon $end): array
+    public const CASH = 'cash';
+
+    public const ACCRUAL = 'accrual';
+
+    public static function currentRegime(): string
     {
+        $regime = auth()->user()?->financial_regime;
+
+        return in_array($regime, [self::CASH, self::ACCRUAL], true) ? $regime : self::CASH;
+    }
+
+    public function totals(Carbon $start, Carbon $end, ?string $regime = null): array
+    {
+        $regime ??= self::currentRegime();
         $rows = Transaction::with(['bankAccount', 'receivableInstallments', 'receivableSettlements', 'destinations', 'destinationPayment', 'allocations.category'])
             ->where('status', 'settled')->whereIn('type', ['income', 'expense', 'invoice_payment'])
-            ->whereBetween('date', [$start, $end])->get();
+            ->whereBetween('date', [$start, $end])->notHistorical()->get();
         $income = $expense = 0;
         foreach ($rows as $row) {
-            $value = $this->ownCents($row);
+            $value = $this->ownCents($row, $regime);
             if ($row->type === 'income') {
                 $income += $value;
             } else {
@@ -27,8 +43,9 @@ class OwnFinancialService
         return ['income' => $income / 100, 'expense' => $expense / 100, 'result' => ($income - $expense) / 100];
     }
 
-    public function ownCents(Transaction $row): int
+    public function ownCents(Transaction $row, ?string $regime = null): int
     {
+        $regime ??= self::currentRegime();
         if ($row->bankAccount?->type === 'repasse') {
             return 0;
         }
@@ -41,11 +58,17 @@ class OwnFinancialService
             return $amount - (int) round((float) $row->receivableSettlements->sum('amount') * 100);
         }
         if ($row->type === 'expense') {
-            if ($row->credit_card_invoice_id || $row->destinationPayment) {
+            if ($row->destinationPayment) {
+                return 0;
+            }
+            if ($row->credit_card_invoice_id && $regime !== self::ACCRUAL) {
                 return 0;
             }
 
             return $amount - $row->receivableInstallments->sum(fn ($part) => $part->amountCents());
+        }
+        if ($row->type === 'invoice_payment' && $regime === self::ACCRUAL && $row->credit_card_invoice_id) {
+            return 0;
         }
         if ($row->type !== 'invoice_payment' || ! $row->credit_card_invoice_id) {
             return $amount;
