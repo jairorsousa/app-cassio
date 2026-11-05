@@ -36,6 +36,7 @@ class Transaction extends Model
         'ofx_fitid',
         'installment_group_id', 'installment_number', 'installment_total',
         'is_test',
+        'link_process', 'link_writ_id', 'link_broker_id', 'link_contact_id',
     ];
 
     protected $casts = [
@@ -118,6 +119,31 @@ class Transaction extends Model
     public function writLinks(): HasMany
     {
         return $this->hasMany(ReceiptDestinationPayment::class, 'writ_income_id');
+    }
+
+    public function linkWrit(): BelongsTo
+    {
+        return $this->belongsTo(Writ::class, 'link_writ_id')->withTrashed();
+    }
+
+    public function linkBroker(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Brokers\Models\Broker::class, 'link_broker_id')->withTrashed();
+    }
+
+    public function linkContact(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Contacts\Models\Contact::class, 'link_contact_id')->withTrashed();
+    }
+
+    public function attachments(): HasMany
+    {
+        return $this->hasMany(TransactionAttachment::class)->orderBy('id');
+    }
+
+    public function hasLinks(): bool
+    {
+        return $this->link_process || $this->link_writ_id || $this->link_broker_id || $this->link_contact_id;
     }
 
     public function sourceWrit(): BelongsTo
