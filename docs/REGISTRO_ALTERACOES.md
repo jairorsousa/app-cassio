@@ -38,3 +38,8 @@ Backup lógico antes da migração: `/root/app-cassio-backups/`.
 3. Confirmar a exclusão definitiva dos registros de teste (hoje só ocultos).
 4. Vincular "BB Fundo (aplicação automática)" e "BB Conta investimento" à conta "Banco do Brasil" no cadastro de contas.
 5. Categorizar receitas e despesas antigas sem categoria (a obrigatoriedade vale para novos lançamentos e edições).
+
+### Saldos iniciais e vínculos (05/11/2026)
+- Migration `2026_11_05_100300_etapa1_saldos_iniciais_e_vinculos` (idempotente): saldo inicial em 01/10/2026 informado pelo Cassio — Banco do Brasil 84.927,38; Itaú 68.802,72; CEF 66.888,02; Bradesco 29.885,23; BTG 14.425,81; XP 1.376,39.
+- BB Fundo (aplicação automática) e BB Conta investimento vinculadas à conta Banco do Brasil.
+- Backup antes: `/root/app-cassio-backups/etapa1-saldos-antes-20261105.json`. Nenhum ajuste de saldo foi lançado; diferenças com o extrato devem ser apuradas em "Conferir saldo".
