@@ -7,12 +7,11 @@ use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Brokers\Models\BrokerCommissionSettlement;
+use App\Domains\Brokers\Models\BrokerProcessExpense;
 
 class BrokerBalanceCalculator
 {
     /**
-     * Calcula o saldo de adiantamentos de um corretor.
-     *
      * @return array{
      *   total_advanced: float,
      *   total_settled: float,
@@ -21,9 +20,9 @@ class BrokerBalanceCalculator
      */
     public function forBroker(Broker $broker): array
     {
-        $totalAdvanced = (float) $broker->advances()->sum('amount');
+        $totalAdvanced = (float) $broker->advances()->personal()->sum('amount');
 
-        $advanceIds = $broker->advances()->pluck('id');
+        $advanceIds = $broker->advances()->personal()->pluck('id');
         $totalSettled = (float) BrokerCommissionSettlement::whereIn('advance_id', $advanceIds)
             ->sum('amount_offset');
 
@@ -35,8 +34,6 @@ class BrokerBalanceCalculator
     }
 
     /**
-     * Total de comissões pagas/pendentes de um corretor.
-     *
      * @return array{
      *   total_commissions: float,
      *   total_pending: float,
@@ -59,8 +56,53 @@ class BrokerBalanceCalculator
     }
 
     /**
-     * Saldos em aberto por corretor, no mesmo critério da tela de detalhes.
+     * Fórmulas da Etapa 3.
      *
+     * @return array{
+     *   saldo_adiantado_pessoal: float,
+     *   comissao_gerada: float,
+     *   comissao_compensada: float,
+     *   comissao_repassada: float,
+     *   comissao_a_pagar: float,
+     *   saldo_devedor: float,
+     *   despesa_processo_em_aberto: float,
+     * }
+     */
+    public function ledgerForBroker(Broker $broker): array
+    {
+        $advanceIds = $broker->advances()->personal()->pluck('id');
+        $commissionIds = $broker->commissions()->pluck('id');
+
+        $saldoAdiantado = round(
+            (float) $broker->advances()->personal()->sum('amount')
+            - (float) BrokerCommissionSettlement::whereIn('advance_id', $advanceIds)->sum('amount_offset'),
+            2,
+        );
+
+        $comissaoGerada = round((float) $broker->commissions()->sum('commission_amount'), 2);
+        $comissaoCompensada = round((float) BrokerCommissionSettlement::whereIn('commission_id', $commissionIds)->sum('amount_offset'), 2);
+        $comissaoRepassada = round((float) BrokerCommissionPayment::where('broker_id', $broker->id)->sum('amount'), 2);
+        $comissaoAPagar = round(max($comissaoGerada - $comissaoCompensada - $comissaoRepassada, 0), 2);
+        $saldoDevedor = round($saldoAdiantado - $comissaoAPagar, 2);
+
+        $despesaAberto = round(
+            $broker->processExpenses()->with('recoveries')->get()
+                ->sum(fn (BrokerProcessExpense $expense) => $expense->remainingCents() / 100),
+            2,
+        );
+
+        return [
+            'saldo_adiantado_pessoal' => $saldoAdiantado,
+            'comissao_gerada' => $comissaoGerada,
+            'comissao_compensada' => $comissaoCompensada,
+            'comissao_repassada' => $comissaoRepassada,
+            'comissao_a_pagar' => $comissaoAPagar,
+            'saldo_devedor' => $saldoDevedor,
+            'despesa_processo_em_aberto' => $despesaAberto,
+        ];
+    }
+
+    /**
      * @param  list<int>  $brokerIds
      * @return array<int, array{advance_pending: float, commission_pending: float}>
      */
@@ -73,6 +115,7 @@ class BrokerBalanceCalculator
         }
 
         $advances = BrokerAdvance::query()
+            ->personal()
             ->whereIn('broker_id', $brokerIds)
             ->selectRaw('broker_id, SUM(amount) as total')
             ->groupBy('broker_id')
@@ -80,6 +123,7 @@ class BrokerBalanceCalculator
 
         $settledAdvances = BrokerCommissionSettlement::query()
             ->join('broker_advances', 'broker_advances.id', '=', 'broker_commission_settlements.advance_id')
+            ->where('broker_advances.kind', BrokerAdvance::KIND_PERSONAL)
             ->whereIn('broker_advances.broker_id', $brokerIds)
             ->selectRaw('broker_advances.broker_id as broker_id, SUM(broker_commission_settlements.amount_offset) as total')
             ->groupBy('broker_advances.broker_id')
@@ -98,32 +142,26 @@ class BrokerBalanceCalculator
             ->groupBy('broker_commissions.broker_id')
             ->pluck('total', 'broker_id');
 
-        $payments = BrokerCommissionPayment::query()
+        $paidCommissions = BrokerCommissionPayment::query()
             ->whereIn('broker_id', $brokerIds)
             ->selectRaw('broker_id, SUM(amount) as total')
             ->groupBy('broker_id')
             ->pluck('total', 'broker_id');
 
-        $balances = [];
+        $result = [];
+        foreach ($brokerIds as $id) {
+            $advanced = (float) ($advances[$id] ?? 0);
+            $settledAdv = (float) ($settledAdvances[$id] ?? 0);
+            $commissionTotal = (float) ($commissions[$id] ?? 0);
+            $settledCom = (float) ($settledCommissions[$id] ?? 0);
+            $paid = (float) ($paidCommissions[$id] ?? 0);
 
-        foreach ($brokerIds as $brokerId) {
-            $advancePending = max(
-                (float) ($advances[$brokerId] ?? 0) - (float) ($settledAdvances[$brokerId] ?? 0),
-                0,
-            );
-            $commissionPending = max(
-                (float) ($commissions[$brokerId] ?? 0)
-                    - (float) ($settledCommissions[$brokerId] ?? 0)
-                    - (float) ($payments[$brokerId] ?? 0),
-                0,
-            );
-
-            $balances[(int) $brokerId] = [
-                'advance_pending' => round($advancePending, 2),
-                'commission_pending' => round($commissionPending, 2),
+            $result[$id] = [
+                'advance_pending' => round(max($advanced - $settledAdv, 0), 2),
+                'commission_pending' => round(max($commissionTotal - $settledCom - $paid, 0), 2),
             ];
         }
 
-        return $balances;
+        return $result;
     }
 }

@@ -41,8 +41,13 @@ class BrokerCommissionService
             'broker_id' => $data['broker_id'],
             'case_type_id' => $data['case_type_id'],
             'name' => $this->normalizeName($data['name'] ?? null),
+            'process_ref' => $this->normalizeName($data['process_ref'] ?? null),
+            'writ_id' => $data['writ_id'] ?? null,
             'base_amount' => $baseAmount,
             'percentage_applied' => $percentage,
+            'commission_mode' => 'percent',
+            'rate_or_amount' => $percentage,
+            'base' => $data['base'] ?? 'fees',
             'commission_amount' => $commissionAmount,
             'status' => 'pending',
             'reference_date' => $data['reference_date'],
@@ -64,8 +69,74 @@ class BrokerCommissionService
             'broker_id' => $data['broker_id'],
             'case_type_id' => $data['case_type_id'],
             'name' => $this->normalizeName($data['name'] ?? null),
+            'process_ref' => $this->normalizeName($data['process_ref'] ?? null),
+            'writ_id' => $data['writ_id'] ?? null,
             'base_amount' => $commissionAmount,
             'percentage_applied' => 0,
+            'commission_mode' => 'fixed',
+            'rate_or_amount' => $commissionAmount,
+            'base' => $data['base'] ?? 'fees',
+            'commission_amount' => $commissionAmount,
+            'status' => 'pending',
+            'reference_date' => $data['reference_date'],
+            'bank_account_id' => $data['bank_account_id'] ?? null,
+            'notes' => $data['notes'] ?? null,
+        ]);
+    }
+
+    /**
+     * Comissão avulsa com modo percentual ou valor fixo e vínculo a processo/requisitório.
+     *
+     * @param  array{
+     *   broker_id: int,
+     *   case_type_id: int,
+     *   name?: ?string,
+     *   mode: string,
+     *   rate_or_amount: float,
+     *   base_amount?: float,
+     *   base?: string,
+     *   process_ref?: ?string,
+     *   writ_id?: ?int,
+     *   reference_date: string,
+     *   bank_account_id?: ?int,
+     *   notes?: ?string
+     * }  $data
+     */
+    public function registerFlexible(array $data): BrokerCommission
+    {
+        $mode = ($data['mode'] ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
+        $rate = round((float) ($data['rate_or_amount'] ?? 0), 3);
+        $baseAmount = round((float) ($data['base_amount'] ?? ($mode === 'fixed' ? $rate : 0)), 2);
+
+        if ($mode === 'percent') {
+            if ($rate <= 0 || $rate > 100) {
+                throw new \DomainException('Informe um percentual entre 0,001 e 100.');
+            }
+            if ($baseAmount <= 0) {
+                throw new \DomainException('Informe a base de cálculo da comissão percentual.');
+            }
+            $commissionAmount = round($baseAmount * ($rate / 100), 2);
+            $percentage = $rate;
+        } else {
+            if ($rate <= 0) {
+                throw new \DomainException('Informe o valor fixo da comissão.');
+            }
+            $commissionAmount = round($rate, 2);
+            $baseAmount = $commissionAmount;
+            $percentage = 0;
+        }
+
+        return BrokerCommission::create([
+            'broker_id' => $data['broker_id'],
+            'case_type_id' => $data['case_type_id'],
+            'name' => $this->normalizeName($data['name'] ?? null),
+            'process_ref' => $this->normalizeName($data['process_ref'] ?? null),
+            'writ_id' => $data['writ_id'] ?? null,
+            'base_amount' => $baseAmount,
+            'percentage_applied' => $percentage,
+            'commission_mode' => $mode,
+            'rate_or_amount' => $rate,
+            'base' => in_array(($data['base'] ?? 'fees'), ['fees', 'gross'], true) ? ($data['base'] ?? 'fees') : 'fees',
             'commission_amount' => $commissionAmount,
             'status' => 'pending',
             'reference_date' => $data['reference_date'],
@@ -154,6 +225,7 @@ class BrokerCommissionService
 
             // Buscar adiantamentos do mesmo broker com saldo restante, mais antigos primeiro
             $advances = BrokerAdvance::where('broker_id', $commission->broker_id)
+                ->personal()
                 ->orderBy('date')
                 ->lockForUpdate()
                 ->get();

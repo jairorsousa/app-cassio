@@ -18,18 +18,30 @@ class BrokerProcessExpenseService
             'amount' => ['required', 'regex:/^\d{1,10}(?:\.\d{1,2})?$/', 'numeric', 'min:0.01'],
             'description' => 'required|string|max:200',
             'bank_account_id' => ['required', Rule::exists('bank_accounts', 'id')->where('status', true)->whereNull('deleted_at')],
+            'process_ref' => 'nullable|string|max:120',
+            'writ_id' => ['nullable', 'integer', Rule::exists('writs', 'id')->whereNull('deleted_at')],
+            'contact_id' => ['nullable', 'integer', Rule::exists('contacts', 'id')->whereNull('deleted_at')],
         ])->validate();
 
         return DB::transaction(function () use ($broker, $data, $expense) {
             Broker::lockForUpdate()->findOrFail($broker->id);
+            $payload = [
+                'date' => $data['date'],
+                'amount' => $data['amount'],
+                'description' => $data['description'],
+                'bank_account_id' => $data['bank_account_id'],
+                'process_ref' => trim((string) ($data['process_ref'] ?? '')) ?: null,
+                'writ_id' => $data['writ_id'] ?? null,
+                'contact_id' => $data['contact_id'] ?? null,
+            ];
             if ($expense) {
                 $expense = BrokerProcessExpense::where('broker_id', $broker->id)->lockForUpdate()->findOrFail($expense->id);
                 if ($expense->recoveries()->exists()) {
                     throw new \DomainException('Desfaça os descontos desta despesa nos recebimentos antes de alterá-la.');
                 }
-                $expense->update($data);
+                $expense->update($payload);
             } else {
-                $expense = BrokerProcessExpense::create($data + ['broker_id' => $broker->id]);
+                $expense = BrokerProcessExpense::create($payload + ['broker_id' => $broker->id]);
             }
             $transactionData = [
                 'type' => 'expense', 'status' => 'settled', 'date' => $data['date'], 'amount' => $data['amount'],

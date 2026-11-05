@@ -9,6 +9,7 @@ use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerAdvance;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
+use App\Domains\Brokers\Models\BrokerProcessExpense;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -17,15 +18,14 @@ class BrokerAdvanceService
     public function __construct(
         private BrokerCommissionService $commissions,
         private TransactionService $transactions,
+        private BrokerProcessExpenseService $processExpenses,
     ) {}
 
     /**
-     * Registra um adiantamento ao corretor.
+     * Registra um adiantamento pessoal ao corretor.
+     * Adiantamentos de despesa de processo devem usar BrokerProcessExpenseService.
      *
-     * Se houver saldo de comissão a pagar, o adiantamento é compensado
-     * automaticamente (settlement), reduzindo o saldo a pagar — sem gerar repasse.
-     *
-     * @param  array{broker_id: int, date: string, amount: float, payment_method?: ?string, bank_account_id?: ?int, notes?: ?string}  $data
+     * @param  array{broker_id: int, date: string, amount: float, payment_method?: ?string, bank_account_id?: ?int, notes?: ?string, process_ref?: ?string, writ_id?: ?int, contact_id?: ?int, kind?: string}  $data
      * @return array{advance: BrokerAdvance, repassed_amount: float, advance_amount: float, settled_amount: float, payments: Collection}
      */
     public function register(array $data): array
@@ -33,18 +33,27 @@ class BrokerAdvanceService
         return DB::transaction(function () use ($data) {
             $broker = Broker::lockForUpdate()->findOrFail($data['broker_id']);
             $amount = round((float) $data['amount'], 2);
+            $kind = $data['kind'] ?? BrokerAdvance::KIND_PERSONAL;
 
             if ($amount <= 0) {
                 throw new \DomainException('O valor do adiantamento deve ser maior que zero.');
             }
 
+            if ($kind === BrokerAdvance::KIND_PROCESS_EXPENSE) {
+                throw new \DomainException('Use a aba Despesas de processos para lançar despesa de processo.');
+            }
+
             $advance = BrokerAdvance::create([
                 'broker_id' => $broker->id,
+                'kind' => BrokerAdvance::KIND_PERSONAL,
                 'date' => $data['date'],
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'] ?? null,
                 'bank_account_id' => $data['bank_account_id'] ?? null,
                 'notes' => $data['notes'] ?? null,
+                'process_ref' => $data['process_ref'] ?? null,
+                'writ_id' => $data['writ_id'] ?? null,
+                'contact_id' => $data['contact_id'] ?? null,
             ]);
 
             BrokerAdvancePaid::dispatch($advance->load('broker'));
@@ -62,9 +71,7 @@ class BrokerAdvanceService
     }
 
     /**
-     * Atualiza um adiantamento, sua despesa no Banking e refaz as compensações.
-     *
-     * @param  array{date: string, amount: float, payment_method?: ?string, bank_account_id?: ?int, notes?: ?string}  $data
+     * @param  array{date: string, amount: float, payment_method?: ?string, bank_account_id?: ?int, notes?: ?string, process_ref?: ?string, writ_id?: ?int, contact_id?: ?int}  $data
      */
     public function update(BrokerAdvance $advance, array $data): BrokerAdvance
     {
@@ -95,6 +102,9 @@ class BrokerAdvanceService
                 'payment_method' => $data['payment_method'] ?? null,
                 'bank_account_id' => $data['bank_account_id'] ?? null,
                 'notes' => $data['notes'] ?? null,
+                'process_ref' => $data['process_ref'] ?? $advance->process_ref,
+                'writ_id' => array_key_exists('writ_id', $data) ? $data['writ_id'] : $advance->writ_id,
+                'contact_id' => array_key_exists('contact_id', $data) ? $data['contact_id'] : $advance->contact_id,
             ]);
 
             if ($transaction) {
@@ -115,6 +125,54 @@ class BrokerAdvanceService
             $this->commissions->settleAdvanceWithCommissions($advance->fresh());
 
             return $advance->fresh(['bankAccount', 'transaction', 'settlements']);
+        });
+    }
+
+    /**
+     * Reclassifica um adiantamento pessoal (sem compensações) como despesa de processo.
+     * Não recalcula histórico: só move o registro após confirmação.
+     */
+    public function reclassifyAsProcessExpense(BrokerAdvance $advance, string $description, ?string $processRef = null, ?int $contactId = null, ?int $writId = null): BrokerProcessExpense
+    {
+        return DB::transaction(function () use ($advance, $description, $processRef, $contactId, $writId) {
+            $advance = BrokerAdvance::with('broker', 'transaction', 'settlements')->lockForUpdate()->findOrFail($advance->id);
+
+            if (! $advance->isPersonal()) {
+                throw new \DomainException('Este lançamento já não é um adiantamento pessoal.');
+            }
+            if ($advance->settlements()->exists()) {
+                throw new \DomainException('Desfaça as compensações deste adiantamento antes de reclassificá-lo.');
+            }
+            if (! $advance->bank_account_id) {
+                throw new \DomainException('Informe a conta de origem no adiantamento antes de reclassificar.');
+            }
+
+            $broker = Broker::lockForUpdate()->findOrFail($advance->broker_id);
+            $description = trim($description) !== '' ? trim($description) : (trim((string) $advance->notes) ?: 'Despesa de processo reclassificada');
+
+            // Remove a despesa bancária do adiantamento; a despesa de processo cria a própria.
+            if ($advance->transaction) {
+                $this->transactions->deleteGenerated($advance->transaction);
+            } else {
+                $legacy = $this->resolveLegacyTransaction($advance);
+                if ($legacy) {
+                    $this->transactions->deleteGenerated($legacy);
+                }
+            }
+
+            $expense = $this->processExpenses->save($broker, [
+                'date' => $advance->date->toDateString(),
+                'amount' => (string) $advance->amount,
+                'description' => mb_substr($description, 0, 200),
+                'bank_account_id' => $advance->bank_account_id,
+                'process_ref' => $processRef ?: $advance->process_ref,
+                'writ_id' => $writId ?: $advance->writ_id,
+                'contact_id' => $contactId ?: $advance->contact_id,
+            ]);
+
+            $advance->delete();
+
+            return $expense;
         });
     }
 
@@ -139,9 +197,6 @@ class BrokerAdvanceService
         return 'Adiantamento registrado.';
     }
 
-    /**
-     * Localiza a despesa de adiantamentos antigos, criados antes do vínculo por transaction_id.
-     */
     private function resolveLegacyTransaction(BrokerAdvance $advance): ?Transaction
     {
         $linkedPaymentIds = BrokerCommissionPayment::query()

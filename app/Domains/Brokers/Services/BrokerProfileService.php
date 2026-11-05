@@ -20,7 +20,7 @@ class BrokerProfileService
     public function synchronizeDirectory(): void
     {
         $this->linkLegacyProfiles();
-        Contact::where('type', 'corretor')->active()->orderBy('id')->eachById(function (Contact $contact) {
+        Contact::ofType('corretor')->active()->orderBy('id')->eachById(function (Contact $contact) {
             $this->forContact($contact);
         });
     }
@@ -30,11 +30,11 @@ class BrokerProfileService
         return DB::transaction(function () use ($broker) {
             $broker = Broker::lockForUpdate()->findOrFail($broker->id);
             if ($broker->contact_id) {
-                return $broker->contact()->where('type', 'corretor')->first();
+                return $broker->contact()->ofType('corretor')->first();
             }
 
             // Include deleted contacts while matching, so a removed person is not recreated.
-            $candidates = Contact::withTrashed()->where('type', 'corretor')
+            $candidates = Contact::withTrashed()->ofType('corretor')
                 ->whereDoesntHave('brokerProfile', fn ($q) => $q->withTrashed())->get();
             $document = $this->normalizedDocument($broker->document);
             $matches = $document !== ''
@@ -57,7 +57,7 @@ class BrokerProfileService
             $attributes['phones'] = array_values(array_filter([$broker->phone]));
             $attributes['emails'] = array_values(array_filter([$broker->email]));
             if (! $contact) {
-                $contact = Contact::create($attributes + ['type' => 'corretor']);
+                $contact = Contact::create($attributes + ['type' => 'corretor', 'roles' => ['corretor']]);
             } else {
                 $contact = Contact::lockForUpdate()->findOrFail($contact->id);
                 // Preserve contact data, filling only information missing from the directory.
@@ -106,12 +106,12 @@ class BrokerProfileService
 
     public function forContact(Contact $contact): Broker
     {
-        if ($contact->type !== 'corretor') {
+        if (! $contact->hasRole('corretor')) {
             throw new \DomainException('Somente contatos do tipo corretor podem ter movimentação de corretor.');
         }
 
         return DB::transaction(function () use ($contact) {
-            $contact = Contact::where('type', 'corretor')->lockForUpdate()->findOrFail($contact->id);
+            $contact = Contact::ofType('corretor')->lockForUpdate()->findOrFail($contact->id);
             $broker = $this->findForContact($contact);
             $attributes = $this->attributesFromContact($contact);
 

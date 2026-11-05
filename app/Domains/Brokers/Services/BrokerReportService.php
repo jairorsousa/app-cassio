@@ -21,14 +21,14 @@ class BrokerReportService
         [$rangeStart, $rangeEnd] = $this->dateRange($month, $year, $startDate, $endDate);
 
         $queryCommissions = $this->applyFilters(
-            BrokerCommission::query(),
+            BrokerCommission::query()->whereHas('broker', fn ($q) => $q->withoutTestContacts()),
             'reference_date',
             $brokerId,
             $rangeStart,
             $rangeEnd,
         );
         $queryAdvances = $this->applyFilters(
-            BrokerAdvance::query(),
+            BrokerAdvance::query()->personal()->whereHas('broker', fn ($q) => $q->withoutTestContacts()),
             'date',
             $brokerId,
             $rangeStart,
@@ -54,6 +54,7 @@ class BrokerReportService
         $openAdvancesBalance = $advances->sum(fn ($advance) => $advance->remainingBalance());
 
         $brokers = Broker::query()
+            ->withoutTestContacts()
             ->when($brokerId, fn (Builder $query) => $query->whereKey($brokerId))
             ->with(['commissions' => fn ($query) => $this->applyFilters(
                 $query,
@@ -64,9 +65,34 @@ class BrokerReportService
             )])
             ->orderBy('name')
             ->get()
-            ->filter(fn (Broker $broker) => $broker->commissions->isNotEmpty());
+            ->filter(fn (Broker $broker) => $broker->commissions->isNotEmpty())
+            ->map(function (Broker $broker) {
+                $broker->setAttribute(
+                    'commissions_total_period',
+                    round((float) $broker->commissions->sum('commission_amount'), 2),
+                );
 
-        $selectedBroker = $brokerId ? Broker::find($brokerId) : null;
+                return $broker;
+            });
+
+        $selectedBroker = $brokerId ? Broker::withoutTestContacts()->find($brokerId) : null;
+
+        $annualByBroker = Broker::query()
+            ->withoutTestContacts()
+            ->when($brokerId, fn (Builder $query) => $query->whereKey($brokerId))
+            ->with(['commissions' => function ($query) use ($year) {
+                $query->whereYear('reference_date', $year);
+            }])
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Broker $broker) => [
+                'broker_id' => $broker->id,
+                'broker_name' => $broker->name,
+                'total' => round((float) $broker->commissions->sum('commission_amount'), 2),
+                'count' => $broker->commissions->count(),
+            ])
+            ->filter(fn ($row) => $row['count'] > 0)
+            ->values();
 
         return compact(
             'totalCommissions',
@@ -79,6 +105,8 @@ class BrokerReportService
             'selectedBroker',
             'rangeStart',
             'rangeEnd',
+            'annualByBroker',
+            'year',
         );
     }
 
