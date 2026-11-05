@@ -36,9 +36,9 @@
     },
     headerVisible(type) {
         if (!this.matchesType(type)) return false;
-        const items = [...(this.$refs.options?.querySelectorAll([data-option-search]) || [])]
-            .filter(item => (item.dataset.optionType || ) === type);
-        return items.some(item => this.matchesSearch(item.dataset.optionSearch || ));
+        const items = [...(this.$refs.options?.querySelectorAll('[data-option-search]') || [])]
+            .filter(item => (item.dataset.optionType || '') === type);
+        return items.some(item => this.matchesSearch(item.dataset.optionSearch || ''));
     },
     hasMatches() {
         return [...(this.$refs.options?.querySelectorAll('[data-option-search]') || [])].some(item => this.matchesOption(item));

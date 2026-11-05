@@ -21,10 +21,10 @@ class MobileNavigationTest extends TestCase
                 ->assertSee('Fechar menu', false)
                 ->assertSee('id="app-mobile-nav"', false)
                 ->assertSee('Financeiro', false)
-                ->assertSee('Requisitórios', false)
+                ->assertSee('Requisitório', false)
                 ->assertSee('Corretores', false)
                 ->assertSee('Transmissão', false)
-                ->assertSee('Investimento', false)
+                ->assertSee('Investimentos', false)
                 ->assertSee('Sociedade', false)
                 ->assertSee('Contatos', false);
         }

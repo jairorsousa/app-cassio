@@ -26,7 +26,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $showFormModal = false;
 
-    public string $type_form = 'cedente';
+    public array $roles = ['cedente'];
+
+    public string $type_form = 'cedente'; // legado do filtro; sincronizado com roles
 
     public string $name = '';
 
@@ -77,13 +79,29 @@ new #[Layout('layouts.app')] class extends Component
     public function rules(): array
     {
         return [
-            'type_form' => 'required|in:cedente,advogado,corretor,pessoal,cliente',
+            'roles' => 'required|array|min:1',
+            'roles.*' => 'in:cedente,advogado,corretor,pessoal,cliente',
+            'type_form' => 'nullable|in:cedente,advogado,corretor,pessoal,cliente',
             'name' => 'required|string|max:200',
-            'document' => 'nullable|string|max:30',
+            'document' => [
+                in_array('cedente', (array) $this->roles, true) ? 'required' : 'nullable',
+                'string',
+                'max:30',
+                function ($attribute, $value, $fail) {
+                    $value = trim((string) $value);
+                    if ($value !== '' && ! \App\Support\BrazilianDocuments::isValidCpfOrCnpj($value)) {
+                        $fail('Informe um CPF ou CNPJ válido.');
+                    }
+                },
+            ],
             'birth_date' => 'nullable|date',
             'phone' => 'nullable|string|max:30',
             'phones' => 'array',
-            'phones.*' => 'nullable|string|max:30',
+            'phones.*' => ['nullable', 'string', 'max:30', function ($attribute, $value, $fail) {
+                if (trim((string) $value) !== '' && ! \App\Support\BrazilianDocuments::isValidPhone($value)) {
+                    $fail('Informe um telefone válido com DDD (10 ou 11 dígitos).');
+                }
+            }],
             'email' => 'nullable|email|max:200',
             'emails' => 'array',
             'emails.*' => 'nullable|email|max:200',
@@ -125,7 +143,8 @@ new #[Layout('layouts.app')] class extends Component
         }
         $this->phones = $this->normalizeRepeaterValues($contact->phones ?: [$contact->phone]);
         $this->emails = $this->normalizeRepeaterValues($contact->emails ?: [$contact->email]);
-        $this->type_form = (string) ($contact->type ?? 'cedente');
+        $this->roles = $contact->roleList();
+        $this->type_form = $this->roles[0] ?? 'cedente';
         $this->birth_date = $contact->birth_date?->format('Y-m-d');
         $this->status_form = (bool) $contact->status;
 
@@ -137,8 +156,11 @@ new #[Layout('layouts.app')] class extends Component
         $this->syncAddress();
         $this->syncContactMethods();
         $data = $this->validate();
-        $data['type'] = $data['type_form'];
-        $data['roles'] = [$data['type_form']];
+        $data['roles'] = array_values(array_unique(array_filter((array) $this->roles)));
+        if ($data['roles'] === []) {
+            $data['roles'] = ['cedente'];
+        }
+        $data['type'] = in_array($this->type_form, $data['roles'], true) ? $this->type_form : $data['roles'][0];
         $data['status'] = $data['status_form'];
         $data['phones'] = $this->cleanRepeaterValues($this->phones);
         $data['emails'] = $this->cleanRepeaterValues($this->emails);
@@ -148,11 +170,16 @@ new #[Layout('layouts.app')] class extends Component
         unset($data['status_form']);
 
         if ($this->editingId) {
-            Contact::find($this->editingId)?->update($data);
+            $contact = Contact::find($this->editingId);
+            $contact?->update($data);
             $msg = 'Contato atualizado com sucesso.';
         } else {
-            Contact::create($data);
+            $contact = Contact::create($data);
             $msg = 'Contato criado com sucesso.';
+        }
+
+        if ($contact && $contact->hasRole('corretor')) {
+            app(\App\Domains\Brokers\Services\BrokerProfileService::class)->forContact($contact->fresh());
         }
 
         $this->resetForm();
@@ -174,7 +201,8 @@ new #[Layout('layouts.app')] class extends Component
         ]);
         $this->phones = [''];
         $this->emails = [''];
-        $this->type_form = $this->filterType !== '' ? $this->filterType : 'cedente';
+        $this->roles = [$this->filterType !== '' ? $this->filterType : 'cedente'];
+        $this->type_form = $this->roles[0];
         $this->status_form = true;
         $this->resetErrorBag();
     }
@@ -355,7 +383,8 @@ new #[Layout('layouts.app')] class extends Component
                     <option value="cedente">Cedente</option>
                     <option value="advogado">Advogado</option>
                     <option value="corretor">Corretor</option>
-                        <option value="pessoal">Pessoal (amigos e familiares)</option>
+                    <option value="pessoal">Pessoal</option>
+                    <option value="cliente">Cliente</option>
                 </select>
             </div>
             
@@ -497,17 +526,22 @@ new #[Layout('layouts.app')] class extends Component
                                 <h4 class="text-base font-bold text-mono-900">Dados Pessoais</h4>
                             </div>
                             <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                <div>
-                                    <label class="mb-2 block text-sm font-medium text-mono-600">Tipo *</label>
-                                    <select wire:model="type_form" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-all focus:border-primary-500 focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]">
-                                        <option value="cedente">Cedente</option>
-                                        <option value="advogado">Advogado</option>
-                                        <option value="corretor">Corretor</option>
-                        <option value="pessoal">Pessoal (amigos e familiares)</option>
-                                    </select>
+                                <div class="md:col-span-2">
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Papéis *</label>
+                                    <div class="flex flex-wrap gap-3 rounded-2xl border border-mono-200 bg-mono-white px-4 py-3">
+                                        @foreach (\App\Domains\Contacts\Models\Contact::ROLE_OPTIONS as $roleValue => $roleLabel)
+                                            <label class="inline-flex items-center gap-2 text-sm text-mono-900">
+                                                <input type="checkbox" value="{{ $roleValue }}" wire:model.live="roles" class="h-4 w-4 rounded border-mono-300 text-primary-500 focus:ring-primary-500">
+                                                {{ $roleLabel }}
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                    @error('roles') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
+                                    @error('roles.*') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
+                                    <p class="mt-2 text-xs text-mono-600">Um contato pode ter vários papéis. O tipo principal fica sincronizado automaticamente.</p>
                                 </div>
                                 <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />
-                                <x-jr.input label="CPF/CNPJ" icon="article" name="document" wire:model="document" x-cpf-cnpj />
+                                <x-jr.input label="CPF/CNPJ {{ in_array('cedente', $roles, true) ? '*' : '' }}" icon="article" name="document" wire:model="document" x-cpf-cnpj />
                                 <x-jr.input label="Data de nascimento" icon="calendar_month" name="birth_date" type="date" wire:model="birth_date" />
                             </div>
                         </section>
@@ -597,9 +631,12 @@ new #[Layout('layouts.app')] class extends Component
                         <section>
                             <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                 <span class="material-icons-outlined text-[20px] text-primary-500">account_balance</span>
-                                <h4 class="text-base font-bold text-mono-900">Dados Bancários</h4>
+                                <h4 class="text-base font-bold text-mono-900">Dados Bancários @if(in_array('corretor', $roles, true))<span class="ml-2 text-xs font-semibold text-primary-500">(destaque para corretor)</span>@endif</h4>
                             </div>
-                            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                            @if(in_array('corretor', $roles, true))
+                                <p class="mb-3 text-xs text-mono-600">Informe PIX ou conta bancária do corretor para facilitar os repasses.</p>
+                            @endif
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-3 {{ in_array('corretor', $roles, true) ? 'rounded-2xl border border-primary-100 bg-primary-50/40 p-4' : '' }}">
                                 <x-jr.input label="Banco" icon="account_balance" name="bank_name" wire:model="bank_name" />
                                 <x-jr.input label="Agência" icon="confirmation_number" name="bank_agency" wire:model="bank_agency" />
                                 <x-jr.input label="Conta" icon="credit_card" name="bank_account" wire:model="bank_account" />

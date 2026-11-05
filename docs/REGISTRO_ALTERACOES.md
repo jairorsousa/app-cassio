@@ -1,5 +1,34 @@
 # Registro de alterações
 
+## 05/11/2026 — Correções de UI pós-Etapa 3 (Auditor Fin)
+
+Autorizações: menu (Cassio), modal Contatos (Cassio), comissão no lançamento de Corretores (Cassio), seletor Conta/Categoria no Financeiro.
+
+### Causa comprovada (não era só cache do navegador)
+1. **Modal Novo Contato** (`contacts/index`): a Etapa 3 atualizou só o formulário completo (`contacts/form`). O modal da listagem continuava com `Tipo` único (`type_form`) — pendência já registrada.
+2. **Novo lançamento → Comissão** (`brokers/index` e `brokers/show`): o modo percentual/fixo existia em `brokers/commissions/form` + `registerFlexible`, mas o modal unificado da listagem/ficha só chamava `registerFixedAmount` e mostrava "Valor da comissão".
+3. **Seletor Conta/Categoria vazio** no modal de lançamento: bug de **sintaxe JavaScript** em `resources/views/components/jr/searchable-select.blade.php` (commit `1795b8b`). Em `headerVisible()`, `querySelectorAll([data-option-search])` e `(… || )` quebravam o Alpine.js do componente. Conta e Categoria usam esse componente; os chips de tipo ainda renderizavam em HTML, mas a lista ficava inutilizável. Views compiladas + OPcache com `validate_timestamps=On` refletiam o arquivo quebrado — limpar cache sozinho não corrigia.
+4. **Menu superior**: ordem/rótulos ainda não tinham sido alterados (`app-nav`).
+5. Certificado `ERR_CERT_AUTHORITY_INVALID` inicial: observado no acesso do Cassio; não alteramos Cloudflare/outros serviços. App em si responde após aceitar o aviso.
+
+### Mudanças
+- Menu (`app-nav`): Dashboard → Financeiro → Investimentos → Requisitório → Contatos → Corretores → Sociedade → Transmissão.
+- Modal Contatos: checkboxes de papéis (Cedente, Corretor, Advogado, Pessoal, Cliente), validações CPF/telefone alinhadas ao formulário completo, sync de perfil corretor.
+- Modal Novo lançamento (Corretores): seletor Percentual/Valor fixo + base de cálculo; create via `registerFlexible` (sem duplicar lançamento).
+- `searchable-select`: corrige `headerVisible` (aspas no seletor CSS e fallback `''`).
+- `view:clear` no container do app após a correção.
+
+### Testes
+- `tests/Feature/Ui/Etapa3UiCorrecoesTest.php` — menu, modal contatos, JS do seletor, markup Conta/Categoria, comissão %/fixo no modal.
+- `tests/Feature/Layout/MobileNavigationTest.php` — rótulos atualizados.
+
+### Conferir na tela
+1. Menu superior na ordem/rótulos acima (hard refresh se necessário).
+2. Contatos → Novo Contato: Papéis com vários checkboxes, inclusive Cliente.
+3. Corretores → Novo lançamento → Comissão: Modo Percentual/Valor fixo.
+4. Financeiro → Novo lançamento → Despesa: Conta bancária e Categoria listam opções ao abrir o dropdown.
+
+
 ## 05/11/2026 — Etapa 3: Corretores e Contatos (Auditor Fin)
 
 Base: commit `dfecaba` (fim da Etapa 2). Nenhum dado real foi apagado. Backup lógico antes: `/root/app-cassio-backups/etapa3-antes-20261105.json`.
@@ -33,7 +62,7 @@ Base: commit `dfecaba` (fim da Etapa 2). Nenhum dado real foi apagado. Backup l�
 1. Confirmar com o Cassio os saldos das contas de investimento/fundo/Dinheiro/repasses na data de corte (só correntes foram informadas).
 2. Conta "XP Investimentos" (R$ 200 mil sem data) permanece intocada.
 3. Limpeza definitiva dos registros de teste — só ocultos via `is_test`.
-4. Modal rápido de Contatos (na listagem) ainda usa um único tipo; o formulário completo `/contacts/create|edit` já aceita múltiplos papéis.
+4. ~~Modal rápido de Contatos~~ — resolvido na correção de UI abaixo.
 5. Prefill de corretores no recebimento depende de selecionar o requisitório com "crédito que eu já comprei"; não há cadastro de processos separado.
 
 

@@ -48,6 +48,7 @@ new #[Layout('layouts.app')] class extends Component
     public string $launch_date = '';
 
     public string $launch_amount = '';
+    public string $launch_mode = 'fixed';
 
     public string $launch_base_amount = '';
 
@@ -134,7 +135,14 @@ new #[Layout('layouts.app')] class extends Component
         $this->editingCommissionId = $commission->id;
         $this->launch_type = 'commission';
         $this->launch_date = $commission->reference_date->toDateString();
-        $this->launch_amount = number_format((float) $commission->commission_amount, 2, '.', '');
+        $this->launch_mode = ($commission->commission_mode ?? 'fixed') === 'percent' ? 'percent' : 'fixed';
+        if ($this->launch_mode === 'percent') {
+            $this->launch_amount = (string) ($commission->rate_or_amount ?? $commission->percentage_applied ?? '');
+            $this->launch_base_amount = number_format((float) $commission->base_amount, 2, '.', '');
+        } else {
+            $this->launch_amount = number_format((float) $commission->commission_amount, 2, '.', '');
+            $this->launch_base_amount = '';
+        }
         $this->launch_case_type_id = $commission->case_type_id;
         $this->launch_name = $commission->name ?: '';
         $this->launch_bank_account_id = $commission->bank_account_id;
@@ -195,7 +203,9 @@ new #[Layout('layouts.app')] class extends Component
             $rules += [
                 'launch_case_type_id' => 'required|exists:case_types,id',
                 'launch_name' => 'required|string|max:160',
+                'launch_mode' => 'required|in:percent,fixed',
                 'launch_amount' => 'required|numeric|min:0.01',
+                'launch_base_amount' => [\Illuminate\Validation\Rule::requiredIf($this->launch_mode === 'percent'), 'nullable', 'numeric', 'min:0.01'],
             ];
         }
 
@@ -234,10 +244,15 @@ new #[Layout('layouts.app')] class extends Component
             }
 
             if ($data['launch_type'] === 'commission') {
+                $mode = $data['launch_mode'] === 'percent' ? 'percent' : 'fixed';
+                $rate = (float) $data['launch_amount'];
+                $base = (float) ($data['launch_base_amount'] ?: $data['launch_amount']);
+                $computedAmount = $mode === 'percent' ? round($base * ($rate / 100), 2) : round($rate, 2);
+
                 $commissionData = [
                     'case_type_id' => $data['launch_case_type_id'],
                     'name' => $data['launch_name'],
-                    'commission_amount' => $data['launch_amount'],
+                    'commission_amount' => $computedAmount,
                     'reference_date' => $data['launch_date'],
                     'bank_account_id' => $data['launch_bank_account_id'] ?? null,
                     'notes' => $data['launch_notes'] ?: null,
@@ -247,11 +262,25 @@ new #[Layout('layouts.app')] class extends Component
                     $commission = BrokerCommission::where('broker_id', $this->financialBroker->id)
                         ->findOrFail($this->editingCommissionId);
                     $commissions->updateFixedAmount($commission, $commissionData);
+                    // Mantém metadados do modo usado na tela.
+                    $commission->update([
+                        'commission_mode' => $mode,
+                        'rate_or_amount' => $rate,
+                        'base_amount' => $mode === 'percent' ? $base : $computedAmount,
+                        'percentage_applied' => $mode === 'percent' ? $rate : 0,
+                    ]);
                     session()->flash('status', 'Comissão atualizada. Saldos e compensações vinculadas foram recalculados.');
                 } else {
-                    $commission = $commissions->registerFixedAmount([
+                    $commission = $commissions->registerFlexible([
                         'broker_id' => $this->financialBroker->id,
-                        ...$commissionData,
+                        'case_type_id' => $data['launch_case_type_id'],
+                        'name' => $data['launch_name'],
+                        'mode' => $mode,
+                        'rate_or_amount' => $rate,
+                        'base_amount' => $base,
+                        'reference_date' => $data['launch_date'],
+                        'bank_account_id' => $data['launch_bank_account_id'] ?? null,
+                        'notes' => $data['launch_notes'] ?: null,
                     ]);
 
                     $settled = $commissions->settleWithAdvances($commission);
@@ -451,6 +480,7 @@ new #[Layout('layouts.app')] class extends Component
             'editingCommissionId',
             'editingPaymentId',
             'launch_amount',
+            'launch_mode',
             'launch_base_amount',
             'launch_case_type_id',
             'launch_name',
@@ -458,6 +488,7 @@ new #[Layout('layouts.app')] class extends Component
             'launch_bank_account_id',
             'launch_notes',
         ]);
+        $this->launch_mode = 'fixed';
 
         $this->launch_type = 'advance';
         $this->launch_date = now()->format('Y-m-d');
@@ -1140,7 +1171,18 @@ new #[Layout('layouts.app')] class extends Component
                                             />
                                             @error('launch_name') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         </div>
-                                        <x-jr.input label="Valor da comissão" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" />
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Modo *</label>
+                                            <select wire:model.live="launch_mode" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
+                                                <option value="fixed">Valor fixo</option>
+                                                <option value="percent">Percentual</option>
+                                            </select>
+                                            @error('launch_mode') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
+                                        </div>
+                                        <x-jr.input label="{{ $launch_mode === 'percent' ? 'Percentual *' : 'Valor fixo *' }}" icon="{{ $launch_mode === 'percent' ? 'percent' : 'attach_money' }}" type="text" name="launch_amount" wire:model="launch_amount" />
+                                        @if ($launch_mode === 'percent')
+                                            <x-jr.input label="Base de cálculo *" icon="attach_money" type="text" name="launch_base_amount" x-money wire:model="launch_base_amount" />
+                                        @endif
                                     @endif
 
                                     @if ($launch_type === 'advance')

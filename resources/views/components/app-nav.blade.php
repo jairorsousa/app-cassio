@@ -4,12 +4,12 @@
     $items = [
         ['route' => 'dashboard', 'match' => 'dashboard', 'label' => 'Dashboard', 'icon' => 'dashboard'],
         ['route' => 'banking.dashboard', 'match' => 'banking.*', 'label' => 'Financeiro', 'icon' => 'account_balance_wallet'],
-        ['route' => 'writs.kanban', 'match' => 'writs.*', 'label' => 'Requisitórios', 'icon' => 'gavel'],
-        ['route' => 'brokers.index', 'match' => 'brokers.*', 'label' => 'Corretores', 'icon' => 'groups'],
-        ['route' => 'broadcasts.index', 'match' => 'broadcasts.*', 'label' => 'Transmissão', 'icon' => 'campaign'],
-        ['route' => 'investments.dashboard', 'match' => 'investments.*', 'label' => 'Investimento', 'icon' => 'trending_up'],
-        ['route' => 'partnership.index', 'match' => 'partnership.*', 'label' => 'Sociedade', 'icon' => 'business'],
+        ['route' => 'investments.dashboard', 'match' => 'investments.*', 'label' => 'Investimentos', 'icon' => 'trending_up'],
+        ['route' => 'writs.kanban', 'match' => 'writs.*', 'label' => 'Requisitório', 'icon' => 'gavel'],
         ['route' => 'contacts.index', 'match' => 'contacts.*', 'label' => 'Contatos', 'icon' => 'person'],
+        ['route' => 'brokers.index', 'match' => 'brokers.*', 'label' => 'Corretores', 'icon' => 'groups'],
+        ['route' => 'partnership.index', 'match' => 'partnership.*', 'label' => 'Sociedade', 'icon' => 'business'],
+        ['route' => 'broadcasts.index', 'match' => 'broadcasts.*', 'label' => 'Transmissão', 'icon' => 'campaign'],
     ];
 
     $base = $layout === 'mobile'
