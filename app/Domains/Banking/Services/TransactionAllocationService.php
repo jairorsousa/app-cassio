@@ -155,8 +155,12 @@ class TransactionAllocationService
             throw new \InvalidArgumentException('Escolha categorias ativas do mesmo tipo do lançamento.');
         }
 
-        if (array_sum($amounts) !== $this->cents($amount)) {
-            throw new \InvalidArgumentException('A soma do rateio deve ser igual ao valor total do lançamento.');
+        $total = $this->cents($amount);
+        $difference = $total - array_sum($amounts);
+        if ($difference !== 0) {
+            $fmt = fn (int $cents) => number_format($cents / 100, 2, ',', '.');
+            throw new \InvalidArgumentException('A soma das categorias deve ser igual a R$ '.$fmt($total).'. '
+                .($difference > 0 ? 'Falta ratear R$ '.$fmt($difference).'.' : 'Excedente de R$ '.$fmt(-$difference).'.'));
         }
 
         return [$categoryIds, $amounts];
