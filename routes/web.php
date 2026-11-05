@@ -70,7 +70,8 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
 
         return redirect()->route('banking.transactions.index', ['novo' => $type]);
     })->name('transactions.create');
-    Volt::route('/transactions/{transaction}/edit', 'banking.transactions.form')->name('transactions.edit');
+    // Edição usa o mesmo modal do lançamento novo (formulário legado removido).
+    Route::get('/transactions/{transaction}/edit', fn (\App\Domains\Banking\Models\Transaction $transaction) => redirect()->route('banking.transactions.index', ['editar' => $transaction->id]))->name('transactions.edit');
     Volt::route('/receivables', 'banking.receivables.index')->name('receivables.index');
     Volt::route('/recurring', 'banking.recurring.index')->name('recurring.index');
     Volt::route('/reports/cashflow', 'banking.reports.cashflow')->name('reports.cashflow');

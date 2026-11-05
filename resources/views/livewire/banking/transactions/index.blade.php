@@ -58,6 +58,14 @@ new #[Layout('layouts.app')] class extends Component
     #[Url]
     public string $type = '';
 
+    /** '' = oculta testes; '1' = mostra também os lançamentos marcados como teste. */
+    #[Url]
+    public string $testes = '';
+
+    /** '' = todos; 'ocultar' = sem históricos; 'somente' = só históricos (antes do saldo inicial). */
+    #[Url]
+    public string $historico = '';
+
     public bool $showFormModal = false;
 
     public bool $showAllocationModal = false;
@@ -208,6 +216,11 @@ new #[Layout('layouts.app')] class extends Component
             $this->to = now()->endOfMonth()->format('Y-m-d');
         }
 
+        $editar = request()->query('editar');
+        if (is_numeric($editar)) {
+            $this->edit((int) $editar);
+        }
+
         $novo = request()->query('novo');
         if (is_string($novo) && in_array($novo, ['expense', 'income', 'transfer', 'card_expense'], true)) {
             $this->create($novo);
@@ -216,7 +229,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function clearFilters(): void
     {
-        $this->reset(['from', 'to', 'category', 'account', 'status', 'type']);
+        $this->reset(['from', 'to', 'category', 'account', 'status', 'type', 'testes', 'historico']);
         $this->from = now()->startOfMonth()->format('Y-m-d');
         $this->to = now()->endOfMonth()->format('Y-m-d');
         $this->resetPage();
@@ -464,6 +477,11 @@ new #[Layout('layouts.app')] class extends Component
             $this->formCategoryId = null;
         }
 
+        // Categoria obrigatória em Receita e Despesa, exceto rateio (categoria por linha), recebimento de processo e estorno de cartão.
+        $categoryRequired = in_array($this->formType, ['income', 'expense'], true) && ! $this->formAllocationEnabled
+            && ! ($this->formType === 'income' && $this->formDestinateAfterSave) && ! $this->formIsCardRefund
+            && ! ($this->editingId && Transaction::whereKey($this->editingId)->whereHas('destinations')->exists());
+
         $data = $this->validate([
             'formType' => 'required|in:income,expense,transfer',
             'formDate' => 'required|date',
@@ -471,7 +489,7 @@ new #[Layout('layouts.app')] class extends Component
             'formDescription' => [Rule::requiredIf($this->formType !== 'transfer'), 'nullable', 'string', 'max:200'],
             'formNotes' => 'nullable|string',
             'formStatus' => $this->formType === 'income' && $this->formDestinateAfterSave ? 'required|in:settled' : 'required|in:pending,settled',
-            'formCategoryId' => ['nullable', Rule::exists('categories', 'id')->when(
+            'formCategoryId' => [Rule::requiredIf($categoryRequired), 'nullable', Rule::exists('categories', 'id')->where('is_system', 0)->when(
                 in_array($this->formType, ['income', 'expense'], true),
                 fn ($rule) => $rule->where('type', $this->formType),
             )],
@@ -481,7 +499,7 @@ new #[Layout('layouts.app')] class extends Component
             'formTransferToId' => 'nullable|exists:bank_accounts,id|different:formBankAccountId',
             'formInstallments' => 'required|integer|min:1|max:36',
             'formAllocationMode' => 'required|in:amount,percentage',
-        ]);
+        ], ['formCategoryId.required' => 'Selecione a categoria. Ela é obrigatória em receitas e despesas.']);
 
         $allocationRows = $this->formAllocationRows;
         if ($this->formAllocationEnabled) {
@@ -647,7 +665,16 @@ new #[Layout('layouts.app')] class extends Component
             return [];
         }
 
-        $q = Transaction::with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
+        $q = Transaction::query();
+        if ($this->testes === '1') {
+            $q->withTests();
+        }
+        if ($this->historico === 'ocultar') {
+            $q->notHistorical();
+        } elseif ($this->historico === 'somente') {
+            $q->whereHas('bankAccount', fn ($a) => $a->whereNotNull('initial_balance_date')->whereColumn('bank_accounts.initial_balance_date', '>', 'transactions.date'));
+        }
+        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination']);
 
         if ($this->from) {
             $q->where('date', '>=', $this->from);
@@ -677,7 +704,9 @@ new #[Layout('layouts.app')] class extends Component
             'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(25),
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
-            'activeCategories' => Category::active()->orderBy('name')->get(),
+            'activeCategories' => Category::active()->selectable()->orderBy('name')->get(),
+            'formIsHistorical' => ! $this->formIsCard && $this->formBankAccountId && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)
+                && (bool) BankAccount::find($this->formBankAccountId)?->isHistoricalDate($this->formDate),
             'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
             'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
         ];
@@ -737,7 +766,18 @@ new #[Layout('layouts.app')] class extends Component
                 </select>
             </div>
         </div>
-        <div class="mt-space-3">
+        <div class="mt-space-3 flex flex-wrap items-center gap-space-4 text-fs-12">
+            <label class="flex items-center gap-2 text-cryptex-text-secondary">
+                Históricos
+                <select wire:model.live="historico" class="h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
+                    <option value="">Mostrar</option>
+                    <option value="ocultar">Ocultar</option>
+                    <option value="somente">Somente históricos</option>
+                </select>
+            </label>
+            <label class="flex items-center gap-2 text-cryptex-text-secondary">
+                <input type="checkbox" wire:model.live="testes" value="1" true-value="1" false-value=""> Mostrar lançamentos de teste
+            </label>
             <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors" wire:click="clearFilters">Limpar filtros</button>
         </div>
     </x-fx.card>
@@ -765,6 +805,12 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                             @if ($t->writLinks->isNotEmpty())
                                 <p class="mt-1 text-xs text-cryptex-text-secondary">R$ {{ number_format((float) $t->writLinks->sum('writ_amount'), 2, ',', '.') }} vinculados a recebimentos de processo. Valor desta linha: entrada restante, para contar o dinheiro uma única vez.</p>
+                            @endif
+                            @if ($t->isHistorical())
+                                <x-fx.badge variant="neutral" class="ml-space-2" title="Anterior ao saldo inicial da conta: registra no módulo, mas não altera o saldo nem o resultado">Histórico</x-fx.badge>
+                            @endif
+                            @if ($t->is_test)
+                                <x-fx.badge variant="warning" class="ml-space-2">Teste</x-fx.badge>
                             @endif
                             @if ($t->ofx_fitid)
                                 <x-fx.badge variant="neutral" class="ml-space-2">OFX</x-fx.badge>
@@ -1048,6 +1094,9 @@ new #[Layout('layouts.app')] class extends Component
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model.live.debounce.300ms="formAmount" x-money required />
                                     <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
+                                    @if ($formIsHistorical)
+                                        <p class="mt-1 text-xs font-medium text-warning" data-test="historical-warning">Lançamento histórico: registra no módulo, mas não altera o saldo da conta.</p>
+                                    @endif
 
                                     @if ($formType !== 'transfer')
                                     <div class="md:col-span-2">

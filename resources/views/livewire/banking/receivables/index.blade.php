@@ -20,6 +20,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     #[Url] public string $contact = '';
     #[Url] public string $search = '';
+    #[Url] public string $testes = '';
     #[Url] public string $status = 'open';
     #[Url] public string $transaction = '';
     #[Locked] public ?int $selectedId = null;
@@ -187,11 +188,12 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
-        $all = Receivable::with(['contact', 'installments.settlements', 'installments.transaction.invoice'])
+        $all = Receivable::with(['contact' => fn ($q) => $q->withTests(), 'installments.settlements', 'installments.transaction.invoice'])
+            ->when($this->testes === '1', fn ($q) => $q->withTests())
             ->when($this->contact, fn ($q) => $q->where('contact_id', $this->contact))
             ->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('description', 'like', '%'.$this->search.'%')->orWhereHas('contact', fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))))
             ->latest('id')->get();
-        $parts = $all->flatMap->installments;
+        $parts = $all->reject(fn ($row) => $row->is_test)->flatMap->installments;
         $summary = [
             'Total em aberto' => $parts->sum(fn ($part) => $part->remainingCents()),
             'Vencidos' => $parts->filter(fn ($part) => $part->due_date?->lt(today()))->sum(fn ($part) => $part->remainingCents()),
@@ -289,6 +291,7 @@ new #[Layout('layouts.app')] class extends Component {
     <x-fx.card>
         <div class="mb-5 grid gap-4 md:grid-cols-3">
             <x-jr.input label="Buscar" name="search" placeholder="Pessoa ou descrição" wire:model.live.debounce.300ms="search" />
+            <label class="flex items-center gap-2 text-xs text-mono-600"><input type="checkbox" wire:model.live="testes" true-value="1" false-value=""> Mostrar testes (fora dos totais)</label>
             <x-banking.contact-picker :contacts="$contacts" :selected-id="$contact" model="contact" id="filter-contact" placeholder="Todas" clear-value="" />
             <div><label for="filter-status" class="mb-2 block text-sm text-mono-600">Situação</label><select id="filter-status" wire:model.live="status" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="open">Em aberto</option><option value="overdue">Vencidos</option><option value="paid">Encerrados</option><option value="">Todos</option></select></div>
         </div>

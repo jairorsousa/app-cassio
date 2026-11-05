@@ -36,6 +36,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function edit(int $id): void
     {
         $cat = Category::findOrFail($id);
+        abort_if($cat->is_system, 403, 'Categoria de sistema não pode ser alterada.');
         $this->editingId = $cat->id;
         $this->name = $cat->name;
         $this->type = $cat->type;
@@ -67,7 +68,13 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Category::find($id)?->delete();
+        try {
+            Category::find($id)?->delete();
+        } catch (\DomainException $e) {
+            session()->flash('error', $e->getMessage());
+
+            return;
+        }
         session()->flash('status', 'Categoria excluída.');
     }
 

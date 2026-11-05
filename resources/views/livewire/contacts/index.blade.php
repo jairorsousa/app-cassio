@@ -14,6 +14,8 @@ new #[Layout('layouts.app')] class extends Component
     #[Url]
     public string $search = '';
 
+    public bool $showTests = false;
+
     #[Url]
     public string $status = '';
 
@@ -293,7 +295,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function with(): array
     {
-        $q = Contact::query();
+        $q = Contact::query()->when($this->showTests, fn ($q) => $q->withTests());
         if ($this->search) {
             $q->where(function ($query) {
                 $query->where('name', 'like', '%'.$this->search.'%')
@@ -334,6 +336,7 @@ new #[Layout('layouts.app')] class extends Component
         <div class="flex flex-wrap items-end gap-4">
             <div class="flex-1 min-w-[240px]">
                 <x-jr.input label="Buscar" icon="search" wire:model.live.debounce.500ms="search" placeholder="Nome ou CPF/CNPJ..." />
+                <label class="flex items-center gap-2 text-xs text-mono-600"><input type="checkbox" wire:model.live="showTests"> Mostrar contatos de teste</label>
             </div>
             <div class="w-48">
                 <label class="mb-2 block text-sm font-medium text-mono-600">Status</label>
