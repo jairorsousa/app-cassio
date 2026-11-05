@@ -116,6 +116,7 @@ class TransactionFlowTest extends TestCase
             ->set('formAmount', '175.90')
             ->set('formDescription', 'Despesa atualizada')
             ->set('formStatus', 'settled')
+            ->set('formCategoryId', Category::create(['name' => 'Escritório', 'type' => 'expense'])->id)
             ->call('saveTransaction')
             ->assertHasNoErrors()
             ->assertSet('showFormModal', false);
@@ -177,7 +178,8 @@ class TransactionFlowTest extends TestCase
                 ->set('formStatus', 'settled')
                 ->set('formAmount', '100.00')
                 ->set('formDescription', 'Pagamento manual')
-                ->call('saveTransaction')
+                ->set('formCategoryId', Category::create(['name' => 'Cat '.$type, 'type' => $type])->id)
+            ->call('saveTransaction')
                 ->assertHasNoErrors();
             $this->assertDatabaseHas('transactions', ['type' => $type, 'date' => '2026-10-08 00:00:00', 'status' => 'settled']);
         }
@@ -289,6 +291,7 @@ class TransactionFlowTest extends TestCase
             ->set('formDescription', 'Compra parcelada')
             ->set('formInstallments', 3)
             ->set('formBankAccountId', $account->id)
+            ->set('formCategoryId', Category::create(['name' => 'Compras', 'type' => 'expense'])->id)
             ->call('saveTransaction')
             ->assertHasNoErrors()
             ->assertSet('showFormModal', false);
@@ -319,6 +322,7 @@ class TransactionFlowTest extends TestCase
             ->set('formCreditCardId', $other->id)
             ->set('formInvoiceMonth', '2026-11')
             ->set('formAmount', '150.00')
+            ->set('formCategoryId', Category::create(['name' => 'Compras', 'type' => 'expense'])->id)
             ->call('saveTransaction')
             ->assertHasNoErrors();
 

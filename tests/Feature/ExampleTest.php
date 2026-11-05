@@ -14,6 +14,7 @@ class ExampleTest extends TestCase
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        // A raiz redireciona para o login (visitante) ou para o Dashboard (autenticado).
+        $response->assertRedirect(route('login', absolute: false));
     }
 }
