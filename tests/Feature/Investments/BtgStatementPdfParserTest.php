@@ -164,4 +164,31 @@ class BtgStatementPdfParserTest extends TestCase
         $this->assertNull($rows[2]['ticker']); // prefixo "CAIXA" ambíguo entre dois emissores
         $this->assertStringContainsString('ambíguo', implode(' ', $rows[2]['messages']));
     }
+
+    public function test_import_command_holds_uncertain_marks_duplicates_and_dry_run_writes_nothing(): void
+    {
+        $cls = \App\Domains\Investments\Models\AssetClass::create(['name' => 'Ações', 'slug' => 'acoes']);
+        foreach (['AAAA3', 'BBBB3', 'CCCC3', 'FFFF11'] as $t) {
+            \App\Domains\Investments\Models\Asset::create(['ticker' => $t, 'name' => $t, 'asset_class_id' => $cls->id]);
+        }
+        AssetIncomeEvent::create(['ticker' => 'BBBB3', 'payment_date' => '2026-01-03', 'type' => 'dividend', 'net_amount' => 30, 'source' => 'b3_midas', 'source_key' => 'b3inc:z:1']);
+        $this->fakePdf($this->text());
+        $f = tempnam(sys_get_temp_dir(), 'btg').'.pdf';
+        file_put_contents($f, '%PDF-1.4');
+        $user = User::factory()->create();
+        $args = ['file' => $f, '--broker' => 'BTG Pactual', '--user' => $user->id];
+        $this->artisan('investments:statement-import', $args)->expectsOutputToContain('Dry-run')->assertSuccessful();
+        $this->assertSame(1, AssetIncomeEvent::count());
+        $this->assertSame(0, \App\Domains\Investments\Models\BrokerStatementImport::count());
+
+        $this->artisan('investments:statement-import', $args + ['--confirm' => true])->expectsOutputToContain('confirmada')->assertSuccessful();
+        $imp = \App\Domains\Investments\Models\BrokerStatementImport::first();
+        $st = $imp->rows()->get()->countBy('status')->all();
+        $this->assertSame('confirmed', $imp->status);
+        $this->assertSame(1, $st['duplicate_not_imported']);
+        $this->assertSame(2, $st['held_review']); // DDDD3 sem cadastro + JCP sem ticker
+        $this->assertSame(4, $st['imported']); // aluguel e JCP AAAA3, reembolso CCCC3, FII FFFF11
+        $this->assertSame(5, AssetIncomeEvent::count());
+        $this->assertSame(0, Transaction::count());
+    }
 }

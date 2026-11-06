@@ -121,7 +121,7 @@ class BrokerStatementImportService
     public function classify(BrokerStatementImport $import): void
     {
         foreach ($import->rows()->get() as $row) {
-            if (in_array($row->status, ['excluded', 'imported', 'linked'], true)) {
+            if (in_array($row->status, ['excluded', 'imported', 'linked', 'held_review', 'duplicate_not_imported'], true)) {
                 continue;
             }
             $msgs = collect($row->messages ?? [])->reject(fn ($m) => str_starts_with($m, 'Possível duplicado'))->values()->all();
@@ -195,6 +195,39 @@ class BrokerStatementImportService
 
             return ['imported' => $imported, 'skipped' => $summary['by_status']['duplicate'] ?? 0, 'pending_manual' => $summary['by_status']['pending_manual'] ?? 0];
         });
+    }
+
+    /**
+     * Antes de confirmar: segura para revisão (não importa) linhas com ticker inferido ou inexistente em Ativos.
+     * @return array{inferred: int, unknown_asset: int}
+     */
+    public function holdUncertain(BrokerStatementImport $import): array
+    {
+        $this->assertOpen($import);
+        $tickers = Asset::pluck('ticker')->map(fn ($t) => strtoupper($t))->flip();
+        $n = ['inferred' => 0, 'unknown_asset' => 0];
+        foreach ($import->rows()->where('status', 'ready')->get() as $row) {
+            $msgs = $row->messages ?? [];
+            $inferred = (bool) array_filter($msgs, fn ($m) => str_contains($m, 'inferido'));
+            $unknown = ! isset($tickers[strtoupper((string) $row->ticker)]);
+            if ($inferred || $unknown) {
+                $msgs[] = $inferred ? 'Retido: ticker inferido, confirmar antes de importar.' : 'Retido: ticker não cadastrado em Ativos.';
+                $row->update(['status' => 'held_review', 'messages' => $msgs]);
+                $n[$inferred ? 'inferred' : 'unknown_asset']++;
+            }
+        }
+        foreach ($import->rows()->where('status', 'error')->get() as $row) {
+            $row->update(['status' => 'held_review', 'messages' => array_merge($row->messages ?? [], ['Retido para revisão (sem ticker/dados).'])]);
+        }
+        $import->update(['summary' => $this->summary($import) + array_intersect_key($import->summary ?? [], ['reconciliation' => 1])]);
+
+        return $n;
+    }
+
+    /** Após confirmar: candidatos a duplicado ficam registrados como não importados (B3 já tem o evento). */
+    public function markDuplicatesNotImported(BrokerStatementImport $import): int
+    {
+        return $import->rows()->where('status', 'duplicate_candidate')->update(['status' => 'duplicate_not_imported']);
     }
 
     public function discard(BrokerStatementImport $import): void

@@ -392,3 +392,40 @@ Artisan::command('investments:account-csv-preview {files*}', function (\App\Doma
 
     return 0;
 })->purpose('Prévia somente leitura de extratos de conta em CSV (saldo corrido, emenda entre arquivos)');
+
+Artisan::command('investments:statement-import {file} {--broker=} {--user=} {--confirm}', function (\App\Domains\Investments\Services\Statements\BrokerStatementImportService $service) {
+    // Mesmo caminho da tela: staging → retém incertos/erros → confirma só "prontos" → duplicados ficam "não importados".
+    // Sem --confirm: dry-run dentro de transação revertida.
+    $user = \App\Models\User::find((int) $this->option('user'));
+    if (! $user || ! $this->option('broker') || ! is_readable((string) $this->argument('file'))) {
+        $this->error('Informe arquivo legível, --broker e --user (id).');
+
+        return 1;
+    }
+    $dry = ! $this->option('confirm');
+    \Illuminate\Support\Facades\DB::beginTransaction();
+    try {
+        $upload = new \Illuminate\Http\UploadedFile((string) $this->argument('file'), basename((string) $this->argument('file')), null, null, true);
+        $imp = $service->stage($upload, (string) $this->option('broker'), $user->id);
+        $held = $service->holdUncertain($imp);
+        $before = $imp->fresh()->rows()->get();
+        $ready = $before->where('status', 'ready');
+        $result = $service->confirm($imp->fresh(), $user->id);
+        $dups = $service->markDuplicatesNotImported($imp);
+        $rows = $imp->fresh()->rows()->get();
+        $out = ['batch' => $imp->id, 'layout' => $imp->mapping['layout'] ?? null, 'rows' => $rows->count(), 'held' => $held, 'result' => $result,
+            'duplicates_not_imported' => $dups, 'by_status' => $rows->countBy('status'),
+            'imported_by_kind' => $ready->groupBy('kind')->map(fn ($g) => ['count' => $g->count(), 'net' => round((float) $g->sum('net_amount'), 2), 'from' => $g->min('date')?->format('Y-m-d'), 'to' => $g->max('date')?->format('Y-m-d')]),
+            'imported_net' => round((float) $ready->sum('net_amount'), 2)];
+        $dry ? \Illuminate\Support\Facades\DB::rollBack() : \Illuminate\Support\Facades\DB::commit();
+    } catch (\Throwable $e) {
+        \Illuminate\Support\Facades\DB::rollBack();
+        $this->error($e->getMessage());
+
+        return 1;
+    }
+    $this->line(json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $this->info($dry ? 'Dry-run: nada foi gravado.' : 'Importação confirmada.');
+
+    return 0;
+})->purpose('Importa extrato de corretora pelo mesmo fluxo da tela (dry-run sem --confirm)');
