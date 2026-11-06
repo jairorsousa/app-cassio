@@ -71,25 +71,13 @@ class DashboardSnapshotBuilder
         ])->values();
 
         // ---- Investments ----
-        $positions = AssetPosition::with('asset.assetClass')->where('quantity', '>', 0)->get();
-        $portfolioMarketValue = (float) $positions->sum(fn ($p) => $p->marketValue());
-        $portfolioInvested = (float) $positions->sum('total_invested');
-        $portfolioByClass = $positions->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')
-            ->map(fn ($g) => [
-                'invested' => round($g->sum('total_invested'), 2),
-                'market_value' => round($g->sum(fn ($p) => $p->marketValue()), 2),
-            ]);
-        $dividends12m = (float) AssetDividend::where('payment_date', '>=', $now->copy()->subYear())->sum('total')
-            + (float) \App\Domains\Investments\Models\AssetIncomeEvent::where('payment_date', '>=', $now->copy()->subYear())->sum('net_amount');
-        // Sem posição calculada por operações, usa a foto B3 confirmada (data-base visível), sem somar as duas.
-        $b3 = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed();
-        $b3Value = round((float) $b3->sum('market_value'), 2);
-        $portfolioSource = 'operations';
-        if ($portfolioMarketValue <= 0 && $b3Value > 0) {
-            $portfolioMarketValue = $b3Value;
-            $portfolioSource = 'b3:'.$b3->first()->base_date->toDateString();
-            $portfolioByClass = $b3->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')->map(fn ($g) => ['invested' => round((float) $g->sum(fn ($p) => $p->cost() ?? 0), 2), 'market_value' => round((float) $g->sum('market_value'), 2)]);
-        }
+        // Mesma composição de /investments (operações ou posição B3 + cotações; proventos inclui importados), sem cálculo paralelo.
+        $portfolio = app(\App\Domains\Investments\Services\PortfolioProfitabilityService::class)->summary();
+        $portfolioMarketValue = (float) $portfolio['market_value'];
+        $portfolioInvested = (float) $portfolio['total_invested'];
+        $portfolioByClass = collect($portfolio['by_class']);
+        $dividends12m = (float) $portfolio['dividends_12m'];
+        $portfolioSource = $portfolio['source'] === 'b3' ? 'b3:'.$portfolio['base_date']->toDateString() : 'operations';
         $propertiesValue = \App\Domains\Assets\Models\Property::activeTotal();
 
         // ---- Partnership ----
@@ -212,6 +200,11 @@ class DashboardSnapshotBuilder
                 'market_value' => round($portfolioMarketValue, 2),
                 'dividends_12m' => round($dividends12m, 2),
                 'by_class' => $portfolioByClass,
+                'source' => $portfolio['source'],
+                'base_date' => $portfolio['base_date']?->toDateString(),
+                'b3_market_value' => $portfolio['b3_market_value'],
+                'quote_time' => $portfolio['quote_time'] ? \Illuminate\Support\Carbon::parse($portfolio['quote_time'])->toIso8601String() : null,
+                'unknown_average_price_count' => count($portfolio['unknown_average_price']),
             ],
             'partnerships' => [
                 'count' => $partnerships->count(),

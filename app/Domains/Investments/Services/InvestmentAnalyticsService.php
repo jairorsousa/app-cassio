@@ -25,6 +25,22 @@ class InvestmentAnalyticsService
             ->get()
             ->groupBy('asset_id');
 
+        // Sem operações: histórico só existe a partir da posição B3 confirmada (data-base → hoje), sem meses zerados inventados.
+        if ($operations->isEmpty()) {
+            $b3 = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed();
+            if ($b3->isNotEmpty()) {
+                $summary = app(PortfolioProfitabilityService::class)->summary();
+                $base = $b3->first()->base_date;
+                $known = (float) $b3->sum(fn ($p) => $p->cost() ?? 0);
+                $rows = [['key' => $base->format('Y-m-d'), 'label' => 'B3 '.$base->format('d/m'), 'date' => $base->toDateString(), 'market_value' => round((float) $b3->sum('market_value'), 2), 'invested' => round($known, 2)]];
+                if (today()->gt($base)) {
+                    $rows[] = ['key' => today()->format('Y-m-d'), 'label' => 'Atual', 'date' => today()->toDateString(), 'market_value' => $summary['market_value'], 'invested' => $summary['total_invested']];
+                }
+
+                return $rows;
+            }
+        }
+
         $rows = [];
         for ($i = 0; $i < $months; $i++) {
             $month = $start->copy()->addMonths($i);

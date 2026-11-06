@@ -340,3 +340,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - `asset_quotes` ganha `market_time` (horário da fonte) e `source`. Resumo de Investimentos usa quantidade × última cotação (data ≥ data-base), senão o fechamento B3; exibe horário da cotação, atraso e o valor B3 da data-base. PM, transações e a foto B3 não são alterados.
 - Job: timeout 600 s, único por 1500 s. Primeira execução manual: 31 tickers atualizados em ~7 s.
 - Testes em Etapa8QuotesB3Test (4).
+
+## 2026-11-06 — Dashboard e evolução usam a mesma carteira de /investments
+
+- Bug: widgets do Dashboard (Investido, Mercado, Proventos 12M, Patrimônio › Carteira) mostravam 0 e a Evolução do patrimônio ficava zerada. Causas: (1) snapshot gravado pelo worker com código antigo (worker reiniciado no deploy); (2) `DashboardSnapshotBuilder` tinha cálculo próprio (investido 0, valor B3 sem cotações); (3) `portfolioEvolution` só considerava operações.
+- Correção: o builder usa `PortfolioProfitabilityService::summary()` (fonte única: operações ou B3 + cotações brapi; proventos com importados). Evolução sem operações = ponto B3 da data-base + ponto atual (sem meses zerados inventados). Rodapé de /investments descreve brapi (atraso ~30 min), fallback B3 e PM ausente ≠ 0.
+- Contas, saldos, transações (309) e proventos não alterados. Testes em `Etapa8DashboardPortfolioB3Test`.

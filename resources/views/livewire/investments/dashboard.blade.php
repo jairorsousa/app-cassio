@@ -126,7 +126,7 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <x-jr.card class="xl:col-span-3">
             <div class="investment-panel-header">
-                <div><h3 class="text-lg font-bold">Evolução do patrimônio</h3><p class="mt-1 text-xs text-mono-600">Valor da carteira e capital investido mês a mês</p></div>
+                <div><h3 class="text-lg font-bold">Evolução do patrimônio</h3><p class="mt-1 text-xs text-mono-600">{{ $summary['source'] === 'b3' ? 'Desde a posição B3 de '.$summary['base_date']->format('d/m/Y').' (sem histórico anterior); investido só com PM conhecido' : 'Valor da carteira e capital investido mês a mês' }}</p></div>
                 <span class="investment-filter-pill"><span class="material-icons-outlined">calendar_month</span>12 meses</span>
             </div>
             <x-investments.equity-chart :rows="$evolution" />
@@ -185,5 +185,12 @@ new #[Layout('layouts.app')] class extends Component {
             @endforelse
         </x-jr.card>
     </div>
-    <p class="text-xs text-mono-600">Cotações informadas manualmente. Valores sem cotação usam o preço médio. O resultado não inclui impostos não registrados.</p>
+    <p class="text-xs text-mono-600">
+        @if ($summary['source'] === 'b3')
+            Cotações da brapi (plano gratuito, atraso ~30 min), atualizadas a cada 30 min no pregão; ativo sem cotação após a data-base usa o fechamento da posição B3 de {{ $summary['base_date']->format('d/m/Y') }}. Preço médio ausente fica fora do valor investido (não é tratado como zero). Proventos líquidos importados não geram lançamentos no Financeiro.
+        @else
+            Cotações da brapi (plano gratuito, atraso ~30 min) ou informadas manualmente; sem cotação, usa o preço médio.
+        @endif
+        O resultado não inclui impostos não registrados.
+    </p>
 </div>
