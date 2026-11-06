@@ -194,4 +194,34 @@ class AccessControlTest extends TestCase
         $this->actingAs($admin);
         Volt::test('settings.users')->set('editModules.'.$u->id, [])->call('saveModules', $u->id)->assertHasErrors('modules');
     }
+
+    public function test_bloqueado_com_tela_livre_aberta_recebe_403_e_sai_na_proxima_acao(): void
+    {
+        $admin = $this->admin();
+        $u = $this->limited(['financeiro']);
+        $this->actingAs($u);
+        $page = Volt::test('settings.index')->assertOk();
+        UserAccessService::block($admin, $u->id);
+        $this->actingAs($u->fresh()); // mesma sessão, agora com a conta bloqueada
+        $page->call('$refresh')->assertForbidden();
+        $this->assertGuest();
+        $this->actingAs($u->fresh());
+        Volt::test('profile.update-profile-information-form')->assertForbidden();
+        $this->assertGuest();
+    }
+
+    public function test_administrador_nao_pode_ser_bloqueado(): void
+    {
+        $admin = $this->admin();
+        $other = $this->admin();
+        foreach ([$admin, $other] as $target) {
+            try {
+                UserAccessService::block($admin, $target->id);
+                $this->fail('bloqueou administrador');
+            } catch (ValidationException) {
+                $this->assertSame('active', $target->fresh()->status);
+            }
+        }
+        $this->actingAs($admin)->get(route('settings.users'))->assertOk();
+    }
 }
