@@ -18,6 +18,8 @@ new class extends Component {
     public string $mode = 'payment';
     public ?int $writIncomeId = null;
     public ?int $bankId = null;
+    /** Filtro "Tipo de conta" do campo Pagar pela conta ('' = todos). */
+    public string $bankType = '';
     public string $amount = '';
     public string $date = '';
 
@@ -40,15 +42,31 @@ new class extends Component {
         $this->mode = 'payment';
         $this->writIncomeId = null;
         $this->destinationId = $part->id;
+        $this->bankType = '';
         $this->bankId = BankAccount::active()->where('type', '!=', 'repasse')->find($part->receipt->bank_account_id)?->id;
         $this->amount = number_format($part->remainingCents() / 100, 2, '.', '');
         $this->date = \App\Support\BusinessDate::today();
         $this->resetValidation();
     }
 
+    public function updatedBankType(): void
+    {
+        if (! in_array($this->bankType, self::bankTypes(), true)) {
+            $this->bankType = '';
+        }
+        if ($this->bankId && $this->bankType !== '' && BankAccount::whereKey($this->bankId)->value('type') !== $this->bankType) {
+            $this->bankId = null;
+        }
+    }
+
+    public static function bankTypes(): array
+    {
+        return array_values(array_diff(BankAccount::TYPE_ORDER, [BankAccount::TYPE_REPASSE]));
+    }
+
     public function cancelPayment(): void
     {
-        $this->reset('destinationId', 'bankId', 'amount', 'date', 'paymentKey', 'mode', 'writIncomeId');
+        $this->reset('destinationId', 'bankId', 'bankType', 'amount', 'date', 'paymentKey', 'mode', 'writIncomeId');
         $this->resetValidation();
     }
 
@@ -105,7 +123,9 @@ new class extends Component {
             'selectedWritIncome' => $incomes->firstWhere('id', $this->writIncomeId),
             'account' => $account, 'parts' => $parts,
             'selectedPart' => $selected,
-            'banks' => BankAccount::active()->where('type', '!=', 'repasse')->orderBy('name')->get(),
+            'banks' => BankAccount::pickerOptions(BankAccount::active()->where('type', '!=', 'repasse')
+                ->when($this->bankType !== '', fn ($q) => $q->where('type', $this->bankType))->get())
+                ->filter(fn ($o) => ! str_starts_with((string) $o['id'], 'group-'))->values(),
             'remaining' => $parts->sum(fn ($part) => $part->remainingCents()) / 100,
         ];
     }
@@ -156,13 +176,23 @@ new class extends Component {
                         <x-jr.input :label="$mode === 'writ' ? 'Valor a vincular (R$) *' : 'Valor do repasse (R$) *'" name="amount" wire:model="amount" x-money required />
                         @if ($mode === 'payment')<x-jr.input label="Data do pagamento *" name="date" wire:model="date" type="date" max="{{ \App\Support\BusinessDate::today() }}" required />@endif
                     </div>
-                    @if ($mode === 'payment')<div>
+                    @if ($mode === 'payment')<div class="grid gap-4 md:grid-cols-2">
+                    <div>
+                        <label for="repasse-bank-type" class="mb-2 block text-sm font-medium text-mono-600">Tipo de conta</label>
+                        <select id="repasse-bank-type" wire:model.live="bankType" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
+                            <option value="">Todos os tipos</option>
+                            @foreach ($this::bankTypes() as $t)<option value="{{ $t }}">{{ \App\Domains\Banking\Models\BankAccount::TYPE_LABELS[$t] ?? $t }}</option>@endforeach
+                        </select>
+                    </div>
+                    <div>
                         <label for="repasse-bank" class="mb-2 block text-sm font-medium text-mono-600">Pagar pela conta *</label>
                         <select id="repasse-bank" wire:model="bankId" required class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
                             <option value="">Selecione a conta bancária</option>
-                            @foreach ($banks as $bank)<option value="{{ $bank->id }}">{{ $bank->name }}</option>@endforeach
+                            @foreach ($banks as $bank)<option value="{{ $bank['id'] }}">{{ $bank['label'] }}</option>@endforeach
                         </select>
+                        @if ($banks->isEmpty())<p class="mt-2 text-sm text-mono-600">Nenhuma conta ativa desse tipo.</p>@endif
                         @error('bankId')<p role="alert" class="mt-2 text-sm text-error">{{ $message }}</p>@enderror
+                    </div>
                     </div>
                     @endif
                     @error('mode')<p role="alert" class="text-sm text-error">{{ $message }}</p>@enderror

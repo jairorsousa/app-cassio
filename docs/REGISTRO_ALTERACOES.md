@@ -482,3 +482,18 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Abre automaticamente ao editar lançamento que já tem vínculo ou comprovante, e quando há erro de validação nesses campos. Novo lançamento/cancelar volta a recolher.
 - Botão acessível (`type=button`, `aria-expanded`). Teste novo: OptionalLinksCollapseTest; Etapa2RateiosVinculosTest ajustado para abrir a seção.
 - Backup: `storage/backups/transactions.pre_collapse`.
+
+## 2026-11-06 — Importação XP (somente JCP BBDC4 novo)
+- Origem: extrato XLSX XP Conta 2858237 (sha256 c4ae11e6278fde75fb62644739a99ee2dc583a22da9d468fc86e3257061a88c2), período 01/01–06/11/2026.
+- XLSX bruto não mapeia no parser genérico (cabeçalho fora da 1ª linha); lote via CSV normalizado derivado (48 linhas).
+- Batch broker_statement_imports #10, broker=XP, user=1 (cassio@motaesilva.adv.br), confirmado.
+- Status: imported=1 (JCP BBDC4 03/11/2026 qtd 4045 líquido R$ 63,32), duplicate_not_imported=40, pending_manual=7 (TED/transf. caixa).
+- asset_income_events: 2013 → 2014; soma líquida 399451.93 → 399515.25. Financeiro (transactions) e posições não alterados.
+- IR não informado no extrato; bruto não inventado. Sem preço médio.
+
+
+## 2026-11-06 — Repasse: "Tipo de conta" antes de "Pagar pela conta"
+
+- No modal de registrar repasse (`resources/views/livewire/banking/accounts/repasses.blade.php`), novo seletor "Tipo de conta" (Todos os tipos, Corrente, Poupança, Investimento, Fundo, Dinheiro) que filtra as contas ativas do campo "Pagar pela conta".
+- Contas exibidas como "Nome · Tipo" (`BankAccount::pickerOptions`). Padrão "Todos os tipos" (não bloqueia o fluxo atual); a conta pré-selecionada é mantida; trocar o tipo só limpa a conta se ela for de outro tipo. Tipo inválido volta para todos.
+- Validação e cálculo do pagamento inalterados. Teste novo: RepasseBankTypeFilterTest. Backup: `storage/backups/repasses.pre_tipo`.
