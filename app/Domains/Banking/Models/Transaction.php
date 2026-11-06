@@ -89,6 +89,12 @@ class Transaction extends Model
         return $this->hasMany(ReceivableSettlement::class);
     }
 
+    /** @return HasMany<LoanSettlement, $this> */
+    public function loanSettlements(): HasMany
+    {
+        return $this->hasMany(LoanSettlement::class);
+    }
+
     public function allocations(): HasMany
     {
         return $this->hasMany(TransactionAllocation::class);

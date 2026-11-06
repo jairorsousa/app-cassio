@@ -35,6 +35,10 @@
         <span class="material-icons-outlined text-[18px]">request_quote</span>
         Valores a receber
     </a>
+    <a href="{{ route('banking.loans.index') }}" class="{{ $tab }} {{ ($active === 'loans' || request()->routeIs('banking.loans.*')) ? $activeTab : $inactiveTab }}">
+        <span class="material-icons-outlined text-[18px]">savings</span>
+        Empréstimos
+    </a>
     <a
         href="{{ route('banking.accounts.index') }}"
         class="{{ $tab }} {{ request()->routeIs('banking.accounts.*') ? $activeTab : $inactiveTab }}"

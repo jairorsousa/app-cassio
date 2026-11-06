@@ -283,7 +283,7 @@ class ReceivableTest extends TestCase
         $row = Receivable::sole();
         $component->set('payment.amount', '100.00')->set('payment.bank_account_id', $this->bank->id)->call('settle')->assertHasNoErrors()->assertSee('R$ 9.900,00');
         $this->get(route('contacts.show', $this->person))->assertOk()->assertSee('Valores a receber desta pessoa');
-        Volt::test('banking.transactions.index')->assertSee('Dividir com terceiros')->assertSee('Devolução de adiantamento');
+        Volt::test('banking.transactions.index')->assertSee('Paguei por alguém')->assertSee('Devolução de adiantamento');
         Volt::test('banking.reports.cashflow')->assertSee('Receitas próprias')->assertSee('Variação do caixa');
     }
 

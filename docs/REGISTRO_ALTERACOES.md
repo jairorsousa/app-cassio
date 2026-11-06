@@ -1,5 +1,30 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 6: Valores a receber com juros e Empréstimos (Auditor Fin)
+
+Base: commit `8719f60`. Backup lógico: `/root/app-cassio-backups/etapa6-antes-20261105.json`. Nenhum empréstimo/baixa real criado; dados antigos preservados (encargos padrão zero; baixas antigas = principal).
+
+### A) Valores a receber (“Paguei por alguém”)
+1. Botão **Paguei por alguém** no lançamento (antes “Dividir com terceiros”) abre o fluxo existente sem duplicar a saída.
+2. Encargos opcionais no cadastro: juros combinados % a.m., multa %, mora % a.m., data inicial. Fórmulas em `App\Support\SimpleInterest` e `docs/valores-a-receber.md`. Alocação de baixas: multa → juros → principal.
+3. Baixa **Devolução em dinheiro (espécie)** seleciona a conta Dinheiro; continua podendo escolher qualquer conta.
+4. Cartão, desconto em processo e perda preservados; principal a recuperar continua fora da despesa própria. Juros/multa recebidos entram na receita; principal devolvido não.
+
+### B) Empréstimos concedidos (módulo novo)
+- Menu Financeiro → **Empréstimos** (`/banking/loans`), lista/novo/ficha/baixas/anexo privado.
+- Saída = categoria de sistema **Empréstimo concedido** (`source_type` Loan), fora do resultado.
+- Juros recebidos → categoria **Juros de empréstimos**; principal recebido não é receita.
+- Ex.: 5000 em 5×, duas pagas ⇒ 3000. Datas com `BusinessDate` (Fortaleza).
+
+### C) Dashboard
+Etapa 7 não iniciada: nenhum card/alteração de Dashboard.
+
+### Testes / publicação
+- `tests/Feature/Banking/Etapa6ValoresReceberEmprestimosTest.php`
+- `tests/Unit/SimpleInterestTest.php` (se presente)
+- Suíte completa após migrate + caches.
+
+
 ## 05/11/2026 — Correção de fuso nas validações de data (Auditor Fin)
 
 Base: commit `bfe7212`. Sem migration e sem alteração de dados reais.

@@ -46,6 +46,7 @@ class ReceivableInstallment extends Model
 
     public function remainingCents(): int
     {
-        return max(0, $this->amountCents() - $this->settlements->sum(fn ($row) => (int) round((float) $row->amount * 100)));
+        // Principal em aberto: baixas contam pelo principal_amount (encargos não reduzem a parcela).
+        return max(0, $this->amountCents() - $this->settlements->sum(fn ($row) => (int) round((float) ($row->principal_amount ?? $row->amount) * 100)));
     }
 }

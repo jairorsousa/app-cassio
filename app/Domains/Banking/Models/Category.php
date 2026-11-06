@@ -17,6 +17,58 @@ class Category extends Model
 
     public const TRANSFER_KEY = 'transfer';
 
+    public const LOAN_DISBURSEMENT_KEY = 'loan_disbursement';
+
+    public const LOAN_INTEREST_KEY = 'loan_interest';
+
+    private static ?int $loanDisbursementId = null;
+
+    private static ?int $loanInterestId = null;
+
+    /** Saída de empréstimo concedido: conversão caixa→crédito, fora do resultado. */
+    public static function loanDisbursementCategoryId(): int
+    {
+        if (self::$loanDisbursementId && self::whereKey(self::$loanDisbursementId)->exists()) {
+            return self::$loanDisbursementId;
+        }
+        $id = self::where('system_key', self::LOAN_DISBURSEMENT_KEY)->value('id');
+        if (! $id) {
+            $category = new self(['name' => 'Empréstimo concedido', 'type' => 'transfer', 'status' => true]);
+            $category->is_system = true;
+            $category->system_key = self::LOAN_DISBURSEMENT_KEY;
+            $category->save();
+            $id = $category->id;
+        }
+
+        return self::$loanDisbursementId = (int) $id;
+    }
+
+    /** Juros efetivamente recebidos de empréstimos concedidos (receita). */
+    public static function loanInterestCategoryId(): int
+    {
+        if (self::$loanInterestId && self::whereKey(self::$loanInterestId)->exists()) {
+            return self::$loanInterestId;
+        }
+        $id = self::where('system_key', self::LOAN_INTEREST_KEY)->value('id');
+        if (! $id) {
+            $parentId = self::where('name', 'Rendimento de Investimentos')->where('type', 'income')->value('id');
+            $category = new self([
+                'name' => 'Juros de empréstimos',
+                'type' => 'income',
+                'status' => true,
+                'parent_id' => $parentId,
+            ]);
+            $category->is_system = true;
+            $category->system_key = self::LOAN_INTEREST_KEY;
+            $category->save();
+            $id = $category->id;
+        }
+
+        return self::$loanInterestId = (int) $id;
+    }
+
+
+
     public const WRIT_PROFIT_NAME = 'Juros Ganho (RPV / Precatórios)';
 
     private static ?int $writProfitId = null;

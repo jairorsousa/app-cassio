@@ -1008,7 +1008,7 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                             @unless ($t->isReadOnly())
                                 @if ($t->type === 'expense' && $t->status === 'settled' && (float) $t->amount > 0 && ! $t->destinationPayment)
-                                    <a href="{{ route('banking.receivables.index', ['transaction' => $t->id]) }}" class="mr-3 text-fs-12 font-medium text-primary-500">Dividir com terceiros</a>
+                                    <a href="{{ route('banking.receivables.index', ['transaction' => $t->id]) }}" class="mr-3 text-fs-12 font-medium text-primary-500">Paguei por alguém</a>
                                 @endif
                                 @if ($t->type === 'income' && $t->status === 'settled' && $t->bank_account_id)
                                     <button type="button" wire:click="openDistribution({{ $t->id }})" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors mr-3">{{ $t->destinations->isNotEmpty() ? 'Ver recebimento de processo' : 'Recebimento de processo' }}</button>

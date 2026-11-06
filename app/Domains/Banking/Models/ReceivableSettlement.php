@@ -11,9 +11,9 @@ class ReceivableSettlement extends Model
 {
     use LogsActivity;
 
-    protected $fillable = ['receivable_installment_id', 'batch_key', 'kind', 'amount', 'date', 'transaction_id', 'transaction_created', 'destination_id', 'notes'];
+    protected $fillable = ['receivable_installment_id', 'batch_key', 'kind', 'amount', 'principal_amount', 'interest_amount', 'penalty_amount', 'date', 'transaction_id', 'transaction_created', 'destination_id', 'notes'];
 
-    protected $casts = ['amount' => 'decimal:2', 'date' => 'date', 'transaction_created' => 'boolean'];
+    protected $casts = ['amount' => 'decimal:2', 'principal_amount' => 'decimal:2', 'interest_amount' => 'decimal:2', 'penalty_amount' => 'decimal:2', 'date' => 'date', 'transaction_created' => 'boolean'];
 
     public function getActivitylogOptions(): LogOptions
     {

@@ -74,6 +74,8 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
     Route::get('/transactions/{transaction}/edit', fn (\App\Domains\Banking\Models\Transaction $transaction) => redirect()->route('banking.transactions.index', ['editar' => $transaction->id]))->name('transactions.edit');
     Route::get('/transactions/attachments/{attachment}', \App\Http\Controllers\TransactionAttachmentController::class)->name('transactions.attachments.download');
     Volt::route('/receivables', 'banking.receivables.index')->name('receivables.index');
+    Volt::route('/loans', 'banking.loans.index')->name('loans.index');
+    Route::get('/loans/{loan}/attachment', \App\Http\Controllers\LoanAttachmentController::class)->name('loans.attachment');
     Volt::route('/recurring', 'banking.recurring.index')->name('recurring.index');
     Volt::route('/reports/cashflow', 'banking.reports.cashflow')->name('reports.cashflow');
 });

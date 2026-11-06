@@ -27,7 +27,7 @@ class OwnFinancialService
     public function totals(Carbon $start, Carbon $end, ?string $regime = null): array
     {
         $regime ??= self::currentRegime();
-        $rows = Transaction::with(['bankAccount', 'receivableInstallments', 'receivableSettlements', 'destinations', 'destinationPayment', 'allocations.category'])
+        $rows = Transaction::with(['bankAccount', 'receivableInstallments', 'receivableSettlements', 'loanSettlements', 'destinations', 'destinationPayment', 'allocations.category'])
             ->where('status', 'settled')->whereIn('type', ['income', 'expense', 'invoice_payment'])
             ->whereBetween('date', [$start, $end])->notHistorical()->get();
         $income = $expense = 0;
@@ -54,11 +54,22 @@ class OwnFinancialService
             if ($row->destinations->isNotEmpty()) {
                 return (int) round(((float) $row->destinations->where('kind', 'own')->sum('amount') + $row->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount'))) * 100);
             }
+            // Devolução de principal (valores a receber / empréstimos) não é receita; juros/multa recebidos são.
+            if ($row->receivableSettlements->isNotEmpty()) {
+                return (int) round(((float) $row->receivableSettlements->sum('interest_amount') + (float) $row->receivableSettlements->sum('penalty_amount')) * 100);
+            }
+            if ($row->loanSettlements->isNotEmpty()) {
+                return (int) round((float) $row->loanSettlements->sum('interest_amount') * 100);
+            }
 
-            return $amount - (int) round((float) $row->receivableSettlements->sum('amount') * 100);
+            return $amount;
         }
         if ($row->type === 'expense') {
             if ($row->destinationPayment) {
+                return 0;
+            }
+            // Empréstimo concedido: conversão de caixa em crédito a recuperar, fora do resultado.
+            if ($row->source_type === \App\Domains\Banking\Models\Loan::class) {
                 return 0;
             }
             if ($row->credit_card_invoice_id && $regime !== self::ACCRUAL) {

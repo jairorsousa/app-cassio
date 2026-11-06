@@ -11,6 +11,7 @@ use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Dashboard\Services\DashboardSnapshotService;
+use App\Support\SimpleInterest;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -42,6 +43,10 @@ class ReceivableService
             'use_invoice_dates' => 'sometimes|boolean',
             'writ_id' => 'nullable|integer|exists:writs,id', 'process_reference' => 'nullable|string|max:200',
             'notes' => 'nullable|string|max:5000', 'request_key' => 'required|uuid',
+            'interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'penalty_pct' => 'nullable|numeric|min:0|max:100',
+            'late_interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'interest_start_date' => 'nullable|date_format:Y-m-d',
             'people' => 'required|array|min:1|max:20', 'people.*.contact_id' => 'required|integer|distinct',
             'people.*.amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
         ])->validate();
@@ -94,6 +99,10 @@ class ReceivableService
                     'repayment_mode' => $data['repayment_mode'], 'writ_id' => ($data['writ_id'] ?? null) ?: null,
                     'process_reference' => $data['process_reference'] ?? null, 'notes' => $data['notes'] ?? null,
                     'request_key' => $index === 0 ? $data['request_key'] : null,
+                    'interest_rate_am' => (float) ($data['interest_rate_am'] ?? 0),
+                    'penalty_pct' => (float) ($data['penalty_pct'] ?? 0),
+                    'late_interest_rate_am' => (float) ($data['late_interest_rate_am'] ?? 0),
+                    'interest_start_date' => $data['interest_start_date'] ?? $data['date'],
                 ]);
                 $left = $amount;
                 $number = 0;
@@ -173,7 +182,10 @@ class ReceivableService
                     throw new \DomainException('Vincule uma entrada recebida, livre, com a mesma conta, data e valor da devolução.');
                 }
             }
-            $rows = $this->allocateSettlement($receivable, $cents, $date, 'cash', $key, $installmentId);
+            $receivable->load(['installments.settlements', 'settlements']);
+            $balance = $receivable->balanceAsOf($date);
+            $split = SimpleInterest::allocate($cents, $balance['principal_open'], $balance['interest_open'], $balance['penalty_open']);
+            $rows = $this->allocateSettlement($receivable, $cents, $date, 'cash', $key, $installmentId, $split);
             if (! $transaction) {
                 $transaction = app(TransactionService::class)->create([
                     'type' => 'income', 'status' => 'settled', 'date' => $date, 'amount' => $this->money($cents), 'bank_account_id' => $accountId,
@@ -199,14 +211,26 @@ class ReceivableService
             $this->validateDate($receivable, $date);
             Validator::make(['reason' => $reason], ['reason' => 'required|string|min:3|max:1000'])->validate();
             $cents = $this->cents($amount);
-            $rows = $this->allocateSettlement($receivable, $cents, $date, 'loss', $key);
-            $entry = app(TransactionService::class)->create([
-                'type' => 'expense', 'status' => 'settled', 'amount' => $this->money($cents), 'date' => $date,
-                'description' => mb_substr('Perda reconhecida · '.$receivable->description, 0, 200),
-                'source_type' => ReceivableSettlement::class, 'source_id' => $rows[0]->id, 'notes' => $reason,
-            ]);
+            $receivable->load(['installments.settlements', 'settlements']);
+            $balance = $receivable->balanceAsOf($date);
+            $split = SimpleInterest::allocate($cents, $balance['principal_open'], $balance['interest_open'], $balance['penalty_open']);
+            $rows = $this->allocateSettlement($receivable, $cents, $date, 'loss', $key, null, $split);
+            // Só o principal perdido vira despesa própria; encargos renunciados não geram resultado.
+            $expenseCents = $split['principal'];
+            $entry = null;
+            if ($expenseCents > 0) {
+                $entry = app(TransactionService::class)->create([
+                    'type' => 'expense', 'status' => 'settled', 'amount' => $this->money($expenseCents), 'date' => $date,
+                    'description' => mb_substr('Perda reconhecida · '.$receivable->description, 0, 200),
+                    'source_type' => ReceivableSettlement::class, 'source_id' => $rows[0]->id, 'notes' => $reason,
+                ]);
+            }
             foreach ($rows as $row) {
-                $row->update(['transaction_id' => $entry->id, 'transaction_created' => true, 'notes' => $reason]);
+                $row->update([
+                    'transaction_id' => $entry?->id,
+                    'transaction_created' => (bool) $entry,
+                    'notes' => $reason,
+                ]);
             }
             $this->invalidate();
         });
@@ -258,23 +282,58 @@ class ReceivableService
         return $existing !== null;
     }
 
-    private function allocateSettlement(Receivable $receivable, int $amount, string $date, string $kind, string $key, ?int $installmentId = null): array
+    /**
+     * @param  array{principal:int,interest:int,penalty:int}|null  $split
+     * @return list<ReceivableSettlement>
+     */
+    private function allocateSettlement(Receivable $receivable, int $amount, string $date, string $kind, string $key, ?int $installmentId = null, ?array $split = null): array
     {
         $parts = $receivable->installments()->with('settlements')->when($installmentId, fn ($q) => $q->whereKey($installmentId))->orderBy('number')->lockForUpdate()->get();
-        if ($amount > $parts->sum(fn ($part) => $part->remainingCents())) {
+        $split ??= ['principal' => $amount, 'interest' => 0, 'penalty' => 0];
+        if ($split['principal'] > $parts->sum(fn ($part) => $part->remainingCents())) {
             throw new \DomainException('O recebimento não pode ultrapassar o saldo em aberto.');
         }
+        if ($amount !== $split['principal'] + $split['interest'] + $split['penalty']) {
+            throw new \DomainException('A alocação da baixa está inconsistente.');
+        }
         $rows = [];
+        $principalLeft = $split['principal'];
+        $interestLeft = $split['interest'];
+        $penaltyLeft = $split['penalty'];
         foreach ($parts as $part) {
-            $portion = min($amount, $part->remainingCents());
-            if (! $portion) {
+            $portion = min($principalLeft, $part->remainingCents());
+            $interestShare = $rows === [] ? $interestLeft : 0;
+            $penaltyShare = $rows === [] ? $penaltyLeft : 0;
+            if (! $portion && ! $interestShare && ! $penaltyShare) {
                 continue;
             }
-            $rows[] = $part->settlements()->create(['batch_key' => $key, 'kind' => $kind, 'amount' => $this->money($portion), 'date' => $date]);
-            $amount -= $portion;
-            if (! $amount) {
+            $rows[] = $part->settlements()->create([
+                'batch_key' => $key,
+                'kind' => $kind,
+                'amount' => $this->money($portion + $interestShare + $penaltyShare),
+                'principal_amount' => $this->money($portion),
+                'interest_amount' => $this->money($interestShare),
+                'penalty_amount' => $this->money($penaltyShare),
+                'date' => $date,
+            ]);
+            $principalLeft -= $portion;
+            $interestLeft -= $interestShare;
+            $penaltyLeft -= $penaltyShare;
+            if ($principalLeft === 0 && $interestLeft === 0 && $penaltyLeft === 0) {
                 break;
             }
+        }
+        if (($interestLeft > 0 || $penaltyLeft > 0) && $rows === []) {
+            $part = $receivable->installments()->orderBy('number')->firstOrFail();
+            $rows[] = $part->settlements()->create([
+                'batch_key' => $key,
+                'kind' => $kind,
+                'amount' => $this->money($interestLeft + $penaltyLeft),
+                'principal_amount' => $this->money(0),
+                'interest_amount' => $this->money($interestLeft),
+                'penalty_amount' => $this->money($penaltyLeft),
+                'date' => $date,
+            ]);
         }
 
         return $rows;

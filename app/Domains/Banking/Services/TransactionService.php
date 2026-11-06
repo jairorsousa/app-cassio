@@ -85,6 +85,9 @@ class TransactionService
             if ($transaction->receivableInstallments()->exists() || $transaction->receivableSettlements()->exists() || ($transaction->installment_group_id && Transaction::where('installment_group_id', $transaction->installment_group_id)->whereHas('receivableInstallments')->exists())) {
                 throw new \DomainException('Remova o vínculo em Valores a receber antes de excluir este lançamento ou suas parcelas.');
             }
+            if ($transaction->loanSettlements()->exists() || $transaction->source_type === \App\Domains\Banking\Models\Loan::class) {
+                throw new \DomainException('Remova o vínculo em Empréstimos antes de excluir este lançamento.');
+            }
             if ($transaction->related_transaction_id) {
                 Transaction::where('id', $transaction->related_transaction_id)->delete();
             }

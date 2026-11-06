@@ -193,15 +193,17 @@ new #[Layout('layouts.app')] class extends Component {
             ->when($this->contact, fn ($q) => $q->where('contact_id', $this->contact))
             ->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('description', 'like', '%'.$this->search.'%')->orWhereHas('contact', fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))))
             ->latest('id')->get();
-        $parts = $all->reject(fn ($row) => $row->is_test)->flatMap->installments;
+        $live = $all->reject(fn ($row) => $row->is_test);
+        $parts = $live->flatMap->installments;
+        $today = \Illuminate\Support\Carbon::parse(\App\Support\BusinessDate::today());
         $summary = [
-            'Total em aberto' => $parts->sum(fn ($part) => $part->remainingCents()),
-            'Vencidos' => $parts->filter(fn ($part) => $part->due_date?->lt(today()))->sum(fn ($part) => $part->remainingCents()),
-            'A vencer no mês' => $parts->filter(fn ($part) => $part->due_date?->between(today(), today()->endOfMonth()))->sum(fn ($part) => $part->remainingCents()),
+            'Total em aberto' => $live->sum(fn ($row) => $row->balanceCents()),
+            'Vencidos' => $live->filter(fn ($row) => $row->statusLabel() === 'Vencido')->sum(fn ($row) => $row->balanceCents()),
+            'A vencer no mês' => $parts->filter(fn ($part) => $part->remainingCents() > 0 && $part->due_date?->between($today, $today->copy()->endOfMonth()))->sum(fn ($part) => $part->remainingCents()),
             'Sem data definida' => $parts->whereNull('due_date')->sum(fn ($part) => $part->remainingCents()),
         ];
         $filtered = $all->filter(fn ($row) => match ($this->status) {
-            'open' => $row->remainingCents() > 0, 'paid' => $row->remainingCents() === 0,
+            'open' => $row->balanceCents() > 0, 'paid' => $row->balanceCents() === 0,
             'overdue' => $row->statusLabel() === 'Vencido', default => true,
         })->values();
         $records = new \Illuminate\Pagination\LengthAwarePaginator($filtered->forPage($this->getPage(), 20)->values(), $filtered->count(), 20, $this->getPage(), ['path' => request()->url()]);
@@ -234,7 +236,7 @@ new #[Layout('layouts.app')] class extends Component {
         <x-jr.alert variant="error"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
     @endif
     <div class="flex flex-wrap items-center justify-between gap-4">
-        <div><h2 class="text-xl font-bold text-mono-900">Valores a receber</h2><p class="mt-1 text-sm text-mono-600">Adiantamentos e pagamentos feitos por outras pessoas. Acompanhe devoluções e compensações.</p></div>
+        <div><h2 class="text-xl font-bold text-mono-900">Valores a receber</h2><p class="mt-1 text-sm text-mono-600">Paguei por alguém: adiantamentos e despesas de terceiros. Encargos opcionais; devolução em conta ou dinheiro.</p></div>
         <x-jr.button wire:click="startCreate">Novo valor a receber</x-jr.button>
     </div>
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -245,7 +247,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     @if ($selected)
         <x-fx.card>
-            <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-bold text-mono-900">{{ $selected->description }}</h3><a class="text-sm text-primary-500" href="{{ route('contacts.show', $selected->contact_id) }}">{{ $selected->contact->name }}</a><p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($selected->remainingCents() / 100, 2, ',', '.') }}</strong></p></div><x-jr.button variant="standard" wire:click="closeDetail">Fechar detalhes</x-jr.button></div>
+            <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-bold text-mono-900">{{ $selected->description }}</h3><a class="text-sm text-primary-500" href="{{ route('contacts.show', $selected->contact_id) }}">{{ $selected->contact->name }}</a>@php $bal = $selected->balanceAsOf(); @endphp
+            <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p></div><x-jr.button variant="standard" wire:click="closeDetail">Fechar detalhes</x-jr.button></div>
             @if ($selected->process_reference || $selected->writ_id)<p class="mt-3 text-sm text-mono-600">Processo: {{ $selected->process_reference ?: 'Requisitório #'.$selected->writ_id }}</p>@endif
             @if ($selected->notes)<p class="mt-3 text-sm text-mono-600">{{ $selected->notes }}</p>@endif
             <div class="mt-5 overflow-x-auto">
@@ -260,10 +263,11 @@ new #[Layout('layouts.app')] class extends Component {
                 <form wire:submit="settle" class="mt-6 space-y-4 border-t border-mono-100 pt-5">
                     <h4 class="font-semibold text-mono-900">Registrar recebimento ou compensação</h4>
                     <div class="grid gap-4 md:grid-cols-2">
-                        <div><label for="payment-kind" class="mb-2 block text-sm text-mono-600">Forma de baixa</label><select id="payment-kind" wire:model.live="payment.kind" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="cash">Devolução em conta bancária</option><option value="offset">Descontar da parte do cliente em um processo</option><option value="loss">Reconhecer perda / valor não será devolvido</option></select></div>
+                        <div><label for="payment-kind" class="mb-2 block text-sm text-mono-600">Forma de baixa</label><select id="payment-kind" wire:model.live="payment.kind" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="cash">Devolução em conta / dinheiro</option><option value="offset">Descontar da parte do cliente em um processo</option><option value="loss">Reconhecer perda / valor não será devolvido</option></select></div>
                         <x-jr.input label="Valor recebido / compensado (R$)" name="payment.amount" x-money inputmode="numeric" wire:model="payment.amount" />
                         @if ($payment['kind'] === 'cash')
                             <x-jr.input label="Data do recebimento" name="payment.date" type="date" wire:model="payment.date" />
+                            <label class="flex items-center gap-2 text-sm text-mono-600 md:col-span-2"><input type="checkbox" wire:model.live="payment.cash" class="rounded border-mono-200 text-primary-500 focus:ring-primary-500" />Devolução em dinheiro (espécie) — credita a conta Dinheiro</label>
                             <div><x-banking.account-picker :accounts="$accounts" :selected-id="$payment['bank_account_id'] ?? null" model="payment.bank_account_id" id="payment-account" label="Conta de entrada" /></div>
                             <div><label for="payment-existing" class="mb-2 block text-sm text-mono-600">Entrada já registrada (opcional)</label><select id="payment-existing" wire:model="payment.transaction_id" wire:change="loadIncoming" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Criar nova entrada</option>@foreach ($incoming as $entry)<option value="{{ $entry->id }}">#{{ $entry->id }} · {{ $entry->date->format('d/m/Y') }} · {{ $entry->description }} · R$ {{ number_format($entry->amount, 2, ',', '.') }}</option>@endforeach</select><p class="mt-2 text-xs text-mono-600">Ao vincular, use a mesma data, conta e valor da entrada existente.</p></div>
                             <div><label for="payment-part" class="mb-2 block text-sm text-mono-600">Aplicar em</label><select id="payment-part" wire:model="payment.installment_id" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="">Parcelas em ordem, permitindo antecipação</option>@foreach ($selected->installments->filter(fn ($part) => $part->remainingCents() > 0) as $part)<option value="{{ $part->id }}">Parcela {{ $part->number }} · R$ {{ number_format($part->remainingCents() / 100, 2, ',', '.') }}</option>@endforeach</select></div>
@@ -300,7 +304,7 @@ new #[Layout('layouts.app')] class extends Component {
             @php
                 $next = $row->installments->filter(fn ($part) => $part->remainingCents() > 0 && $part->due_date)->sortBy('due_date')->first();
             @endphp
-            <tr wire:key="receivable-{{ $row->id }}"><td><div class="font-medium text-mono-900">{{ $row->contact->name }}</div><div class="mt-1 text-xs text-mono-600">{{ $row->description }}</div></td><td class="whitespace-nowrap">R$ {{ number_format($row->amountCents() / 100, 2, ',', '.') }}</td><td class="whitespace-nowrap">R$ {{ number_format(($row->amountCents() - $row->remainingCents()) / 100, 2, ',', '.') }}</td><td class="whitespace-nowrap font-semibold">R$ {{ number_format($row->remainingCents() / 100, 2, ',', '.') }}</td><td>{{ $next?->due_date->format('d/m/Y') ?: ($row->remainingCents() === 0 ? '—' : ($row->repayment_mode === 'process' ? 'No recebimento do processo' : 'Sem data definida')) }}</td><td><x-jr.badge :variant="$row->remainingCents() === 0 ? 'success' : ($row->statusLabel() === 'Vencido' ? 'error' : 'neutral')">{{ $row->statusLabel() }}</x-jr.badge></td><td><button type="button" class="font-semibold text-primary-500" wire:click="open({{ $row->id }})">Gerenciar</button></td></tr>
+            <tr wire:key="receivable-{{ $row->id }}"><td><div class="font-medium text-mono-900">{{ $row->contact->name }}</div><div class="mt-1 text-xs text-mono-600">{{ $row->description }}</div></td><td class="whitespace-nowrap">R$ {{ number_format($row->amountCents() / 100, 2, ',', '.') }}</td><td class="whitespace-nowrap">R$ {{ number_format(($row->amountCents() - $row->remainingCents()) / 100, 2, ',', '.') }}</td><td class="whitespace-nowrap font-semibold">R$ {{ number_format($row->balanceCents() / 100, 2, ',', '.') }}</td><td>{{ $next?->due_date->format('d/m/Y') ?: ($row->remainingCents() === 0 ? '—' : ($row->repayment_mode === 'process' ? 'No recebimento do processo' : 'Sem data definida')) }}</td><td><x-jr.badge :variant="$row->balanceCents() === 0 ? 'success' : ($row->statusLabel() === 'Vencido' ? 'error' : 'neutral')">{{ $row->statusLabel() }}</x-jr.badge></td><td><button type="button" class="font-semibold text-primary-500" wire:click="open({{ $row->id }})">Gerenciar</button></td></tr>
         @empty <tr><td colspan="7" class="py-8 text-center text-mono-600">Nenhum valor a receber encontrado.</td></tr> @endforelse
         </tbody></table></div>
         <div class="mt-4">{{ $records->links() }}</div>
@@ -363,6 +367,18 @@ new #[Layout('layouts.app')] class extends Component {
                                 <x-jr.searchable-select :options="$writOptions" :selected-id="$form['writ_id'] ?? null" model="form.writ_id" id="receivable-writ"
                                     label="Requisitório vinculado (opcional)" placeholder="Sem vínculo" search-label="Pesquisar cedente ou processo"
                                     search-placeholder="Digite o nome do cedente ou o processo..." empty-message="Nenhum requisitório encontrado." />
+
+                            <div class="md:col-span-2 rounded-lg border border-mono-100 bg-mono-50 p-4">
+                                <h4 class="font-semibold text-mono-900">Encargos opcionais (padrão: nenhum)</h4>
+                                <p class="mt-1 text-xs text-mono-600">Juros simples = principal × (taxa a.m./100) × (dias/30). Multa uma vez + mora após o vencimento. Baixas abatem multa → juros → principal.</p>
+                                <div class="mt-3 grid gap-4 md:grid-cols-2">
+                                    <x-jr.input label="Juros combinados (% a.m.)" name="form.interest_rate_am" wire:model="form.interest_rate_am" />
+                                    <x-jr.input label="Início da contagem dos juros" name="form.interest_start_date" type="date" wire:model="form.interest_start_date" helper="Vazio = data do pagamento" />
+                                    <x-jr.input label="Multa após vencimento (%)" name="form.penalty_pct" wire:model="form.penalty_pct" />
+                                    <x-jr.input label="Mora após vencimento (% a.m.)" name="form.late_interest_rate_am" wire:model="form.late_interest_rate_am" />
+                                </div>
+                            </div>
+
                                 <x-jr.input label="Observações" name="form.notes" wire:model="form.notes" />
                             </div>
                         </div>
