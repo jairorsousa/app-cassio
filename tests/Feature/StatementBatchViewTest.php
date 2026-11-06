@@ -33,6 +33,20 @@ class StatementBatchViewTest extends TestCase
             ->set('viewGroup', 'all')->set('viewSearch', 'BBBB3')->assertSee('Duplicado, não importado')->assertDontSee('TED</td>', false);
     }
 
+    public function test_status_count_query_is_group_by_safe(): void
+    {
+        $u = User::factory()->create();
+        $b = $this->batch($u);
+        $this->actingAs($u);
+        \DB::enableQueryLog();
+        Volt::test('investments.statements.index')->call('openBatch', $b->id)->assertOk();
+        $grouped = collect(\DB::getQueryLog())->pluck('query')->filter(fn ($q) => str_contains($q, 'group by'));
+        $this->assertNotEmpty($grouped);
+        foreach ($grouped as $q) {
+            $this->assertStringNotContainsString('order by', $q, 'GROUP BY com ORDER BY quebra no MySQL only_full_group_by');
+        }
+    }
+
     public function test_other_user_cannot_open_batch(): void
     {
         $b = $this->batch(User::factory()->create());

@@ -401,3 +401,5 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - /investments/extratos: "Ver lançamentos" em lotes confirmados (somente leitura, só do próprio usuário). Filtros com contagem: Pendentes de revisão (padrão), Importados, Duplicados, Registro manual, IR vinculado, Todos; busca por ticker, descrição, data ou valor; 50 linhas por vez. Mostra situação, motivos e o evento B3 de que a linha é duplicada. Nada é importado nem editado por esta tela.
 - Texto de formatos atualizado: validados BTG Conta Investimento (PDF) e BB Home Broker (PDF); demais entram com mapeamento genérico.
 - Histórico de lotes restrito ao usuário logado. `/investments/bens` redireciona para `/bens`.
+
+- Correção (HTTP 500 em "Ver lançamentos"): a contagem por situação usava a relação rows() (ordenada por row_number) com GROUP BY, recusada pelo MySQL com only_full_group_by. Contagem agora consulta sem ORDER BY; teste garante que nenhuma query agrupada da tela tem ORDER BY.

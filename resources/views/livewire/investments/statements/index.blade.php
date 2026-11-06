@@ -181,7 +181,8 @@ new #[Layout('layouts.app')] class extends Component {
         if (! $batch) {
             return ['viewed' => null, 'viewRows' => collect(), 'viewCounts' => [], 'viewTotal' => 0, 'viewMatched' => 0];
         }
-        $byStatus = $batch->rows()->selectRaw('status, count(*) n')->groupBy('status')->pluck('n', 'status');
+        // rows() já vem ordenado por row_number; MySQL (only_full_group_by) recusa ORDER BY fora do GROUP BY.
+        $byStatus = BrokerStatementRow::where('import_id', $batch->id)->selectRaw('status, count(*) n')->groupBy('status')->pluck('n', 'status');
         $counts = [];
         foreach (self::VIEW_GROUPS as $k => [$label, $st]) {
             $counts[$k] = $st === null ? (int) $byStatus->sum() : (int) $byStatus->only($st)->sum();
