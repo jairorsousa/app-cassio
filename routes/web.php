@@ -19,6 +19,11 @@ Volt::route('dashboard', 'dashboard.index')
 Volt::route('configuracoes', 'settings.index')
     ->middleware(['auth', 'inactivity'])
     ->name('settings');
+Route::middleware(['auth', 'inactivity'])->prefix('configuracoes/logo')->name('settings.logo')->group(function () {
+    Route::get('/', [\App\Http\Controllers\BrandLogoController::class, 'show']);
+    Route::post('/', [\App\Http\Controllers\BrandLogoController::class, 'store'])->name('.store');
+    Route::delete('/', [\App\Http\Controllers\BrandLogoController::class, 'destroy'])->name('.destroy');
+});
 
 Route::view('profile', 'profile')
     ->middleware(['auth', 'inactivity'])

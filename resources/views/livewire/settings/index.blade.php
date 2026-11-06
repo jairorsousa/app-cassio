@@ -17,6 +17,11 @@ new #[Layout('layouts.app')] class extends Component {
 
     public ?string $message = null;
 
+    public function with(): array
+    {
+        return ['logoUrl' => \App\Support\BrandLogo::url(auth()->user())];
+    }
+
     public function mount(): void
     {
         $this->fill(UserPreferences::for(auth()->user()));
@@ -55,6 +60,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     @if (request('salvo'))<x-jr.alert variant="success">Preferências salvas e aplicadas.</x-jr.alert>@endif
     @if ($message)<x-jr.alert variant="info">{{ $message }}</x-jr.alert>@endif
+
+    @include('livewire.settings.logo-section')
 
     <form wire:submit="save" class="space-y-6">
         <x-jr.card>

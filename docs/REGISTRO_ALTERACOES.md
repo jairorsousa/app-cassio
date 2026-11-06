@@ -441,3 +441,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
   - Área inicial: Painel, Financeiro (lançamentos), Investimentos — usada após login e em `/`.
 - Salvar, Cancelar alterações e Restaurar padrões (carrega padrões; aplica ao salvar). Sem dados financeiros, permissões ou importações alteradas.
 - Modo escuro: utilitários bg-white/gray herdados mapeados aos tokens; texto terciário do escuro mais claro (eixos e legendas de gráficos). Gráficos já usam tokens/currentColor.
+
+## 2026-11-06 — Engrenagem de Configurações e Identidade visual
+
+- Engrenagem (ícone `settings`, aria-label/título "Configurações") no fim da navegação principal, depois de Transmissão; no menu mobile, último item com rótulo. Link no menu da conta mantido.
+- /configuracoes › Identidade visual: foto/logo do topo por usuário. Escolha PNG/JPG/WebP (até 5 MB e 4096 px, checado no navegador), ajuste Zoom, Posição horizontal e vertical com prévia; só o recorte quadrado 512 px em PNG é enviado (original não sai do aparelho). Servidor aceita só PNG 512×512 até 2 MB, reencoda com GD (sem metadados) e grava em `storage/app/private/branding/users/{id}.png` (privado, servido só ao dono em `/configuracoes/logo`). "Remover foto" volta ao "CM". Formulário separado das preferências de aparência.
+- Diagnóstico "site não abre" (08:14): cloudflared sem erros, HTTPS público 200, nginx atendeu o celular às 08:12 (Fortaleza) com o CSS novo; erro de túnel era do lado do navegador/rede, não do servidor.

@@ -12,7 +12,11 @@
         </button>
 
         <a href="{{ route('dashboard') }}" class="flex shrink-0 items-center gap-3">
-            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
+            @if ($brandLogo = \App\Support\BrandLogo::url(auth()->user()))
+                <img src="{{ $brandLogo }}" alt="Logo" class="h-9 w-9 shrink-0 rounded-lg object-cover">
+            @else
+                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
+            @endif
             <span class="hidden text-sm font-bold text-mono-900 sm:block">Cassio Finance</span>
         </a>
 

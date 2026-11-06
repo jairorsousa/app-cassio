@@ -31,3 +31,15 @@
         {{ $item['label'] }}
     </a>
 @endforeach
+@php($settingsActive = request()->routeIs('settings*'))
+<a
+    href="{{ route('settings') }}"
+    data-nav-settings
+    aria-label="Configurações"
+    title="Configurações"
+    class="{{ $layout === 'mobile' ? $base : 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors' }} {{ $settingsActive ? 'bg-primary-100 text-primary-500' : 'text-mono-600 hover:bg-mono-100 hover:text-mono-900' }}"
+    @if ($layout === 'mobile') @click="sidebarOpen = false" @endif
+>
+    <span class="material-icons-outlined text-[20px]">settings</span>
+    @if ($layout === 'mobile') Configurações @endif
+</a>
