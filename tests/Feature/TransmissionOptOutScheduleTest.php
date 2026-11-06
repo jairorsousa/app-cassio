@@ -131,11 +131,13 @@ class TransmissionOptOutScheduleTest extends TestCase
         $this->assertNotNull($row->fresh()->restored_at);
     }
 
-    public function test_classificador_de_resposta_nao_esta_ligado_a_nada(): void
+    public function test_classificador_reconhece_sair_explicito_sem_efeito_colateral(): void
     {
         $this->assertSame('optout', TransmissionSuppression::classify(' SAIR '));
         $this->assertSame('optout', TransmissionSuppression::classify('Não quero mais receber!'));
+        $this->assertSame('optout', TransmissionSuppression::classify('stop'));
         $this->assertSame('unknown', TransmissionSuppression::classify('quero saber mais'));
+        $this->assertSame('unknown', TransmissionSuppression::classify('vou sair amanhã do escritório'));
         $this->assertSame(0, TransmissionSuppression::count());
     }
 

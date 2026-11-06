@@ -590,3 +590,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Reaproveita client_id/secret da Agenda via `config/gmail-send.php` (sem imprimir segredos). Calendar scopes inalterados.
 - UI: “Conectar Gmail somente para envio de convites”; teste explícito; enviar convite na fila Redis. Conectar ≠ enviar.
 - Testes: `GmailSendOAuthTest` + `InvitationMailTest` com `FakeGmailSendClient` (sem rede). Registrar callback no Console e ativar Gmail API antes do connect real.
+
+## 2026-11-06 — Transmissão: webhook Chatwoot para SAIR (opt-out automático)
+
+- Endpoint `POST /webhooks/chatwoot` (throttle 60/min, sem CSRF/sessão). Autentica com `CHATWOOT_WEBHOOK_TOKEN` via header `X-Chatwoot-Webhook-Token` (ou `X-Webhook-Token`) ou query `token`. Token vazio = **desligado** (503). Token inválido = 401.
+- Só processa `message_created` **incoming** e **não privada**. Outgoing/private/outros eventos → 200 `ignored` (Chatwoot não reenvia).
+- Texto classificado por `TransmissionSuppression::classify()` (SAIR / quero sair / não quero mais receber / parar / stop / cancelar e variações com acento/pontuação). Frases que só **contêm** a palavra não bloqueiam.
+- Telefone normalizado E.164 (mesmo helper da Transmissão); entra na lista "Não receber" com origem `chatwoot`, motivo e data. Idempotente. **Não** envia resposta no WhatsApp nem altera a conversa no Chatwoot.
+- Proteção anti-bloqueio em massa: payload com vários itens é ignorado; no máx. `CHATWOOT_WEBHOOK_OPTOUT_PER_MINUTE` (padrão 30) opt-outs reais por minuto (429).
+- Testes: `ChatwootOptOutWebhookTest`. Nenhuma migration. Webhook **não** foi criado no Chatwoot nesta etapa — falta configurar token no `.env` e o webhook na UI do Chatwoot.

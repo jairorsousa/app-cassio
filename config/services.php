@@ -41,6 +41,9 @@ return [
         'api_access_token' => env('CHATWOOT_API_ACCESS_TOKEN'),
         'inbox_id' => env('CHATWOOT_INBOX_ID', 15),
         'assignee_id' => env('CHATWOOT_ASSIGNEE_ID', 4),
+        // Token do webhook de opt-out (SAIR). Vazio = endpoint desligado (503). Não inventar valor.
+        'webhook_token' => env('CHATWOOT_WEBHOOK_TOKEN'),
+        'webhook_optout_per_minute' => (int) env('CHATWOOT_WEBHOOK_OPTOUT_PER_MINUTE', 30),
     ],
 
     // IA opcional para SUGERIR mapeamento de extratos (envia cabeçalho + 5 linhas). Vazio = desligado, nada é enviado.

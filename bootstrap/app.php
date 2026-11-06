@@ -17,6 +17,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
         $middleware->appendToGroup('web', \App\Http\Middleware\EnsureModuleAccess::class);
 
+        // Webhook Chatwoot (opt-out SAIR): sem sessão/CSRF; autentica por token próprio.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/chatwoot',
+        ]);
+
         $middleware->alias([
             'inactivity' => \App\Http\Middleware\InactivityLogout::class,
         ]);

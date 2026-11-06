@@ -142,4 +142,9 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('broadcasts')->nam
     Volt::route('/', 'broadcasts.index')->name('index');
 });
 
+// Webhook Chatwoot: só recebe eventos; não envia WhatsApp. Token em header/query (ver CHATWOOT_WEBHOOK_TOKEN).
+Route::post('/webhooks/chatwoot', \App\Http\Controllers\ChatwootWebhookController::class)
+    ->middleware('throttle:60,1')
+    ->name('webhooks.chatwoot');
+
 require __DIR__.'/auth.php';

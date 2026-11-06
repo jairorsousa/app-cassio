@@ -15,7 +15,7 @@ class TransmissionSuppression extends Model
 
     protected $hidden = ['phone'];
 
-    public const SOURCES = ['manual' => 'Manual'];
+    public const SOURCES = ['manual' => 'Manual', 'chatwoot' => 'Resposta SAIR (Chatwoot)'];
 
     public function scopeActive(Builder $q): Builder
     {
@@ -75,15 +75,25 @@ class TransmissionSuppression extends Model
     }
 
     /**
-     * Classifica uma resposta recebida. Ainda NÃO está ligado a nenhum webhook:
-     * nada no sistema reage a mensagens recebidas nesta fase.
+     * Classifica texto de resposta como opt-out explícito.
+     * Só frases inteiras (após normalizar acentos/pontuação); "quero saber" não conta.
+     * Usado pelo webhook Chatwoot e pelos testes — nunca dispara resposta automática.
      */
     public static function classify(?string $text): string
     {
         $t = mb_strtolower(trim((string) $text));
         $t = preg_replace('/[\s[:punct:]]+/u', ' ', $t);
-        $t = trim(strtr($t, ['ã' => 'a', 'á' => 'a', 'â' => 'a', 'é' => 'e', 'ê' => 'e', 'í' => 'i', 'ó' => 'o', 'õ' => 'o', 'ú' => 'u', 'ç' => 'c']));
+        $t = trim(strtr($t, ['ã' => 'a', 'á' => 'a', 'â' => 'a', 'é' => 'e', 'ê' => 'e', 'í' => 'i', 'ó' => 'o', 'õ' => 'o', 'ô' => 'o', 'ú' => 'u', 'ü' => 'u', 'ç' => 'c']));
 
-        return in_array($t, ['sair', 'quero sair', 'nao quero mais receber', 'parar', 'pare'], true) ? 'optout' : 'unknown';
+        return in_array($t, [
+            'sair',
+            'quero sair',
+            'nao quero mais receber',
+            'nao quero receber',
+            'parar',
+            'pare',
+            'stop',
+            'cancelar',
+        ], true) ? 'optout' : 'unknown';
     }
 }
