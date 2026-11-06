@@ -43,9 +43,9 @@ class AssetPositionService
         });
     }
 
-    public function setQuote(Asset $asset, string $date, float $price): AssetQuote
+    public function setQuote(Asset $asset, string $date, float $price, ?string $marketTime = null, ?string $source = null): AssetQuote
     {
-        return DB::transaction(function () use ($asset, $date, $price) {
+        return DB::transaction(function () use ($asset, $date, $price, $marketTime, $source) {
             $day = Carbon::parse($date)->toDateString();
             $quote = AssetQuote::query()
                 ->where('asset_id', $asset->id)
@@ -53,12 +53,14 @@ class AssetPositionService
                 ->first();
 
             if ($quote) {
-                $quote->update(['price' => $price]);
+                $quote->update(array_filter(['price' => $price, 'market_time' => $marketTime, 'source' => $source], fn ($v) => $v !== null));
             } else {
                 $quote = AssetQuote::create([
                     'asset_id' => $asset->id,
                     'date' => $day,
                     'price' => $price,
+                    'market_time' => $marketTime,
+                    'source' => $source,
                 ]);
             }
 

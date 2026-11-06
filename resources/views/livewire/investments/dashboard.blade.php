@@ -15,7 +15,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         return [
             'summary' => $summary,
-            'b3Positions' => $summary['source'] === 'b3' ? \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed()->sortByDesc('market_value') : collect(),
+            'b3Positions' => $summary['source'] === 'b3' ? \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed()->sortByDesc(fn ($p) => $p->currentValue()) : collect(),
             'evolution' => app(InvestmentAnalyticsService::class)->portfolioEvolution(),
             'positions' => AssetPosition::with('asset.assetClass')->where('quantity', '>', 0)->get()->sortByDesc(fn ($p) => $p->marketValue()),
             'recent' => AssetOperation::with('asset')->orderByDesc('date')->orderByDesc('id')->limit(5)->get(),
@@ -111,7 +111,7 @@ new #[Layout('layouts.app')] class extends Component {
     </div>
 
     @if ($summary['source'] === 'b3')
-        <x-jr.alert variant="info">Carteira pela posição B3 de {{ $summary['base_date']->format('d/m/Y') }} (ainda não há compras/vendas registradas). Preço médio não informado em {{ count($summary['unknown_average_price']) }} ativo(s): valor investido e ganho em aberto consideram só os demais.@if ($summary['custody_split_missing']) Custódia × emprestado não separado no arquivo B3: {{ implode(', ', $summary['custody_split_missing']) }} (quantidade total contada uma vez).@endif <a class="font-semibold underline" href="{{ route('investments.b3') }}">Ver posição B3</a></x-jr.alert>
+        <x-jr.alert variant="info">Carteira pela posição B3 de {{ $summary['base_date']->format('d/m/Y') }} (ainda não há compras/vendas registradas). @if ($summary['quoted_count'] > 0)Valor atual com cotação brapi (plano gratuito, atraso ~30 min) em {{ $summary['quoted_count'] }} de {{ $b3Positions->count() }} ativo(s), última de {{ \Illuminate\Support\Carbon::parse($summary['quote_time'])->timezone('America/Sao_Paulo')->format('d/m/Y H:i') }} (Brasília); demais pelo fechamento B3. Valor B3 na data-base: R$ {{ number_format($summary['b3_market_value'], 2, ',', '.') }}.@else Valores pelo fechamento B3 da data-base (sem cotação mais recente).@endif Preço médio não informado em {{ count($summary['unknown_average_price']) }} ativo(s): valor investido e ganho em aberto consideram só os demais.@if ($summary['custody_split_missing']) Custódia × emprestado não separado no arquivo B3: {{ implode(', ', $summary['custody_split_missing']) }} (quantidade total contada uma vez).@endif <a class="font-semibold underline" href="{{ route('investments.b3') }}">Ver posição B3</a></x-jr.alert>
     @elseif ($assetCount === 0)
         <x-jr.card>
             <div class="flex flex-wrap items-center justify-between gap-6">
@@ -164,7 +164,7 @@ new #[Layout('layouts.app')] class extends Component {
             @foreach ($b3Positions->take(5) as $snap)
                 <div class="flex items-center justify-between gap-4 border-b border-mono-100 py-4">
                     <div class="flex items-center gap-3"><span class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-100 text-sm font-bold text-primary-500">{{ mb_substr($snap->ticker, 0, 2) }}</span><div><p class="font-semibold">{{ $snap->ticker }}</p><p class="text-xs text-mono-600">B3 {{ $snap->base_date->format('d/m/Y') }} · {{ \App\Domains\Investments\Models\B3PositionSnapshot::ORIGIN_LABELS[$snap->origin] ?? $snap->origin }}</p></div></div>
-                    <div class="text-right"><p class="font-semibold">R$ {{ number_format($snap->market_value, 2, ',', '.') }}</p><p class="text-xs text-mono-600">{{ $snap->cost() === null ? 'PM não informado' : 'PM R$ '.number_format($snap->average_price, 2, ',', '.') }}</p></div>
+                    <div class="text-right"><p class="font-semibold">R$ {{ number_format($snap->currentValue(), 2, ',', '.') }}</p><p class="text-xs text-mono-600">{{ $snap->cost() === null ? 'PM não informado' : 'PM R$ '.number_format($snap->average_price, 2, ',', '.') }}</p></div>
                 </div>
             @endforeach
             @forelse ($summary['source'] === 'b3' ? collect() : $positions->take(5) as $position)

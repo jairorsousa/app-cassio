@@ -21,9 +21,11 @@ class RefreshAssetQuotesService
         $failed = [];
         $skipped = [];
 
+        // Só ativos em carteira: posição por operações ou a última posição B3 confirmada (não todo o histórico de proventos).
+        $b3Ids = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed()->pluck('asset_id')->filter()->all();
         $assets = Asset::query()
             ->with('position')
-            ->whereHas('position', fn ($query) => $query->where('quantity', '>', 0))
+            ->where(fn ($q) => $q->whereHas('position', fn ($query) => $query->where('quantity', '>', 0))->orWhereIn('id', $b3Ids))
             ->orderBy('ticker')
             ->get();
 
@@ -41,7 +43,7 @@ class RefreshAssetQuotesService
                 continue;
             }
 
-            $this->positions->setQuote($asset, $quote['date'], $quote['price']);
+            $this->positions->setQuote($asset, $quote['date'], $quote['price'], $quote['market_time'] ?? null, 'brapi');
             $updated[] = $asset->ticker;
         }
 

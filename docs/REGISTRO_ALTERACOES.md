@@ -331,3 +331,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Bug: após a importação B3 (#1), `/investments` mostrava R$ 0, 0 ativos e proventos 0 — `PortfolioProfitabilityService::summary()` só lia posições por operações e `asset_dividends`.
 - Correção: sem posição por operações, o resumo usa a última posição B3 confirmada (rotulada com data-base), nunca somando as duas. Valor investido/ganho em aberto só com PM conhecido; PM ausente listado. Proventos totais/12M incluem `asset_income_events` (líquido, inclui reembolsos de aluguel). Aviso visível para ativos sem divisão custódia × emprestado (SBFG3), contados uma vez pela quantidade total da linha.
 - Nenhum dado financeiro alterado (309 transações). Testes em `Etapa8InvestmentsSummaryB3Test`.
+
+## 2026-11-06 — Cotações brapi (plano gratuito) para a posição B3
+
+- `BRAPI_TOKEN` já configurado e válido (teste BBAS3/BTLG11/JBSS32 = HTTP 200). Plano gratuito, sem assinatura; cotação com atraso ~30 min.
+- Agendamento: mantém 18:30 e adiciona a cada 30 min, dias úteis 10:00–17:30 (America/Sao_Paulo), job único sem sobreposição; tickers processados em sequência. Feriados da B3 não são tratados (a fonte devolve a última cotação).
+- Escopo: só ativos em carteira — posição por operações ou a última posição B3 confirmada (31), não os ~60 ativos do histórico de proventos.
+- `asset_quotes` ganha `market_time` (horário da fonte) e `source`. Resumo de Investimentos usa quantidade × última cotação (data ≥ data-base), senão o fechamento B3; exibe horário da cotação, atraso e o valor B3 da data-base. PM, transações e a foto B3 não são alterados.
+- Job: timeout 600 s, único por 1500 s. Primeira execução manual: 31 tickers atualizados em ~7 s.
+- Testes em .

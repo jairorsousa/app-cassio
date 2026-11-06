@@ -35,20 +35,29 @@ class PortfolioProfitabilityService
         $baseDate = null;
         $unknownPm = [];
         $splitMissing = [];
+        $b3MarketValue = null;
+        $quotedCount = 0;
+        $quoteTime = null;
         if ($positions->isEmpty()) {
             $b3 = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed();
             if ($b3->isNotEmpty()) {
                 $source = 'b3';
                 $baseDate = $b3->first()->base_date;
+                $quotes = $b3->mapWithKeys(fn ($p) => [$p->id => $p->latestQuote()]);
+                $value = fn ($p) => $p->currentValue($quotes[$p->id]);
                 $known = $b3->filter(fn ($p) => $p->cost() !== null);
                 $totalInvested = (float) $known->sum(fn ($p) => $p->cost());
-                $marketValue = (float) $b3->sum('market_value');
+                $marketValue = (float) $b3->sum($value);
+                $b3MarketValue = round((float) $b3->sum('market_value'), 2);
+                $quoted = $quotes->filter();
+                $quotedCount = $quoted->count();
+                $quoteTime = $quoted->max(fn ($q) => $q->market_time ?? $q->date);
                 // Ganho em aberto só sobre ativos com PM conhecido.
-                $unrealizedPnL = round((float) $known->sum('market_value') - $totalInvested, 2);
+                $unrealizedPnL = round((float) $known->sum($value) - $totalInvested, 2);
                 $unrealizedPct = $totalInvested > 0 ? round(($unrealizedPnL / $totalInvested) * 100, 3) : 0.0;
                 $byClass = $b3->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')->map(fn ($g) => [
                     'invested' => round((float) $g->sum(fn ($p) => $p->cost() ?? 0), 2),
-                    'market_value' => round((float) $g->sum('market_value'), 2),
+                    'market_value' => round((float) $g->sum($value), 2),
                 ]);
                 $unknownPm = $b3->filter(fn ($p) => $p->cost() === null)->pluck('ticker')->values()->all();
                 $splitMissing = $b3->filter(fn ($p) => $p->quantity_custody === null && $p->quantity_lent === null)->pluck('ticker')->values()->all();
@@ -84,6 +93,9 @@ class PortfolioProfitabilityService
             'base_date' => $baseDate,
             'unknown_average_price' => $unknownPm,
             'custody_split_missing' => $splitMissing,
+            'b3_market_value' => $b3MarketValue,
+            'quoted_count' => $quotedCount,
+            'quote_time' => $quoteTime,
         ];
     }
 }

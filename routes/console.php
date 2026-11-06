@@ -321,3 +321,11 @@ Schedule::job(new RefreshAssetQuotesJob)
     ->dailyAt('18:30')
     ->timezone('America/Sao_Paulo')
     ->withoutOverlapping();
+// Pregão: a cada 30 min, dias úteis 10:00–17:30 (Brasília). Plano gratuito brapi = cotação com atraso ~30 min.
+Schedule::job(new RefreshAssetQuotesJob)
+    ->name('investment-quotes-intraday')
+    ->timezone('America/Sao_Paulo') // antes de between(): o intervalo usa o fuso definido no momento da chamada
+    ->weekdays()
+    ->everyThirtyMinutes()
+    ->between('10:00', '17:30')
+    ->withoutOverlapping();

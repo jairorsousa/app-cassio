@@ -16,9 +16,9 @@ class RefreshAssetQuotesJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 120;
+    public int $timeout = 600; // 31+ tickers em sequência (até 8 s cada)
 
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 1500; // menor que o intervalo de 30 min: sem sobreposição
 
     public function uniqueId(): string
     {

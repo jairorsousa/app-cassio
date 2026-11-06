@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 class BrapiQuoteProvider
 {
     /**
-     * @return array{ticker: string, price: float, date: string}|null
+     * @return array{ticker: string, price: float, date: string, market_time: ?string}|null
      */
     public function quote(string $ticker): ?array
     {
@@ -63,6 +63,7 @@ class BrapiQuoteProvider
             'ticker' => (string) ($row['symbol'] ?? $data['symbol'] ?? $ticker),
             'price' => $price,
             'date' => $date,
+            'market_time' => is_string($marketTime) && $marketTime !== '' ? Carbon::parse($marketTime)->utc()->toDateTimeString() : null,
         ];
     }
 
