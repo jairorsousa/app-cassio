@@ -45,6 +45,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->na
     Volt::route('/positions', 'investments.positions')->name('positions');
     Volt::route('/reports/profitability', 'investments.reports.profitability')->name('reports');
     Volt::route('/b3', 'investments.b3.index')->name('b3');
+    Volt::route('/extratos', 'investments.statements.index')->name('statements');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('bens')->name('bens.')->group(function () {

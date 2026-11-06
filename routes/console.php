@@ -329,3 +329,8 @@ Schedule::job(new RefreshAssetQuotesJob)
     ->everyThirtyMinutes()
     ->between('10:00', '17:30')
     ->withoutOverlapping();
+
+Artisan::command('investments:statements-cleanup', function (\App\Domains\Investments\Services\Statements\BrokerStatementImportService $service) {
+    $this->info('Lotes/arquivos limpos: '.$service->cleanup());
+})->purpose('Apaga extratos de corretora expirados (TTL) e arquivos de lotes fechados');
+Schedule::command('investments:statements-cleanup')->hourly();

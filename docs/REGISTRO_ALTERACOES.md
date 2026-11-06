@@ -346,3 +346,13 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Bug: widgets do Dashboard (Investido, Mercado, Proventos 12M, Patrimônio › Carteira) mostravam 0 e a Evolução do patrimônio ficava zerada. Causas: (1) snapshot gravado pelo worker com código antigo (worker reiniciado no deploy); (2) `DashboardSnapshotBuilder` tinha cálculo próprio (investido 0, valor B3 sem cotações); (3) `portfolioEvolution` só considerava operações.
 - Correção: o builder usa `PortfolioProfitabilityService::summary()` (fonte única: operações ou B3 + cotações brapi; proventos com importados). Evolução sem operações = ponto B3 da data-base + ponto atual (sem meses zerados inventados). Rodapé de /investments descreve brapi (atraso ~30 min), fallback B3 e PM ausente ≠ 0.
 - Contas, saldos, transações (309) e proventos não alterados. Testes em `Etapa8DashboardPortfolioB3Test`.
+
+## 2026-11-06 — Etapa 8: importação de extratos de corretoras (MVP genérico)
+
+- Ambiente: nenhuma chave de IA configurada; sem pdftotext/tesseract, sem phpoffice no servidor. Reaproveitado padrão de prévia do OFX/B3. XLSX lido nativamente (zip + XMLReader).
+- Novas tabelas `broker_statement_imports` (lote staging, hash, TTL 24 h, mapeamento, sugestão IA) e `broker_statement_rows` (linha normalizada: data, ticker, tipo, qtd, preço, bruto, IR, taxa, líquido, taxa de aluguel, id externo, `source_key`, status).
+- Página Investimentos › Extratos (`/investments/extratos`): upload XLSX/CSV/PDF → prévia editável (mapeamento de colunas, tipo por linha, excluir, "é outro evento") → confirmação explícita. Só proventos/aluguel viram `asset_income_events` (`source=broker_statement`, sem Financeiro); compra/venda/transferência/taxa = "registrar manualmente".
+- Deduplicação: duplicado exato por `source_key` é ignorado; cruzado com eventos existentes (inclui os 1845 da B3) por ticker + data ±3 dias + líquido ±0,01 vira "possível duplicado" e exige decisão humana. Nada existente é apagado.
+- PDF: só texto via pdftotext se instalado; escaneado/sem extrator/sem layout → "precisa revisão", nada importado. Arquivo alterado após prévia invalida a confirmação.
+- IA opcional (`STATEMENT_AI_URL/KEY/MODEL`): só sugere mapeamento com cabeçalho + 5 linhas; sem config nada é enviado. Limpeza horária `investments:statements-cleanup`.
+- Layouts BTG/XP/BB/Itaú NÃO validados (sem arquivos reais). Testes com dados sintéticos: `BrokerStatementImportTest`.

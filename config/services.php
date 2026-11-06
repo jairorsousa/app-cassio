@@ -43,6 +43,14 @@ return [
         'assignee_id' => env('CHATWOOT_ASSIGNEE_ID', 4),
     ],
 
+    // IA opcional para SUGERIR mapeamento de extratos (envia cabeçalho + 5 linhas). Vazio = desligado, nada é enviado.
+    'statement_ai' => [
+        'provider' => env('STATEMENT_AI_PROVIDER'),
+        'url' => env('STATEMENT_AI_URL'),
+        'key' => env('STATEMENT_AI_KEY'),
+        'model' => env('STATEMENT_AI_MODEL'),
+    ],
+
     'brapi' => [
         'token' => env('BRAPI_TOKEN'),
         'base_url' => env('BRAPI_BASE_URL', 'https://brapi.dev'),
