@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->na
     Volt::route('/extratos', 'investments.statements.index')->name('statements');
 });
 
+Route::redirect('investments/bens', '/bens');
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('bens')->name('bens.')->group(function () {
     Volt::route('/', 'bens.index')->name('index');
     Route::get('/{property}/anexo', \App\Http\Controllers\PropertyAttachmentController::class)->name('attachment')->whereNumber('property');

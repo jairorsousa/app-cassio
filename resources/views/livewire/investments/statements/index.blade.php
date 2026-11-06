@@ -24,6 +24,38 @@ new #[Layout('layouts.app')] class extends Component {
 
     public ?string $error = null;
 
+    /** Lote confirmado aberto para consulta (somente leitura). */
+    public ?int $viewBatch = null;
+
+    public string $viewGroup = 'review';
+
+    public string $viewSearch = '';
+
+    public int $viewLimit = 50;
+
+    public const VIEW_GROUPS = [
+        'review' => ['Pendentes de revisão', ['held_review', 'duplicate_candidate', 'error', 'ready']],
+        'imported' => ['Importados', ['imported']],
+        'duplicate' => ['Duplicados (não importados)', ['duplicate_not_imported']],
+        'manual' => ['Registro manual', ['pending_manual']],
+        'linked' => ['IR vinculado', ['linked']],
+        'all' => ['Todos', null],
+    ];
+
+    public function openBatch(int $id): void
+    {
+        $this->viewBatch = $this->viewBatch === $id ? null : BrokerStatementImport::where('created_by', auth()->id())->findOrFail($id)->id;
+        $this->viewGroup = 'review';
+        $this->viewSearch = '';
+        $this->viewLimit = 50;
+    }
+
+    public function updatedViewGroup(): void { $this->viewLimit = 50; }
+
+    public function updatedViewSearch(): void { $this->viewLimit = 50; }
+
+    public function moreRows(): void { $this->viewLimit = min($this->viewLimit + 50, 1000); }
+
     public function mount(): void
     {
         $open = BrokerStatementImport::whereIn('status', ['draft', 'needs_review'])->where('expires_at', '>', now())->where('created_by', auth()->id())->latest('id')->first();
@@ -138,8 +170,43 @@ new #[Layout('layouts.app')] class extends Component {
             'fields' => BrokerStatementParser::FIELDS,
             'kinds' => BrokerStatementRow::KINDS,
             'aiEnabled' => $ai->enabled(),
-            'history' => BrokerStatementImport::whereIn('status', ['confirmed', 'discarded', 'expired'])->latest('id')->limit(10)->get(),
+            'history' => BrokerStatementImport::whereIn('status', ['confirmed', 'discarded', 'expired'])->where('created_by', auth()->id())->latest('id')->limit(10)->get(),
+            ...$this->batchView(),
         ];
+    }
+
+    private function batchView(): array
+    {
+        $batch = $this->viewBatch ? BrokerStatementImport::where('created_by', auth()->id())->find($this->viewBatch) : null;
+        if (! $batch) {
+            return ['viewed' => null, 'viewRows' => collect(), 'viewCounts' => [], 'viewTotal' => 0, 'viewMatched' => 0];
+        }
+        $byStatus = $batch->rows()->selectRaw('status, count(*) n')->groupBy('status')->pluck('n', 'status');
+        $counts = [];
+        foreach (self::VIEW_GROUPS as $k => [$label, $st]) {
+            $counts[$k] = $st === null ? (int) $byStatus->sum() : (int) $byStatus->only($st)->sum();
+        }
+        $q = $batch->rows()->with('duplicateOf')->orderBy('row_number');
+        $st = self::VIEW_GROUPS[$this->viewGroup][1] ?? null;
+        if ($st !== null) {
+            $q->whereIn('status', $st);
+        }
+        $s = trim($this->viewSearch);
+        if ($s !== '') {
+            $q->where(function ($w) use ($s) {
+                $w->where('ticker', 'like', '%'.$s.'%')->orWhere('source_type_label', 'like', '%'.$s.'%');
+                if (preg_match('#^(\d{2})/(\d{2})/(\d{4})$#', $s, $m)) {
+                    $w->orWhereDate('date', "{$m[3]}-{$m[2]}-{$m[1]}");
+                }
+                $n = str_replace(['.', ','], ['', '.'], $s);
+                if (is_numeric($n)) {
+                    $w->orWhere('net_amount', (float) $n)->orWhere('net_amount', -(float) $n);
+                }
+            });
+        }
+        $matched = (clone $q)->count();
+
+        return ['viewed' => $batch, 'viewRows' => $q->limit($this->viewLimit)->get(), 'viewCounts' => $counts, 'viewTotal' => $counts['all'], 'viewMatched' => $matched];
     }
 }; ?>
 
@@ -150,7 +217,7 @@ new #[Layout('layouts.app')] class extends Component {
     <div>
         <h2 class="text-2xl font-bold tracking-tight">Extratos de corretoras</h2>
         <p class="mt-2 text-sm text-mono-600">Envie o extrato original (XLSX ou CSV; PDF só com texto). Você revisa a prévia, ajusta o mapeamento e confirma. Só proventos e aluguel viram eventos em Investimentos, sem lançamentos no Financeiro; compras, vendas e transferências ficam como pendências para registro manual. O arquivo fica privado e é apagado ao confirmar, descartar ou em {{ \App\Domains\Investments\Models\BrokerStatementImport::TTL_HOURS }} h.</p>
-        <p class="mt-1 text-xs text-mono-600">Layouts por corretora (BTG, XP, BB, Itaú) ainda não validados com arquivos reais: o mapeamento é genérico por nome de coluna. {{ $aiEnabled ? 'IA configurada: pode sugerir o mapeamento enviando cabeçalho + 5 linhas de amostra; nunca confirma sozinha.' : 'IA não configurada: nada é enviado a terceiros.' }}</p>
+        <p class="mt-1 text-xs text-mono-600">Formatos validados: BTG Conta Investimento (PDF) e BB Home Broker (PDF). Outros layouts CSV/XLSX/PDF entram na prévia com mapeamento genérico por nome de coluna, para revisão e edição. {{ $aiEnabled ? 'IA configurada: pode sugerir o mapeamento enviando cabeçalho + 5 linhas de amostra; nunca confirma sozinha.' : 'IA não configurada: nada é enviado a terceiros.' }}</p>
     </div>
 
     @if ($message)<x-jr.alert variant="success">{{ $message }}</x-jr.alert>@endif
@@ -228,7 +295,40 @@ new #[Layout('layouts.app')] class extends Component {
         <x-jr.card>
             <h3 class="mb-3 font-bold">Últimos lotes</h3>
             @foreach ($history as $h)
-                <p class="text-xs text-mono-600">#{{ $h->id }} · {{ $h->broker_name }} · {{ $h->file_name }} · {{ ['confirmed' => 'confirmado', 'discarded' => 'descartado', 'expired' => 'expirado'][$h->status] ?? $h->status }} · {{ $h->updated_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }}</p>
+                <div class="border-b border-cryptex-border-default py-2">
+                    <div class="flex flex-wrap items-center gap-2 text-xs text-mono-600">
+                        <span>#{{ $h->id }} · {{ $h->broker_name }} · {{ $h->file_name }} · {{ ['confirmed' => 'confirmado', 'discarded' => 'descartado', 'expired' => 'expirado'][$h->status] ?? $h->status }} · {{ $h->updated_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }}</span>
+                        @if ($h->status === 'confirmed')<button type="button" wire:click="openBatch({{ $h->id }})" class="ml-auto rounded-sm border border-cryptex-border-default px-2 py-1">{{ $viewBatch === $h->id ? 'Fechar' : 'Ver lançamentos' }}</button>@endif
+                    </div>
+                    @if ($viewed && $viewed->id === $h->id)
+                        <div class="mt-3 space-y-3 text-sm">
+                            <p class="text-xs text-mono-600">Somente consulta. Linhas em revisão não são importadas por esta tela; nada aqui altera o Financeiro nem apaga eventos da B3. Total do lote: {{ $viewTotal }} linhas.</p>
+                            <div class="flex flex-wrap gap-2">
+                                @foreach (self::VIEW_GROUPS as $k => [$label, $st])
+                                    <button type="button" wire:click="$set('viewGroup', '{{ $k }}')" class="rounded-full border px-3 py-1 text-xs {{ $viewGroup === $k ? 'border-cryptex-accent font-semibold' : 'border-cryptex-border-default' }}">{{ $label }} ({{ $viewCounts[$k] ?? 0 }})</button>
+                                @endforeach
+                            </div>
+                            <input wire:model.live.debounce.400ms="viewSearch" placeholder="Buscar ticker, descrição, data (dd/mm/aaaa) ou valor" class="h-10 w-full rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2" />
+                            <div class="overflow-x-auto">
+                                <table class="fx-table w-full text-xs">
+                                    <thead><tr><th class="text-left">Data</th><th class="text-left">Ticker</th><th class="text-left">Descrição</th><th class="text-left">Tipo</th><th class="text-right">Valor</th><th class="text-left">Situação</th></tr></thead>
+                                    <tbody>
+                                        @forelse ($viewRows as $r)
+                                            <tr>
+                                                <td>{{ $r->date?->format('d/m/Y') }}</td><td>{{ $r->ticker ?? '—' }}</td><td>{{ $r->source_type_label }}</td><td>{{ $kinds[$r->kind] ?? $r->kind }}</td>
+                                                <td class="text-right">{{ $r->net_amount === null ? '—' : number_format((float) $r->net_amount, 2, ',', '.') }}</td>
+                                                <td>{{ \App\Domains\Investments\Models\BrokerStatementRow::statusLabel($r->status) }}@if ($r->duplicate_of_event_id) · duplicado do evento #{{ $r->duplicate_of_event_id }}{{ $r->duplicateOf ? ' ('.$r->duplicateOf->ticker.' '.$r->duplicateOf->payment_date?->format('d/m/Y').')' : '' }}@endif @if ($r->income_event_id) · evento #{{ $r->income_event_id }}@endif @if (! empty($r->messages))<span class="block text-mono-600">{{ implode(' · ', (array) $r->messages) }}</span>@endif</td>
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="6" class="text-mono-600">Nenhuma linha neste filtro.</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="text-xs text-mono-600">Mostrando {{ $viewRows->count() }} de {{ $viewMatched }}. @if ($viewRows->count() < $viewMatched)<button type="button" wire:click="moreRows" class="underline">Carregar mais 50</button>@endif</p>
+                        </div>
+                    @endif
+                </div>
             @endforeach
         </x-jr.card>
     @endif

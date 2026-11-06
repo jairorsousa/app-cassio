@@ -25,6 +25,16 @@ class BrokerStatementRow extends Model
     /** Não viram evento: registrar/reconciliar manualmente. */
     public const MANUAL_KINDS = ['buy', 'sell', 'transfer', 'fee', 'trade_settlement', 'lending_settlement', 'tax', 'cash_yield', 'fraction', 'subscription_right'];
 
+    public const STATUS_LABELS = [
+        'imported' => 'Importado', 'held_review' => 'Retido para revisão', 'duplicate_candidate' => 'Possível duplicado', 'duplicate_not_imported' => 'Duplicado, não importado',
+        'pending_manual' => 'Registro manual', 'linked' => 'IR vinculado ao aluguel', 'ready' => 'Pronto (não confirmado)', 'error' => 'Erro',
+    ];
+
+    public static function statusLabel(?string $s): string
+    {
+        return self::STATUS_LABELS[$s] ?? (string) $s;
+    }
+
     public const INCOME_KINDS = ['dividend', 'jcp', 'fii_income', 'yield', 'lending_fee', 'lending_reimbursement'];
 
     public function import(): BelongsTo

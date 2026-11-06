@@ -395,3 +395,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 ## 2026-11-06 — Conferência Etapa 8: proventos por origem e aluguel BTC
 
 - Posição B3 › proventos: tabela anual passa a ter coluna "Taxa de aluguel (BTC)" (antes ficava só no total); lista mostra IR e Origem (B3/Midas × extrato de corretora); resumo das taxas BTC com bruto − IR = líquido. Corretagem do aluguel segue pendência manual (não descontada).
+
+## 2026-11-06 — Extratos: consulta das linhas do lote
+
+- /investments/extratos: "Ver lançamentos" em lotes confirmados (somente leitura, só do próprio usuário). Filtros com contagem: Pendentes de revisão (padrão), Importados, Duplicados, Registro manual, IR vinculado, Todos; busca por ticker, descrição, data ou valor; 50 linhas por vez. Mostra situação, motivos e o evento B3 de que a linha é duplicada. Nada é importado nem editado por esta tela.
+- Texto de formatos atualizado: validados BTG Conta Investimento (PDF) e BB Home Broker (PDF); demais entram com mapeamento genérico.
+- Histórico de lotes restrito ao usuário logado. `/investments/bens` redireciona para `/bens`.
