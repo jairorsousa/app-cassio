@@ -1,5 +1,6 @@
 import './bootstrap';
 import { bindMoneyInput, centsToModel, parseToCents } from './money-mask';
+import { registerSessionExpiredHandler } from './session-expired';
 
 // --- Diretiva Alpine x-cpf-cnpj ---
 function maskCpfCnpj(val) {
@@ -195,6 +196,8 @@ document.addEventListener('alpine:init', () => {
 
 // Se um re-render devolver o número cru em um campo sem foco, formata de novo.
 document.addEventListener('livewire:initialized', () => {
+    registerSessionExpiredHandler(Livewire);
+
     Livewire.hook('commit', ({ succeed }) => {
         succeed(() => {
             requestAnimationFrame(() => {

@@ -301,3 +301,13 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Agora: o handle ⠿ (desktop) é o único elemento arrastável, com `setData`/`effectAllowed`/imagem do bloco; cada bloco é alvo de soltura com destaque visual; ao soltar chama `moveWidgetTo(origem, destino)` e a nova ordem é calculada e salva no servidor (`DashboardPreferences::moveTo`). Setas ↑ ↓, teclado e mobile inalterados.
 - Testes: `moveTo` (unitário) e arrastar para cima/baixo, alvos inválidos, convivência com setas e persistência (feature). Nenhum dado financeiro alterado.
 - Filtro Pessoa no Fluxo mostrando só Todas: comportamento correto. As opções vêm de titulares de cartão definidos e de contatos vinculados a lançamentos, Valores a receber ou Empréstimos; nos dados reais os 8 cartões estão sem titular e não há vínculos de contato, valores a receber nem empréstimos. Nenhuma pessoa foi criada.
+
+### Correção pós-Etapa 7 — sessão expirada (419) no Livewire (05/11/2026)
+- Causa da perda após o arraste: o POST `/livewire/update` voltou 419 (sessão/CSRF expirados; `SESSION_LIFETIME` 120 min). O servidor recusou corretamente e nada foi salvo, mas a tela já mostrava a nova ordem, sem aviso.
+- Novo `resources/js/session-expired.js`, registrado em `app.js` (hook global `request` do Livewire, só neste app): em status 419 cancela o tratamento padrão e mostra aviso fixo (`role=alert`) Sua
+
+### Correção pós-Etapa 7 — sessão expirada (419) no Livewire (05/11/2026)
+- Causa da perda após o arraste: o POST `/livewire/update` voltou 419 (sessão/CSRF expirados; `.env` usa `SESSION_LIFETIME=60`, além do middleware de inatividade). O servidor recusou corretamente e nada foi salvo, mas a tela já mostrava a nova ordem, sem aviso.
+- Novo `resources/js/session-expired.js`, registrado em `app.js` (hook global `request` do Livewire, só neste app): em status 419 cancela o tratamento padrão e mostra aviso fixo (`role=alert`) "Sua sessão expirou. Recarregue a página para acessar novamente antes de salvar." com botão **Recarregar**. Um único aviso; nada recarrega sozinho (sem loop). No Dashboard o botão leva a `/dashboard?personalizar=1`, que abre o modo Personalizar.
+- CSRF continua ativo; nada foi liberado. Com sessão válida o arraste salva normalmente (`moveWidgetTo`). Setas inalteradas.
+- Testes: POST Livewire sem token → 419 sem gravar preferências; aviso/handler presentes no JS-fonte e no build publicado; `?personalizar=1` abre Personalizar. Nenhum dado financeiro alterado.

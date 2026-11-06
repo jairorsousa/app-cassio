@@ -124,6 +124,37 @@ class Etapa7DashboardFluxoTest extends TestCase
         $this->assertSame($before, Transaction::count());
     }
 
+    public function test_expired_session_is_419_and_the_app_warns_instead_of_failing_silently(): void
+    {
+        // CSRF continua ativo: POST do Livewire sem token válido devolve 419 (nada é salvo).
+        $this->app['env'] = 'production';
+        $before = $this->user->fresh()->dashboard_preferences;
+        $response = $this->withMiddleware()->withHeaders(['X-Livewire' => '1'])->postJson('/livewire/update', ['components' => []]);
+        $this->assertSame(419, $response->status());
+        $this->assertSame($before, $this->user->fresh()->dashboard_preferences);
+
+        $js = file_get_contents(resource_path('js/session-expired.js'));
+        $this->assertStringContainsString('Sua sessão expirou. Recarregue a página para acessar novamente antes de salvar.', $js);
+        $this->assertStringContainsString('status === 419', $js);
+        $this->assertStringContainsString('preventDefault()', $js);
+        $this->assertStringContainsString('/dashboard?personalizar=1', $js);
+        $this->assertStringContainsString("getElementById('session-expired-alert')", $js); // um aviso só, sem loop
+        $this->assertStringNotContainsString('location.reload', $js);
+        $this->assertStringContainsString('registerSessionExpiredHandler(Livewire)', file_get_contents(resource_path('js/app.js')));
+
+        $manifest = json_decode(file_get_contents(public_path('build/manifest.json')), true);
+        $built = file_get_contents(public_path('build/'.$manifest['resources/js/app.js']['file']));
+        $this->assertStringContainsString('Sua sessão expirou', $built);
+    }
+
+    public function test_reload_target_opens_dashboard_in_customize_mode(): void
+    {
+        Livewire::withQueryParams(['personalizar' => '1'])->withoutLazyLoading()->test('dashboard.index')
+            ->assertSet('customizing', true)->assertSee('Restaurar padrão');
+        Livewire::withQueryParams([])->withoutLazyLoading()->test('dashboard.index')->assertSet('customizing', false);
+        $this->get('/dashboard?personalizar=1')->assertOk();
+    }
+
     public function test_dashboard_renders_widgets_hides_and_keeps_launch_shortcut(): void
     {
         $this->tx('income', 1200, '2026-11-02');

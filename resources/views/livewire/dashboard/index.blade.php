@@ -25,6 +25,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->preset = $this->prefs['period']['preset'];
         $this->start = $this->prefs['period']['start'];
         $this->end = $this->prefs['period']['end'];
+        // Volta do aviso de sessão expirada já com o modo Personalizar aberto.
+        $this->customizing = request()->boolean('personalizar');
         if ($this->preset === 'custom' && (! $this->start || ! $this->end)) {
             $this->preset = 'this_month';
         }
