@@ -389,5 +389,5 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 ## 2026-11-06 — Comando de importação de extratos (mesmo fluxo da tela)
 
-- : staging → retém para revisão () linhas com ticker inferido, ticker sem cadastro ou com erro → confirma só as prontas → candidatos a duplicado viram  (lote preserva todas as linhas). Sem  é dry-run em transação revertida.
+- `investments:statement-import {arquivo} --broker= --user= [--confirm]`: staging → retém para revisão (`held_review`) linhas com ticker inferido, ticker sem cadastro ou com erro → confirma só as prontas → candidatos a duplicado viram `duplicate_not_imported` (o lote preserva todas as linhas). Sem `--confirm` é dry-run em transação revertida.
 - Dry-run real: BTG 667 linhas → 168 importáveis (166 aluguéis líquidos R$ 1.537,34 + 2 JCP R$ 280,27 = R$ 1.817,61), 47 duplicados não importados, 31 retidos (8 reembolsos com ticker inferido + 23 sem ticker), 141 IR vinculados, 280 manuais. BB 40 linhas → 0 importáveis, 40 duplicados. Confirmação real NÃO executada (contagem esperada pelo pedido divergiu).
