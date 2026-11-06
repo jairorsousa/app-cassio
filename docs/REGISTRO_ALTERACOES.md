@@ -403,3 +403,10 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Histórico de lotes restrito ao usuário logado. `/investments/bens` redireciona para `/bens`.
 
 - Correção (HTTP 500 em "Ver lançamentos"): a contagem por situação usava a relação rows() (ordenada por row_number) com GROUP BY, recusada pelo MySQL com only_full_group_by. Contagem agora consulta sem ORDER BY; teste garante que nenhuma query agrupada da tela tem ORDER BY.
+
+## 2026-11-06 — Ajustes mobile (Investimentos)
+
+- Subnav de Investimentos: abaixo de lg vira uma linha só com rolagem horizontal (sem barra), mesma ordem e rótulos; desktop (lg+) inalterado.
+- Posição B3: posições e proventos em cartões abaixo de md; tabelas só em md+ (sem mudança no desktop).
+- Extratos › Ver lançamentos: linhas em cartões abaixo de md (data, ticker, tipo, valor com cor, descrição, situação e motivos); chips de filtro em uma linha rolável; busca com fonte menor no mobile.
+- Só visual; nenhum dado alterado. CSS recompilado (`npm run build`).

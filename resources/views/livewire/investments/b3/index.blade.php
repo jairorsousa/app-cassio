@@ -154,7 +154,22 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
         </div>
         @if ($positions->isNotEmpty())
-            <div class="overflow-x-auto mt-space-3">
+            <div class="mt-space-3 space-y-2 md:hidden" data-mobile="b3-positions">
+                @foreach ($positions as $p)
+                    <div class="rounded-sm border border-cryptex-border-default p-3 text-sm">
+                        <div class="flex items-start justify-between gap-2"><div><strong>{{ $p->ticker }}</strong> <span class="text-xs text-mono-600">{{ \App\Domains\Investments\Models\B3PositionSnapshot::ORIGIN_LABELS[$p->origin] ?? $p->origin }}</span></div><strong>{{ $m($p->market_value) }}</strong></div>
+                        <div class="text-xs text-mono-600 break-words">{{ $p->product }}</div>
+                        <dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                            <dt class="text-mono-600">Quantidade</dt><dd class="text-right">{{ $q($p->quantity) }}</dd>
+                            <dt class="text-mono-600">Custódia / emprestada</dt><dd class="text-right">{{ $p->quantity_custody === null ? 'não separado' : $q($p->quantity_custody) }} / {{ $p->quantity_lent === null ? 'não separado' : $q($p->quantity_lent) }}</dd>
+                            <dt class="text-mono-600">PM</dt><dd class="text-right">{!! $p->hasAveragePrice() ? e($m($p->average_price)) : '<span class="text-system-down">não informado</span>' !!}</dd>
+                            <dt class="text-mono-600">Fechamento</dt><dd class="text-right">{{ $m($p->close_price) }}</dd>
+                        </dl>
+                        @if ($p->institutions)<div class="mt-1 text-xs text-mono-600 break-words">{{ $p->institutions }}</div>@endif
+                    </div>
+                @endforeach
+            </div>
+            <div class="mt-space-3 hidden overflow-x-auto md:block">
                 <table class="fx-table w-full text-sm">
                     <thead><tr><th class="text-left">Ativo</th><th class="text-left">Situação</th><th class="text-right">Quantidade</th><th class="text-right">Custódia</th><th class="text-right">Emprestada</th><th class="text-right">PM</th><th class="text-right">Fechamento</th><th class="text-right">Valor</th><th class="text-left">Instituições (B3)</th></tr></thead>
                     <tbody>
@@ -203,7 +218,18 @@ new #[Layout('layouts.app')] class extends Component {
             <label class="flex flex-col gap-1">Ticker<input wire:model.live.debounce.500ms="ticker" class="h-10 w-28 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2 uppercase" /></label>
             <div class="ml-auto">Total filtrado: <strong>{{ $m($eventsTotal) }}</strong></div>
         </div>
-        <div class="overflow-x-auto">
+        <div class="space-y-2 md:hidden" data-mobile="b3-income">
+            @forelse ($events as $e)
+                <div class="rounded-sm border border-cryptex-border-default p-3 text-sm">
+                    <div class="flex items-start justify-between gap-2"><div><strong>{{ $e->ticker }}</strong> <span class="text-xs text-mono-600">{{ $e->typeLabel() }}</span></div><strong class="text-system-up">{{ $m($e->net_amount) }}</strong></div>
+                    <div class="mt-1 text-xs text-mono-600">{{ $e->payment_date->format('d/m/Y') }} · {{ $e->broker_name ?: '—' }} · {{ $e->source === 'b3_midas' ? 'B3 (Midas)' : ($e->source === 'broker_statement' ? 'Extrato corretora' : $e->source) }}</div>
+                    <div class="mt-1 text-xs text-mono-600">Qtd. {{ $q($e->quantity) }} · Bruto {{ $e->gross_amount === null ? 'não informado' : $m($e->gross_amount) }} · IR {{ $e->withholding_tax === null ? '—' : $m($e->withholding_tax) }}</div>
+                </div>
+            @empty
+                <p class="text-sm text-mono-600">Nenhum provento importado.</p>
+            @endforelse
+        </div>
+        <div class="hidden overflow-x-auto md:block">
             <table class="fx-table w-full text-sm">
                 <thead><tr><th class="text-left">Pagamento</th><th class="text-left">Ativo</th><th class="text-left">Tipo</th><th class="text-right">Qtd. base</th><th class="text-right">Bruto</th><th class="text-right">IR</th><th class="text-right">Líquido</th><th class="text-left">Corretora</th><th class="text-left">Origem</th></tr></thead>
                 <tbody>

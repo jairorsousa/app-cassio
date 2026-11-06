@@ -304,13 +304,24 @@ new #[Layout('layouts.app')] class extends Component {
                     @if ($viewed && $viewed->id === $h->id)
                         <div class="mt-3 space-y-3 text-sm">
                             <p class="text-xs text-mono-600">Somente consulta. Linhas em revisão não são importadas por esta tela; nada aqui altera o Financeiro nem apaga eventos da B3. Total do lote: {{ $viewTotal }} linhas.</p>
-                            <div class="flex flex-wrap gap-2">
+                            <div class="-mx-1 flex flex-nowrap gap-2 overflow-x-auto whitespace-nowrap px-1 pb-1 [scrollbar-width:none] md:flex-wrap md:overflow-visible">
                                 @foreach (self::VIEW_GROUPS as $k => [$label, $st])
                                     <button type="button" wire:click="$set('viewGroup', '{{ $k }}')" class="rounded-full border px-3 py-1 text-xs {{ $viewGroup === $k ? 'border-cryptex-accent font-semibold' : 'border-cryptex-border-default' }}">{{ $label }} ({{ $viewCounts[$k] ?? 0 }})</button>
                                 @endforeach
                             </div>
-                            <input wire:model.live.debounce.400ms="viewSearch" placeholder="Buscar ticker, descrição, data (dd/mm/aaaa) ou valor" class="h-10 w-full rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2" />
-                            <div class="overflow-x-auto">
+                            <input wire:model.live.debounce.400ms="viewSearch" placeholder="Buscar ticker, descrição, data (dd/mm/aaaa) ou valor" class="h-10 w-full text-xs md:text-sm rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2" />
+                            <div class="space-y-2 md:hidden" data-mobile="batch-rows">
+                                @forelse ($viewRows as $r)
+                                    <div class="rounded-sm border border-cryptex-border-default p-3 text-xs">
+                                        <div class="flex items-start justify-between gap-2"><span>{{ $r->date?->format('d/m/Y') }} · <strong>{{ $r->ticker ?? '—' }}</strong> · {{ $kinds[$r->kind] ?? $r->kind }}</span><strong class="{{ (float) $r->net_amount < 0 ? 'text-system-down' : 'text-system-up' }}">{{ $r->net_amount === null ? '—' : number_format((float) $r->net_amount, 2, ',', '.') }}</strong></div>
+                                        <div class="mt-1 break-words">{{ $r->source_type_label }}</div>
+                                        <div class="mt-1 text-mono-600 break-words"><span class="rounded-full border border-cryptex-border-default px-2">{{ \App\Domains\Investments\Models\BrokerStatementRow::statusLabel($r->status) }}</span>@if ($r->duplicate_of_event_id) · duplicado do evento #{{ $r->duplicate_of_event_id }}{{ $r->duplicateOf ? ' ('.$r->duplicateOf->ticker.' '.$r->duplicateOf->payment_date?->format('d/m/Y').')' : '' }}@endif @if ($r->income_event_id) · evento #{{ $r->income_event_id }}@endif @if (! empty($r->messages))<span class="block">{{ implode(' · ', (array) $r->messages) }}</span>@endif</div>
+                                    </div>
+                                @empty
+                                    <p class="text-mono-600">Nenhuma linha neste filtro.</p>
+                                @endforelse
+                            </div>
+                            <div class="hidden overflow-x-auto md:block">
                                 <table class="fx-table w-full text-xs">
                                     <thead><tr><th class="text-left">Data</th><th class="text-left">Ticker</th><th class="text-left">Descrição</th><th class="text-left">Tipo</th><th class="text-right">Valor</th><th class="text-left">Situação</th></tr></thead>
                                     <tbody>
