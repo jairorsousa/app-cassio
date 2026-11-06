@@ -542,3 +542,14 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 - Commit da entrega acima: `f027d58`. Durante essa implantação houve um erro temporário (código publicado antes da migração e um erro de sintaxe no menu), corrigido em poucos minutos com a migração e o ajuste do menu. Prática adotada: rodar migração e conferir a sintaxe das telas imediatamente ao publicar código novo.
 - Correção (2026-11-06): o hook Livewire agora também confere conta bloqueada em componentes livres (perfil, configurações): desconecta, invalida a sessão e responde 403. Testes novos em AccessControlTest (bloqueado com tela aberta; administrador não pode ser bloqueado).
+
+## 2026-11-06 — Login com Google (somente usuários já cadastrados)
+
+- Botão "Continuar com Google" no login (aparece só se o cliente OAuth estiver configurado); e-mail e senha continuam funcionando.
+- Rotas `GET /login/google` e `GET /login/google/callback` (guest, throttle 10/min). Callback a registrar no Google Cloud Console: `https://app.cassiomota.com/login/google/callback`.
+- OAuth com escopos mínimos `openid email profile`, `state` aleatório de uso único guardado na sessão (expira em 10 min) e PKCE S256. ID token verificado pela biblioteca do Google (assinatura, emissor, validade, `aud` = client_id); exige `email_verified`.
+- Só entra quem já existe, está ativo e tem o mesmo e-mail (comparação sem maiúsculas). Nunca cria conta. Bloqueado é recusado. No primeiro login a identidade Google (`sub`) é vinculada ao usuário (coluna nova `users.google_sub`, única, oculta); depois disso outra identidade para o mesmo usuário, ou a mesma identidade para outro usuário, é recusada.
+- Nenhum token é guardado nem registrado em log; mensagens de erro públicas são genéricas.
+- Configuração: `GOOGLE_AUTH_CLIENT_ID/SECRET/REDIRECT_URI` opcionais; sem eles reaproveita o cliente OAuth da Agenda. Agenda, permissões e senhas não foram alterados.
+- Envio de convite por e-mail continua pendente: o sistema está com mailer `log` e sem SMTP próprio; o convite segue com link copiado manualmente até haver provedor definido.
+- Testes: `GoogleLoginTest` (11) com provedor falso, sem rede. Migração rodada antes de validar; lint de todos os arquivos.

@@ -55,7 +55,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->bind(\App\Support\GoogleAuth\IdentityProvider::class, \App\Support\GoogleAuth\GoogleClientIdentityProvider::class);
     }
 
     public function boot(): void

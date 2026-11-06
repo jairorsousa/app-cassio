@@ -9,6 +9,12 @@ Route::middleware('guest')->group(function () {
     Volt::route('login', 'pages.auth.login')
         ->name('login');
 
+    Route::get('login/google', [\App\Http\Controllers\Auth\GoogleLoginController::class, 'redirect'])
+        ->middleware('throttle:10,1')->name('login.google');
+
+    Route::get('login/google/callback', [\App\Http\Controllers\Auth\GoogleLoginController::class, 'callback'])
+        ->middleware('throttle:10,1')->name('login.google.callback');
+
     Volt::route('forgot-password', 'pages.auth.forgot-password')
         ->name('password.request');
 

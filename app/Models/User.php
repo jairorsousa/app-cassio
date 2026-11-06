@@ -34,6 +34,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'google_sub',
     ];
 
     /** is_admin, status e modules NÃO são preenchíveis em massa: só mudam pelo UserAccessService. */
