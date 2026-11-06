@@ -17,6 +17,9 @@
         : 'inline-flex h-10 shrink-0 items-center gap-2 rounded-pill px-3 text-sm font-semibold transition-colors';
 @endphp
 
+@php
+    $items = array_filter($items, fn ($i) => \App\Support\Access::allows(auth()->user(), \App\Support\Access::forRoute($i['route'])));
+@endphp
 @foreach ($items as $item)
     @php
         $active = request()->routeIs($item['match']);

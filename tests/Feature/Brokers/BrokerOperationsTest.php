@@ -33,6 +33,8 @@ class BrokerOperationsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Componentes de módulo exigem usuário autenticado com acesso (controle de acesso).
+        $this->actingAs(\App\Models\User::factory()->create());
 
         $this->broker = Broker::create(['name' => 'João Corretor']);
         $this->account = BankAccount::create(['name' => 'Conta Corrente', 'initial_balance' => 10000]);

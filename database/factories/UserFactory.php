@@ -30,6 +30,9 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            // Permissões explícitas (novo usuário real sem módulos não acessa nada).
+            'status' => 'active',
+            'modules' => array_keys(\App\Support\Access::MODULES),
         ];
     }
 

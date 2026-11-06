@@ -19,6 +19,16 @@ Volt::route('dashboard', 'dashboard.index')
 Volt::route('configuracoes', 'settings.index')
     ->middleware(['auth', 'inactivity'])
     ->name('settings');
+Volt::route('configuracoes/usuarios', 'settings.users')
+    ->middleware(['auth', 'inactivity'])
+    ->name('settings.users');
+
+// Aceite de convite (público; o token é conferido a cada requisição).
+Volt::route('convite/{token}', 'invite.accept')
+    ->middleware(['guest', 'throttle:30,1'])
+    ->where('token', '[A-Za-z0-9]{1,200}')
+    ->name('invite.accept');
+
 Route::middleware(['auth', 'inactivity'])->prefix('configuracoes/logo')->name('settings.logo')->group(function () {
     Route::get('/', [\App\Http\Controllers\BrandLogoController::class, 'show']);
     Route::post('/', [\App\Http\Controllers\BrandLogoController::class, 'store'])->name('.store');

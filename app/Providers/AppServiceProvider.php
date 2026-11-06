@@ -70,6 +70,8 @@ class AppServiceProvider extends ServiceProvider
             }
         }
 
+        \Livewire\Livewire::componentHook(\App\Livewire\ModuleAccessHook::class);
+
         Event::listen(Login::class, [LogAuthenticationActivity::class, 'handleLogin']);
         Event::listen(Failed::class, [LogAuthenticationActivity::class, 'handleFailed']);
         Event::listen(Lockout::class, [LogAuthenticationActivity::class, 'handleLockout']);

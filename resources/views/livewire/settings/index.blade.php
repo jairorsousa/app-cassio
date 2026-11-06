@@ -61,6 +61,14 @@ new #[Layout('layouts.app')] class extends Component {
     @if (request('salvo'))<x-jr.alert variant="success">Preferências salvas e aplicadas.</x-jr.alert>@endif
     @if ($message)<x-jr.alert variant="info">{{ $message }}</x-jr.alert>@endif
 
+    @if (auth()->user()?->isAdmin())
+        <x-jr.card data-settings-users>
+            <h3 class="font-bold">Usuários e acessos</h3>
+            <p class="mb-3 text-sm text-mono-600">Convidar pessoas por e-mail e escolher os módulos de cada uma.</p>
+            <a href="{{ route('settings.users') }}" class="text-sm font-semibold text-primary-600">Abrir usuários e acessos →</a>
+        </x-jr.card>
+    @endif
+
     @include('livewire.settings.logo-section')
 
     <form wire:submit="save" class="space-y-6">

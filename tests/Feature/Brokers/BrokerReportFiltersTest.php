@@ -24,6 +24,8 @@ class BrokerReportFiltersTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Componentes de módulo exigem usuário autenticado com acesso (controle de acesso).
+        $this->actingAs(\App\Models\User::factory()->create());
 
         Carbon::setTestNow('2026-08-11 10:00:00');
 

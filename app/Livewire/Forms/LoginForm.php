@@ -38,6 +38,14 @@ class LoginForm extends Form
             ]);
         }
 
+        if (! Auth::user()->isActive()) {
+            Auth::guard('web')->logout();
+
+            throw ValidationException::withMessages([
+                'form.email' => 'Seu acesso foi bloqueado. Fale com o administrador.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 

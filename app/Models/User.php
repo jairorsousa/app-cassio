@@ -36,6 +36,26 @@ class User extends Authenticatable
         'remember_token',
     ];
 
+    /** is_admin, status e modules NÃO são preenchíveis em massa: só mudam pelo UserAccessService. */
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
+    public function isActive(): bool
+    {
+        return ($this->status ?? 'active') === 'active';
+    }
+
+    public function canAccessModule(string $module): bool
+    {
+        if (! $this->isActive()) {
+            return false;
+        }
+
+        return $this->isAdmin() || in_array($module, (array) $this->modules, true);
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -48,6 +68,9 @@ class User extends Authenticatable
             'preferences' => 'array',
             'password' => 'hashed',
             'dashboard_preferences' => 'array',
+            'is_admin' => 'boolean',
+            'modules' => 'array',
+            'blocked_at' => 'datetime',
         ];
     }
 }

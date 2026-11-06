@@ -18,6 +18,13 @@ class PartnershipFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Componentes de módulo exigem usuário autenticado com acesso (controle de acesso).
+        $this->actingAs(\App\Models\User::factory()->create());
+    }
+
     private function makePartnership(float $pct = 30.0): Partnership
     {
         return Partnership::create([

@@ -54,7 +54,12 @@ class UserPreferences
 
     public static function homeUrl(?User $user): string
     {
-        return route(self::HOMES[self::for($user)['home']][1], absolute: false);
+        $route = self::HOMES[self::for($user)['home']][1];
+        if (! \App\Support\Access::allows($user, \App\Support\Access::forRoute($route))) {
+            $route = \App\Support\Access::homeRoute($user);
+        }
+
+        return route($route, absolute: false);
     }
 
     /** CSS das variáveis de destaque (claro + escuro). Valores vêm só da lista acima. */
