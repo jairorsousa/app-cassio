@@ -17,11 +17,15 @@ new #[Layout('layouts.app')] class extends Component {
     public $attachment = null;
     public array $contacts = [];
     public array $labels = [];
-    public string $selectedLabel = '';
+    /** Etiquetas marcadas (nenhuma por padrão). */
+    public array $selectedLabels = [];
+    /** Contatos já carregados por etiqueta (id/nome/telefone), para não buscar de novo a cada clique. */
+    public array $labelContacts = [];
+    public ?int $lastBatchId = null;
     public string $contactSearch = '';
     public int $contactPage = 1;
     public const CONTACTS_PER_PAGE = 20;
-    public bool $loading = true;
+    public bool $loading = false;
     public bool $loadingLabels = true;
     public string $errorMessage = '';
     public string $labelsErrorMessage = '';
@@ -29,13 +33,60 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount()
     {
         $this->loadLabels();
-        $this->loadContacts();
+        $this->lastBatchId = \App\Domains\Broadcasts\Models\TransmissionBatch::where('created_by', auth()->id())->latest('id')->value('id');
+    }
+
+    private function audience(): array
+    {
+        return \App\Support\TransmissionAudience::build(array_intersect_key($this->labelContacts, array_flip($this->selectedLabels)));
+    }
+
+    private function refreshRecipients(): void
+    {
+        $this->contacts = array_map(fn ($r) => ['id' => $r['contact_id'], 'name' => $r['name'], 'phone_number' => $r['phone']], $this->audience()['recipients']);
+        $this->contactPage = 1;
+        if ($this->reviewing) {
+            $this->reviewing = false;
+            $this->reviewHash = null;
+            $this->reviewNotice = 'Você alterou a mensagem ou o público: revise novamente antes de enviar.';
+        }
+    }
+
+    public function toggleLabel(string $title): void
+    {
+        if (! in_array($title, array_column($this->labels, 'title'), true)) {
+            return;
+        }
+        if (in_array($title, $this->selectedLabels, true)) {
+            $this->selectedLabels = array_values(array_diff($this->selectedLabels, [$title]));
+        } else {
+            if (! array_key_exists($title, $this->labelContacts)) {
+                $loaded = $this->fetchLabelContacts($title);
+                if ($loaded === null) {
+                    return;
+                }
+                $this->labelContacts[$title] = $loaded;
+            }
+            $this->selectedLabels[] = $title;
+        }
+        $this->refreshRecipients();
+    }
+
+    public function reloadSelected(): void
+    {
+        foreach ($this->selectedLabels as $t) {
+            $loaded = $this->fetchLabelContacts($t);
+            if ($loaded !== null) {
+                $this->labelContacts[$t] = $loaded;
+            }
+        }
+        $this->refreshRecipients();
     }
 
     /** Qualquer mudança no que será enviado invalida a revisão. */
     public function updated($property): void
     {
-        if ($this->reviewing && in_array(explode('.', $property)[0], ['message', 'link', 'splitParagraphs', 'attachment', 'selectedLabel'], true)) {
+        if ($this->reviewing && in_array(explode('.', $property)[0], ['message', 'link', 'splitParagraphs', 'attachment'], true)) {
             $this->reviewing = false;
             $this->reviewHash = null;
             $this->reviewNotice = 'Você alterou a mensagem ou o público: revise novamente antes de enviar.';
@@ -44,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function fingerprint(): string
     {
-        return sha1(json_encode([$this->message, $this->link, $this->splitParagraphs, $this->selectedLabel, $this->attachment ? [$this->attachment->getClientOriginalName(), $this->attachment->getSize()] : null, array_column($this->contacts, 'id')]));
+        return sha1(json_encode([$this->message, $this->link, $this->splitParagraphs, $this->selectedLabels, $this->attachment ? [$this->attachment->getClientOriginalName(), $this->attachment->getSize()] : null, array_column($this->audience()['recipients'], 'phone_hash')]));
     }
 
     private function validateDraft(): void
@@ -56,8 +107,23 @@ new #[Layout('layouts.app')] class extends Component {
                     $fail('Link inválido. Use um endereço http:// ou https:// (ex.: instagram.com/seuperfil).');
                 }
             }],
-            'attachment' => 'nullable|file|mimetypes:image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm|max:12288',
-        ]);
+            'attachment' => ['nullable', 'file', 'max:12288',
+                'mimetypes:image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/aac,audio/x-aac,audio/x-hx-aac-adts,audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,audio/ogg,audio/opus,application/ogg',
+                function ($attr, $file, $fail) {
+                    $ext = strtolower((string) $file->getClientOriginalExtension());
+                    if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'mov', 'webm', 'mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus'], true)) {
+                        $fail('Formato não aceito. Use imagem (JPG, PNG, WebP, GIF), vídeo (MP4, MOV, WebM) ou áudio (MP3, M4A, AAC, WAV, OGG, OPUS).');
+                        return;
+                    }
+                    // Conteúdo real (não o nome/MIME informado pelo navegador).
+                    $path = $file->getRealPath();
+                    $head = $path ? (string) @file_get_contents($path, false, null, 0, 4) : '';
+                    $real = $path ? (string) (new \finfo(FILEINFO_MIME_TYPE))->file($path) : '';
+                    if (str_starts_with($head, 'MZ') || str_starts_with($head, "\x7FELF") || ! preg_match('#^(image|video|audio)/|^application/ogg$#', $real)) {
+                        $fail('Arquivo não reconhecido como imagem, vídeo ou áudio válido.');
+                    }
+                }],
+        ], ['attachment.mimetypes' => 'Arquivo não reconhecido como imagem, vídeo ou áudio válido.', 'attachment.max' => 'Arquivo maior que 12 MB.']);
     }
 
     /** Etapa 1: revisar (nada é enviado). */
@@ -65,8 +131,13 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->reviewNotice = null;
         $this->validateDraft();
-        if (empty($this->contacts)) {
-            $this->addError('message', 'Nenhum contato na lista para enviar a mensagem.');
+        if (empty($this->selectedLabels)) {
+            $this->addError('message', 'Escolha pelo menos uma etiqueta de destinatários.');
+
+            return;
+        }
+        if ($this->audience()['unique'] === 0) {
+            $this->addError('message', 'Nenhum contato com telefone válido nas etiquetas escolhidas.');
 
             return;
         }
@@ -107,13 +178,11 @@ new #[Layout('layouts.app')] class extends Component {
         $pages = max(1, (int) ceil(count($all) / self::CONTACTS_PER_PAGE));
         $page = min($this->contactPage, $pages);
 
-        return ['preview' => \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), 'audience' => \App\Support\BroadcastComposer::audienceStats($this->contacts), 'pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
+        $lastBatch = $this->lastBatchId ? \App\Domains\Broadcasts\Models\TransmissionBatch::where('created_by', auth()->id())->find($this->lastBatchId) : null;
+
+        return ['preview' => \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), 'audience' => $this->audience(), 'labelCounts' => array_map('count', $this->labelContacts), 'lastBatch' => $lastBatch, 'lastCounts' => $lastBatch?->counts(), 'pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
     }
 
-    public function updatedSelectedLabel(): void
-    {
-        $this->loadContacts();
-    }
 
     public function loadLabels(): void
     {
@@ -131,12 +200,6 @@ new #[Layout('layouts.app')] class extends Component {
 
             $this->labels = $this->normalizeLabels($response->json());
 
-            if ($this->selectedLabel === '' && ! empty($this->labels)) {
-                $availableLabels = collect($this->labels)->pluck('title');
-                $this->selectedLabel = $availableLabels->contains('parceiros')
-                    ? 'parceiros'
-                    : (string) $availableLabels->first();
-            }
         } catch (\Exception $e) {
             $this->labelsErrorMessage = 'Erro ao carregar labels do Chatwoot: ' . $e->getMessage();
         } finally {
@@ -144,55 +207,35 @@ new #[Layout('layouts.app')] class extends Component {
         }
     }
 
-    public function loadContacts()
+    /** Lê todos os contatos de UMA etiqueta (15 por página no Chatwoot). Só leitura. */
+    private function fetchLabelContacts(string $label): ?array
     {
-        $this->contacts = [];
-        $this->contactPage = 1;
         $this->errorMessage = '';
-        $this->loading = true;
+        $out = [];
         $page = 1;
-        $pageContacts = [];
-
-        if ($this->selectedLabel === '') {
-            $this->errorMessage = 'Selecione uma label para carregar os contatos.';
-            $this->loading = false;
-            return;
-        }
-
         try {
             do {
-                $response = $this->chatwootRequest()
-                    ->post($this->chatwootUrl('contacts/filter') . '?page=' . $page, [
-                        'payload' => [
-                            [
-                                'attribute_key' => 'labels',
-                                'filter_operator' => 'equal_to',
-                                'values' => [$this->selectedLabel],
-                                'query_operator' => null
-                            ]
-                        ]
-                    ]);
+                $response = $this->chatwootRequest()->post($this->chatwootUrl('contacts/filter').'?page='.$page, [
+                    'payload' => [['attribute_key' => 'labels', 'filter_operator' => 'equal_to', 'values' => [$label], 'query_operator' => null]],
+                ]);
+                if (! $response->successful()) {
+                    $this->errorMessage = 'Falha ao carregar contatos da etiqueta '.$label.'.';
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    $pageContacts = $data['payload'] ?? [];
-                    
-                    if (!empty($pageContacts)) {
-                        // Guarda só o necessário (id/nome/telefone): o objeto completo do Chatwoot pesava o estado da página.
-                        $slim = array_map(fn ($c) => ['id' => $c['id'] ?? null, 'name' => $c['name'] ?? null, 'phone_number' => $c['phone_number'] ?? null], $pageContacts);
-                        $this->contacts = array_merge($this->contacts, $slim);
-                    }
-                    
-                    $page++;
-                } else {
-                    $this->errorMessage = 'Falha ao carregar contatos do Chatwoot.';
-                    break;
+                    return null;
                 }
-            } while (!empty($pageContacts) && count($pageContacts) >= 15); // Continue looping while we receive full pages
+                $pageContacts = $response->json('payload') ?? [];
+                foreach ($pageContacts as $c) {
+                    $out[] = ['id' => $c['id'] ?? null, 'name' => $c['name'] ?? null, 'phone_number' => $c['phone_number'] ?? null];
+                }
+                $page++;
+            } while (count($pageContacts) >= 15 && $page <= 200);
         } catch (\Exception $e) {
-            $this->errorMessage = 'Erro ao conectar com Chatwoot: ' . $e->getMessage();
+            $this->errorMessage = 'Erro ao conectar com Chatwoot.';
+
+            return null;
         }
-        $this->loading = false;
+
+        return $out;
     }
 
     /** Envio direto não existe mais: abre a revisão. */
@@ -219,33 +262,17 @@ new #[Layout('layouts.app')] class extends Component {
         $this->reviewing = false;
         $this->reviewHash = null;
 
-        if (empty($this->contacts)) {
-            $this->addError('message', 'Nenhum contato na lista para enviar a mensagem.');
+        $audience = $this->audience();
+        if (empty($this->selectedLabels) || $audience['unique'] === 0) {
+            $this->addError('message', 'Escolha pelo menos uma etiqueta com contatos válidos.');
+
             return;
         }
 
-        // Extract contact IDs from the contacts array
-        $contactIds = collect($this->contacts)->pluck('id')->filter()->toArray();
+        $batch = \App\Support\TransmissionDispatcher::start(auth()->id(), \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), $this->attachment, $audience, $this->selectedLabels);
+        $this->lastBatchId = $batch->id;
 
-        if (empty($contactIds)) {
-            $this->addError('message', 'Não foi possível extrair os IDs dos contatos. Verifique a integração.');
-            return;
-        }
-
-        $attachment = null;
-
-        if ($this->attachment) {
-            $attachment = [
-                'path' => $this->attachment->store('broadcast-attachments', 'local'),
-                'name' => $this->attachment->getClientOriginalName(),
-                'mime_type' => $this->attachment->getMimeType(),
-            ];
-        }
-
-        // Dispatch background job to send messages with sleep intervals
-        \App\Jobs\SendBroadcastMessage::dispatch($contactIds, \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), $attachment);
-
-        session()->flash('status', 'Envio iniciado! As mensagens estão sendo processadas em segundo plano (com o delay configurado).');
+        session()->flash('status', 'Envio iniciado para '.$audience['unique'].' pessoa(s), uma por vez, com 45 a 90 s entre cada.');
         $this->reset('message', 'attachment', 'link');
     }
 
@@ -343,7 +370,8 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
 
                 <div>
-                    <label for="attachment" class="block text-sm font-medium text-mono-700 mb-xxxs">Mídia</label>
+                    <label for="attachment" class="block text-sm font-medium text-mono-700 mb-xxxs">Imagem, vídeo ou áudio (máx. 12 MB)</label>
+                    <p class="text-xs text-mono-600">Áudio: envie a gravação em MP3, M4A, AAC, WAV, OGG ou OPUS (grave no celular e anexe aqui). Um arquivo por mensagem.</p>
                     <label
                         for="attachment"
                         class="flex cursor-pointer items-center gap-xs rounded-2xl border border-dashed border-mono-200 bg-mono-50 px-4 py-3 text-sm text-mono-600 transition-colors hover:border-primary-300 hover:bg-primary-50/40"
@@ -361,10 +389,16 @@ new #[Layout('layouts.app')] class extends Component {
                         id="attachment"
                         type="file"
                         wire:model="attachment"
-                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
+                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus"
                         class="sr-only"
                     >
                     <div wire:loading wire:target="attachment" class="mt-1 text-xs text-mono-500">Carregando mídia...</div>
+                    @if ($attachment && ! $errors->has('attachment') && str_starts_with((string) $attachment->getMimeType(), 'audio/') && method_exists($attachment, 'temporaryUrl'))
+                        @php
+                            try { $audioUrl = $attachment->temporaryUrl(); } catch (\Throwable $e) { $audioUrl = null; }
+                        @endphp
+                        @if ($audioUrl)<audio controls preload="none" src="{{ $audioUrl }}" class="mt-2 w-full" data-audio-preview></audio>@endif
+                    @endif
                     @error('attachment') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
 
@@ -387,23 +421,38 @@ new #[Layout('layouts.app')] class extends Component {
 
         @if ($reviewNotice)<x-fx.alert variant="warning" class="mt-md">{{ $reviewNotice }}</x-fx.alert>@endif
 
+        @if ($lastBatch)
+            <div data-last-batch @if (! in_array($lastBatch->status, ['done', 'done_with_errors'], true)) wire:poll.20s @endif><x-fx.card class="mt-md">
+                <div class="flex items-center justify-between gap-2">
+                    <h3 class="font-semibold text-mono-900">Último envio</h3>
+                    <span class="text-xs text-mono-600">{{ \App\Domains\Broadcasts\Models\TransmissionBatch::STATUS_LABELS[$lastBatch->status] ?? $lastBatch->status }} · {{ $lastBatch->created_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }}</span>
+                </div>
+                <p class="mt-1 text-xs text-mono-600">{{ implode(', ', (array) $lastBatch->labels) }} · {{ $lastBatch->recipients_count }} pessoa(s) · {{ $lastBatch->duplicates_omitted }} repetido(s) e {{ $lastBatch->invalid_omitted }} sem telefone válido fora</p>
+                <dl class="mt-2 grid grid-cols-2 gap-1 text-sm sm:grid-cols-5">
+                    @foreach (\App\Domains\Broadcasts\Models\TransmissionRecipient::STATUSES as $k => $l)
+                        <div><dt class="text-xs text-mono-600">{{ $l }}</dt><dd class="font-semibold" data-count-{{ $k }}>{{ $lastCounts[$k] ?? 0 }}</dd></div>
+                    @endforeach
+                </dl>
+                <p class="mt-2 text-xs text-mono-600">"Aceita pelo Chatwoot" não confirma entrega ou leitura no WhatsApp. "Sem confirmação" não é reenviada automaticamente.@if ($lastBatch->media_removed_at) Anexo removido após a finalização.@endif</p>
+            </x-fx.card></div>
+        @endif
+
         @if ($reviewing)
             <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="review-title" data-broadcast-review>
                 <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-mono-white p-5 shadow-elevated">
                     <h3 id="review-title" class="text-lg font-bold text-mono-900">Revisar envio</h3>
-                    <p class="mt-1 text-sm text-mono-600">Etiqueta <strong>{{ $selectedLabel }}</strong>: a mensagem vai para todos os contatos carregados da etiqueta.</p>
+                    <p class="mt-1 text-sm text-mono-600">Etiquetas: <strong>{{ implode(', ', $selectedLabels) }}</strong>. Cada telefone recebe uma única vez, mesmo estando em mais de uma etiqueta.</p>
                     <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
-                        <dt class="text-mono-600">Contatos na etiqueta</dt><dd class="text-right font-semibold" data-review-total>{{ $audience['total'] }}</dd>
-                        <dt class="text-mono-600">Com telefone válido</dt><dd class="text-right">{{ $audience['valid'] }}</dd>
-                        <dt class="text-mono-600">Sem telefone</dt><dd class="text-right">{{ $audience['missing_phone'] }}</dd>
-                        <dt class="text-mono-600">Telefone inválido</dt><dd class="text-right">{{ $audience['invalid_phone'] }}</dd>
-                        <dt class="text-mono-600">Telefones repetidos</dt><dd class="text-right">{{ $audience['duplicates'] }}</dd>
+                        <dt class="text-mono-600">Vão receber (pessoas únicas)</dt><dd class="text-right font-semibold" data-review-total>{{ $audience['unique'] }}</dd>
+                        <dt class="text-mono-600">Contatos nas etiquetas (soma)</dt><dd class="text-right">{{ $audience['raw'] }}</dd>
+                        <dt class="text-mono-600">Repetidos, não enviados de novo</dt><dd class="text-right" data-review-dups>{{ $audience['duplicates'] }}</dd>
+                        <dt class="text-mono-600">Sem telefone (fora)</dt><dd class="text-right">{{ $audience['missing_phone'] }}</dd>
+                        <dt class="text-mono-600">Telefone inválido (fora)</dt><dd class="text-right">{{ $audience['invalid_phone'] }}</dd>
                     </dl>
-                    @if ($audience['duplicates'] > 0)<p class="mt-1 text-xs text-mono-600">Repetidos ainda não são removidos nesta versão: essas pessoas podem receber mais de uma vez.</p>@endif
                     @if ($attachment)<p class="mt-2 text-sm">Mídia: {{ $attachment->getClientOriginalName() }}</p>@endif
                     <p class="mt-3 text-sm font-medium text-mono-700">Mensagem</p>
                     <div class="mt-1 whitespace-pre-wrap break-words rounded-xl border border-mono-100 bg-mono-50 px-3 py-2 text-sm">{{ $preview }}</div>
-                    <p class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-sm text-down">Depois de confirmar, o envio começa em segundo plano (45 a 90 s entre cada contato) e não pode ser desfeito por esta tela.</p>
+                    <p class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-sm text-down">Depois de confirmar, o envio começa em segundo plano, em ordem aleatória, com 45 a 90 s entre cada pessoa, e não pode ser desfeito por esta tela.</p>
                     <div class="mt-4 flex flex-wrap justify-end gap-2">
                         <button type="button" wire:click="cancelReview" class="h-10 rounded-xl border border-mono-200 px-4 text-sm">Voltar e editar</button>
                         <button type="button" wire:click="confirmSend" wire:loading.attr="disabled" wire:target="confirmSend" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white disabled:opacity-60" data-confirm-send>Confirmar e iniciar envio</button>
@@ -424,37 +473,25 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
 
             <div class="mb-sm">
-                <label for="selectedLabel" class="block text-sm font-medium text-mono-700 mb-xxxs">Label do Chatwoot</label>
-                <div class="flex gap-xxs">
-                    <select
-                        id="selectedLabel"
-                        wire:model.live="selectedLabel"
-                        class="min-w-0 flex-1 rounded-xl border border-mono-200 bg-mono-white px-3 py-2 text-sm text-mono-900 transition-all duration-200 hover:border-mono-300 focus:border-primary-500 focus:outline-none focus:ring-0 focus:shadow-[0_0_0_3px_rgba(255,111,0,.1)]"
-                        @disabled($loadingLabels || empty($labels))
-                    >
-                        @if(empty($labels))
-                            <option value="">Nenhuma label encontrada</option>
-                        @else
-                            @foreach($labels as $label)
-                                <option value="{{ $label['title'] }}">{{ $label['title'] }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-
-                    <button
-                        type="button"
-                        wire:click="loadContacts"
-                        wire:loading.attr="disabled"
-                        wire:target="loadContacts,selectedLabel"
-                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-mono-200 text-mono-600 transition-colors hover:bg-mono-50 hover:text-mono-900 disabled:cursor-not-allowed disabled:opacity-60"
-                        title="Recarregar contatos"
-                        aria-label="Recarregar contatos"
-                        @disabled($selectedLabel === '')
-                    >
-                        <span class="material-icons-outlined text-[20px]">refresh</span>
-                    </button>
+                <p class="block text-sm font-medium text-mono-700 mb-xxxs">Etiquetas do Chatwoot</p>
+                <p class="mb-2 text-xs text-mono-600">Toque para marcar quem recebe. Nenhuma vem marcada.</p>
+                <div class="flex flex-col gap-xxs" data-label-cards>
+                    @forelse ($labels as $label)
+                        @php($on = in_array($label['title'], $selectedLabels, true))
+                        <button type="button" wire:click="toggleLabel(@js($label['title']))" wire:loading.attr="disabled" wire:target="toggleLabel" aria-pressed="{{ $on ? 'true' : 'false' }}"
+                            class="flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm {{ $on ? 'border-primary-500 bg-primary-100 text-primary-500' : 'border-mono-200 text-mono-900' }}">
+                            <span class="flex items-center gap-2"><span class="material-icons-outlined text-[18px]">{{ $on ? 'check_box' : 'check_box_outline_blank' }}</span>{{ $label['title'] }}</span>
+                            <span class="text-xs">{{ array_key_exists($label['title'], $labelCounts) ? $labelCounts[$label['title']].' contato(s)' : '' }}{{ $on ? ' · Selecionado' : '' }}</span>
+                        </button>
+                    @empty
+                        <p class="text-sm text-mono-500 italic">{{ $loadingLabels ? 'Carregando etiquetas…' : 'Nenhuma etiqueta encontrada.' }}</p>
+                    @endforelse
                 </div>
-
+                @if ($selectedLabels)
+                    <button type="button" wire:click="reloadSelected" class="mt-2 text-xs text-mono-600 underline">Recarregar contatos das etiquetas marcadas</button>
+                @endif
+            </div>
+            <div>
                 @if($labelsErrorMessage)
                     <div class="mt-2 text-xs text-red-500">{{ $labelsErrorMessage }}</div>
                 @endif
@@ -467,9 +504,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-600"></div>
                 </div>
             @elseif(empty($contacts))
-                <div class="text-sm text-mono-500 italic py-xs">Nenhum contato encontrado.</div>
+                <div class="text-sm text-mono-500 italic py-xs">{{ $selectedLabels ? 'Nenhum contato com telefone válido.' : 'Marque uma ou mais etiquetas.' }}</div>
             @else
-                <p class="text-xs text-mono-600">{{ count($contacts) }} contato(s) na label; a mensagem vai para todos.</p>
+                <p class="text-xs text-mono-600">{{ count($contacts) }} pessoa(s) únicas vão receber{{ $audience['duplicates'] ? ' ('.$audience['duplicates'].' repetida(s) removida(s))' : '' }}.</p>
                 <input type="search" wire:model.live.debounce.300ms="contactSearch" placeholder="Buscar nome ou telefone" aria-label="Buscar contato" class="h-10 w-full rounded-xl border border-mono-200 bg-mono-white px-3 text-sm">
                 <div class="flex flex-col gap-xxs" data-contact-list>
                     @if ($contactMatches === 0)<div class="text-sm text-mono-500 italic py-xs">Nenhum contato com esse filtro.</div>@endif

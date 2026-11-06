@@ -32,9 +32,9 @@ class ListsPaginationTest extends TestCase
     {
         $this->fakeChatwoot(47);
         $this->actingAs(User::factory()->create());
-        $c = Volt::test('broadcasts.index');
-        $c->assertSee('47 contato(s) na label')->assertSee('Contato 001')->assertSee('Contato 020')->assertDontSee('Contato 021')->assertSee('Página 1 de 3');
-        $this->assertSame(['id', 'name', 'phone_number'], array_keys($c->get('contacts')[0]));
+        $c = Volt::test('broadcasts.index')->assertSee('Marque uma ou mais etiquetas.')->call('toggleLabel', 'parceiros');
+        $c->assertSee('47 pessoa(s) únicas vão receber')->assertSee('Contato 001')->assertSee('Contato 020')->assertDontSee('Contato 021')->assertSee('Página 1 de 3');
+        $this->assertSame(['id', 'name', 'phone_number'], array_keys($c->get('labelContacts')['parceiros'][0]));
         $this->assertCount(47, $c->get('contacts'));
         $c->call('contactPageTo', 3)->assertSee('Contato 047')->assertDontSee('Contato 001');
         $c->set('contactSearch', 'Contato 04')->assertSet('contactPage', 1)->assertSee('Contato 040')->assertDontSee('Contato 001')->assertDontSeeHtml('data-contact-pages');

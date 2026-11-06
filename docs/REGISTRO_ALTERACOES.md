@@ -459,3 +459,17 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 - `App\Support\BroadcastComposer`: monta o texto enviado e a prévia com a mesma função. CRLF→LF; com "Separar parágrafos automaticamente" (padrão ligado) cada Enter simples vira linha em branco, 2+ enters ficam iguais (sem acumular). Link opcional (só http/https; sem esquema vira https://; javascript:/mailto:/data: rejeitados; nunca acessado pelo servidor) vai no fim, após linha em branco. Anexo até 12 MB mantido.
 - Envio em duas etapas: "Revisar envio" abre a revisão com total da etiqueta, telefone válido/sem/inválido e repetidos (não removidos nesta fase), mídia, prévia e aviso de irreversível. Só "Confirmar e iniciar envio" enfileira; `send()` direto só abre a revisão; confirmar sem revisão ou após alterar mensagem/link/opção/mídia/etiqueta é recusado; trava de 15 s contra duplo clique. Intervalo 45–90 s e limpeza do anexo inalterados. Sem envio real nos testes (fila e HTTP falsos).
+
+
+## 2026-11-06 — Transmissão fase 2: etiquetas múltiplas, deduplicação, fila por pessoa e áudio
+
+- Etiquetas em cards de seleção múltipla, nenhuma marcada por padrão; contatos carregados por clique e guardados em cache por etiqueta.
+- Deduplicação entre etiquetas por telefone E.164 (hash HMAC) e por ID de contato; a revisão mostra os totais exatos (brutos, únicos, duplicados, sem telefone, telefone inválido).
+- Novas tabelas `transmission_batches` e `transmission_recipients` (telefone criptografado, `unique(batch_id, phone_hash)`).
+- Um job curto `SendTransmissionRecipient` por destinatário: ordem embaralhada, intervalo de 45 a 90 s, `tries=1`, claim atômico com `lockForUpdate`. Status: aguardando / enviando / aceita pelo Chatwoot / falhou / sem confirmação. Nada é reenviado automaticamente.
+- Áudio (mp3, m4a, aac, wav, ogg, oga, opus) até 12 MB; validação por MIME, extensão e conteúdo real (finfo + bloqueio de cabeçalhos MZ/ELF).
+- A mídia fica no disco privado até o último destinatário terminar e depois é apagada (`media_removed_at`).
+- Card "Último lote" com atualização a cada 20 s enquanto o lote roda.
+- Removidos a etiqueta padrão "parceiros" e o job longo antigo (`SendBroadcastMessage` ficou sem uso).
+- Testes: BroadcastReviewTest reescrito, TransmissionQueueTest novo, ListsPaginationTest ajustado. Suíte: 536 passando.
+- Backups: `storage/backups/broadcasts.pre_fase2` e `storage/backups/build.pre_fase2`.
