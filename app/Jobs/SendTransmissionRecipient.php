@@ -22,17 +22,28 @@ class SendTransmissionRecipient implements ShouldQueue
 
     public bool $failOnTimeout = true;
 
-    public function __construct(public int $recipientId) {}
+    public function __construct(public int $recipientId, public ?string $token = null) {}
 
     public function handle(ChatwootSender $sender): void
     {
-        // Reserva atômica: só quem muda pending→sending envia.
-        $r = DB::transaction(function () {
+        $batchId = TransmissionRecipient::whereKey($this->recipientId)->value('batch_id');
+        if (! $batchId) {
+            return;
+        }
+        // Reserva atômica (lote → destinatário, mesma ordem de trava usada por pausar/cancelar).
+        $r = DB::transaction(function () use ($batchId) {
+            $batch = TransmissionBatch::whereKey($batchId)->lockForUpdate()->first();
+            if (! $batch || ! in_array($batch->status, ['queued', 'running'], true)) {
+                return null; // pausada ou cancelada: não envia; ao retomar, uma nova tarefa é agendada.
+            }
             $row = TransmissionRecipient::whereKey($this->recipientId)->lockForUpdate()->first();
-            if (! $row || $row->status !== 'pending') {
+            if (! $row || $row->status !== 'pending' || $row->dispatch_token !== $this->token) {
                 return null;
             }
             $row->update(['status' => 'sending', 'attempted_at' => now()]);
+            if ($batch->status === 'queued') {
+                $batch->update(['status' => 'running']);
+            }
 
             return $row;
         });
@@ -40,9 +51,6 @@ class SendTransmissionRecipient implements ShouldQueue
             return;
         }
         $batch = $r->batch;
-        if ($batch->status === 'queued') {
-            $batch->update(['status' => 'running']);
-        }
 
         if (! $r->contact_id) {
             $res = ['outcome' => 'not_sent', 'error' => 'Contato sem ID no Chatwoot'];

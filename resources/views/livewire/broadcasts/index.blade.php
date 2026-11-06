@@ -22,6 +22,12 @@ new #[Layout('layouts.app')] class extends Component {
     /** Contatos já carregados por etiqueta (id/nome/telefone), para não buscar de novo a cada clique. */
     public array $labelContacts = [];
     public ?int $lastBatchId = null;
+    public string $tab = 'nova';
+
+    public function showTab(string $tab): void
+    {
+        $this->tab = $tab === 'historico' ? 'historico' : 'nova';
+    }
     public string $contactSearch = '';
     public int $contactPage = 1;
     public const CONTACTS_PER_PAGE = 20;
@@ -327,6 +333,14 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Lista de Transmissão</x-slot>
 
+<div class="max-w-6xl mx-auto">
+<div class="mb-md flex gap-2 border-b border-mono-100" role="tablist">
+    <button type="button" role="tab" wire:click="showTab('nova')" aria-selected="{{ $tab === 'nova' ? 'true' : 'false' }}" class="px-3 py-2 text-sm font-semibold {{ $tab === 'nova' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-mono-600' }}">Nova transmissão</button>
+    <button type="button" role="tab" wire:click="showTab('historico')" aria-selected="{{ $tab === 'historico' ? 'true' : 'false' }}" class="px-3 py-2 text-sm font-semibold {{ $tab === 'historico' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-mono-600' }}">Histórico</button>
+</div>
+@if ($tab === 'historico')
+    <livewire:broadcasts.history />
+@else
 <div class="flex flex-col gap-md max-w-6xl mx-auto md:flex-row md:items-start">
     <div class="flex-1 w-full order-2 md:order-1">
         @if (session('status'))
@@ -527,4 +541,6 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
         </x-fx.card>
     </div>
+</div>
+@endif
 </div>

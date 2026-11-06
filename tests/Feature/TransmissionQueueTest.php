@@ -67,8 +67,8 @@ class TransmissionQueueTest extends TestCase
         Http::fake(['*/contacts/*/conversations' => Http::response(['payload' => [['id' => 77, 'status' => 'open']]]), '*/conversations/77/messages' => Http::response(['id' => 991])]);
         $b = TransmissionDispatcher::start(null, 'Oi', null, $this->audience(1), ['x']);
         $id = $b->recipients()->value('id');
-        (new SendTransmissionRecipient($id))->handle(app(\App\Support\ChatwootSender::class));
-        (new SendTransmissionRecipient($id))->handle(app(\App\Support\ChatwootSender::class));
+        (new SendTransmissionRecipient($id, TransmissionRecipient::whereKey($id)->value('dispatch_token')))->handle(app(\App\Support\ChatwootSender::class));
+        (new SendTransmissionRecipient($id, TransmissionRecipient::whereKey($id)->value('dispatch_token')))->handle(app(\App\Support\ChatwootSender::class));
         Http::assertSentCount(2); // 1 consulta + 1 envio
         $r = TransmissionRecipient::find($id);
         $this->assertSame('sent', $r->status);
@@ -83,7 +83,7 @@ class TransmissionQueueTest extends TestCase
             '*/conversations/1/messages' => Http::response('erro', 502), '*/conversations/2/messages' => Http::response(['error' => 'x'], 422)]);
         $b = TransmissionDispatcher::start(null, 'Oi', null, $this->audience(2), ['x']);
         foreach ($b->recipients as $r) {
-            (new SendTransmissionRecipient($r->id))->handle(app(\App\Support\ChatwootSender::class));
+            (new SendTransmissionRecipient($r->id, TransmissionRecipient::whereKey($r->id)->value('dispatch_token')))->handle(app(\App\Support\ChatwootSender::class));
         }
         $st = TransmissionRecipient::orderBy('contact_id')->pluck('status')->all();
         $this->assertSame(['unconfirmed', 'failed'], $st);
@@ -101,9 +101,9 @@ class TransmissionQueueTest extends TestCase
         $this->assertSame('audio/wav', $b->media_mime);
         Storage::disk('local')->assertExists($b->media_path);
         [$r1, $r2] = $b->recipients()->orderBy('position')->get()->all();
-        (new SendTransmissionRecipient($r1->id))->handle(app(\App\Support\ChatwootSender::class));
+        (new SendTransmissionRecipient($r1->id, TransmissionRecipient::whereKey($r1->id)->value('dispatch_token')))->handle(app(\App\Support\ChatwootSender::class));
         Storage::disk('local')->assertExists($b->media_path);
-        (new SendTransmissionRecipient($r2->id))->handle(app(\App\Support\ChatwootSender::class));
+        (new SendTransmissionRecipient($r2->id, TransmissionRecipient::whereKey($r2->id)->value('dispatch_token')))->handle(app(\App\Support\ChatwootSender::class));
         Storage::disk('local')->assertMissing($b->media_path);
         $this->assertNotNull($b->fresh()->media_removed_at);
         Http::assertSent(fn ($req) => str_contains($req->url(), '/messages') && $req->hasFile('attachments[]', null, 'recado.wav') && collect($req->data())->firstWhere('name', 'content')['contents'] === 'Escute');

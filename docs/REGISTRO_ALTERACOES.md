@@ -507,3 +507,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Comando `php artisan process-numbers:normalize [--confirm]` (prévia por padrão; backup JSON em `storage/app/backups/`).
 - Histórico em produção: 3 registros formatados — writs #45, transactions #310 e process_receipts #13 (os dois últimos eram 01369335520264019198 → 0136933-55.2026.4.01.9198). Demais tabelas sem números a ajustar.
 - Teste novo: ProcessNumberTest. Backup de código: `storage/backups/pre_pn/`.
+
+
+## 2026-11-06 — Transmissão fase 3: histórico, pausar/retomar/cancelar e reenviar só falhas
+
+- Abas "Nova transmissão" e "Histórico" em /broadcasts. Novo componente `resources/views/livewire/broadcasts/history.blade.php`.
+- Histórico: só as transmissões do próprio usuário, 10 por página, mais recentes primeiro; autor, data/hora (Fortaleza), texto, etiquetas, tipo e nome do anexo, contagens por situação (uma consulta agrupada). Detalhes com destinatários 20 por página, busca por nome e filtro por situação; telefone exibido só com os 4 últimos dígitos. Aviso: o histórico começa nesta atualização; envios antigos não aparecem.
+- Pausar/Retomar/Cancelar (somente o dono; lote de outra pessoa = 404). A tarefa de cada pessoa trava o lote antes de reservar o envio: pausada/cancelada não envia. Retomar reagenda só os pendentes (5 s + 45–90 s entre cada) com novo token; tarefas antigas perdem a validade. Cancelar pede confirmação ("Mensagens já aceitas não podem ser retiradas."), marca pendentes como "Cancelado" e mantém as aceitas.
+- "Reenviar somente falhas": cria nova transmissão ligada à original (`retry_of_id`), mesmo texto/etiquetas/anexo copiado, só com destinatários "Falhou"; "Sem confirmação" nunca entra. Uma vez por lote. Original não é alterado. Anexo agora é guardado enquanto houver falhas; se o anexo original sumiu, o reenvio é bloqueado com aviso (não envia sem anexo).
+- Migração `2026_11_06_500000_transmission_history_controls` (retry_of_id, paused_at, cancelled_at, controlled_by, dispatch_token). Teste novo: TransmissionHistoryTest (8). Suíte: 552 passando. Backup: `storage/backups/pre_t3/`.
