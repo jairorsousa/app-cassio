@@ -599,3 +599,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Telefone normalizado E.164 (mesmo helper da Transmissão); entra na lista "Não receber" com origem `chatwoot`, motivo e data. Idempotente. **Não** envia resposta no WhatsApp nem altera a conversa no Chatwoot.
 - Proteção anti-bloqueio em massa: payload com vários itens é ignorado; no máx. `CHATWOOT_WEBHOOK_OPTOUT_PER_MINUTE` (padrão 30) opt-outs reais por minuto (429).
 - Testes: `ChatwootOptOutWebhookTest`. Nenhuma migration. Webhook **não** foi criado no Chatwoot nesta etapa — falta configurar token no `.env` e o webhook na UI do Chatwoot.
+
+## 2026-11-06 — Webhook SAIR: restrição fail-closed à inbox 15 (CMS-6000)
+
+- `CHATWOOT_OPT_OUT_INBOX_ID=15` (conta 1 / CMS-6000). Eventos de outras inboxes ou sem `inbox_id` no payload são ignorados (`wrong_inbox`); sem ID configurado também não bloqueia ninguém.
+- Nenhuma alteração no Chatwoot nesta etapa.
+

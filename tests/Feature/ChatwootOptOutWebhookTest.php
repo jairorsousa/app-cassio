@@ -21,6 +21,7 @@ class ChatwootOptOutWebhookTest extends TestCase
         config([
             'services.chatwoot.webhook_token' => $this->token,
             'services.chatwoot.webhook_optout_per_minute' => 30,
+            'services.chatwoot.opt_out_inbox_id' => 15,
         ]);
         Cache::flush();
         Http::fake(); // nenhuma chamada externa
@@ -39,7 +40,9 @@ class ChatwootOptOutWebhookTest extends TestCase
                 'name' => 'Fulano',
                 'phone_number' => '+5585999900099',
             ],
+            'inbox' => ['id' => 15],
             'conversation' => [
+                'inbox_id' => 15,
                 'meta' => [
                     'sender' => [
                         'name' => 'Fulano',
@@ -145,5 +148,29 @@ class ChatwootOptOutWebhookTest extends TestCase
             ->assertOk()
             ->assertJson(['status' => 'suppressed']);
         $this->assertSame('chatwoot', TransmissionSuppression::sole()->source);
+    }
+
+    public function test_inbox_fora_da_permitida_e_fail_closed(): void
+    {
+        $this->postWebhook($this->payload([
+            'inbox' => ['id' => 99],
+            'conversation' => ['inbox_id' => 99],
+        ]))->assertOk()->assertJson(['status' => 'ignored', 'reason' => 'wrong_inbox']);
+        $this->assertSame(0, TransmissionSuppression::count());
+    }
+
+    public function test_sem_inbox_no_payload_e_fail_closed(): void
+    {
+        $payload = $this->payload();
+        unset($payload['inbox'], $payload['conversation']['inbox_id']);
+        $this->postWebhook($payload)->assertOk()->assertJson(['status' => 'ignored', 'reason' => 'wrong_inbox']);
+        $this->assertSame(0, TransmissionSuppression::count());
+    }
+
+    public function test_opt_out_inbox_id_zero_nao_bloqueia_ninguem(): void
+    {
+        config(['services.chatwoot.opt_out_inbox_id' => 0]);
+        $this->postWebhook($this->payload())->assertOk()->assertJson(['status' => 'ignored', 'reason' => 'wrong_inbox']);
+        $this->assertSame(0, TransmissionSuppression::count());
     }
 }

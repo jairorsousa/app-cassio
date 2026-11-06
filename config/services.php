@@ -44,6 +44,8 @@ return [
         // Token do webhook de opt-out (SAIR). Vazio = endpoint desligado (503). Não inventar valor.
         'webhook_token' => env('CHATWOOT_WEBHOOK_TOKEN'),
         'webhook_optout_per_minute' => (int) env('CHATWOOT_WEBHOOK_OPTOUT_PER_MINUTE', 30),
+        // Inbox permitida para SAIR (fail-closed se vazio ou divergente). CMS-6000 conta 1 = 15.
+        'opt_out_inbox_id' => (int) env('CHATWOOT_OPT_OUT_INBOX_ID', 0),
     ],
 
     // IA opcional para SUGERIR mapeamento de extratos (envia cabeçalho + 5 linhas). Vazio = desligado, nada é enviado.

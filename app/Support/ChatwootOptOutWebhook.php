@@ -43,6 +43,11 @@ class ChatwootOptOutWebhook
             return ['status' => self::RESULT_IGNORED, 'reason' => 'not_incoming_public'];
         }
 
+        // Fail-closed: só a inbox configurada (CMS-6000 / conta 1). Sem ID no payload ou ID diferente = ignore.
+        if (! $this->inboxAllowed($payload)) {
+            return ['status' => self::RESULT_IGNORED, 'reason' => 'wrong_inbox'];
+        }
+
         $content = $this->messageContent($payload);
         if (TransmissionSuppression::classify($content) !== 'optout') {
             return ['status' => self::RESULT_IGNORED, 'reason' => 'not_optout'];
@@ -156,6 +161,42 @@ class ChatwootOptOutWebhook
         ] as $name) {
             if (is_string($name) && trim($name) !== '') {
                 return trim($name);
+            }
+        }
+
+        return null;
+    }
+
+
+    /** Fail-closed: exige CHATWOOT_OPT_OUT_INBOX_ID e igualdade com a inbox do evento. */
+    private function inboxAllowed(array $payload): bool
+    {
+        $expected = (int) config('services.chatwoot.opt_out_inbox_id', 0);
+        if ($expected <= 0) {
+            return false;
+        }
+        $got = $this->extractInboxId($payload);
+
+        return $got !== null && $got === $expected;
+    }
+
+    private function extractInboxId(array $payload): ?int
+    {
+        $candidates = [
+            data_get($payload, 'inbox.id'),
+            data_get($payload, 'inbox_id'),
+            data_get($payload, 'conversation.inbox_id'),
+            data_get($payload, 'conversation.inbox.id'),
+        ];
+        foreach ($candidates as $raw) {
+            if ($raw === null || $raw === '') {
+                continue;
+            }
+            if (is_int($raw) || (is_string($raw) && ctype_digit($raw))) {
+                $id = (int) $raw;
+                if ($id > 0) {
+                    return $id;
+                }
             }
         }
 
