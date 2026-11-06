@@ -14,7 +14,7 @@ class TransmissionRecipient extends Model
     protected $hidden = ['phone'];
 
     /** "sent" = aceito pelo Chatwoot (não comprova entrega/leitura). */
-    public const STATUSES = ['pending' => 'Aguardando', 'sending' => 'Enviando', 'sent' => 'Aceita pelo Chatwoot', 'failed' => 'Falhou (não enviada)', 'unconfirmed' => 'Sem confirmação', 'cancelled' => 'Cancelado'];
+    public const STATUSES = ['pending' => 'Aguardando', 'sending' => 'Enviando', 'sent' => 'Aceita pelo Chatwoot', 'failed' => 'Falhou (não enviada)', 'unconfirmed' => 'Sem confirmação', 'cancelled' => 'Cancelado', 'suppressed' => 'Não recebe (lista de saída)'];
 
     public function batch(): BelongsTo
     {

@@ -23,10 +23,15 @@ new #[Layout('layouts.app')] class extends Component {
     public array $labelContacts = [];
     public ?int $lastBatchId = null;
     public string $tab = 'nova';
+    public bool $includeOptOut = true;
+    public string $sendMode = 'now';
+    public string $scheduledDate = '';
+    public string $scheduledTime = '';
+    public string $weeklyPeriod = 'morning';
 
     public function showTab(string $tab): void
     {
-        $this->tab = $tab === 'historico' ? 'historico' : 'nova';
+        $this->tab = in_array($tab, ['historico', 'nao-receber'], true) ? $tab : 'nova';
     }
     public string $contactSearch = '';
     public int $contactPage = 1;
@@ -44,7 +49,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function audience(): array
     {
-        return \App\Support\TransmissionAudience::build(array_intersect_key($this->labelContacts, array_flip($this->selectedLabels)));
+        return \App\Support\TransmissionAudience::withoutSuppressed(\App\Support\TransmissionAudience::build(array_intersect_key($this->labelContacts, array_flip($this->selectedLabels))));
     }
 
     private function refreshRecipients(): void
@@ -92,7 +97,7 @@ new #[Layout('layouts.app')] class extends Component {
     /** Qualquer mudança no que será enviado invalida a revisão. */
     public function updated($property): void
     {
-        if ($this->reviewing && in_array(explode('.', $property)[0], ['message', 'link', 'splitParagraphs', 'attachment'], true)) {
+        if ($this->reviewing && in_array(explode('.', $property)[0], ['message', 'link', 'splitParagraphs', 'attachment', 'includeOptOut', 'sendMode', 'scheduledDate', 'scheduledTime', 'weeklyPeriod'], true)) {
             $this->reviewing = false;
             $this->reviewHash = null;
             $this->reviewNotice = 'Você alterou a mensagem ou o público: revise novamente antes de enviar.';
@@ -101,7 +106,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     private function fingerprint(): string
     {
-        return sha1(json_encode([$this->message, $this->link, $this->splitParagraphs, $this->selectedLabels, $this->attachment ? [$this->attachment->getClientOriginalName(), $this->attachment->getSize()] : null, array_column($this->audience()['recipients'], 'phone_hash')]));
+        return sha1(json_encode([$this->message, $this->link, $this->splitParagraphs, $this->includeOptOut, $this->sendMode, $this->scheduledDate, $this->scheduledTime, $this->weeklyPeriod, $this->selectedLabels, $this->attachment ? [$this->attachment->getClientOriginalName(), $this->attachment->getSize()] : null, array_column($this->audience()['recipients'], 'phone_hash')]));
     }
 
     private function validateDraft(): void
@@ -147,8 +152,33 @@ new #[Layout('layouts.app')] class extends Component {
 
             return;
         }
+        if (! $this->validSchedule()) {
+            return;
+        }
         $this->reviewing = true;
         $this->reviewHash = $this->fingerprint();
+    }
+
+    private function validSchedule(): bool
+    {
+        if (! in_array($this->sendMode, ['now', 'once', 'weekly'], true)) {
+            $this->sendMode = 'now';
+        }
+        [, $error] = \App\Support\TransmissionScheduler::firstRun($this->sendMode, $this->scheduledDate, $this->scheduledTime, $this->weeklyPeriod);
+        if ($error) {
+            $this->addError('scheduledDate', $error);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    public function updatedSendMode(): void
+    {
+        if ($this->sendMode === 'weekly' && $this->scheduledDate === '') {
+            $this->scheduledDate = now('America/Fortaleza')->next(\Carbon\Carbon::MONDAY)->format('Y-m-d');
+        }
     }
 
     public function cancelReview(): void
@@ -186,7 +216,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         $lastBatch = $this->lastBatchId ? \App\Domains\Broadcasts\Models\TransmissionBatch::where('created_by', auth()->id())->find($this->lastBatchId) : null;
 
-        return ['preview' => \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), 'audience' => $this->audience(), 'labelCounts' => array_map('count', $this->labelContacts), 'lastBatch' => $lastBatch, 'lastCounts' => $lastBatch?->counts(), 'pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
+        return ['preview' => \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs, $this->includeOptOut), 'firstRunLabel' => $this->sendMode !== 'now' ? (\App\Support\TransmissionScheduler::firstRun($this->sendMode, $this->scheduledDate, $this->scheduledTime, $this->weeklyPeriod)[0]?->setTimezone('America/Fortaleza')->format('d/m/Y H:i')) : null, 'audience' => $this->audience(), 'labelCounts' => array_map('count', $this->labelContacts), 'lastBatch' => $lastBatch, 'lastCounts' => $lastBatch?->counts(), 'pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
     }
 
 
@@ -216,30 +246,9 @@ new #[Layout('layouts.app')] class extends Component {
     /** Lê todos os contatos de UMA etiqueta (15 por página no Chatwoot). Só leitura. */
     private function fetchLabelContacts(string $label): ?array
     {
-        $this->errorMessage = '';
-        $out = [];
-        $page = 1;
-        try {
-            do {
-                $response = $this->chatwootRequest()->post($this->chatwootUrl('contacts/filter').'?page='.$page, [
-                    'payload' => [['attribute_key' => 'labels', 'filter_operator' => 'equal_to', 'values' => [$label], 'query_operator' => null]],
-                ]);
-                if (! $response->successful()) {
-                    $this->errorMessage = 'Falha ao carregar contatos da etiqueta '.$label.'.';
-
-                    return null;
-                }
-                $pageContacts = $response->json('payload') ?? [];
-                foreach ($pageContacts as $c) {
-                    $out[] = ['id' => $c['id'] ?? null, 'name' => $c['name'] ?? null, 'phone_number' => $c['phone_number'] ?? null];
-                }
-                $page++;
-            } while (count($pageContacts) >= 15 && $page <= 200);
-        } catch (\Exception $e) {
-            $this->errorMessage = 'Erro ao conectar com Chatwoot.';
-
-            return null;
-        }
+        $svc = app(\App\Support\ChatwootContacts::class);
+        $out = $svc->forLabel($label);
+        $this->errorMessage = $svc->error;
 
         return $out;
     }
@@ -275,10 +284,25 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
 
-        $batch = \App\Support\TransmissionDispatcher::start(auth()->id(), \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), $this->attachment, $audience, $this->selectedLabels);
+        $body = \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs, $this->includeOptOut);
+        if ($this->sendMode !== 'now') {
+            [$first, $error] = \App\Support\TransmissionScheduler::firstRun($this->sendMode, $this->scheduledDate, $this->scheduledTime, $this->weeklyPeriod);
+            if ($error) {
+                $this->addError('scheduledDate', $error);
+
+                return;
+            }
+            $s = \App\Support\TransmissionScheduler::create(auth()->id(), $this->sendMode, $body, $this->selectedLabels, $this->attachment, $first, $this->weeklyPeriod);
+            session()->flash('status', 'Transmissão agendada para '.$first->setTimezone('America/Fortaleza')->format('d/m/Y H:i').' (Fortaleza)'.($s->kind === 'weekly' ? ', depois uma vez por semana alternando segunda/terça/quarta e manhã/tarde' : '').'. Os contatos das etiquetas serão lidos de novo na hora do envio. Veja e cancele em Histórico.');
+            $this->reset('message', 'attachment', 'link', 'sendMode', 'scheduledDate', 'scheduledTime', 'weeklyPeriod');
+
+            return;
+        }
+
+        $batch = \App\Support\TransmissionDispatcher::start(auth()->id(), $body, $this->attachment, $audience, $this->selectedLabels);
         $this->lastBatchId = $batch->id;
 
-        session()->flash('status', 'Envio iniciado para '.$audience['unique'].' pessoa(s), uma por vez, com 45 a 90 s entre cada.');
+        session()->flash('status', 'Envio iniciado para '.$batch->recipients_count.' pessoa(s), uma por vez, com 45 a 90 s entre cada.');
         $this->reset('message', 'attachment', 'link');
     }
 
@@ -337,9 +361,12 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="mb-md flex gap-2 border-b border-mono-100" role="tablist">
     <button type="button" role="tab" wire:click="showTab('nova')" aria-selected="{{ $tab === 'nova' ? 'true' : 'false' }}" class="px-3 py-2 text-sm font-semibold {{ $tab === 'nova' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-mono-600' }}">Nova transmissão</button>
     <button type="button" role="tab" wire:click="showTab('historico')" aria-selected="{{ $tab === 'historico' ? 'true' : 'false' }}" class="px-3 py-2 text-sm font-semibold {{ $tab === 'historico' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-mono-600' }}">Histórico</button>
+    <button type="button" role="tab" wire:click="showTab('nao-receber')" aria-selected="{{ $tab === 'nao-receber' ? 'true' : 'false' }}" class="px-3 py-2 text-sm font-semibold {{ $tab === 'nao-receber' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-mono-600' }}">Não receber</button>
 </div>
 @if ($tab === 'historico')
     <livewire:broadcasts.history />
+@elseif ($tab === 'nao-receber')
+    <livewire:broadcasts.suppressions />
 @else
 <div class="flex flex-col gap-md max-w-6xl mx-auto md:flex-row md:items-start">
     <div class="flex-1 w-full order-2 md:order-1">
@@ -377,6 +404,35 @@ new #[Layout('layouts.app')] class extends Component {
                     <p class="text-xs text-mono-600">Vai no fim da mensagem, depois de uma linha em branco. Sem http, usamos https://. O link não é aberto pelo sistema.</p>
                     @error('link') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
                 </div>
+
+                <div>
+                    <label class="flex items-center gap-2 text-sm text-mono-700"><input type="checkbox" wire:model.live="includeOptOut"> Incluir orientação sobre saída da lista</label>
+                    <p class="text-xs text-mono-600">Acrescenta no fim: "{{ \App\Support\BroadcastComposer::OPT_OUT_FOOTER }}". Desligar o aviso não tira ninguém da lista "Não receber".</p>
+                </div>
+
+                <fieldset class="rounded-2xl border border-mono-100 p-3">
+                    <legend class="px-1 text-sm font-medium text-mono-700">Quando enviar</legend>
+                    <div class="flex flex-wrap gap-3 text-sm">
+                        <label class="flex items-center gap-1"><input type="radio" wire:model.live="sendMode" value="now"> Agora</label>
+                        <label class="flex items-center gap-1"><input type="radio" wire:model.live="sendMode" value="once"> Em uma data e horário</label>
+                        <label class="flex items-center gap-1"><input type="radio" wire:model.live="sendMode" value="weekly"> Toda semana (alternando)</label>
+                    </div>
+                    @if ($sendMode !== 'now')
+                        <div class="mt-3 grid gap-3 md:grid-cols-2">
+                            <x-jr.input :label="$sendMode === 'weekly' ? 'Primeiro envio (segunda, terça ou quarta) *' : 'Data *'" name="scheduledDate" type="date" wire:model.live="scheduledDate" min="{{ now('America/Fortaleza')->format('Y-m-d') }}" />
+                            @if ($sendMode === 'once')
+                                <x-jr.input label="Horário (08:00 a 20:00) *" name="scheduledTime" type="time" min="08:00" max="20:00" wire:model.live="scheduledTime" />
+                            @else
+                                <div>
+                                    <label for="weekly-period" class="mb-2 block text-sm font-medium text-mono-600">Período inicial</label>
+                                    <select id="weekly-period" wire:model.live="weeklyPeriod" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm"><option value="morning">Manhã (09:00)</option><option value="afternoon">Tarde (14:00)</option></select>
+                                </div>
+                            @endif
+                        </div>
+                        @error('scheduledDate') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+                        <p class="mt-2 text-xs text-mono-600">Horário de Fortaleza/Imperatriz (UTC−3).@if ($sendMode === 'weekly') Uma vez por semana: o dia alterna segunda → terça → quarta e o horário alterna manhã ↔ tarde. Os contatos das etiquetas são lidos de novo a cada envio.@endif</p>
+                    @endif
+                </fieldset>
 
                 <div>
                     <p class="block text-sm font-medium text-mono-700 mb-xxxs">Prévia (exatamente o texto que será enviado)</p>
@@ -462,14 +518,16 @@ new #[Layout('layouts.app')] class extends Component {
                         <dt class="text-mono-600">Repetidos, não enviados de novo</dt><dd class="text-right" data-review-dups>{{ $audience['duplicates'] }}</dd>
                         <dt class="text-mono-600">Sem telefone (fora)</dt><dd class="text-right">{{ $audience['missing_phone'] }}</dd>
                         <dt class="text-mono-600">Telefone inválido (fora)</dt><dd class="text-right">{{ $audience['invalid_phone'] }}</dd>
+                        <dt class="text-mono-600">Na lista "Não receber" (fora)</dt><dd class="text-right" data-review-suppressed>{{ $audience['suppressed'] ?? 0 }}</dd>
                     </dl>
                     @if ($attachment)<p class="mt-2 text-sm">Mídia: {{ $attachment->getClientOriginalName() }}</p>@endif
                     <p class="mt-3 text-sm font-medium text-mono-700">Mensagem</p>
                     <div class="mt-1 whitespace-pre-wrap break-words rounded-xl border border-mono-100 bg-mono-50 px-3 py-2 text-sm">{{ $preview }}</div>
+                    @if ($sendMode !== 'now')<p class="mt-3 rounded-xl bg-mono-50 px-3 py-2 text-sm" data-review-schedule>{{ $sendMode === 'weekly' ? 'Toda semana, começando em' : 'Agendada para' }} <strong>{{ $firstRunLabel }}</strong> (Fortaleza). Os números acima são de agora; na hora do envio as etiquetas são lidas de novo e a lista "Não receber" é aplicada.</p>@endif
                     <p class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-sm text-down">Depois de confirmar, o envio começa em segundo plano, em ordem aleatória, com 45 a 90 s entre cada pessoa, e não pode ser desfeito por esta tela.</p>
                     <div class="mt-4 flex flex-wrap justify-end gap-2">
                         <button type="button" wire:click="cancelReview" class="h-10 rounded-xl border border-mono-200 px-4 text-sm">Voltar e editar</button>
-                        <button type="button" wire:click="confirmSend" wire:loading.attr="disabled" wire:target="confirmSend" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white disabled:opacity-60" data-confirm-send>Confirmar e iniciar envio</button>
+                        <button type="button" wire:click="confirmSend" wire:loading.attr="disabled" wire:target="confirmSend" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white disabled:opacity-60" data-confirm-send>{{ $sendMode === 'now' ? 'Confirmar e iniciar envio' : 'Confirmar agendamento' }}</button>
                     </div>
                 </div>
             </div>

@@ -313,6 +313,12 @@ Artisan::command('investments:refresh-quotes', function (RefreshAssetQuotesServi
     return $result['failed'] === [] ? Command::SUCCESS : Command::FAILURE;
 })->purpose('Atualiza cotações de ativos listados em bolsa');
 
+Artisan::command('transmissions:dispatch-scheduled', function () {
+    $ids = \App\Support\TransmissionScheduler::runDue(app(\App\Support\ChatwootContacts::class));
+    $this->info('Lotes criados: '.(count($ids) ? implode(', ', $ids) : 'nenhum'));
+})->purpose('Gera as transmissões agendadas que venceram (uma por ocorrência)');
+Schedule::command('transmissions:dispatch-scheduled')->everyMinute()->withoutOverlapping(10);
+
 Schedule::job(new GenerateRecurringTransactionsJob)->dailyAt('00:05');
 Schedule::job(new CloseInvoiceJob)->dailyAt('00:10');
 Schedule::job(new RefreshDashboardSnapshotJob)->everyFifteenMinutes();

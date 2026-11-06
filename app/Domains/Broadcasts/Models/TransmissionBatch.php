@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 class TransmissionBatch extends Model
 {
-    protected $fillable = ['created_by', 'retry_of_id', 'labels', 'body', 'media_path', 'media_name', 'media_mime', 'status', 'paused_at', 'cancelled_at', 'controlled_by', 'recipients_count', 'duplicates_omitted', 'invalid_omitted', 'media_removed_at', 'finished_at'];
+    protected $fillable = ['created_by', 'retry_of_id', 'labels', 'body', 'media_path', 'media_name', 'media_mime', 'status', 'paused_at', 'cancelled_at', 'controlled_by', 'schedule_id', 'recipients_count', 'duplicates_omitted', 'invalid_omitted', 'suppressed_omitted', 'media_removed_at', 'finished_at'];
 
     protected $casts = ['labels' => 'array', 'media_removed_at' => 'datetime', 'finished_at' => 'datetime', 'paused_at' => 'datetime', 'cancelled_at' => 'datetime'];
 

@@ -73,9 +73,25 @@ new class extends Component {
         }
     }
 
+    public function pauseSchedule(int $id): void
+    {
+        $this->flash(\App\Support\TransmissionScheduler::pause($id, auth()->id()), 'Agendamento semanal pausado. Nenhum novo envio será gerado.', 'Este agendamento não pode ser pausado.');
+    }
+
+    public function resumeSchedule(int $id): void
+    {
+        $this->flash(\App\Support\TransmissionScheduler::resume($id, auth()->id()), 'Agendamento retomado a partir da próxima data futura (sem envios atrasados).', 'Este agendamento não está pausado.');
+    }
+
+    public function cancelSchedule(int $id): void
+    {
+        $this->flash(\App\Support\TransmissionScheduler::cancel($id, auth()->id()), 'Agendamento cancelado. Nenhum envio futuro será gerado.', 'Este agendamento já terminou.');
+    }
+
     public function with(): array
     {
         $uid = auth()->id();
+        $schedules = \App\Domains\Broadcasts\Models\TransmissionSchedule::where('created_by', $uid)->whereIn('status', ['active', 'paused', 'failed'])->orderBy('next_run_at')->limit(20)->get();
         $base = TransmissionBatch::where('created_by', $uid);
         $total = (clone $base)->count();
         $pages = max(1, (int) ceil($total / self::BATCHES_PER_PAGE));
@@ -102,7 +118,7 @@ new class extends Component {
         }
         $live = $batches->contains(fn ($b) => in_array($b->status, ['queued', 'running'], true));
 
-        return compact('batches', 'counts', 'total', 'pages', 'open', 'recipients', 'recipientTotal', 'retry', 'live')
+        return compact('schedules', 'batches', 'counts', 'total', 'pages', 'open', 'recipients', 'recipientTotal', 'retry', 'live')
             + ['recipientPages' => max(1, (int) ceil($recipientTotal / self::RECIPIENTS_PER_PAGE))];
     }
 }; ?>
@@ -112,10 +128,28 @@ new class extends Component {
     @if ($notice)<x-fx.alert variant="success">{{ $notice }}</x-fx.alert>@endif
     @if ($errorNotice)<x-fx.alert variant="warning">{{ $errorNotice }}</x-fx.alert>@endif
 
+    @foreach ($schedules as $s)
+        <x-fx.card wire:key="schedule-{{ $s->id }}" data-schedule="{{ $s->id }}">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                    <p class="font-semibold text-mono-900">Agendamento #{{ $s->id }} · {{ \App\Domains\Broadcasts\Models\TransmissionSchedule::KIND_LABELS[$s->kind] ?? $s->kind }}</p>
+                    <p class="text-xs text-mono-600">{{ \App\Domains\Broadcasts\Models\TransmissionSchedule::STATUS_LABELS[$s->status] ?? $s->status }}@if ($s->next_run_at && $s->status === 'active') · Próximo envio: {{ $s->next_run_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }} (Fortaleza)@endif · Etiquetas: {{ implode(', ', (array) $s->labels) }}@if ($s->media_name) · Anexo: {{ $s->media_name }}@endif</p>
+                    @if ($s->last_error)<p class="text-xs text-error">Último problema: {{ $s->last_error }}</p>@endif
+                </div>
+                <div class="flex flex-wrap gap-2 text-xs">
+                    @if ($s->kind === 'weekly' && $s->status === 'active')<button type="button" wire:click="pauseSchedule({{ $s->id }})" class="h-9 rounded-xl border border-mono-200 px-3">Pausar</button>@endif
+                    @if ($s->kind === 'weekly' && $s->status === 'paused')<button type="button" wire:click="resumeSchedule({{ $s->id }})" class="h-9 rounded-xl border border-mono-200 px-3">Retomar</button>@endif
+                    @if (in_array($s->status, ['active', 'paused'], true))<button type="button" wire:click="cancelSchedule({{ $s->id }})" wire:confirm="Cancelar este agendamento? Nenhum envio futuro será gerado." class="h-9 rounded-xl border border-error px-3 text-error">Cancelar agendamento</button>@endif
+                </div>
+            </div>
+            <p class="mt-2 text-sm text-mono-800">{{ \Illuminate\Support\Str::limit($s->body, 160) }}</p>
+        </x-fx.card>
+    @endforeach
+
     @forelse ($batches as $b)
         @php
             $c = $counts[$b->id] ?? [];
-            $done = ($c['sent'] ?? 0) + ($c['failed'] ?? 0) + ($c['unconfirmed'] ?? 0) + ($c['cancelled'] ?? 0);
+            $done = ($c['sent'] ?? 0) + ($c['failed'] ?? 0) + ($c['unconfirmed'] ?? 0) + ($c['cancelled'] ?? 0) + ($c['suppressed'] ?? 0);
         @endphp
         <x-fx.card wire:key="batch-{{ $b->id }}" data-batch="{{ $b->id }}">
             <div class="flex flex-wrap items-start justify-between gap-2">

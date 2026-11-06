@@ -516,3 +516,15 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Pausar/Retomar/Cancelar (somente o dono; lote de outra pessoa = 404). A tarefa de cada pessoa trava o lote antes de reservar o envio: pausada/cancelada não envia. Retomar reagenda só os pendentes (5 s + 45–90 s entre cada) com novo token; tarefas antigas perdem a validade. Cancelar pede confirmação ("Mensagens já aceitas não podem ser retiradas."), marca pendentes como "Cancelado" e mantém as aceitas.
 - "Reenviar somente falhas": cria nova transmissão ligada à original (`retry_of_id`), mesmo texto/etiquetas/anexo copiado, só com destinatários "Falhou"; "Sem confirmação" nunca entra. Uma vez por lote. Original não é alterado. Anexo agora é guardado enquanto houver falhas; se o anexo original sumiu, o reenvio é bloqueado com aviso (não envia sem anexo).
 - Migração `2026_11_06_500000_transmission_history_controls` (retry_of_id, paused_at, cancelled_at, controlled_by, dispatch_token). Teste novo: TransmissionHistoryTest (8). Suíte: 552 passando. Backup: `storage/backups/pre_t3/`.
+
+
+## 2026-11-06 — Transmissão fase 4: lista "Não receber", aviso de saída e agendamento
+
+- Lista "Não receber" (`transmission_suppressions`, aba nova em /broadcasts): telefone criptografado + hash HMAC (mesmo padrão E.164 dos destinatários), nome/motivo opcionais, origem "manual", data; "Voltar a receber" só por clique explícito (registro mantido). Vale para o sistema todo. Telefone exibido só com 4 últimos dígitos.
+- A lista é aplicada na revisão (contagem "Na lista Não receber (fora)"), na criação do lote (`suppressed_omitted`), no reenvio de falhas e de novo na tarefa de cada pessoa antes de chamar o Chatwoot (status "Não recebe (lista de saída)", sem chamada externa).
+- `TransmissionSuppression::classify()` reconhece SAIR / quero sair / não quero mais receber, mas NÃO está ligado a nenhum webhook: o sistema não lê respostas nem responde sozinho.
+- Aviso opcional (ligado por padrão) no fim da mensagem: "Se não quiser mais receber estas mensagens, responda SAIR." — mesma função da prévia, nunca duplicado.
+- "Quando enviar": Agora (padrão, igual antes) / Em uma data e horário / Toda semana (alternando). Horário de Fortaleza (UTC−3), 08:00–20:00, mínimo 5 min de antecedência. Semanal começa seg/ter/qua, manhã 09:00 ou tarde 14:00; depois uma vez por semana alternando seg→ter→qua e manhã↔tarde. Sempre com revisão e confirmação.
+- `transmission_schedules` + comando `transmissions:dispatch-scheduled` (agendador, a cada minuto, withoutOverlapping). Reserva a ocorrência com trava antes de ler os contatos (idempotente; uma por semana), relê as etiquetas no Chatwoot, aplica deduplicação e "Não receber" e cria o lote com o mesmo fluxo de envio (45–90 s por pessoa). Falha ao ler contatos: registra o motivo e para (semanal fica pausado, data única "Não executada"); nunca tenta sozinho de novo. Retomar vai para a próxima data futura (sem envio atrasado).
+- Histórico mostra agendamentos do dono com Pausar/Retomar (semanal) e Cancelar agendamento.
+- Teste novo: TransmissionOptOutScheduleTest (12). Backup de código: `storage/backups/pre_t4/`.

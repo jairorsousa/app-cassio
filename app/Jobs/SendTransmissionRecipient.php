@@ -40,6 +40,12 @@ class SendTransmissionRecipient implements ShouldQueue
             if (! $row || $row->status !== 'pending' || $row->dispatch_token !== $this->token) {
                 return null;
             }
+            // Pediu para não receber depois do agendamento: não chama o Chatwoot.
+            if (\App\Domains\Broadcasts\Models\TransmissionSuppression::isActive($row->phone_hash)) {
+                $row->update(['status' => 'suppressed', 'error' => 'Na lista "Não receber"', 'finished_at' => now()]);
+
+                return false;
+            }
             $row->update(['status' => 'sending', 'attempted_at' => now()]);
             if ($batch->status === 'queued') {
                 $batch->update(['status' => 'running']);
@@ -47,6 +53,11 @@ class SendTransmissionRecipient implements ShouldQueue
 
             return $row;
         });
+        if ($r === false) {
+            TransmissionBatch::finalizeIfDone($batchId);
+
+            return;
+        }
         if (! $r) {
             return;
         }

@@ -73,7 +73,7 @@ class BroadcastReviewTest extends TestCase
         Queue::fake();
         $c = $this->broadcastPage()->call('toggleLabel', 'parceiros')->call('toggleLabel', 'clientes')
             ->set('message', "Olá\nNovidade")->set('link', 'instagram.com/cassio')->set('attachment', UploadedFile::fake()->image('foto.png'));
-        $expected = "Olá\n\nNovidade\n\nhttps://instagram.com/cassio";
+        $expected = "Olá\n\nNovidade\n\nhttps://instagram.com/cassio\n\nSe não quiser mais receber estas mensagens, responda SAIR.";
         $c->call('review')->assertSet('reviewing', true)->assertSeeHtml('data-review-total>2<')->assertSeeHtml('data-review-dups>2<')->assertSee('foto.png');
         $this->assertStringContainsString(e($expected), $c->html());
         Queue::assertNothingPushed();

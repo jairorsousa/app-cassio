@@ -38,12 +38,17 @@ class BroadcastComposer
         return trim($t);
     }
 
-    public static function compose(string $text, ?string $url, bool $splitParagraphs = true): string
+    public const OPT_OUT_FOOTER = 'Se não quiser mais receber estas mensagens, responda SAIR.';
+
+    public static function compose(string $text, ?string $url, bool $splitParagraphs = true, bool $optOutFooter = false): string
     {
         $body = self::formatText($text, $splitParagraphs);
         $link = self::normalizeUrl($url);
         if (is_string($link)) {
             $body = $body === '' ? $link : $body."\n\n".$link;
+        }
+        if ($optOutFooter && ! str_ends_with($body, self::OPT_OUT_FOOTER)) {
+            $body = $body === '' ? self::OPT_OUT_FOOTER : $body."\n\n".self::OPT_OUT_FOOTER;
         }
 
         return $body;

@@ -19,14 +19,21 @@ class TransmissionDispatcher
     public const AUDIO_MIME = ['mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'aac' => 'audio/aac', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'oga' => 'audio/ogg', 'opus' => 'audio/ogg'];
 
     /** Cria o lote + destinatários (ordem embaralhada, 45–90 s entre cada) e agenda uma tarefa por pessoa. */
-    public static function start(?int $userId, string $body, ?UploadedFile $media, array $audience, array $labels): TransmissionBatch
+    public static function start(?int $userId, string $body, ?UploadedFile $media, array $audience, array $labels, ?array $storedMedia = null, ?int $scheduleId = null): TransmissionBatch
     {
-        $batch = DB::transaction(function () use ($userId, $body, $media, $audience, $labels) {
+        // Confere de novo a lista "Não receber" no momento de criar o lote.
+        $audience = \App\Support\TransmissionAudience::withoutSuppressed($audience);
+        $batch = DB::transaction(function () use ($userId, $body, $media, $audience, $labels, $storedMedia, $scheduleId) {
             $b = TransmissionBatch::create([
-                'created_by' => $userId, 'labels' => array_values($labels), 'body' => $body, 'status' => 'queued',
+                'created_by' => $userId, 'schedule_id' => $scheduleId, 'labels' => array_values($labels), 'body' => $body, 'status' => 'queued',
                 'recipients_count' => count($audience['recipients']), 'duplicates_omitted' => $audience['duplicates'],
-                'invalid_omitted' => $audience['missing_phone'] + $audience['invalid_phone'],
+                'invalid_omitted' => $audience['missing_phone'] + $audience['invalid_phone'], 'suppressed_omitted' => $audience['suppressed'] ?? 0,
             ]);
+            if ($storedMedia) {
+                $path = 'transmissions/'.$b->id.'/'.basename($storedMedia['path']);
+                Storage::disk('local')->copy($storedMedia['path'], $path);
+                $b->update(['media_path' => $path, 'media_name' => $storedMedia['name'], 'media_mime' => $storedMedia['mime']]);
+            }
             if ($media) {
                 $ext = strtolower($media->getClientOriginalExtension());
                 $path = $media->storeAs('transmissions/'.$b->id, Str::random(32).'.'.$ext, 'local');
@@ -155,11 +162,16 @@ class TransmissionDispatcher
             if ($info['blocked']) {
                 throw new \RuntimeException($info['blocked']);
             }
+            $blocked = \App\Domains\Broadcasts\Models\TransmissionSuppression::activeHashes($orig->recipients()->where('status', 'failed')->pluck('phone_hash')->all());
             $people = $orig->recipients()->where('status', 'failed')->orderBy('position')->get()
+                ->reject(fn ($r) => isset($blocked[$r->phone_hash]))
                 ->map(fn ($r) => ['contact_id' => $r->contact_id, 'name' => $r->name, 'phone' => $r->phone, 'phone_hash' => $r->phone_hash, 'labels' => $r->labels]);
+            if ($people->isEmpty()) {
+                throw new \RuntimeException('Todos com falha estão na lista "Não receber".');
+            }
             $b = TransmissionBatch::create([
                 'created_by' => $userId, 'retry_of_id' => $orig->id, 'labels' => $orig->labels, 'body' => $orig->body, 'status' => 'queued',
-                'recipients_count' => $people->count(), 'duplicates_omitted' => 0, 'invalid_omitted' => 0,
+                'recipients_count' => $people->count(), 'duplicates_omitted' => 0, 'invalid_omitted' => 0, 'suppressed_omitted' => count($blocked),
             ]);
             if ($orig->media_name) {
                 $path = 'transmissions/'.$b->id.'/'.basename($orig->media_path);

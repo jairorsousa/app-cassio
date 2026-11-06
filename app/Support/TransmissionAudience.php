@@ -24,6 +24,18 @@ class TransmissionAudience
         return hash_hmac('sha256', $e164, (string) config('app.key'));
     }
 
+    /** Tira quem está na lista "Não receber" (uma consulta). Soma em 'suppressed'. */
+    public static function withoutSuppressed(array $audience): array
+    {
+        $blocked = \App\Domains\Broadcasts\Models\TransmissionSuppression::activeHashes(array_column($audience['recipients'], 'phone_hash'));
+        $keep = array_values(array_filter($audience['recipients'], fn ($r) => ! isset($blocked[$r['phone_hash']])));
+        $audience['suppressed'] = ($audience['suppressed'] ?? 0) + (count($audience['recipients']) - count($keep));
+        $audience['recipients'] = $keep;
+        $audience['unique'] = count($keep);
+
+        return $audience;
+    }
+
     /**
      * @param  array<string, array<int, array{id:mixed,name:mixed,phone_number:mixed}>>  $byLabel
      */
@@ -67,6 +79,6 @@ class TransmissionAudience
             }
         }
 
-        return ['recipients' => array_values($recipients), 'raw' => $raw, 'unique' => count($recipients), 'duplicates' => $duplicates, 'missing_phone' => $missing, 'invalid_phone' => $invalid];
+        return ['recipients' => array_values($recipients), 'raw' => $raw, 'unique' => count($recipients), 'duplicates' => $duplicates, 'missing_phone' => $missing, 'invalid_phone' => $invalid, 'suppressed' => 0];
     }
 }
