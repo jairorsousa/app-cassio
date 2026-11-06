@@ -605,3 +605,11 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - `CHATWOOT_OPT_OUT_INBOX_ID=15` (conta 1 / CMS-6000). Eventos de outras inboxes ou sem `inbox_id` no payload são ignorados (`wrong_inbox`); sem ID configurado também não bloqueia ninguém.
 - Nenhuma alteração no Chatwoot nesta etapa.
 
+
+## 2026-11-06 — Webhook SAIR: assinatura oficial X-Chatwoot-Signature (OR com token)
+
+- Auth OR no mesmo `POST /webhooks/chatwoot`:
+  1. Assinatura oficial: headers `X-Chatwoot-Signature` + `X-Chatwoot-Timestamp`; `CHATWOOT_WEBHOOK_SECRET` = Secret do webhook **Transmissão - SAIR** na UI. Fórmula sha256=HMAC-SHA256(secret, "{timestamp}.{raw_body}") (raw body, sem re-serializar); tolerância `CHATWOOT_WEBHOOK_SIGNATURE_TOLERANCE` (padrão 300s). Helper `App\Support\ChatwootWebhookSignature`.
+  2. Token legado: `CHATWOOT_WEBHOOK_TOKEN` (header/query) — preservado; não removido.
+- Sem token **e** sem secret → 503 `webhook_auth_unset`. Secret vazio = assinatura desligada (token continua válido).
+- Inbox fail-closed 15 e demais regras de SAIR inalteradas. **Não** gravamos `CHATWOOT_WEBHOOK_SECRET` nesta etapa (colar depois via clipboard no `.env` + `config:cache`). Token tmp e `CHATWOOT_WEBHOOK_TOKEN` mantidos. Sem ação no Chatwoot/nginx_msa.

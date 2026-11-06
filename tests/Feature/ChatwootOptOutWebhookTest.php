@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Domains\Broadcasts\Models\TransmissionSuppression;
+use App\Support\ChatwootWebhookSignature;
 use App\Support\TransmissionAudience;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -15,11 +16,15 @@ class ChatwootOptOutWebhookTest extends TestCase
 
     private string $token = 'test-webhook-token-not-for-production';
 
+    private string $secret = 'test-webhook-signing-secret-not-for-production';
+
     protected function setUp(): void
     {
         parent::setUp();
         config([
             'services.chatwoot.webhook_token' => $this->token,
+            'services.chatwoot.webhook_secret' => '', // assinatura desligada por padrão nos testes de token
+            'services.chatwoot.webhook_signature_tolerance' => 300,
             'services.chatwoot.webhook_optout_per_minute' => 30,
             'services.chatwoot.opt_out_inbox_id' => 15,
         ]);
@@ -61,22 +66,49 @@ class ChatwootOptOutWebhookTest extends TestCase
         return $this->postJson('/webhooks/chatwoot', $payload, $headers);
     }
 
+    /** POST com corpo raw + headers de assinatura Chatwoot (não re-serializa). */
+    private function postSigned(array $payload, ?string $secret = null, ?int $timestamp = null, ?string $signatureOverride = null)
+    {
+        $secret ??= $this->secret;
+        $timestamp ??= time();
+        $raw = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $sig = $signatureOverride ?? ChatwootWebhookSignature::expected($secret, (string) $timestamp, $raw);
+
+        return $this->call(
+            'POST',
+            '/webhooks/chatwoot',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_CHATWOOT_SIGNATURE' => $sig,
+                'HTTP_X_CHATWOOT_TIMESTAMP' => (string) $timestamp,
+            ],
+            $raw
+        );
+    }
+
     public function test_token_ausente_ou_invalido_e_recusado(): void
     {
         $this->postJson('/webhooks/chatwoot', $this->payload())->assertUnauthorized();
         $this->postWebhook($this->payload(), 'errado')->assertUnauthorized();
     }
 
-    public function test_sem_token_configurado_fica_desligado(): void
+    public function test_sem_token_nem_secret_fica_desligado(): void
     {
-        config(['services.chatwoot.webhook_token' => '']);
+        config([
+            'services.chatwoot.webhook_token' => '',
+            'services.chatwoot.webhook_secret' => '',
+        ]);
         $this->postWebhook($this->payload())->assertStatus(503)->assertJson(['status' => 'disabled']);
         $this->assertSame(0, TransmissionSuppression::count());
     }
 
     public function test_sair_incoming_bloqueia_telefone_idempotente(): void
     {
-        $r1 = $this->postWebhook($this->payload())->assertOk()->assertJson(['status' => 'suppressed']);
+        $this->postWebhook($this->payload())->assertOk()->assertJson(['status' => 'suppressed']);
         $this->assertSame(1, TransmissionSuppression::count());
         $row = TransmissionSuppression::sole();
         $this->assertSame('chatwoot', $row->source);
@@ -90,12 +122,113 @@ class ChatwootOptOutWebhookTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_aceita_token_na_query_para_url_do_chatwoot(): void
+    public function test_aceita_token_na_query_para_compatibilidade_local(): void
     {
         $this->postJson('/webhooks/chatwoot?token='.$this->token, $this->payload(['content' => 'parar']))
             ->assertOk()
             ->assertJson(['status' => 'suppressed']);
         $this->assertSame(1, TransmissionSuppression::count());
+    }
+
+    public function test_assinatura_valida_com_raw_body_autoriza_sem_token(): void
+    {
+        config([
+            'services.chatwoot.webhook_token' => '',
+            'services.chatwoot.webhook_secret' => $this->secret,
+        ]);
+
+        $this->postSigned($this->payload())
+            ->assertOk()
+            ->assertJson(['status' => 'suppressed']);
+        $this->assertSame(1, TransmissionSuppression::count());
+        Http::assertNothingSent();
+    }
+
+    public function test_assinatura_invalida_e_recusada(): void
+    {
+        config([
+            'services.chatwoot.webhook_token' => '',
+            'services.chatwoot.webhook_secret' => $this->secret,
+        ]);
+
+        $this->postSigned($this->payload(), signatureOverride: 'sha256='.str_repeat('0', 64))
+            ->assertUnauthorized();
+        $this->assertSame(0, TransmissionSuppression::count());
+    }
+
+    public function test_assinatura_com_corpo_alterado_falha(): void
+    {
+        config([
+            'services.chatwoot.webhook_token' => '',
+            'services.chatwoot.webhook_secret' => $this->secret,
+        ]);
+
+        $payload = $this->payload();
+        $timestamp = time();
+        $rawAssinado = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $sig = ChatwootWebhookSignature::expected($this->secret, (string) $timestamp, $rawAssinado);
+
+        // Corpo diferente do que foi assinado.
+        $payload['content'] = 'SAIR tampered';
+        $rawTampered = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $this->call(
+            'POST',
+            '/webhooks/chatwoot',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_CHATWOOT_SIGNATURE' => $sig,
+                'HTTP_X_CHATWOOT_TIMESTAMP' => (string) $timestamp,
+            ],
+            $rawTampered
+        )->assertUnauthorized();
+        $this->assertSame(0, TransmissionSuppression::count());
+    }
+
+    public function test_secret_vazio_nao_aceita_assinatura_mesmo_com_headers(): void
+    {
+        config([
+            'services.chatwoot.webhook_token' => $this->token,
+            'services.chatwoot.webhook_secret' => '',
+        ]);
+
+        // Sem token e com assinatura "válida" para um secret fictício → 401 (modo assinatura desligado).
+        $payload = $this->payload();
+        $raw = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $ts = (string) time();
+        $sig = ChatwootWebhookSignature::expected('outro-secret', $ts, $raw);
+
+        $this->call(
+            'POST',
+            '/webhooks/chatwoot',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_CHATWOOT_SIGNATURE' => $sig,
+                'HTTP_X_CHATWOOT_TIMESTAMP' => $ts,
+            ],
+            $raw
+        )->assertUnauthorized();
+    }
+
+    public function test_timestamp_expirado_e_recusado(): void
+    {
+        config([
+            'services.chatwoot.webhook_token' => '',
+            'services.chatwoot.webhook_secret' => $this->secret,
+            'services.chatwoot.webhook_signature_tolerance' => 300,
+        ]);
+
+        $this->postSigned($this->payload(), timestamp: time() - 301)
+            ->assertUnauthorized();
+        $this->assertSame(0, TransmissionSuppression::count());
     }
 
     public function test_outgoing_private_e_eventos_irrelevantes_nao_bloqueiam(): void

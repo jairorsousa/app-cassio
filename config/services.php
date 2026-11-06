@@ -41,8 +41,13 @@ return [
         'api_access_token' => env('CHATWOOT_API_ACCESS_TOKEN'),
         'inbox_id' => env('CHATWOOT_INBOX_ID', 15),
         'assignee_id' => env('CHATWOOT_ASSIGNEE_ID', 4),
-        // Token do webhook de opt-out (SAIR). Vazio = endpoint desligado (503). Não inventar valor.
+        // Token legado/local (header ou ?token=). Opcional se webhook_secret estiver preenchido.
         'webhook_token' => env('CHATWOOT_WEBHOOK_TOKEN'),
+        // Secret do webhook "Transmissão - SAIR" (UI Chatwoot → editar webhook). Assinatura X-Chatwoot-Signature.
+        // Vazio = modo assinatura desligado. Nunca logar. Não usar token do webhook "labels".
+        'webhook_secret' => env('CHATWOOT_WEBHOOK_SECRET'),
+        // Tolerância do X-Chatwoot-Timestamp em segundos (0 = não checa idade). Padrão 5 min.
+        'webhook_signature_tolerance' => (int) env('CHATWOOT_WEBHOOK_SIGNATURE_TOLERANCE', 300),
         'webhook_optout_per_minute' => (int) env('CHATWOOT_WEBHOOK_OPTOUT_PER_MINUTE', 30),
         // Inbox permitida para SAIR (fail-closed se vazio ou divergente). CMS-6000 conta 1 = 15.
         'opt_out_inbox_id' => (int) env('CHATWOOT_OPT_OUT_INBOX_ID', 0),
