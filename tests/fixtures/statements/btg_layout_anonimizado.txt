@@ -1,0 +1,39 @@
+Extrato de Conta
+Investimento
+
+Período de 01/01/2026 a 10/01/2026        Emitido em 10 de Janeiro de 2026
+
+      TITULAR ANONIMIZADO
+
+      Informações de Conta Investimento
+      Banco: 208 BTGPACTUAL
+      Conta Investimento: 000000000
+
+                                                                             1 de 2
+Movimentação - Conta Investimento
+
+  Data                            Descrição                       Débito      Crédito        Saldo
+01/01/2026   Saldo Inicial                                                                  1.000,00
+
+02/01/2026   LIQ BOLSA (Corretagem BTC Aluguel)                        0,50                    999,50
+02/01/2026   TAXA REMUNERAÇÃO - BTC AAAA3                                          10,00      1.009,50
+02/01/2026   IR - BTC AAAA3                                            1,50                  1.008,00
+03/01/2026   JUROS S/ CAPITAL s/ EMPRESA A     PN     N1 - AAAA3                  20,00      1.028,00
+03/01/2026   DIVIDENDOS - À VISTA s/ EMPRESA B ON NM - BBBB3                      30,00      1.058,00
+04/01/2026   DIVIDENDOS - ALUGUEL DE AÇÕES s/ EMPRESA C ON NM - CCCC3              5,00      1.063,00
+04/01/2026   RENDIMENTOS s/ EMPRESA D ON NM - DDDD3                               2,00      1.065,00
+                                                                                           1 de 2
+05/01/2026   RENDIMENTOS - À VISTA s/ FUNDO F CI - FFFF11                        4,00       1.069,00
+05/01/2026   JUROS S/ CAPITAL s/ EMPRESA SEM TICKER ON NM -                      3,00       1.072,00
+06/01/2026   LIQ BOLSA (ALUGUEL)                                    7,00                   1.065,00
+06/01/2026   LIQ BOLSA (Operacoes)- Pregão:02/01/2026          500,00                      565,00
+07/01/2026   TED ENVIADA - TITULAR ANONIMIZADO                     100,00                     465,00
+07/01/2026   CONTA REMUNERADA - RESGATE REMUNERAÇÃO -                             1,00         466,00
+08/01/2026   LIQ BOLSA (TAXA SOBRE VALOR EM CUSTÓDIA TAXA                0,30                  465,70
+08/01/2026   IRRF - LEI 11.033/04 - AÇÃO (VENDAS)                      0,20                  465,50
+09/01/2026   LEILÃO DE FRAÇÕES - À VISTA s/ EMPRESA A PN N1 - AAAA3              0,80        466,30
+10/01/2026   Rendimento Disponível - Saldo Remunerado                            0,70        467,00
+10/01/2026   Saldo Final                                                                    466,30
+
+Total de Créditos                                                           76,50
+Total de Débitos                                               609,50

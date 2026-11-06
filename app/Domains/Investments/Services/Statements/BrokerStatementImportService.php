@@ -36,6 +36,14 @@ class BrokerStatementImportService
         ]);
         if ($kind === 'pdf') {
             $r = $this->pdf->extract($abs);
+            if ($r['status'] === 'text_extracted' && BtgStatementPdfParser::detect($r['text'])) {
+                $btg = app(BtgStatementPdfParser::class);
+                $parsed = $btg->parse($r['text']);
+                $import->update(['text_status' => 'text_extracted', 'headers' => null, 'mapping' => ['layout' => 'btg_conta_investimento'], 'summary' => ['reconciliation' => $parsed['reconciliation']]]);
+                $this->buildLayoutRows($import, $btg->toStagingRows($parsed), $parsed['reconciliation']);
+
+                return $import->fresh();
+            }
             $import->update(['status' => 'needs_review', 'text_status' => $r['status'], 'summary' => ['pdf_chars' => mb_strlen($r['text']), 'message' => match ($r['status']) {
                 'text_extracted' => 'PDF com texto, mas sem layout validado desta corretora: envie o XLSX/CSV original ou cadastre manualmente. Nada será importado do PDF automaticamente.',
                 'no_text' => 'PDF sem texto (provavelmente escaneado). Precisa do arquivo original XLSX/CSV ou revisão manual.',
@@ -63,6 +71,29 @@ class BrokerStatementImportService
         return $import->fresh();
     }
 
+    /** Linhas já normalizadas por um parser de layout (ex.: BTG PDF). IR vinculado vira "linked". */
+    public function buildLayoutRows(BrokerStatementImport $import, array $rows, array $reconciliation): void
+    {
+        DB::transaction(function () use ($import, $rows, $reconciliation) {
+            $import->rows()->delete();
+            $seen = [];
+            $ids = [];
+            foreach ($rows as $i => $n) {
+                $base = 'stmt:'.sha1(mb_strtolower($import->broker_name).'|'.$n['date'].'|'.$n['ticker'].'|'.$n['kind'].'|'.$n['source_type_label'].'|'.$n['net_amount']);
+                $seen[$base] = ($seen[$base] ?? 0) + 1;
+                $link = $n['link_to'];
+                unset($n['link_to']);
+                $row = BrokerStatementRow::create($n + ['import_id' => $import->id, 'row_number' => $i + 1, 'source_key' => $base.':'.$seen[$base], 'status' => 'pending']);
+                $ids[$i] = $row->id;
+                if ($link !== null) {
+                    $row->update(['status' => 'linked', 'external_id' => 'linha '.($link + 1)]);
+                }
+            }
+            $import->update(['summary' => ['reconciliation' => $reconciliation]]);
+            $this->classify($import);
+        });
+    }
+
     public function buildRows(BrokerStatementImport $import, array $table): void
     {
         DB::transaction(function () use ($import, $table) {
@@ -82,14 +113,14 @@ class BrokerStatementImportService
     public function classify(BrokerStatementImport $import): void
     {
         foreach ($import->rows()->get() as $row) {
-            if (in_array($row->status, ['excluded', 'imported'], true)) {
+            if (in_array($row->status, ['excluded', 'imported', 'linked'], true)) {
                 continue;
             }
             $msgs = collect($row->messages ?? [])->reject(fn ($m) => str_starts_with($m, 'Possível duplicado'))->values()->all();
             $status = 'ready';
             $dup = null;
             if (! in_array($row->kind, BrokerStatementRow::INCOME_KINDS, true)) {
-                $status = in_array($row->kind, ['buy', 'sell', 'transfer', 'fee'], true) ? 'pending_manual' : 'error';
+                $status = in_array($row->kind, BrokerStatementRow::MANUAL_KINDS, true) ? 'pending_manual' : 'error';
             } elseif (! $row->date || $row->net_amount === null || ! $row->ticker) {
                 $status = 'error';
             } elseif (AssetIncomeEvent::where('source_key', $row->source_key)->exists()) {
@@ -105,7 +136,7 @@ class BrokerStatementImportService
             }
             $row->update(['status' => $status, 'duplicate_of_event_id' => $dup?->id, 'messages' => $msgs]);
         }
-        $import->update(['summary' => $this->summary($import)]);
+        $import->update(['summary' => $this->summary($import) + array_intersect_key($import->summary ?? [], ['reconciliation' => 1])]);
     }
 
     public function updateRow(BrokerStatementRow $row, array $data): void
@@ -128,6 +159,9 @@ class BrokerStatementImportService
         $this->assertOpen($import);
         $this->verifiedPath($import);
         $this->classify($import);
+        if (isset($import->summary['reconciliation']) && ! $import->summary['reconciliation']['ok']) {
+            throw new RuntimeException('O extrato não reconcilia (saldo/totais): revise antes de importar.');
+        }
         if ($import->rows()->where('status', 'error')->exists()) {
             throw new RuntimeException('Há linhas com erro: corrija ou exclua antes de confirmar.');
         }
@@ -147,7 +181,7 @@ class BrokerStatementImportService
                 $row->update(['status' => 'imported', 'income_event_id' => $event->id]);
                 $imported++;
             }
-            $summary = $this->summary($import);
+            $summary = $this->summary($import) + array_intersect_key($import->summary ?? [], ['reconciliation' => 1]);
             $this->deleteFile($import);
             $import->update(['status' => 'confirmed', 'confirmed_by' => $userId, 'confirmed_at' => now(), 'summary' => $summary]);
 

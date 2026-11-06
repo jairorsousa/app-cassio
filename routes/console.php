@@ -334,3 +334,37 @@ Artisan::command('investments:statements-cleanup', function (\App\Domains\Invest
     $this->info('Lotes/arquivos limpos: '.$service->cleanup());
 })->purpose('Apaga extratos de corretora expirados (TTL) e arquivos de lotes fechados');
 Schedule::command('investments:statements-cleanup')->hourly();
+
+Artisan::command('investments:statement-preview {file} {--broker=BTG Pactual}', function (\App\Domains\Investments\Services\Statements\BrokerStatementImportService $service) {
+    // Prévia somente leitura: tudo dentro de transação revertida e arquivo temporário apagado.
+    $file = (string) $this->argument('file');
+    if (! is_readable($file)) {
+        $this->error('Arquivo inexistente ou ilegível.');
+
+        return 1;
+    }
+    $upload = new \Illuminate\Http\UploadedFile($file, basename($file), null, null, true);
+    \Illuminate\Support\Facades\DB::beginTransaction();
+    try {
+        $imp = $service->stage($upload, (string) $this->option('broker'), null);
+        $rows = $imp->rows()->get();
+        $out = [
+            'status' => $imp->status, 'text_status' => $imp->text_status, 'layout' => $imp->mapping['layout'] ?? null,
+            'reconciliation' => $imp->summary['reconciliation'] ?? null, 'rows' => $rows->count(),
+            'by_status' => $rows->countBy('status'),
+            'by_kind' => $rows->groupBy('kind')->map(fn ($g) => ['count' => $g->count(), 'net' => round((float) $g->sum('net_amount'), 2), 'statuses' => $g->countBy('status')]),
+            'importable_net' => round((float) $rows->where('status', 'ready')->sum('net_amount'), 2),
+            'duplicate_candidates_by_kind' => $rows->where('status', 'duplicate_candidate')->countBy('kind'),
+            'errors' => $rows->where('status', 'error')->map(fn ($r) => $r->date?->format('d/m/Y').' '.$r->kind.' '.($r->ticker ?? '?').': '.implode(' ', $r->messages ?? []))->values(),
+        ];
+        if ($imp->file_path) {
+            \Illuminate\Support\Facades\Storage::disk('local')->deleteDirectory(dirname($imp->file_path));
+        }
+    } finally {
+        \Illuminate\Support\Facades\DB::rollBack();
+    }
+    $this->line(json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $this->info('Somente prévia: nada foi gravado.');
+
+    return 0;
+})->purpose('Prévia somente leitura de um extrato de corretora (sem gravar)');

@@ -364,3 +364,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Testes `BrokerStatementPdfTest` com PDFs sintéticos (`tests/fixtures/statements/`): extração real, PDF sem texto, PDF com texto continua "precisa revisão" e não importa nada, binário quebrado/ausente. Pulam se pdftotext não existir.
 - Continua sem OCR, sem IA e sem layout de PDF validado de qualquer corretora; PDF só serve para triagem (texto detectado ou não).
 - Observação: o worker roda `queue:work --timeout=120`, menor que o `timeout` 600 do job de cotações; não alterado aqui.
+
+## 2026-11-06 — Parser BTG (PDF Conta Investimento) com reconciliação
+
+- `BtgStatementPdfParser`: calibrado com 1 extrato real BTG (01/01–06/11/2026, 19 páginas) via `pdftotext -layout`. Débito/crédito decidido pelo saldo corrido (anterior ± valor = saldo), não pela coluna. Reconciliação: saldo inicial + créditos − débitos = saldo corrido final e = "Total de Créditos/Débitos" impressos; qualquer linha divergente bloqueia a confirmação. "Saldo Final" impresso diferente do saldo corrido é sinalizado (no arquivo real: 51.498,34 impresso × 51.510,94 corrido, diferença = "Rendimento Disponível - Saldo Remunerado" 12,60 lançado após o fechamento).
+- Classificação: TAXA REMUNERAÇÃO - BTC → aluguel (bruto); IR - BTC → vinculado à taxa do mesmo dia/ticker (líquido = bruto − IR); LIQ BOLSA (Corretagem BTC Aluguel)/taxa custódia/emolumentos → taxa (manual); LIQ BOLSA (ALUGUEL) → liquidação agregada (manual); DIVIDENDOS/JCP/RENDIMENTOS (à vista ou sem sufixo) → provento; "- ALUGUEL" → reembolso; RENDIMENTOS de ação = "Rendimento (ação)", de FII (…11) = rendimento FII; TED → transferência; LIQ BOLSA (Operacoes) → liquidação de operações (manual, sem qtd/preço); IRRF vendas → imposto; conta remunerada/saldo remunerado → manual; frações/subscrição → manual.
+- Ticker: aceita B3SA3; quando o PDF corta a descrição, infere pelo nome do emissor em outra linha do mesmo extrato (aviso "conferir"); ambíguo/ausente → erro "informe o ticker" (campo editável na prévia).
+- Comando `investments:statement-preview {arquivo}`: prévia somente leitura (transação revertida, arquivo apagado).
+- Prévia do arquivo real (nada gravado; cópia temporária privada apagada): 667 movimentos, reconciliação OK (0 divergências). Confirmação NÃO executada.
+- Testes `BtgStatementPdfParserTest` com layout anonimizado (`tests/fixtures/statements/btg_layout_anonimizado.txt`).

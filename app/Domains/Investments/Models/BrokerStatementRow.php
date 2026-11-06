@@ -16,10 +16,16 @@ class BrokerStatementRow extends Model
         'dividend' => 'Dividendo', 'jcp' => 'JCP', 'fii_income' => 'Rendimento FII',
         'lending_fee' => 'Aluguel (taxa recebida)', 'lending_reimbursement' => 'Reembolso (aluguel)',
         'buy' => 'Compra', 'sell' => 'Venda', 'transfer' => 'Transferência/custódia', 'fee' => 'Taxa/tarifa',
+        'yield' => 'Rendimento (ação)', 'lending_tax' => 'IR sobre aluguel', 'lending_settlement' => 'Liquidação de aluguel (agregada)',
+        'trade_settlement' => 'Liquidação de operações', 'tax' => 'Imposto', 'cash_yield' => 'Conta remunerada', 'fraction' => 'Fração/leilão',
+        'subscription_right' => 'Direito de subscrição',
         'other' => 'Outro', 'unknown' => 'Não identificado',
     ];
 
-    public const INCOME_KINDS = ['dividend', 'jcp', 'fii_income', 'lending_fee', 'lending_reimbursement'];
+    /** Não viram evento: registrar/reconciliar manualmente. */
+    public const MANUAL_KINDS = ['buy', 'sell', 'transfer', 'fee', 'trade_settlement', 'lending_settlement', 'tax', 'cash_yield', 'fraction', 'subscription_right'];
+
+    public const INCOME_KINDS = ['dividend', 'jcp', 'fii_income', 'yield', 'lending_fee', 'lending_reimbursement'];
 
     public function import(): BelongsTo
     {
