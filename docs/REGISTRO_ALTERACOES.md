@@ -454,3 +454,8 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 - Transmissão: a página não tem histórico de envios; o peso era a lista de contatos do Chatwoot guardada inteira (objeto completo) no estado do Livewire. Agora guarda só id/nome/telefone, mostra 20 por página com busca por nome/telefone (filtra antes de paginar e volta à página 1). O envio continua indo para todos os contatos da label. Nenhuma chamada nova ao Chatwoot; leitura de labels/contatos ao abrir a página é a mesma de antes.
 - Categorias: 20 categorias-mãe por página em Despesas e Receitas (paginação separada); subcategorias carregadas só ao clicar "Ver N subcategoria(s)". Contagens totais e de transações inalteradas.
+
+## 2026-11-06 — Transmissão fase 1: link, parágrafos e revisão antes do envio
+
+- `App\Support\BroadcastComposer`: monta o texto enviado e a prévia com a mesma função. CRLF→LF; com "Separar parágrafos automaticamente" (padrão ligado) cada Enter simples vira linha em branco, 2+ enters ficam iguais (sem acumular). Link opcional (só http/https; sem esquema vira https://; javascript:/mailto:/data: rejeitados; nunca acessado pelo servidor) vai no fim, após linha em branco. Anexo até 12 MB mantido.
+- Envio em duas etapas: "Revisar envio" abre a revisão com total da etiqueta, telefone válido/sem/inválido e repetidos (não removidos nesta fase), mídia, prévia e aviso de irreversível. Só "Confirmar e iniciar envio" enfileira; `send()` direto só abre a revisão; confirmar sem revisão ou após alterar mensagem/link/opção/mídia/etiqueta é recusado; trava de 15 s contra duplo clique. Intervalo 45–90 s e limpeza do anexo inalterados. Sem envio real nos testes (fila e HTTP falsos).

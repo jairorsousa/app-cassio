@@ -9,6 +9,11 @@ new #[Layout('layouts.app')] class extends Component {
     use WithFileUploads;
 
     public string $message = '';
+    public string $link = '';
+    public bool $splitParagraphs = true;
+    public bool $reviewing = false;
+    public ?string $reviewHash = null;
+    public ?string $reviewNotice = null;
     public $attachment = null;
     public array $contacts = [];
     public array $labels = [];
@@ -25,6 +30,54 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->loadLabels();
         $this->loadContacts();
+    }
+
+    /** Qualquer mudança no que será enviado invalida a revisão. */
+    public function updated($property): void
+    {
+        if ($this->reviewing && in_array(explode('.', $property)[0], ['message', 'link', 'splitParagraphs', 'attachment', 'selectedLabel'], true)) {
+            $this->reviewing = false;
+            $this->reviewHash = null;
+            $this->reviewNotice = 'Você alterou a mensagem ou o público: revise novamente antes de enviar.';
+        }
+    }
+
+    private function fingerprint(): string
+    {
+        return sha1(json_encode([$this->message, $this->link, $this->splitParagraphs, $this->selectedLabel, $this->attachment ? [$this->attachment->getClientOriginalName(), $this->attachment->getSize()] : null, array_column($this->contacts, 'id')]));
+    }
+
+    private function validateDraft(): void
+    {
+        $this->validate([
+            'message' => 'required|string|max:1000',
+            'link' => ['nullable', 'string', 'max:500', function ($attr, $value, $fail) {
+                if (\App\Support\BroadcastComposer::normalizeUrl($value) === false) {
+                    $fail('Link inválido. Use um endereço http:// ou https:// (ex.: instagram.com/seuperfil).');
+                }
+            }],
+            'attachment' => 'nullable|file|mimetypes:image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm|max:12288',
+        ]);
+    }
+
+    /** Etapa 1: revisar (nada é enviado). */
+    public function review(): void
+    {
+        $this->reviewNotice = null;
+        $this->validateDraft();
+        if (empty($this->contacts)) {
+            $this->addError('message', 'Nenhum contato na lista para enviar a mensagem.');
+
+            return;
+        }
+        $this->reviewing = true;
+        $this->reviewHash = $this->fingerprint();
+    }
+
+    public function cancelReview(): void
+    {
+        $this->reviewing = false;
+        $this->reviewHash = null;
     }
 
     public function updatedContactSearch(): void
@@ -54,7 +107,7 @@ new #[Layout('layouts.app')] class extends Component {
         $pages = max(1, (int) ceil(count($all) / self::CONTACTS_PER_PAGE));
         $page = min($this->contactPage, $pages);
 
-        return ['pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
+        return ['preview' => \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), 'audience' => \App\Support\BroadcastComposer::audienceStats($this->contacts), 'pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
     }
 
     public function updatedSelectedLabel(): void
@@ -142,12 +195,29 @@ new #[Layout('layouts.app')] class extends Component {
         $this->loading = false;
     }
 
+    /** Envio direto não existe mais: abre a revisão. */
     public function send(): void
     {
-        $this->validate([
-            'message' => 'required|string|max:1000',
-            'attachment' => 'nullable|file|mimetypes:image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm|max:12288',
-        ]);
+        $this->review();
+    }
+
+    /** Etapa 2: só depois da revisão e sem alterações desde então. */
+    public function confirmSend(): void
+    {
+        if (! $this->reviewing || $this->reviewHash === null || ! hash_equals($this->reviewHash, $this->fingerprint())) {
+            $this->reviewing = false;
+            $this->reviewNotice = 'Revise a mensagem antes de confirmar o envio.';
+
+            return;
+        }
+        if (! \Illuminate\Support\Facades\Cache::add('broadcast-confirm:'.auth()->id(), 1, 15)) {
+            $this->reviewNotice = 'Envio já iniciado. Aguarde alguns segundos.';
+
+            return;
+        }
+        $this->validateDraft();
+        $this->reviewing = false;
+        $this->reviewHash = null;
 
         if (empty($this->contacts)) {
             $this->addError('message', 'Nenhum contato na lista para enviar a mensagem.');
@@ -173,10 +243,10 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         // Dispatch background job to send messages with sleep intervals
-        \App\Jobs\SendBroadcastMessage::dispatch($contactIds, $this->message, $attachment);
+        \App\Jobs\SendBroadcastMessage::dispatch($contactIds, \App\Support\BroadcastComposer::compose($this->message, $this->link, $this->splitParagraphs), $attachment);
 
         session()->flash('status', 'Envio iniciado! As mensagens estão sendo processadas em segundo plano (com o delay configurado).');
-        $this->reset('message', 'attachment');
+        $this->reset('message', 'attachment', 'link');
     }
 
     private function chatwootRequest()
@@ -242,7 +312,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <p class="text-sm text-mono-600">Escreva uma mensagem para enviar para os seus contatos, semelhante a uma lista de transmissão do WhatsApp.</p>
             </div>
 
-            <form wire:submit="send" class="flex flex-col gap-sm" enctype="multipart/form-data">
+            <form wire:submit="review" class="flex flex-col gap-sm" enctype="multipart/form-data">
                 <div>
                     <label for="message" class="block text-sm font-medium text-mono-700 mb-xxxs">Mensagem</label>
                     <textarea
@@ -256,6 +326,20 @@ new #[Layout('layouts.app')] class extends Component {
                         required
                     ></textarea>
                     @error('message') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                    <label class="mt-2 flex items-center gap-2 text-sm text-mono-700"><input type="checkbox" wire:model.live="splitParagraphs"> Separar parágrafos automaticamente</label>
+                    <p class="text-xs text-mono-600">Ligado: cada Enter vira um parágrafo com linha em branco, como no WhatsApp. Desligado: o texto sai exatamente como digitado.</p>
+                </div>
+
+                <div>
+                    <label for="link" class="block text-sm font-medium text-mono-700 mb-xxxs">Link (opcional)</label>
+                    <input id="link" type="text" inputmode="url" wire:model.live.debounce.500ms="link" maxlength="500" placeholder="ex.: instagram.com/seuperfil" class="h-10 w-full rounded-xl border border-mono-200 bg-mono-white px-3 text-sm">
+                    <p class="text-xs text-mono-600">Vai no fim da mensagem, depois de uma linha em branco. Sem http, usamos https://. O link não é aberto pelo sistema.</p>
+                    @error('link') <span class="text-red-500 text-xs mt-1">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <p class="block text-sm font-medium text-mono-700 mb-xxxs">Prévia (exatamente o texto que será enviado)</p>
+                    <div class="whitespace-pre-wrap break-words rounded-2xl border border-mono-100 bg-mono-50 px-4 py-3 text-sm text-mono-900" data-broadcast-preview>{{ $preview !== '' ? $preview : '—' }}</div>
                 </div>
 
                 <div>
@@ -292,7 +376,7 @@ new #[Layout('layouts.app')] class extends Component {
                         wire:loading.attr="disabled"
                         wire:target="attachment,send"
                     >
-                        <span>Enviar Mensagem</span>
+                        <span>Revisar envio</span>
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                         </svg>
@@ -300,6 +384,33 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             </form>
         </x-fx.card>
+
+        @if ($reviewNotice)<x-fx.alert variant="warning" class="mt-md">{{ $reviewNotice }}</x-fx.alert>@endif
+
+        @if ($reviewing)
+            <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="review-title" data-broadcast-review>
+                <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-mono-white p-5 shadow-elevated">
+                    <h3 id="review-title" class="text-lg font-bold text-mono-900">Revisar envio</h3>
+                    <p class="mt-1 text-sm text-mono-600">Etiqueta <strong>{{ $selectedLabel }}</strong>: a mensagem vai para todos os contatos carregados da etiqueta.</p>
+                    <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                        <dt class="text-mono-600">Contatos na etiqueta</dt><dd class="text-right font-semibold" data-review-total>{{ $audience['total'] }}</dd>
+                        <dt class="text-mono-600">Com telefone válido</dt><dd class="text-right">{{ $audience['valid'] }}</dd>
+                        <dt class="text-mono-600">Sem telefone</dt><dd class="text-right">{{ $audience['missing_phone'] }}</dd>
+                        <dt class="text-mono-600">Telefone inválido</dt><dd class="text-right">{{ $audience['invalid_phone'] }}</dd>
+                        <dt class="text-mono-600">Telefones repetidos</dt><dd class="text-right">{{ $audience['duplicates'] }}</dd>
+                    </dl>
+                    @if ($audience['duplicates'] > 0)<p class="mt-1 text-xs text-mono-600">Repetidos ainda não são removidos nesta versão: essas pessoas podem receber mais de uma vez.</p>@endif
+                    @if ($attachment)<p class="mt-2 text-sm">Mídia: {{ $attachment->getClientOriginalName() }}</p>@endif
+                    <p class="mt-3 text-sm font-medium text-mono-700">Mensagem</p>
+                    <div class="mt-1 whitespace-pre-wrap break-words rounded-xl border border-mono-100 bg-mono-50 px-3 py-2 text-sm">{{ $preview }}</div>
+                    <p class="mt-3 rounded-xl bg-down-bg px-3 py-2 text-sm text-down">Depois de confirmar, o envio começa em segundo plano (45 a 90 s entre cada contato) e não pode ser desfeito por esta tela.</p>
+                    <div class="mt-4 flex flex-wrap justify-end gap-2">
+                        <button type="button" wire:click="cancelReview" class="h-10 rounded-xl border border-mono-200 px-4 text-sm">Voltar e editar</button>
+                        <button type="button" wire:click="confirmSend" wire:loading.attr="disabled" wire:target="confirmSend" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white disabled:opacity-60" data-confirm-send>Confirmar e iniciar envio</button>
+                    </div>
+                </div>
+            </div>
+        @endif
     </div>
 
     {{-- Contact List Sidebar --}}
