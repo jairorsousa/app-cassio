@@ -9,14 +9,29 @@ use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
-    #[Url]
+    #[Url(history: true, keep: true)]
     public string $month = '';
 
     public function mount(): void
     {
-        if ($this->month === '') {
+        $this->normalizeMonth($this->month);
+    }
+
+    public function updatedMonth(mixed $value): void
+    {
+        $this->normalizeMonth(is_string($value) ? $value : '');
+    }
+
+    private function normalizeMonth(?string $value): void
+    {
+        $value = trim((string) $value);
+        if (! preg_match('/^\d{4}-\d{2}$/', $value)) {
             $this->month = now()->format('Y-m');
+
+            return;
         }
+
+        $this->month = $value;
     }
 
     private function categoryRows(Transaction $transaction): array
@@ -100,6 +115,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
+        $this->normalizeMonth($this->month);
         $month = $this->month;
 
         $data = (function () use ($month) {
@@ -166,8 +182,17 @@ new #[Layout('layouts.app')] class extends Component {
     <x-banking.subnav />
     <x-fx.card>
         <div class="flex items-end gap-sm">
-            <x-fx.input label="Mês de referência" type="month" wire:model.live="month" />
-            <livewire:banking.regime-switch />
+            <div class="flex flex-col gap-1">
+                <label class="block text-fs-12 font-medium text-cryptex-text-tertiary" for="cashflow-month">Mês de referência</label>
+                <input
+                    id="cashflow-month"
+                    type="month"
+                    wire:model.live="month"
+                    wire:key="cashflow-month-input"
+                    class="h-12 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-4 text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none"
+                />
+            </div>
+            <livewire:banking.regime-switch :key="'regime-'.$month" />
         </div>
     </x-fx.card>
 

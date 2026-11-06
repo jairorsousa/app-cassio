@@ -60,6 +60,18 @@ new #[Layout('layouts.app')] class extends Component
         $this->transition_destination_account = $writ->destination_bank_account_id;
     }
 
+    public function updatedTransitionTo(?string $value): void
+    {
+        if ($value === 'signature' && blank($this->transition_signature_at)) {
+            $this->transition_signature_at = $this->writ->signature_at?->format('Y-m-d\TH:i') ?: now()->format('Y-m-d\TH:i');
+        }
+
+        if ($value === 'lost') {
+            $this->transition_lost_reason = '';
+            $this->resetErrorBag('transition_lost_reason');
+        }
+    }
+
     private function moneyValue(string|int|float|null $value): float
     {
         if ($value === null || $value === '') {
@@ -79,9 +91,22 @@ new #[Layout('layouts.app')] class extends Component
 
     public function transition(WritService $service)
     {
-        $this->validate([
+        $rules = [
             'transitionTo' => 'required|in:'.implode(',', Writ::STAGES),
-        ]);
+        ];
+        $messages = [];
+
+        if ($this->transitionTo === 'signature') {
+            $rules['transition_signature_at'] = 'required|date';
+            $messages['transition_signature_at.required'] = 'Informe a data e hora da assinatura.';
+        }
+
+        if ($this->transitionTo === 'lost') {
+            $rules['transition_lost_reason'] = 'required|string|max:2000';
+            $messages['transition_lost_reason.required'] = 'Informe o motivo da perda.';
+        }
+
+        $this->validate($rules, $messages);
 
         $context = ['notes' => $this->transition_notes ?: null];
 
@@ -489,19 +514,31 @@ new #[Layout('layouts.app')] class extends Component
                     </select>
                 </div>
 
-                @if ($transitionTo === 'monitoring')
-                    <x-fx.input label="Data e hora para monitorar" type="datetime-local" wire:model="transition_monitoring_at" required />
+                <div wire:key="transition-fields-{{ $transitionTo }}">
+                @if ($this->transitionTo === 'monitoring')
+                    <div>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Data e hora para monitorar *</label>
+                        <input type="datetime-local" wire:model="transition_monitoring_at" required class="fx-form-field" />
+                    </div>
                 @endif
 
-                @if ($transitionTo === 'pending')
-                    <x-fx.input label="Data da cessão" type="datetime-local" wire:model="transition_cession_at" />
+                @if ($this->transitionTo === 'pending')
+                    <div>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Data da cessão</label>
+                        <input type="datetime-local" wire:model="transition_cession_at" class="fx-form-field" />
+                    </div>
                 @endif
 
-                @if ($transitionTo === 'signature')
-                    <x-fx.input label="Data e hora da assinatura" type="datetime-local" wire:model="transition_signature_at" required />
+                @if ($this->transitionTo === 'signature')
+                    <div class="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4">
+                        <label class="block text-sm font-bold text-indigo-800 mb-1">Data e hora da assinatura *</label>
+                        <input type="datetime-local" wire:model.live="transition_signature_at" required class="fx-form-field bg-white" />
+                        <p class="mt-2 text-xs text-indigo-700">Informe a data agendada ou a confirmação da assinatura da cessão.</p>
+                        @error('transition_signature_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                    </div>
                 @endif
 
-                @if ($transitionTo === 'paid')
+                @if ($this->transitionTo === 'paid')
                     <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />
                     <x-fx.input label="Valor pago" type="text" x-money wire:model="transition_paid_amount" />
                     <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="transition_notary_expenses" />
@@ -517,15 +554,21 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 @endif
 
-                @if ($transitionTo === 'petitioning')
-                    <x-fx.input label="Data e hora do peticionamento" type="datetime-local" wire:model="transition_petitioned_at" required />
+                @if ($this->transitionTo === 'petitioning')
+                    <div>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Data e hora do peticionamento *</label>
+                        <input type="datetime-local" wire:model="transition_petitioned_at" required class="fx-form-field" />
+                    </div>
                 @endif
 
-                @if ($transitionTo === 'awaiting_receipt')
-                    <x-fx.input label="Data e hora para aguardar recebimento" type="datetime-local" wire:model="transition_awaiting_receipt_at" required />
+                @if ($this->transitionTo === 'awaiting_receipt')
+                    <div>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Data e hora para aguardar recebimento *</label>
+                        <input type="datetime-local" wire:model="transition_awaiting_receipt_at" required class="fx-form-field" />
+                    </div>
                 @endif
 
-                @if ($transitionTo === 'finalized')
+                @if ($this->transitionTo === 'finalized')
                     <x-fx.input label="Data do recebimento" type="date" wire:model="transition_finalized_at" />
                     <x-fx.input label="Valor recebido" type="text" x-money wire:model="transition_actual_receipt_amount" />
                     <div>
@@ -539,19 +582,32 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 @endif
 
-                @if ($transitionTo === 'lost')
+                @if ($this->transitionTo === 'lost')
+                    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                        <label class="block text-sm font-bold text-rose-800 mb-1">Motivo da perda (obrigatório) *</label>
+                        <textarea
+                            wire:model.live="transition_lost_reason"
+                            class="fx-form-field bg-white"
+                            rows="4"
+                            required
+                            placeholder="Descreva por que este requisitório foi perdido"
+                        ></textarea>
+                        <p class="mt-2 text-xs text-rose-700">Este campo é obrigatório. Sem o motivo a transição não é salva.</p>
+                        @error('transition_lost_reason') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                    </div>
+                @elseif ($this->transitionTo !== '')
                     <div>
-                        <label class="block text-sm font-medium text-mono-700 mb-1">Motivo da perda *</label>
-                        <textarea wire:model.live="transition_lost_reason" class="fx-form-field" rows="4" required placeholder="Informe o motivo da perda (obrigatório)"></textarea>
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Nota da transição (opcional)</label>
+                        <textarea wire:model="transition_notes" class="fx-form-field" rows="4" placeholder="Digite uma observação (opcional)..."></textarea>
                     </div>
                 @endif
-
-                <div>
-                    <label class="block text-sm font-medium text-mono-700 mb-1">Nota da transição (opcional)</label>
-                    <textarea wire:model="transition_notes" class="fx-form-field" rows="4" placeholder="Digite uma observação (opcional)..."></textarea>
                 </div>
 
-                <button type="submit" class="w-full rounded-lg bg-primary-500 px-4 py-3 text-sm font-bold text-white hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2" @disabled(! $transitionTo)>
+                <button
+                    type="submit"
+                    class="w-full rounded-lg bg-primary-500 px-4 py-3 text-sm font-bold text-white hover:bg-primary-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2"
+                    :disabled="!$wire.transitionTo || ($wire.transitionTo === 'lost' && !(($wire.transition_lost_reason || '').trim())) || ($wire.transitionTo === 'signature' && !(($wire.transition_signature_at || '').trim()))"
+                >
                     Confirmar <span class="material-icons-outlined text-[18px]">arrow_forward</span>
                 </button>
             </form>

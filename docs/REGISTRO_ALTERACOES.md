@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 4 (ajuste visual): Perdido, Assinatura e Fluxo de caixa (Auditor Fin)
+
+Base: commit `50fd288`. Sem migration e sem alteração de dados reais.
+
+### Correções
+1. **Perdido (detalhe + modal do kanban)**: painel com rótulo inequívoco **Motivo da perda (obrigatório)**; a “Nota da transição (opcional)” some quando a etapa escolhida é Perdido; validação e botão desabilitado sem motivo (`:disabled` Alpine, não `@disabled` do Blade).
+2. **Assinatura no formulário de transição**: campo de data/hora passa a aparecer ao selecionar Assinatura (`wire:key` no bloco, input nativo, `updatedTransitionTo`); grava `signature_at` com teste. No modal Novo Requisitório do kanban, etapa Assinatura também pede/grava a data.
+3. **Fluxo de caixa**: `#[Url(history: true, keep: true)]`, `updatedMonth`/`normalizeMonth` e input de mês nativo com `wire:model.live` — a primeira troca de mês (ex.: nov → out/2026) recalcula Juros Ganho e Retorno de capital sem precisar reabrir a URL; valores não duplicam.
+
+### Testes
+`tests/Feature/Writs/Etapa4TransitionUiTest.php` (4 casos). Suíte Etapa4 completa passando.
+
 ## 05/11/2026 — Etapa 4: Requisitórios (Auditor Fin)
 
 Base: commit `a87b662`. Backup lógico antes da migration: `/root/app-cassio-backups/etapa4-antes-20261105.json` (36 requisitórios). Nenhum registro existente foi movido de etapa nem teve valor recalculado.

@@ -140,6 +140,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
     public string $cession_at = '';
 
+    public string $signature_at = '';
+
     public string $petitioned_at = '';
 
     public string $awaiting_receipt_at = '';
@@ -203,6 +205,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             'monitoring_at' => 'nullable|date',
             'negotiation_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
+            'signature_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
             'paid_at' => 'nullable|date',
@@ -227,6 +230,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
         if ($stage === 'pending' && blank($this->cession_at)) {
             $this->cession_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($stage === 'signature' && blank($this->signature_at)) {
+            $this->signature_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($stage === 'petitioning' && blank($this->petitioned_at)) {
@@ -255,6 +262,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
         if ($this->stage === 'pending') {
             $this->cession_at = now()->format('Y-m-d\TH:i');
+        }
+
+        if ($this->stage === 'signature') {
+            $this->signature_at = now()->format('Y-m-d\TH:i');
         }
 
         if ($this->stage === 'petitioning') {
@@ -376,6 +387,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             return;
         }
 
+        if ($this->stage === 'signature' && blank($this->signature_at)) {
+            $this->addError('signature_at', 'Informe a data e hora da assinatura.');
+
+            return;
+        }
+
         $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
         $data['negotiation_at'] = blank($this->negotiation_at) ? null : $this->negotiation_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
@@ -459,6 +476,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         return $this->stage === 'pending';
     }
 
+    public function usesSignatureDate(): bool
+    {
+        return $this->stage === 'signature';
+    }
+
     public function usesNegotiationDate(): bool
     {
         return $this->stage !== 'monitoring';
@@ -503,7 +525,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['monitoring_at', 'negotiation_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'negotiation_at', 
+            'cession_at',
+            'signature_at', 'signature_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -574,7 +598,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             'estimated_months',
             'monitoring_at',
             'negotiation_at',
+            
             'cession_at',
+            'signature_at',
             'petitioned_at',
             'awaiting_receipt_at',
             'paid_at',
@@ -1540,7 +1566,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                                 </div>
                             </section>
 
-                            @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+                            @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesSignatureDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
                                 <section>
                                     <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                         <span class="material-icons-outlined text-[20px] text-primary-500">event</span>
@@ -1560,6 +1586,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
                                         @if ($this->usesCessionDate())
                                             <x-jr.input label="Data da cessão" icon="edit_calendar" type="datetime-local" wire:model="cession_at" />
+                                        @endif
+
+                                        @if ($this->usesSignatureDate())
+                                            <x-jr.input label="Data e hora da assinatura *" icon="draw" type="datetime-local" wire:model="signature_at" required />
+                                            @error('signature_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                         @endif
 
                                         @if ($this->usesPetitionDate())
@@ -1868,9 +1899,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             </div>
 
             <div class="p-6 flex flex-col gap-5">
-                <div>
-                    <label class="block text-sm font-medium text-mono-700 mb-1">Motivo *</label>
-                    <textarea wire:model.live="promptLostReason" class="fx-form-field" rows="4" required placeholder="Informe o motivo da perda (obrigatório)"></textarea>
+                <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <label class="block text-sm font-bold text-rose-800 mb-1">Motivo da perda (obrigatório) *</label>
+                    <textarea wire:model.live="promptLostReason" class="fx-form-field bg-white" rows="4" required placeholder="Descreva por que este requisitório foi perdido"></textarea>
+                    <p class="mt-2 text-xs text-rose-700">Sem o motivo a transição não é salva.</p>
                     @error('promptLostReason') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                 </div>
             </div>
@@ -1879,8 +1911,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 <button wire:click="cancelLostReason" class="px-4 py-2 text-sm font-bold text-mono-600 hover:text-mono-900 transition-colors">
                     Cancelar
                 </button>
-                <button wire:click="confirmLostReason" class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors">
-                    Confirmar
+                <button
+                    wire:click="confirmLostReason"
+                    :disabled="!(($wire.promptLostReason || '').trim())"
+                    class="px-4 py-2 rounded-lg bg-primary-500 text-sm font-bold text-white hover:bg-primary-600 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    Confirmar perda
                 </button>
             </div>
         </div>
