@@ -98,6 +98,32 @@ class Etapa7DashboardFluxoTest extends TestCase
         $this->assertSame($before, Transaction::count());
     }
 
+    public function test_drag_and_drop_moves_widget_to_target_and_persists(): void
+    {
+        $before = Transaction::count();
+        $c = Livewire::withoutLazyLoading()->test('dashboard.index')->call('toggleCustomize');
+        $c->assertSeeHtml('data-drag-handle="loans"')->assertSeeHtml('draggable="true"')->assertSeeHtml('moveWidgetTo(from');
+        $order = DashboardPreferences::defaults()['order'];
+        // Arrastar "loans" para cima, sobre "cash_position" (primeiro).
+        $c->call('moveWidgetTo', 'loans', 'cash_position');
+        $saved = DashboardPreferences::for($this->user->fresh())['order'];
+        $this->assertSame('loans', $saved[0]);
+        $this->assertSame('cash_position', $saved[1]);
+        // Arrastar "cash_position" para baixo, sobre "invoices": fica no lugar dele.
+        $targetIndex = array_search('invoices', $saved, true);
+        $c->call('moveWidgetTo', 'cash_position', 'invoices');
+        $saved = DashboardPreferences::for($this->user->fresh())['order'];
+        $this->assertSame($targetIndex, array_search('cash_position', $saved, true));
+        $this->assertCount(count($order), $saved);
+        // Alvos inválidos não mexem na ordem.
+        $c->call('moveWidgetTo', 'nao_existe', 'loans')->call('moveWidgetTo', 'loans', 'loans');
+        $this->assertSame($saved, DashboardPreferences::for($this->user->fresh())['order']);
+        // Setas continuam funcionando junto.
+        $c->call('moveWidget', 'loans', 1);
+        $this->assertSame('loans', DashboardPreferences::for($this->user->fresh())['order'][1]);
+        $this->assertSame($before, Transaction::count());
+    }
+
     public function test_dashboard_renders_widgets_hides_and_keeps_launch_shortcut(): void
     {
         $this->tx('income', 1200, '2026-11-02');

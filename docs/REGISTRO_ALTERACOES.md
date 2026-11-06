@@ -295,3 +295,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 ### Pendências para o Cassio
 1. 18 requisitórios adquiridos estão com a previsão de recebimento vencida (R$ 1.294.908,13 estimados). Revisar "meses estimados"/data de pagamento para que voltem à projeção.
 2. Bens (imóveis, veículos) ficam para a Etapa 8.
+
+### Correção pós-Etapa 7 — arrastar no Dashboard (05/11/2026)
+- Causa: o handler de soltura usava `this.$el` dentro do método do `x-data`; no Alpine isso aponta para o bloco onde o evento ocorreu, não para a grade, então a lista de blocos vinha vazia e a ordem não mudava. Além disso o bloco inteiro era `draggable` (conflito com botões/checkbox) e não havia `dataTransfer.setData` (exigido pelo Firefox).
+- Agora: o handle ⠿ (desktop) é o único elemento arrastável, com `setData`/`effectAllowed`/imagem do bloco; cada bloco é alvo de soltura com destaque visual; ao soltar chama `moveWidgetTo(origem, destino)` e a nova ordem é calculada e salva no servidor (`DashboardPreferences::moveTo`). Setas ↑ ↓, teclado e mobile inalterados.
+- Testes: `moveTo` (unitário) e arrastar para cima/baixo, alvos inválidos, convivência com setas e persistência (feature). Nenhum dado financeiro alterado.
+- Filtro Pessoa no Fluxo mostrando só Todas: comportamento correto. As opções vêm de titulares de cartão definidos e de contatos vinculados a lançamentos, Valores a receber ou Empréstimos; nos dados reais os 8 cartões estão sem titular e não há vínculos de contato, valores a receber nem empréstimos. Nenhuma pessoa foi criada.

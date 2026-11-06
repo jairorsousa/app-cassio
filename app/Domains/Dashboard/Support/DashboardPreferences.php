@@ -102,6 +102,22 @@ class DashboardPreferences
         return $prefs['charts'][$widget] ?? ($allowed[0] ?? null);
     }
 
+    /** Arrastar e soltar: coloca $widget na posição de $target (antes dele se veio de baixo, depois se veio de cima). */
+    public static function moveTo(array $prefs, string $widget, string $target): array
+    {
+        $order = $prefs['order'];
+        $from = array_search($widget, $order, true);
+        $to = array_search($target, $order, true);
+        if ($from === false || $to === false || $from === $to) {
+            return $prefs;
+        }
+        array_splice($order, $from, 1);
+        array_splice($order, $to, 0, [$widget]);
+        $prefs['order'] = $order;
+
+        return $prefs;
+    }
+
     public static function move(array $prefs, string $widget, int $delta): array
     {
         $order = $prefs['order'];

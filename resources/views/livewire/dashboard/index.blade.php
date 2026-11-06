@@ -104,6 +104,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->persist();
     }
 
+    public function moveWidgetTo(string $key, string $target): void
+    {
+        $this->current();
+        $this->prefs = DashboardPreferences::moveTo($this->prefs, $key, $target);
+        $this->persist();
+    }
+
     public function reorder(array $keys): void
     {
         $this->current();
@@ -214,24 +221,26 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </x-fx.card>
     @endif
 
+    {{-- Arrastar (HTML5): o handle inicia o arraste; o bloco inteiro é alvo de soltura. A ordem é calculada e salva no servidor (moveWidgetTo). --}}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-5"
-         x-data="{ dragging: null,
-            drop(target) {
-                if (!this.dragging || this.dragging === target) return;
-                const keys = [...this.$el.querySelectorAll('[data-widget]')].map(el => el.dataset.widget);
-                const from = keys.indexOf(this.dragging); keys.splice(from, 1);
-                keys.splice(keys.indexOf(target) + (from <= keys.indexOf(target) ? 1 : 0), 0, this.dragging);
-                this.dragging = null; $wire.reorder(keys);
-            } }">
+         x-data="{ dragging: null, over: null }"
+         x-on:dragend.window="dragging = null; over = null">
         @foreach ($order as $index => $key)
             @php $isHidden = in_array($key, $hidden, true); @endphp
             @continue($isHidden && ! $customizing)
             <section data-widget="{{ $key }}" wire:key="widget-{{ $key }}" aria-label="{{ $title($key) }}"
                 class="min-w-0 {{ in_array($key, $wide, true) ? 'lg:col-span-2' : '' }} {{ $isHidden ? 'opacity-50' : '' }} {{ $customizing ? 'outline outline-1 outline-dashed outline-cryptex-border-default rounded-md' : '' }}"
-                @if ($customizing) draggable="true" x-on:dragstart="dragging = '{{ $key }}'" x-on:dragover.prevent x-on:drop.prevent="drop('{{ $key }}')" @endif>
+                @if ($customizing)
+                    x-on:dragover.prevent="if (dragging) { $event.dataTransfer.dropEffect = 'move'; over = '{{ $key }}' }"
+                    x-on:dragleave="if (over === '{{ $key }}') over = null"
+                    x-on:drop.prevent="const from = dragging || $event.dataTransfer.getData('text/plain'); dragging = null; over = null; if (from && from !== '{{ $key }}') $wire.moveWidgetTo(from, '{{ $key }}')"
+                    x-bind:class="over === '{{ $key }}' && dragging !== '{{ $key }}' ? 'ring-2 ring-cryptex-brand-400' : ''"
+                @endif>
                 @if ($customizing)
                     <div class="flex flex-wrap items-center gap-space-2 px-space-3 py-space-2 text-fs-12">
-                        <span class="cursor-move select-none text-cryptex-text-tertiary hidden md:inline" aria-hidden="true">⠿</span>
+                        <span draggable="true" data-drag-handle="{{ $key }}" title="Arraste para reordenar"
+                            x-on:dragstart="dragging = '{{ $key }}'; $event.dataTransfer.effectAllowed = 'move'; $event.dataTransfer.setData('text/plain', '{{ $key }}'); $event.dataTransfer.setDragImage($el.closest('section'), 20, 20)"
+                            class="cursor-grab active:cursor-grabbing select-none text-fs-18 leading-none px-2 py-1 rounded-sm border border-cryptex-border-default text-cryptex-text-tertiary hidden md:inline-block" aria-hidden="true">⠿</span>
                         <span class="font-semibold text-cryptex-text-primary">{{ $title($key) }}</span>
                         <label class="flex items-center gap-1 ml-auto text-cryptex-text-secondary">
                             <input type="checkbox" {{ $isHidden ? '' : 'checked' }} wire:click="toggleWidget('{{ $key }}')" aria-label="Mostrar {{ $title($key) }}" /> Mostrar

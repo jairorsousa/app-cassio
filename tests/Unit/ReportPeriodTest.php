@@ -63,5 +63,10 @@ class ReportPeriodTest extends TestCase
         $this->assertSame(['cash_position', 'loans'], array_slice($moved['order'], 0, 2));
         $this->assertSame($moved, DashboardPreferences::move($moved, 'cash_position', -1)); // já é o primeiro
         $this->assertSame('this_month', DashboardPreferences::normalize(null)['period']['preset']);
+        $d = DashboardPreferences::defaults();
+        $this->assertSame(['own_result', 'cash_position'], array_slice(DashboardPreferences::moveTo($d, 'own_result', 'cash_position')['order'], 0, 2));
+        $down = DashboardPreferences::moveTo($d, 'cash_position', 'income_expense')['order'];
+        $this->assertSame(['own_result', 'income_expense', 'cash_position'], array_slice($down, 0, 3));
+        $this->assertSame($d, DashboardPreferences::moveTo($d, 'x', 'loans'));
     }
 }
