@@ -373,3 +373,10 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Comando `investments:statement-preview {arquivo}`: prévia somente leitura (transação revertida, arquivo apagado).
 - Prévia do arquivo real (nada gravado; cópia temporária privada apagada): 667 movimentos, reconciliação OK (0 divergências). Confirmação NÃO executada.
 - Testes `BtgStatementPdfParserTest` com layout anonimizado (`tests/fixtures/statements/btg_layout_anonimizado.txt`).
+
+## 2026-11-06 — Extrato de conta em CSV (saldo corrido) — base para XP
+
+- `BankAccountCsvParser`: CSV de conta com data, descrição, valor com sinal (ou débito/crédito) e saldo. Detecta ordem decrescente e inverte (sem reordenar por data, preservando lançamentos retroativos), reconcilia linha a linha (anterior + valor = saldo), deriva a abertura da 1ª linha e aponta lacunas com o valor faltante. Junta vários arquivos: ordena por período, remove repetições entre arquivos por impressão digital (data+descrição+valor+saldo+ordinal; iguais no mesmo arquivo seguem distintas) e confere a emenda de saldo.
+- Classificação só para revisão ("outros movimentos", nenhum lançamento financeiro nem provento): rendimento automático/conta remunerada, transferência (TED/PIX), devolução (sem compensar com o PIX de origem), pagamento de financiamento, taxa, liquidação de operações, indício de provento, outro.
+- Comando `investments:account-csv-preview {arquivos*}` (somente leitura, saída agregada).
+- Layout XP NÃO validado: os CSVs reais citados não estavam no box. Testes com amostras sanitizadas: `BankAccountCsvParserTest`.

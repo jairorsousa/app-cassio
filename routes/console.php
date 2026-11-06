@@ -368,3 +368,25 @@ Artisan::command('investments:statement-preview {file} {--broker=BTG Pactual}', 
 
     return 0;
 })->purpose('Prévia somente leitura de um extrato de corretora (sem gravar)');
+
+Artisan::command('investments:account-csv-preview {files*}', function (\App\Domains\Investments\Services\Statements\TabularFileReader $reader, \App\Domains\Investments\Services\Statements\BankAccountCsvParser $parser) {
+    // Somente leitura: não grava nada (nem staging). Saída só com agregados, sem descrições.
+    $parsed = [];
+    foreach ($this->argument('files') as $i => $file) {
+        if (! is_readable($file)) {
+            $this->error('Arquivo ilegível: '.basename($file));
+
+            return 1;
+        }
+        $t = $reader->csv((string) file_get_contents($file));
+        $parsed[] = $parser->parse($t['headers'], $t['rows'], 'arquivo'.($i + 1));
+    }
+    $c = $parser->combine($parsed);
+    $this->line(json_encode([
+        'files' => array_map(fn ($p) => array_merge($p['reconciliation'], ['file' => $p['rows'][0]['file'] ?? null]), $parsed),
+        'combined' => ['from' => $c['from'], 'to' => $c['to'], 'rows' => count($c['rows']), 'duplicates_removed' => $c['duplicates_removed'], 'joins' => $c['joins'], 'by_kind' => $c['by_kind'], 'ok' => $c['ok']],
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    $this->info('Somente prévia: nada foi gravado.');
+
+    return 0;
+})->purpose('Prévia somente leitura de extratos de conta em CSV (saldo corrido, emenda entre arquivos)');
