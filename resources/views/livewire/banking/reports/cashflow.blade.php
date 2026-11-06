@@ -25,14 +25,62 @@ new #[Layout('layouts.app')] class extends Component {
         $accrual = $regime === \App\Domains\Banking\Services\OwnFinancialService::ACCRUAL;
         if (($transaction->credit_card_invoice_id && $transaction->type === 'expense' && ! $accrual) || ($accrual && $transaction->type === 'invoice_payment' && $transaction->credit_card_invoice_id) || $transaction->bankAccount?->type === 'repasse') { return []; }
         $ownCents = app(\App\Domains\Banking\Services\OwnFinancialService::class)->ownCents($transaction, $regime);
+        $profitName = \App\Domains\Banking\Models\Category::WRIT_PROFIT_NAME;
+        $capitalName = 'Retorno de capital (RPV/Precatórios)';
+
+        // Recebimento direto do requisitorio: separa lucro (Juros Ganho) do retorno de capital.
+        if ($transaction->type === 'income' && $transaction->source_type === \App\Domains\Writs\Models\Writ::class && (float) $transaction->amount > 0) {
+            $writ = $transaction->relationLoaded('sourceWrit')
+                ? $transaction->sourceWrit
+                : \App\Domains\Writs\Models\Writ::find($transaction->source_id);
+            if ($writ) {
+                $split = $writ->receiptSplit((float) $transaction->amount);
+                $own = $ownCents / 100;
+                $scale = (float) $transaction->amount > 0 ? $own / (float) $transaction->amount : 0.0;
+
+                return [
+                    ['category' => $profitName, 'type' => 'income', 'amount' => $split['profit'], 'own_amount' => round($split['profit'] * $scale, 2)],
+                    ['category' => $capitalName, 'type' => 'income', 'amount' => $split['capital'], 'own_amount' => round($split['capital'] * $scale, 2)],
+                ];
+            }
+        }
+
         if ($transaction->processReceipt) {
             $own = $ownCents / 100;
             $recovered = $transaction->destinations->sum(fn ($part) => $part->recoveredCents()) / 100;
             $acquired = $transaction->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount'));
+            $profit = 0.0;
+            foreach ($transaction->destinations as $part) {
+                foreach ($part->payments as $payment) {
+                    $linked = (float) $payment->writ_amount;
+                    if ($linked <= 0 || ! $payment->writ_income_id) {
+                        continue;
+                    }
+                    $income = $payment->relationLoaded('writIncome') ? $payment->writIncome : $payment->writIncome()->first();
+                    $writ = $income?->sourceWrit;
+                    if (! $writ && $income) {
+                        $writ = \App\Domains\Writs\Models\Writ::find($income->source_id);
+                    }
+                    if (! $writ) {
+                        continue;
+                    }
+                    $baseReceipt = (float) ($writ->actual_receipt_amount ?? 0);
+                    if ($baseReceipt > 0) {
+                        $ratio = min(1, $linked / $baseReceipt);
+                        $profit += round(((float) ($writ->actualProfit() ?? 0)) * $ratio, 2);
+                    } else {
+                        $profit += $writ->receiptSplit($linked)['profit'];
+                    }
+                }
+            }
+            $profit = round($profit, 2);
+            $capital = round($acquired - $profit, 2);
+
             return [
                 ['category' => $transaction->processReceipt->category?->name ?? '— sem categoria —', 'type' => 'income', 'amount' => $own - $acquired, 'own_amount' => $own - $acquired],
                 ['category' => 'Valores para repasse', 'type' => 'income', 'amount' => (float) $transaction->amount - $own - $recovered, 'own_amount' => 0],
-                ['category' => 'Requisitórios adquiridos', 'type' => 'income', 'amount' => $acquired, 'own_amount' => $acquired],
+                ['category' => $profitName, 'type' => 'income', 'amount' => $profit, 'own_amount' => $profit],
+                ['category' => $capitalName, 'type' => 'income', 'amount' => $capital, 'own_amount' => $capital],
                 ['category' => 'Recuperação de despesas', 'type' => 'income', 'amount' => $recovered, 'own_amount' => 0],
             ];
         }
@@ -58,7 +106,7 @@ new #[Layout('layouts.app')] class extends Component {
             $start = Carbon::createFromFormat('Y-m-d', $month.'-01')->startOfMonth();
             $end = (clone $start)->endOfMonth();
 
-            $byCategory = Transaction::with(['category', 'allocations.category', 'processReceipt.category', 'destinations.recoveries', 'destinations.payments', 'bankAccount', 'receivableInstallments', 'receivableSettlements', 'destinationPayment'])
+            $byCategory = Transaction::with(['category', 'allocations.category', 'processReceipt.category', 'destinations.recoveries', 'destinations.payments.writIncome.sourceWrit', 'sourceWrit', 'bankAccount', 'receivableInstallments', 'receivableSettlements', 'destinationPayment'])
                 ->whereBetween('date', [$start, $end])
                 ->where('status', 'settled')
                 ->whereIn('type', ['income', 'expense', 'invoice_payment'])

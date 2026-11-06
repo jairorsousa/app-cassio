@@ -55,6 +55,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $cession_at = '';
 
+    public string $signature_at = '';
+
     public string $petitioned_at = '';
 
     public string $awaiting_receipt_at = '';
@@ -87,6 +89,10 @@ new #[Layout('layouts.app')] class extends Component
             $this->cession_at = now()->format('Y-m-d\TH:i');
         }
 
+        if ($stage === 'signature' && blank($this->signature_at)) {
+            $this->signature_at = now()->format('Y-m-d\TH:i');
+        }
+
         if ($stage === 'petitioning' && blank($this->petitioned_at)) {
             $this->petitioned_at = now()->format('Y-m-d\TH:i');
         }
@@ -114,6 +120,7 @@ new #[Layout('layouts.app')] class extends Component
             $this->monitoring_at = $writ->monitoring_at?->format('Y-m-d\TH:i') ?? '';
             $this->negotiation_at = $writ->negotiation_at?->format('Y-m-d\TH:i') ?? '';
             $this->cession_at = $writ->cession_at?->format('Y-m-d\TH:i') ?? '';
+            $this->signature_at = $writ->signature_at?->format('Y-m-d\TH:i') ?? '';
             $this->petitioned_at = $writ->petitioned_at?->format('Y-m-d\TH:i') ?? '';
             $this->awaiting_receipt_at = $writ->awaiting_receipt_at?->format('Y-m-d\TH:i') ?? '';
             $this->paid_at = $writ->paid_at?->format('Y-m-d') ?? '';
@@ -191,6 +198,7 @@ new #[Layout('layouts.app')] class extends Component
             'monitoring_at' => 'nullable|date',
             'negotiation_at' => 'nullable|date',
             'cession_at' => 'nullable|date',
+            'signature_at' => 'nullable|date',
             'petitioned_at' => 'nullable|date',
             'awaiting_receipt_at' => 'nullable|date',
             'paid_at' => 'nullable|date',
@@ -297,9 +305,16 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
+        if ($this->stage === 'signature' && blank($this->signature_at)) {
+            $this->addError('signature_at', 'Informe a data e hora da assinatura.');
+
+            return;
+        }
+
         $data['monitoring_at'] = blank($this->monitoring_at) ? null : $this->monitoring_at;
         $data['negotiation_at'] = blank($this->negotiation_at) ? null : $this->negotiation_at;
         $data['cession_at'] = blank($this->cession_at) ? null : $this->cession_at;
+        $data['signature_at'] = blank($this->signature_at) ? null : $this->signature_at;
         $data['petitioned_at'] = blank($this->petitioned_at) ? null : $this->petitioned_at;
         $data['awaiting_receipt_at'] = blank($this->awaiting_receipt_at) ? null : $this->awaiting_receipt_at;
 
@@ -318,6 +333,7 @@ new #[Layout('layouts.app')] class extends Component
             $previousStage = $this->writ->stage;
             $previousMonitoringAt = $this->writ->monitoring_at;
             $previousCessionAt = $this->writ->cession_at;
+            $previousSignatureAt = $this->writ->signature_at;
             $previousPetitionedAt = $this->writ->petitioned_at;
             $previousAwaitingReceiptAt = $this->writ->awaiting_receipt_at;
             try {
@@ -353,6 +369,12 @@ new #[Layout('layouts.app')] class extends Component
                 if (! app(WritGoogleCalendarSyncDispatcher::class)->syncCession($writ)) {
                     $this->flashCalendarSyncWarning($writ, 'google_calendar_sync_error');
                 }
+            } elseif (
+                $writ->stage === 'signature'
+                && $writ->signature_at
+                && $previousSignatureAt?->getTimestamp() !== $writ->signature_at->getTimestamp()
+            ) {
+                app(WritService::class)->recordSignatureDateChange($writ, $previousSignatureAt, $writ->signature_at);
             } elseif (
                 $writ->stage === 'petitioning'
                 && $writ->petitioned_at
@@ -452,6 +474,11 @@ new #[Layout('layouts.app')] class extends Component
         return $this->stage === 'pending';
     }
 
+    public function usesSignatureDate(): bool
+    {
+        return $this->stage === 'signature';
+    }
+
     public function usesNegotiationDate(): bool
     {
         return $this->stage !== 'monitoring';
@@ -496,7 +523,7 @@ new #[Layout('layouts.app')] class extends Component
 
     private function prepareDataForStage(array $data): array
     {
-        foreach (['monitoring_at', 'negotiation_at', 'cession_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
+        foreach (['monitoring_at', 'negotiation_at', 'cession_at', 'signature_at', 'petitioned_at', 'awaiting_receipt_at', 'paid_at', 'finalized_at'] as $field) {
             $data[$field] = blank($data[$field] ?? null) ? null : $data[$field];
         }
 
@@ -739,7 +766,7 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </section>
 
-        @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
+        @if ($this->usesMonitoringDate() || $this->usesNegotiationDate() || $this->usesCessionDate() || $this->usesSignatureDate() || $this->usesPetitionDate() || $this->usesAwaitingReceiptDate() || $this->usesPaymentFields() || $this->usesReceiptFields())
             <section>
                 <h3 class="text-md font-semibold mb-xs">Datas da etapa</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
@@ -755,6 +782,10 @@ new #[Layout('layouts.app')] class extends Component
 
                     @if ($this->usesCessionDate())
                         <x-fx.input label="Data da cessão" type="datetime-local" wire:model="cession_at" />
+                    @endif
+
+                    @if ($this->usesSignatureDate())
+                        <x-fx.input label="Data e hora da assinatura" type="datetime-local" wire:model="signature_at" :required="$stage === 'signature'" />
                     @endif
 
                     @if ($this->usesPetitionDate())

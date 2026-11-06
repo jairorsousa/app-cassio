@@ -21,6 +21,11 @@
             'value' => $writ->cession_at?->format('d/m/Y H:i'),
             'icon' => 'edit_calendar',
         ]],
+        'signature' => [[
+            'label' => 'Assinatura',
+            'value' => $writ->signature_at?->format('d/m/Y H:i'),
+            'icon' => 'draw',
+        ]],
         'paid' => [[
             'label' => 'Pagamento',
             'value' => $writ->paid_at?->format('d/m/Y'),
@@ -74,7 +79,8 @@
         'monitoring' => 'Monitorando',
         'negotiation' => 'Em negociação',
         'pending' => 'Cessão pendente',
-        'paid' => 'Pago',
+        'signature' => 'Assinatura',
+        'paid' => 'Pagamento',
         'petitioning' => 'Em peticionamento',
         'awaiting_receipt' => 'Aguardando',
         'finalized' => 'Recebido',
@@ -84,13 +90,32 @@
 
     $statusAmount = match ($stage) {
         'monitoring' => $faceValue,
-        'negotiation', 'pending' => (float) ($writ->proposed_amount ?: $writ->negotiated_amount),
+        'negotiation', 'pending', 'signature' => (float) ($writ->proposed_amount ?: $writ->negotiated_amount),
         'paid', 'petitioning' => $totalCost,
         'awaiting_receipt' => (float) ($writ->estimated_receipt_amount ?: $totalCost),
         'finalized' => (float) ($writ->actual_receipt_amount ?? $writ->estimated_receipt_amount),
         'lost' => $negotiatedValue > 0 ? $negotiatedValue : $faceValue,
         default => 0,
     };
+
+    if (in_array($stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true)) {
+        $deadline = $writ->estimatedReceiptDeadline();
+        if ($deadline) {
+            $dateItems[] = [
+                'label' => 'Prazo estimado',
+                'value' => $deadline->format('d/m/Y'),
+                'icon' => 'event',
+            ];
+        }
+        $actualDays = $writ->actualDaysElapsed();
+        if ($actualDays !== null) {
+            $dateItems[] = [
+                'label' => $writ->finalized_at ? 'Prazo real' : 'Dias desde o pagamento',
+                'value' => $actualDays.' dia(s)',
+                'icon' => $writ->isOverdue() ? 'warning' : 'timelapse',
+            ];
+        }
+    }
 @endphp
 
 <article
@@ -204,6 +229,17 @@
             </span>
         </div>
 
+        
+        @if (in_array($stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true) && $writ->isOverdue())
+            <div class="mt-3 rounded-xl bg-down-bg px-3 py-2.5 text-xs text-down">
+                <div class="mb-1 flex items-center gap-1 font-semibold">
+                    <span class="material-icons-outlined text-[15px]">warning</span>
+                    Fora do prazo estimado
+                </div>
+                <p>{{ $writ->daysOverdue() }} dia(s) além da previsão{{ $writ->estimatedReceiptDeadline() ? ' ('.$writ->estimatedReceiptDeadline()->format('d/m/Y').')' : '' }}.</p>
+            </div>
+        @endif
+
         @if ($stage === 'lost' && $writ->lost_reason)
             <div class="mt-3 rounded-xl bg-down-bg px-3 py-2.5 text-xs text-down">
                 <div class="mb-1 flex items-center gap-1 font-semibold">
@@ -237,7 +273,7 @@
                         <span class="material-icons-outlined text-[18px] text-mono-400">edit</span>
                         Editar
                     </a>
-                    @if (in_array($stage, ['monitoring', 'negotiation'], true))
+                    @if ($stage !== 'lost')
                         <button
                             type="button"
                             wire:click="promptLostReason({{ $writ->id }})"

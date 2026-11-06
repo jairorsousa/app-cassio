@@ -307,7 +307,7 @@ class GoogleCalendarService
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ, 'Monitorar Processo'),
+            'summary' => $this->eventSummary($writ, Writ::STAGE_LABELS['monitoring']),
             'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['monitoring'], includeAmount: false),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),
@@ -339,7 +339,7 @@ class GoogleCalendarService
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ, 'Cessao'),
+            'summary' => $this->eventSummary($writ, Writ::STAGE_LABELS['pending']),
             'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['pending']),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),
@@ -371,7 +371,7 @@ class GoogleCalendarService
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ, 'Peticionar'),
+            'summary' => $this->eventSummary($writ, Writ::STAGE_LABELS['petitioning']),
             'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['petitioning']),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),
@@ -403,7 +403,7 @@ class GoogleCalendarService
         $end = $start->copy()->addMinutes(max(15, (int) config('google-calendar.default_duration_minutes', 30)));
 
         $event = new Event([
-            'summary' => $this->eventSummary($writ, 'Aguardando Recebimento'),
+            'summary' => $this->eventSummary($writ, Writ::STAGE_LABELS['awaiting_receipt']),
             'description' => $this->eventDescription($writ, Writ::STAGE_LABELS['awaiting_receipt']),
             'start' => $this->eventDateTime($start, $timezone),
             'end' => $this->eventDateTime($end, $timezone),

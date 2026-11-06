@@ -279,7 +279,8 @@ class ReceiptWritLinkTest extends TestCase
         $this->assertEquals(0, $report->viewData('totalExpense'));
         $this->assertEquals(8000, $report->viewData('ownIncome'));
         $this->assertEquals(2000, $report->viewData('thirdPartyIncome'));
-        $this->assertEquals(7000, $report->viewData('byCategory')->get('Requisitórios adquiridos')['income']);
+        $this->assertEquals(3000, $report->viewData('byCategory')->get(\App\Domains\Banking\Models\Category::WRIT_PROFIT_NAME)['income']);
+        $this->assertEquals(4000, $report->viewData('byCategory')->get('Retorno de capital (RPV/Precatórios)')['income']);
         $this->assertEquals(1000, $report->viewData('byCategory')->get('Honorários próprios')['income']);
         $this->assertEquals(['in' => 10000, 'out' => 0], $report->viewData('byAccount')->get('CEF'));
         Livewire::withoutLazyLoading();

@@ -22,17 +22,24 @@ class WritService
      */
     private const ALLOWED_TRANSITIONS = [
         'monitoring' => ['negotiation', 'lost'],
-        'negotiation' => ['monitoring', 'pending', 'paid', 'lost'],
-        'pending' => ['negotiation', 'paid'],
-        'paid' => ['pending', 'petitioning', 'awaiting_receipt', 'finalized'],
-        'petitioning' => ['paid', 'awaiting_receipt', 'finalized'],
-        'awaiting_receipt' => ['petitioning', 'finalized'],
-        'finalized' => ['awaiting_receipt', 'petitioning'],
-        'lost' => ['monitoring', 'negotiation'],
+        'negotiation' => ['monitoring', 'pending', 'lost'],
+        'pending' => ['negotiation', 'signature', 'lost'],
+        'signature' => ['pending', 'paid', 'lost'],
+        'paid' => ['signature', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'],
+        'petitioning' => ['paid', 'awaiting_receipt', 'finalized', 'lost'],
+        'awaiting_receipt' => ['petitioning', 'finalized', 'lost'],
+        'finalized' => ['awaiting_receipt', 'petitioning', 'lost'],
+        'lost' => ['monitoring', 'negotiation', 'pending', 'signature', 'paid', 'petitioning', 'awaiting_receipt'],
     ];
 
+    /** @return array<int, string> */
+    public function allowedTransitionsFrom(string $stage): array
+    {
+        return self::ALLOWED_TRANSITIONS[$stage] ?? [];
+    }
+
     /**
-     * @param  array<string, mixed>  $context  campos opcionais (monitoring_at, negotiation_at, cession_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, notes)
+     * @param  array<string, mixed>  $context  campos opcionais (monitoring_at, negotiation_at, cession_at, signature_at, paid_at, petitioned_at, awaiting_receipt_at, finalized_at, actual_receipt_amount, lost_reason, notes)
      */
     public function transitionTo(Writ $writ, string $newStage, array $context = []): Writ
     {
@@ -67,6 +74,11 @@ class WritService
             throw new \DomainException('Informe a data e hora para aguardar recebimento.');
         }
 
+        if ($newStage === 'signature' && blank($context['signature_at'] ?? null) && blank($writ->signature_at)) {
+            throw new \DomainException('Informe a data e hora da assinatura.');
+        }
+
+
         $updatedWrit = DB::transaction(function () use ($writ, $current, $newStage, $context) {
             $writ = Writ::lockForUpdate()->findOrFail($writ->id);
             $patch = ['stage' => $newStage];
@@ -82,6 +94,15 @@ class WritService
             if ($newStage === 'pending' && isset($context['cession_at'])) {
                 $patch['cession_at'] = $context['cession_at'];
             }
+
+            if ($newStage === 'signature') {
+                if (isset($context['signature_at'])) {
+                    $patch['signature_at'] = $context['signature_at'];
+                } elseif (! $writ->signature_at) {
+                    $patch['signature_at'] = now();
+                }
+            }
+
 
             if ($newStage === 'paid') {
                 $patch['paid_at'] = $context['paid_at'] ?? ($writ->paid_at ?? now()->toDateString());
@@ -216,6 +237,23 @@ class WritService
                 'Data de aguardar recebimento atualizada de: %s para: %s',
                 $previousAwaitingReceiptAt ? $previousAwaitingReceiptAt->format('d/m/Y H:i') : '—',
                 $newAwaitingReceiptAt->format('d/m/Y H:i'),
+            ),
+            'user_id' => Auth::id(),
+        ]);
+    }
+
+
+    public function recordSignatureDateChange(Writ $writ, ?CarbonInterface $previousSignatureAt, CarbonInterface $newSignatureAt): void
+    {
+        WritStageHistory::create([
+            'writ_id' => $writ->id,
+            'from_stage' => 'signature',
+            'to_stage' => 'signature',
+            'transitioned_at' => now(),
+            'notes' => sprintf(
+                'Data da assinatura atualizada de: %s para: %s',
+                $previousSignatureAt ? $previousSignatureAt->format('d/m/Y H:i') : '—',
+                $newSignatureAt->format('d/m/Y H:i'),
             ),
             'user_id' => Auth::id(),
         ]);

@@ -17,6 +17,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $transition_cession_at = '';
 
+    public string $transition_signature_at = '';
+
     public string $transition_paid_at = '';
 
     public string $transition_paid_amount = '';
@@ -46,6 +48,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->writ = $writ->load('history.user', 'transactions.writLinks', 'assignors.contact');
         $this->transition_monitoring_at = now()->format('Y-m-d\TH:i');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
+        $this->transition_signature_at = $writ->signature_at?->format('Y-m-d\TH:i') ?: now()->format('Y-m-d\TH:i');
         $this->transition_paid_at = now()->format('Y-m-d');
         $this->transition_petitioned_at = now()->format('Y-m-d\TH:i');
         $this->transition_awaiting_receipt_at = now()->format('Y-m-d\TH:i');
@@ -88,6 +91,10 @@ new #[Layout('layouts.app')] class extends Component
 
         if ($this->transitionTo === 'pending') {
             $context['cession_at'] = $this->transition_cession_at ?: null;
+        }
+
+        if ($this->transitionTo === 'signature') {
+            $context['signature_at'] = $this->transition_signature_at ?: null;
         }
 
         if ($this->transitionTo === 'paid') {
@@ -208,6 +215,7 @@ new #[Layout('layouts.app')] class extends Component
                                 'monitoring' => $writ->monitoring_at,
                                 'negotiation' => $writ->negotiation_at,
                                 'pending' => $writ->cession_at,
+                                'signature' => $writ->signature_at,
                                 'paid' => $writ->paid_at,
                                 'petitioning' => $writ->petitioned_at,
                                 'awaiting_receipt' => $writ->awaiting_receipt_at,
@@ -367,6 +375,27 @@ new #[Layout('layouts.app')] class extends Component
                         <div class="text-xs text-mono-500 mb-1">Deságio calculado</div>
                         <div class="font-bold text-sm text-mono-900">{{ number_format($writ->discountPercentageCalculated(), 2, ',', '.') }}%</div>
                     </div>
+
+                    @if ($writ->paid_at)
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Data da compra/pagamento</div>
+                            <div class="font-bold text-sm text-mono-900">{{ $writ->paid_at->format('d/m/Y') }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Prazo estimado (data)</div>
+                            <div class="font-bold text-sm text-mono-900">{{ $writ->estimatedReceiptDeadline()?->format('d/m/Y') ?? '—' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-mono-500 mb-1">Prazo real (dias)</div>
+                            <div class="font-bold text-sm {{ $writ->isOverdue() ? 'text-down' : 'text-mono-900' }}">
+                                {{ $writ->actualDaysElapsed() !== null ? $writ->actualDaysElapsed().' dia(s)' : '—' }}
+                                @if ($writ->isOverdue())
+                                    <span class="ml-1 text-xs font-semibold">(atraso {{ $writ->daysOverdue() }}d)</span>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+
                     @if ($writ->stage === 'finalized')
                         <div>
                             <div class="text-xs text-mono-500 mb-1">Valor recebido</div>
@@ -454,10 +483,8 @@ new #[Layout('layouts.app')] class extends Component
                     <label class="block text-sm font-medium text-mono-700 mb-1">Nova etapa</label>
                     <select wire:model.live="transitionTo" class="fx-form-field">
                         <option value="">Selecione a etapa</option>
-                        @foreach (\App\Domains\Writs\Models\Writ::STAGES as $s)
-                            @if ($s !== $writ->stage)
-                                <option value="{{ $s }}">{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$s] }}</option>
-                            @endif
+                        @foreach (app(\App\Domains\Writs\Services\WritService::class)->allowedTransitionsFrom($writ->stage) as $s)
+                            <option value="{{ $s }}">{{ \App\Domains\Writs\Models\Writ::STAGE_LABELS[$s] }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -468,6 +495,10 @@ new #[Layout('layouts.app')] class extends Component
 
                 @if ($transitionTo === 'pending')
                     <x-fx.input label="Data da cessão" type="datetime-local" wire:model="transition_cession_at" />
+                @endif
+
+                @if ($transitionTo === 'signature')
+                    <x-fx.input label="Data e hora da assinatura" type="datetime-local" wire:model="transition_signature_at" required />
                 @endif
 
                 @if ($transitionTo === 'paid')
@@ -511,7 +542,7 @@ new #[Layout('layouts.app')] class extends Component
                 @if ($transitionTo === 'lost')
                     <div>
                         <label class="block text-sm font-medium text-mono-700 mb-1">Motivo da perda *</label>
-                        <textarea wire:model="transition_lost_reason" class="fx-form-field" rows="4" required placeholder="Informe por que a negociação foi perdida"></textarea>
+                        <textarea wire:model.live="transition_lost_reason" class="fx-form-field" rows="4" required placeholder="Informe o motivo da perda (obrigatório)"></textarea>
                     </div>
                 @endif
 

@@ -17,6 +17,33 @@ class Category extends Model
 
     public const TRANSFER_KEY = 'transfer';
 
+    public const WRIT_PROFIT_NAME = 'Juros Ganho (RPV / Precatórios)';
+
+    private static ?int $writProfitId = null;
+
+    /** Categoria de lucro realizado de requisitorios nos relatorios. */
+    public static function writProfitCategoryId(): int
+    {
+        if (self::$writProfitId && self::whereKey(self::$writProfitId)->exists()) {
+            return self::$writProfitId;
+        }
+
+        $id = self::where('name', self::WRIT_PROFIT_NAME)->where('type', 'income')->value('id');
+        if (! $id) {
+            $parentId = self::where('name', 'Rendimento de Investimentos')->where('type', 'income')->value('id');
+            $category = new self([
+                'name' => self::WRIT_PROFIT_NAME,
+                'type' => 'income',
+                'status' => true,
+                'parent_id' => $parentId,
+            ]);
+            $category->save();
+            $id = $category->id;
+        }
+
+        return self::$writProfitId = (int) $id;
+    }
+
     private static ?int $transferId = null;
 
     protected static function booted(): void

@@ -1,5 +1,40 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 4: Requisitórios (Auditor Fin)
+
+Base: commit `a87b662`. Backup lógico antes da migration: `/root/app-cassio-backups/etapa4-antes-20261105.json` (36 requisitórios). Nenhum registro existente foi movido de etapa nem teve valor recalculado.
+
+### Objetivo de negócio
+Funil da Teto para compra de RPV/precatórios: Monitorar → Negociação → Cessão Pendente → **Assinatura** → Pagamento → Peticionamento → Aguardando Recebimento → Recebido; **Perdido** a qualquer momento com motivo. Recebimento de crédito já comprado continua baixando como Recebido sem repasse ao cliente (regra da Etapa 2 preservada).
+
+### Mudanças
+1. **Perdido a partir de qualquer etapa operacional** (Monitorar até Recebido), sempre com motivo obrigatório, histórico em `writ_stage_history`, botão do modal desabilitado sem motivo e validação no serviço.
+2. **Etapa Assinatura** (`signature` + `signature_at`): fica entre Cessão Pendente e Pagamento. Transição exige data/hora. Cards antigos em Pago/Peticionar/Aguardando/Recebido permanecem onde estão; novos fluxos passam por Assinatura.
+3. **Prazos**: prazo estimado = `paid_at + estimated_months`; prazo real = dias entre pagamento e recebimento (ou hoje se ainda aberto); destaque de atraso só quando há `paid_at` e `estimated_months` — sem inventar dados para antigos incompletos. Visível no detalhe e no card do kanban.
+4. **Totais do funil**: Monitorar/Negociação/Cessão/Assinatura/Perdido **não** entram como aquisição. Em aberto = só Pago + Peticionamento + Aguardando. Custo = `paid_amount + despesas` (`totalCost`). Lucro esperado/líquido sobre o **custo total**; se não houver custo, mostra “sem custo” em vez de %. Face, negociado, custo e recebimento ficam separados nos cards.
+5. **Juros Ganho (RPV/Precatórios)** nos relatórios de fluxo: lucro realizado separado do retorno de capital. Recebimento direto do requisitório marca a categoria; o relatório rateia lucro × retorno. No vínculo com recebimento de processo, a entrada do requisitório continua zerada (sem duplicar caixa) e o lucro vai para Juros Ganho; regimes Caixa/Competência preservados via `OwnFinancialService`.
+6. Rótulos alinhados ao funil: Monitorar, Assinatura, Pagamento, Peticionamento. Google Calendar usa os mesmos rótulos.
+
+### Migration
+- `2026_11_05_400000_etapa4_requisitorios_assinatura` — inclui `signature` no ENUM (MySQL) e coluna `signature_at`. O create de `writs` também lista `signature` para o SQLite dos testes.
+- Efeito em registros antigos: **nenhum**. Só passa a aceitar a nova etapa; 0 cards em Assinatura após o deploy.
+
+### Testes
+- Novo: `tests/Feature/Writs/Etapa4RequisitoriosTest.php` (8 casos: Assinatura no fluxo, Perdido de todas as etapas, prazos, totais, Juros Ganho, vínculo processo, kanban).
+- Ajustados: `WritPipelineTest`, `WritKanbanPageTest`, `GoogleCalendarServiceTest`, `ReceiptWritLinkTest` (categoria do relatório), `ConsolidatedSnapshotTest`.
+- Suíte relacionada (Etapa4 + Pipeline + Kanban + Calendar + Etapa2 + ReceiptWritLink + forms calendar): passando.
+
+### Conferência
+- `view:clear` / `cache:clear` / `config:clear` / `route:clear` no container.
+- Produção: stages atuais inalterados (`monitoring` 5, `paid` 2, `petitioning` 1, `awaiting_receipt` 18, `finalized` 10); coluna `signature_at` presente.
+
+### Pendências para o Cassio confirmar
+1. Conferir no computador o kanban com a coluna **Assinatura** e a nova ordem/rótulos.
+2. Conferir modal de Perdido a partir de um card em Pagamento/Aguardando (motivo obrigatório).
+3. Conferir prazos estimado vs real num card com `paid_at` e `estimated_months` preenchidos.
+4. Conferir no Fluxo de caixa o desdobramento **Juros Ganho** × **Retorno de capital** nos meses com requisitório recebido (ex.: Antônio Sérgio / out-2026).
+5. Etapa 5 (Cartões e faturas) e Dashboard ainda não iniciados.
+
 ## 05/11/2026 — Correções de UI pós-Etapa 3 (Auditor Fin)
 
 Autorizações: menu (Cassio), modal Contatos (Cassio), comissão no lançamento de Corretores (Cassio), seletor Conta/Categoria no Financeiro.

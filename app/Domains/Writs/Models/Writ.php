@@ -24,7 +24,7 @@ class Writ extends Model
         return LogOptions::defaults()
             ->logOnly(['type', 'stage', 'process_number', 'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount',
                 'notary_expenses_amount', 'other_expenses_amount',
-                'estimated_receipt_amount', 'actual_receipt_amount', 'monitoring_at', 'negotiation_at', 'cession_at', 'paid_at', 'finalized_at',
+                'estimated_receipt_amount', 'actual_receipt_amount', 'monitoring_at', 'negotiation_at', 'cession_at', 'signature_at', 'paid_at', 'finalized_at',
                 'google_calendar_monitoring_event_id', 'google_calendar_monitoring_synced_at',
                 'google_calendar_event_id', 'google_calendar_synced_at',
                 'google_calendar_petition_event_id', 'google_calendar_petition_synced_at',
@@ -35,14 +35,21 @@ class Writ extends Model
             ->useLogName('writs');
     }
 
-    public const STAGES = ['monitoring', 'negotiation', 'pending', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
+    public const STAGES = ['monitoring', 'negotiation', 'pending', 'signature', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
+
+    /** Etapas com capital ja desembolsado (em aberto). Monitorar/negociacao/cessao/assinatura/perdido ficam de fora. */
+    public const ACQUIRED_OPEN_STAGES = ['paid', 'petitioning', 'awaiting_receipt'];
+
+    /** Etapas com aquisicao paga, inclusive recebidas. */
+    public const ACQUIRED_STAGES = ['paid', 'petitioning', 'awaiting_receipt', 'finalized'];
 
     public const STAGE_LABELS = [
-        'monitoring' => 'Monitorar Processo',
+        'monitoring' => 'Monitorar',
         'negotiation' => 'Negociação',
         'pending' => 'Cessão Pendente',
-        'paid' => 'Pago',
-        'petitioning' => 'Peticionar',
+        'signature' => 'Assinatura',
+        'paid' => 'Pagamento',
+        'petitioning' => 'Peticionamento',
         'awaiting_receipt' => 'Aguardando Recebimento',
         'finalized' => 'Recebido',
         'lost' => 'Perdido',
@@ -55,7 +62,7 @@ class Writ extends Model
         'assignor_bank_data', 'assignor_lawyer',
         'face_value', 'negotiated_amount', 'proposed_amount', 'paid_amount', 'notary_expenses_amount', 'other_expenses_amount', 'discount_percentage',
         'estimated_receipt_amount', 'estimated_months',
-        'actual_receipt_amount', 'monitoring_at', 'negotiation_at', 'cession_at', 'paid_at', 'petitioned_at', 'awaiting_receipt_at', 'finalized_at',
+        'actual_receipt_amount', 'monitoring_at', 'negotiation_at', 'cession_at', 'signature_at', 'paid_at', 'petitioned_at', 'awaiting_receipt_at', 'finalized_at',
         'google_calendar_monitoring_event_id', 'google_calendar_monitoring_event_link', 'google_calendar_monitoring_synced_at', 'google_calendar_monitoring_sync_error',
         'google_calendar_event_id', 'google_calendar_event_link', 'google_calendar_synced_at', 'google_calendar_sync_error',
         'google_calendar_petition_event_id', 'google_calendar_petition_event_link', 'google_calendar_petition_synced_at', 'google_calendar_petition_sync_error',
@@ -80,6 +87,7 @@ class Writ extends Model
         'negotiation_at' => 'datetime',
         'google_calendar_monitoring_synced_at' => 'datetime',
         'cession_at' => 'datetime',
+        'signature_at' => 'datetime',
         'google_calendar_synced_at' => 'datetime',
         'paid_at' => 'date',
         'petitioned_at' => 'datetime',
@@ -260,6 +268,108 @@ class Writ extends Model
         }
 
         return round($this->actualProfitPercentage() / $months, 2);
+    }
+
+
+    public function isAcquiredOpen(): bool
+    {
+        return in_array($this->stage, self::ACQUIRED_OPEN_STAGES, true);
+    }
+
+    public function isAcquired(): bool
+    {
+        return in_array($this->stage, self::ACQUIRED_STAGES, true);
+    }
+
+    /** Dias estimados a partir de estimated_months (null se nao informado). */
+    public function estimatedDays(): ?int
+    {
+        if (! $this->estimated_months || $this->estimated_months <= 0) {
+            return null;
+        }
+
+        return (int) $this->estimated_months * 30;
+    }
+
+    /** Data prevista de recebimento = paid_at + estimated_months (null se faltar dado). */
+    public function estimatedReceiptDeadline(): ?Carbon
+    {
+        if (! $this->paid_at || ! $this->estimated_months || $this->estimated_months <= 0) {
+            return null;
+        }
+
+        return Carbon::parse($this->paid_at)->copy()->addMonths((int) $this->estimated_months);
+    }
+
+    /** Dias corridos entre pagamento e recebimento (ou hoje, se ainda aberto). */
+    public function actualDaysElapsed(?Carbon $asOf = null): ?int
+    {
+        if (! $this->paid_at) {
+            return null;
+        }
+
+        $end = $this->finalized_at
+            ? Carbon::parse($this->finalized_at)
+            : ($asOf ? $asOf->copy() : now());
+
+        return max(0, Carbon::parse($this->paid_at)->diffInDays($end));
+    }
+
+    /** Atraso: prazo estimado estourado sem inventar dados quando faltam paid_at/estimated_months. */
+    public function isOverdue(?Carbon $asOf = null): bool
+    {
+        $deadline = $this->estimatedReceiptDeadline();
+        if (! $deadline) {
+            return false;
+        }
+
+        if ($this->finalized_at) {
+            return Carbon::parse($this->finalized_at)->gt($deadline);
+        }
+
+        $asOf = $asOf ? $asOf->copy() : now();
+
+        return $asOf->gt($deadline);
+    }
+
+    /** Dias de atraso (0 se no prazo ou sem dados). */
+    public function daysOverdue(?Carbon $asOf = null): int
+    {
+        $deadline = $this->estimatedReceiptDeadline();
+        if (! $deadline) {
+            return 0;
+        }
+
+        $end = $this->finalized_at
+            ? Carbon::parse($this->finalized_at)
+            : ($asOf ? $asOf->copy() : now());
+
+        if ($end->lte($deadline)) {
+            return 0;
+        }
+
+        return $deadline->diffInDays($end);
+    }
+
+    /**
+     * Parte do recebimento que e lucro (Juros Ganho) e retorno de capital.
+     *
+     * @return array{profit: float, capital: float, receipt: float, cost: float}
+     */
+    public function receiptSplit(?float $receiptAmount = null): array
+    {
+        $receipt = $receiptAmount !== null
+            ? round($receiptAmount, 2)
+            : round((float) ($this->actual_receipt_amount ?? 0), 2);
+        $cost = $this->totalCost();
+        $profit = round($receipt - $cost, 2);
+
+        return [
+            'profit' => $profit,
+            'capital' => round($receipt - $profit, 2),
+            'receipt' => $receipt,
+            'cost' => $cost,
+        ];
     }
 
     public static function calculateDiscountPercentage(float $base, float $amount): float

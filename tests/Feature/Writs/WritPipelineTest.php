@@ -34,6 +34,22 @@ class WritPipelineTest extends TestCase
         ], $overrides));
     }
 
+
+    private function moveToPaid(Writ $writ, array $context = []): Writ
+    {
+        $service = app(WritService::class);
+        if ($writ->stage === 'negotiation') {
+            $writ = $service->transitionTo($writ, 'pending');
+        }
+        if ($writ->stage === 'pending') {
+            $writ = $service->transitionTo($writ, 'signature', [
+                'signature_at' => $context['signature_at'] ?? '2026-03-15 10:00:00',
+            ]);
+        }
+
+        return $service->transitionTo($writ, 'paid', $context);
+    }
+
     // ──────────────────────────────────────────────
     // 1. Card percorre as etapas principais e gera transactions corretas
     // ──────────────────────────────────────────────
@@ -52,8 +68,15 @@ class WritPipelineTest extends TestCase
         $writ = $service->transitionTo($writ, 'pending');
         $this->assertEquals('pending', $writ->stage);
 
-        // pending → paid
-        $writ = $service->transitionTo($writ, 'paid', [
+        // pending → signature
+        $writ = $service->transitionTo($writ, 'signature', [
+            'signature_at' => '2026-03-20 14:00:00',
+        ]);
+        $this->assertEquals('signature', $writ->stage);
+        $this->assertEquals('2026-03-20 14:00:00', $writ->signature_at->format('Y-m-d H:i:s'));
+
+        // signature → paid
+        $writ = $this->moveToPaid($writ, [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
             'source_bank_account_id' => $account->id,
@@ -91,6 +114,7 @@ class WritPipelineTest extends TestCase
 
         $service = app(WritService::class);
         $service->transitionTo($writ, 'pending');
+        $service->transitionTo($writ->fresh(), 'signature', ['signature_at' => '2026-03-20 10:00:00']);
         $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
@@ -210,6 +234,7 @@ class WritPipelineTest extends TestCase
 
         $service = app(WritService::class);
         $service->transitionTo($writ, 'pending');
+        $service->transitionTo($writ->fresh(), 'signature', ['signature_at' => '2026-03-20 10:00:00']);
         $writ = $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
@@ -250,7 +275,7 @@ class WritPipelineTest extends TestCase
 
         // Pipeline completo
         $writ = $service->transitionTo($writ, 'pending');
-        $writ = $service->transitionTo($writ, 'paid', [
+        $writ = $this->moveToPaid($writ, [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
             'source_bank_account_id' => $account->id,
@@ -287,14 +312,15 @@ class WritPipelineTest extends TestCase
 
         $service = app(WritService::class);
         $service->transitionTo($writ, 'pending');
+        $service->transitionTo($writ->fresh(), 'signature', ['signature_at' => '2026-03-20 10:00:00']);
         $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
             'source_bank_account_id' => $account->id,
         ]);
 
-        // Regredir e pagar novamente
-        $service->transitionTo($writ->fresh(), 'pending');
+        // Regredir para Assinatura e pagar novamente
+        $service->transitionTo($writ->fresh(), 'signature');
         $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-04-02',
             'paid_amount' => 60000.00,
@@ -395,6 +421,7 @@ class WritPipelineTest extends TestCase
         $service = app(WritService::class);
 
         $service->transitionTo($writ, 'pending', ['notes' => 'Documentos recebidos']);
+        $service->transitionTo($writ->fresh(), 'signature', ['signature_at' => '2026-03-15 09:00:00', 'notes' => 'Assinatura ok']);
         $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-05-01',
             'paid_amount' => 60000.00,
@@ -405,17 +432,22 @@ class WritPipelineTest extends TestCase
             ->orderBy('transitioned_at')
             ->get();
 
-        $this->assertCount(2, $history);
+        $this->assertCount(3, $history);
 
         // 1ª transição: negotiation → pending
         $this->assertEquals('negotiation', $history[0]->from_stage);
         $this->assertEquals('pending', $history[0]->to_stage);
         $this->assertEquals('Documentos recebidos', $history[0]->notes);
 
-        // 2ª transição: pending → paid
+        // 2ª transição: pending → signature
         $this->assertEquals('pending', $history[1]->from_stage);
-        $this->assertEquals('paid', $history[1]->to_stage);
-        $this->assertEquals('Pagamento via TED', $history[1]->notes);
+        $this->assertEquals('signature', $history[1]->to_stage);
+        $this->assertEquals('Assinatura ok', $history[1]->notes);
+
+        // 3ª transição: signature → paid
+        $this->assertEquals('signature', $history[2]->from_stage);
+        $this->assertEquals('paid', $history[2]->to_stage);
+        $this->assertEquals('Pagamento via TED', $history[2]->notes);
     }
 
     public function test_history_includes_all_transitions_in_full_pipeline(): void
@@ -429,7 +461,7 @@ class WritPipelineTest extends TestCase
         $service = app(WritService::class);
 
         $writ = $service->transitionTo($writ, 'pending');
-        $writ = $service->transitionTo($writ, 'paid', [
+        $writ = $this->moveToPaid($writ, [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,
         ]);
@@ -445,11 +477,12 @@ class WritPipelineTest extends TestCase
         ]);
 
         $history = WritStageHistory::where('writ_id', $writ->id)->get();
-        $this->assertCount(5, $history);
+        $this->assertCount(6, $history);
 
         $expectedFlow = [
             ['negotiation', 'pending'],
-            ['pending', 'paid'],
+            ['pending', 'signature'],
+            ['signature', 'paid'],
             ['paid', 'petitioning'],
             ['petitioning', 'awaiting_receipt'],
             ['awaiting_receipt', 'finalized'],
@@ -601,6 +634,7 @@ class WritPipelineTest extends TestCase
 
         $service = app(WritService::class);
         $service->transitionTo($writ, 'pending');
+        $service->transitionTo($writ->fresh(), 'signature', ['signature_at' => '2026-03-20 10:00:00']);
         $service->transitionTo($writ->fresh(), 'paid', [
             'paid_at' => '2026-04-01',
             'paid_amount' => 60000.00,

@@ -27,7 +27,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 <div class="h-24 bg-mono-100 rounded-2xl"></div>
             </div>
             <div class="h-12 bg-mono-100 rounded-pill"></div>
-            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-8 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-9 gap-4">
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
+                <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
                 <div class="h-96 bg-mono-100 rounded-2xl"></div>
@@ -93,6 +95,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
     public ?int $promptLostWritId = null;
 
     public string $promptLostReason = '';
+
+    public bool $showSignatureModal = false;
+
+    public ?int $promptSignatureWritId = null;
+
+    public string $promptSignatureAt = '';
 
     public bool $showFilters = false;
 
@@ -823,6 +831,38 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         $this->promptFinalizedWritId = null;
     }
 
+
+    public function promptSignatureDate(int $id): void
+    {
+        $this->promptSignatureWritId = $id;
+        $writ = Writ::find($id);
+        $this->promptSignatureAt = $writ?->signature_at?->format('Y-m-d\TH:i') ?: now()->format('Y-m-d\TH:i');
+        $this->showSignatureModal = true;
+    }
+
+    public function confirmSignatureDate(WritService $service): void
+    {
+        $this->validate(['promptSignatureAt' => 'required|date']);
+
+        try {
+            $writ = Writ::findOrFail($this->promptSignatureWritId);
+            $service->transitionTo($writ, 'signature', [
+                'signature_at' => $this->promptSignatureAt,
+            ]);
+            $this->showSignatureModal = false;
+            $this->promptSignatureWritId = null;
+            session()->flash('status', 'Card movido para '.Writ::STAGE_LABELS['signature'].'.');
+        } catch (DomainException|InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
+    }
+
+    public function cancelSignatureDate(): void
+    {
+        $this->showSignatureModal = false;
+        $this->promptSignatureWritId = null;
+    }
+
     public function promptLostReason(int $id): void
     {
         $this->promptLostWritId = $id;
@@ -942,26 +982,35 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             ];
         }
 
-        $totalNegotiated = $filteredWrits
-            ->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
-            ->sum('negotiated_amount');
-        $openWrits = $filteredWrits->where('stage', '!=', 'finalized');
-        $totalOpenInvested = $openWrits->sum('paid_amount');
-        $totalEstimatedReceipt = $openWrits->sum('estimated_receipt_amount');
+        $acquiredOpen = $filteredWrits->whereIn('stage', Writ::ACQUIRED_OPEN_STAGES);
+        $finalizedWrits = $filteredWrits->where('stage', 'finalized');
+        $acquiredAll = $filteredWrits->whereIn('stage', Writ::ACQUIRED_STAGES);
+
+        // Face negociada so das aquisicoes (Monitorar/Negociacao/Cessao/Assinatura/Perdido ficam de fora).
+        $totalFaceAcquired = $acquiredAll->sum('face_value');
+        $totalNegotiated = $acquiredAll->sum(fn (Writ $writ) => (float) ($writ->negotiated_amount ?: $writ->face_value));
+
+        $totalOpenInvested = round($acquiredOpen->sum(fn (Writ $writ) => $writ->totalCost()), 2);
+        $totalEstimatedReceipt = round($acquiredOpen->sum(fn (Writ $writ) => (float) $writ->estimated_receipt_amount), 2);
         $expectedProfitAmount = round((float) $totalEstimatedReceipt - (float) $totalOpenInvested, 2);
         $expectedProfitPercentage = $totalOpenInvested > 0
             ? round($expectedProfitAmount / (float) $totalOpenInvested * 100, 2)
-            : 0.0;
-        $finalizedWrits = $filteredWrits->where('stage', 'finalized');
-        $totalReceived = $finalizedWrits->sum('actual_receipt_amount');
-        $totalFinalizedCost = $finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost());
+            : null;
+        $openWithoutCost = $acquiredOpen->filter(fn (Writ $writ) => $writ->totalCost() <= 0)->count();
+
+        $totalReceived = round($finalizedWrits->sum(fn (Writ $writ) => (float) $writ->actual_receipt_amount), 2);
+        $totalFinalizedCost = round($finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost()), 2);
         $totalInvested = round((float) $totalOpenInvested + (float) $totalFinalizedCost, 2);
         $profitAmount = round((float) $totalReceived - (float) $totalFinalizedCost, 2);
         $profitPercentage = $totalFinalizedCost > 0
             ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
-            : 0.0;
+            : null;
 
-        return compact('stages', 'totalNegotiated', 'totalInvested', 'totalOpenInvested', 'totalFinalizedCost', 'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'totalReceived', 'profitAmount', 'profitPercentage') + [
+        return compact(
+            'stages', 'totalFaceAcquired', 'totalNegotiated', 'totalInvested', 'totalOpenInvested', 'totalFinalizedCost',
+            'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'openWithoutCost',
+            'totalReceived', 'profitAmount', 'profitPercentage'
+        ) + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -989,14 +1038,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
             <dl class="divide-y divide-mono-100">
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Total negociado</dt>
+                    <dt class="text-xs font-medium text-mono-600">Valor de face (adquiridos)</dt>
+                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalFaceAcquired, 2, ',', '.') }}</dd>
+                </div>
+                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
+                    <dt class="text-xs font-medium text-mono-600">Valor negociado (adquiridos)</dt>
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalNegotiated, 2, ',', '.') }}</dd>
                 </div>
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Total investido</dt>
+                    <dt class="text-xs font-medium text-mono-600">Custo total (pago + despesas)</dt>
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</dd>
                 </div>
             </dl>
+            <p class="mt-2 text-[11px] text-mono-500">Monitorar, Negociação, Cessão, Assinatura e Perdido não entram como aquisição.</p>
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
@@ -1004,26 +1058,33 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
                     <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
                 </div>
-                <h2 class="text-base font-bold text-mono-900">Em aberto</h2>
+                <h2 class="text-base font-bold text-mono-900">Em aberto (já pagos)</h2>
             </div>
 
             <dl class="divide-y divide-mono-100">
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Investimento em aberto</dt>
+                    <dt class="text-xs font-medium text-mono-600">Custo total em aberto</dt>
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</dd>
                 </div>
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Recebimento estimado</dt>
+                    <dt class="text-xs font-medium text-mono-600">Recebimento previsto</dt>
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</dd>
                 </div>
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Lucro esperado</dt>
+                    <dt class="text-xs font-medium text-mono-600">Lucro esperado sobre o custo</dt>
                     <dd class="flex shrink-0 items-center gap-2">
-                        <span class="rounded-pill bg-primary-100 px-2 py-1 text-[11px] font-bold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</span>
+                        @if ($expectedProfitPercentage === null)
+                            <span class="rounded-pill bg-mono-100 px-2 py-1 text-[11px] font-bold text-mono-500">sem custo</span>
+                        @else
+                            <span class="rounded-pill bg-primary-100 px-2 py-1 text-[11px] font-bold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</span>
+                        @endif
                         <span class="whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</span>
                     </dd>
                 </div>
             </dl>
+            @if ($openWithoutCost > 0)
+                <p class="mt-2 text-[11px] text-mono-500">{{ $openWithoutCost }} card(s) em aberto sem custo informado — % não calculado sobre eles.</p>
+            @endif
         </x-jr.card>
 
         <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
@@ -1036,7 +1097,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
             <dl class="divide-y divide-mono-100">
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Investimento finalizado</dt>
+                    <dt class="text-xs font-medium text-mono-600">Custo total finalizado</dt>
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalFinalizedCost, 2, ',', '.') }}</dd>
                 </div>
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
@@ -1044,9 +1105,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                     <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</dd>
                 </div>
                 <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Lucro líquido</dt>
+                    <dt class="text-xs font-medium text-mono-600">Lucro líquido sobre o custo</dt>
                     <dd class="flex shrink-0 items-center gap-2">
-                        <span class="rounded-pill px-2 py-1 text-[11px] font-bold {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</span>
+                        @if ($profitPercentage === null)
+                            <span class="rounded-pill bg-mono-100 px-2 py-1 text-[11px] font-bold text-mono-500">sem custo</span>
+                        @else
+                            <span class="rounded-pill px-2 py-1 text-[11px] font-bold {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</span>
+                        @endif
                         <span class="whitespace-nowrap text-lg font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</span>
                     </dd>
                 </div>
@@ -1183,6 +1248,19 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 'date_icon' => 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200',
                 'status' => 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
             ],
+            'signature' => [
+                'icon' => 'draw',
+                'dot' => 'bg-indigo-500',
+                'tint' => 'bg-indigo-100 text-indigo-700',
+                'bar' => 'bg-indigo-500',
+                'card_accent' => 'bg-indigo-500',
+                'column' => 'border-indigo-100 bg-indigo-50/70 dark:border-indigo-900/40 dark:bg-indigo-950/25',
+                'count' => 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/45 dark:text-indigo-200',
+                'icon_text' => 'text-indigo-600 dark:text-indigo-300',
+                'metric_text' => 'text-indigo-700 dark:text-indigo-300',
+                'date_icon' => 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200',
+                'status' => 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200',
+            ],
             'paid' => [
                 'icon' => 'payments',
                 'dot' => 'bg-up',
@@ -1255,7 +1333,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         <x-jr.empty-state
             icon="gavel"
             title="Nenhum requisitório no pipeline"
-            description="Crie um card e arraste pelas etapas: Monitorar Processo, Negociação, Cessão Pendente, Pago, Peticionar, Aguardando Recebimento, Recebido e Perdido."
+            description="Crie um card e arraste pelas etapas: Monitorar, Negociação, Cessão Pendente, Assinatura, Pagamento, Peticionamento, Aguardando Recebimento, Recebido e Perdido."
         >
             <x-jr.button type="button" wire:click="create" size="sm">Criar primeiro requisitório</x-jr.button>
         </x-jr.empty-state>
@@ -1792,7 +1870,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             <div class="p-6 flex flex-col gap-5">
                 <div>
                     <label class="block text-sm font-medium text-mono-700 mb-1">Motivo *</label>
-                    <textarea wire:model="promptLostReason" class="fx-form-field" rows="4" required placeholder="Informe por que a negociação foi perdida"></textarea>
+                    <textarea wire:model.live="promptLostReason" class="fx-form-field" rows="4" required placeholder="Informe o motivo da perda (obrigatório)"></textarea>
                     @error('promptLostReason') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                 </div>
             </div>
@@ -1832,13 +1910,16 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                         if (newStage === 'monitoring') {
                             evt.from.appendChild(evt.item);
                             $wire.promptMonitoringDate(id);
-                        } else if (['monitoring', 'negotiation'].includes(oldStage) && newStage === 'lost') {
+                        } else if (newStage === 'lost') {
                             evt.from.appendChild(evt.item);
                             $wire.promptLostReason(id);
                         } else if (oldStage === 'negotiation' && newStage === 'pending') {
                             evt.from.appendChild(evt.item);
                             $wire.promptCessionDate(id);
-                        } else if (oldStage === 'pending' && newStage === 'paid') {
+                        } else if (newStage === 'signature') {
+                            evt.from.appendChild(evt.item);
+                            $wire.promptSignatureDate(id);
+                        } else if (newStage === 'paid' && ['signature', 'pending'].includes(oldStage)) {
                             evt.from.appendChild(evt.item);
                             $wire.promptPaidDate(id);
                         } else if (newStage === 'petitioning') {

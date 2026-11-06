@@ -35,7 +35,7 @@ class GoogleCalendarServiceTest extends TestCase
         /** @var Event $event */
         $event = $method->invoke(app(GoogleCalendarService::class), $writ);
 
-        $this->assertSame('Cessao - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('Cessão Pendente - Maria Clara Santos', $event->getSummary());
         $this->assertSame('2026-06-19T14:00:00-03:00', $event->getStart()->getDateTime());
         $this->assertSame('2026-06-19T14:30:00-03:00', $event->getEnd()->getDateTime());
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
@@ -65,10 +65,10 @@ class GoogleCalendarServiceTest extends TestCase
         /** @var Event $event */
         $event = $method->invoke(app(GoogleCalendarService::class), $writ);
 
-        $this->assertSame('Monitorar Processo - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('Monitorar - Maria Clara Santos', $event->getSummary());
         $this->assertSame('2026-06-25T09:30:00-03:00', $event->getStart()->getDateTime());
         $this->assertSame('2026-06-25T10:00:00-03:00', $event->getEnd()->getDateTime());
-        $this->assertStringContainsString('Etapa: Monitorar Processo', $event->getDescription());
+        $this->assertStringContainsString('Etapa: Monitorar', $event->getDescription());
         $this->assertStringNotContainsString('Valor negociado', $event->getDescription());
     }
 
@@ -95,10 +95,10 @@ class GoogleCalendarServiceTest extends TestCase
         /** @var Event $event */
         $event = $method->invoke(app(GoogleCalendarService::class), $writ);
 
-        $this->assertSame('Peticionar - Maria Clara Santos', $event->getSummary());
+        $this->assertSame('Peticionamento - Maria Clara Santos', $event->getSummary());
         $this->assertSame('2026-06-22T15:00:00-03:00', $event->getStart()->getDateTime());
         $this->assertSame('2026-06-22T15:30:00-03:00', $event->getEnd()->getDateTime());
-        $this->assertStringContainsString('Etapa: Peticionar', $event->getDescription());
+        $this->assertStringContainsString('Etapa: Peticionamento', $event->getDescription());
         $this->assertStringContainsString('Valor negociado: R$ 20.000,00', $event->getDescription());
     }
 
