@@ -255,3 +255,43 @@ Base: commit `ee6cece` (fim da Etapa 1). Não havia commits novos do Jairo. Nenh
 2. Lucro do requisitório na categoria "Juros Ganho (RPV / Precatórios)" nos relatórios: hoje o lucro aparece no requisitório; a entrada do requisitório fica zerada para não duplicar o caixa.
 3. Conferido no banco: o caso real do Antônio Sérgio (recebimento #251, 08/10/2026, R$ 78.810,26) já está íntegro: requisitório #41 (1007715-60.2023.4.01.3701) em Recebido em 08/10/2026 com R$ 55.167,18, pelo vínculo anterior. Nada foi refeito.
 4. Vínculo com "bem" (Etapa 6) ainda não existe.
+
+## 05/11/2026 — Etapa 7: Dashboard personalizável e evolução do Fluxo de caixa (Auditor Fin)
+
+Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alterado ou apagado; a migration só adiciona uma coluna.
+
+### Dashboard (`/dashboard`)
+- **Filtro de período** no topo: Este mês, Últimos 3/6/12 meses (meses fechados, incluindo o atual) e Intervalo livre (De/Até; datas invertidas são trocadas; inválidas voltam a "Este mês").
+- **Fluxos** (receitas, despesas, resultado próprio, entradas/saídas, despesas por categoria) respeitam o período. **Posições** (saldo bruto/terceiros/caixa próprio, saldos por conta, faturas, valores a receber, empréstimos) usam o **último dia do período, limitado a hoje**, com rótulo "Posição em dd/mm/aaaa". Quando a posição é hoje, o saldo é calculado exatamente como em /banking (todos os lançamentos liquidados).
+- **Personalizar**: mostrar/ocultar cada bloco, reordenar arrastando pelo ⠿ (computador) ou pelos botões ↑ ↓ (celular/teclado, com aria-label), escolher tipo de gráfico quando faz sentido (Entradas/Saídas e Médias móveis: barra/linha/área; Despesas por categoria e Distribuição: pizza/barras; Requisitórios por etapa: barras/pizza). Números continuam números. "Restaurar padrão" pede confirmação e só redefine o layout (o período é mantido).
+- Preferências salvas **por usuário** em `users.dashboard_preferences` (JSON normalizado: blocos desconhecidos são descartados, blocos novos entram no fim, tipos inválidos voltam ao padrão). Persistem após recarregar.
+- **Blocos**: Saldo bruto/Terceiros/Caixa próprio; Resultado próprio com comparação com o período anterior (valor e %, "sem base" quando o anterior é zero); Entradas e saídas por mês; Médias móveis 3/6/12 (números + linha com média móvel de 3 meses); Faturas a vencer/vencidas; Valores a receber (principal e com encargos); Empréstimos em aberto (Etapa 6); Saldo com corretores (adiantamentos a compensar e comissões a pagar, posição atual); Requisitórios a receber nos próximos 6 meses (somente Pago, Peticionamento e Aguardando recebimento, nunca Monitorar; previsão = pagamento + meses estimados; previsões já vencidas aparecem à parte, fora do total); Despesas por categoria; Saldos por conta separando contas próprias e de repasse; Patrimônio consolidado, Distribuição, Investimentos, Requisitórios por etapa, Sociedade e Faturas próximas (posição atual do snapshot). **Bens**: não há módulo; nada foi inventado (aviso no bloco de patrimônio).
+- Atalho **Lançamento** continua abrindo o modal único (`?novo=expense`), que já tem "Paguei por alguém".
+- Gráficos em SVG gerados no servidor (sem biblioteca/CDN nova), responsivos, com `role="img"`, título e tabela de dados para leitor de tela.
+
+### Fluxo de caixa (`/banking/reports/cashflow`)
+- Filtros: Mês (atalho mantido), De/Até livre, Conta, Categoria e Pessoa (titular do cartão — Cassio, Luciane, filho, contato — ou contato vinculado ao lançamento, a Valores a receber ou a Empréstimos). Filtros ficam na URL.
+- **Comparação** com o período anterior de mesmo tamanho (valor e %; divisão por zero tratada).
+- **Saldo nas contas / Dinheiro de terceiros / Saldo próprio** pelo mesmo `CashPositionService` de /banking, na data de posição.
+- **Realizado x previsto**: realizado = liquidados; previsto = lançamentos pendentes + saldo das faturas que vencem no período + recorrências ativas ainda não geradas + requisitórios adquiridos (Pago/Peticionamento/Aguardando) com previsão no período, com lucro e capital separados. Monitorar nunca entra. Lista dos itens previstos.
+- **Projeção 3/6/12 meses** a partir do saldo próprio de hoje (ou da conta filtrada), mês a mês, com gráfico de linha e tabela. Requisitórios com previsão já vencida não entram (seriam R$ 1,29 mi no "amanhã"); a tela informa quantos são e o valor.
+- Gráfico mensal de receitas/despesas/resultado com escolha barra/linha/área.
+- **Exportar CSV e PDF** (`/banking/reports/cashflow/export/{csv|pdf}`), só autenticado, com os mesmos filtros, valores reais e horário de Fortaleza. CSV em UTF-8 com BOM, separador `;` e vírgula decimal (abre direto no Excel).
+- Regras preservadas (lógica movida sem alteração para `CashflowReportService`): cartão por competência = data da compra e por caixa = pagamento da fatura; principal a recuperar/emprestado não é despesa; principal devolvido não é receita; juros recebidos são receita; transferências, repasses e adiantamentos fora do resultado próprio; Juros Ganho e Retorno de capital dos requisitórios sem duplicar.
+
+### Arquivos
+- Novos: `app/Domains/Dashboard/Support/ReportPeriod.php`, `DashboardPreferences.php`, `app/Domains/Dashboard/Services/DashboardWidgetService.php`, `app/Domains/Banking/Services/CashflowReportService.php`, `app/Http/Controllers/CashflowExportController.php`, `resources/views/components/dashboard/chart.blade.php`, `chart-switch.blade.php`, `resources/views/pdf/banking/cashflow.blade.php`.
+- Alterados: `resources/views/livewire/dashboard/index.blade.php`, `resources/views/livewire/banking/reports/cashflow.blade.php`, `CashPositionService` (parâmetro opcional de data), `User` (cast), `routes/web.php` (rota de exportação).
+
+### Migration
+- `2026_11_05_700000_etapa7_dashboard_preferences` — coluna `users.dashboard_preferences` (JSON, nula), reversível. Backup lógico antes: `/root/app-cassio-backups/etapa7-users-antes-migration-20261105.json`.
+- Assets recompilados (`npm run build` no container do app; o build anterior era de 27/10). Backup do build anterior: `/root/app-cassio-backups/etapa7-public-build-antes-20261105`.
+
+### Testes
+- `tests/Unit/ReportPeriodTest.php` (4): períodos, data de posição, período anterior, variação com base zero, normalização/ordem/visibilidade/tipos de gráfico.
+- `tests/Feature/Dashboard/Etapa7DashboardFluxoTest.php` (11): persistência por usuário e após recarregar, arrastar/restaurar sem mexer em dados, renderização e atalho Lançamento, fluxos x posições, requisitórios sem Monitorar, filtros conta/categoria/pessoa, regime caixa/competência + comparação, empréstimo (principal fora, juros dentro), previsto/projeção com pendentes, faturas e recorrências, faturas a vencer/vencidas, exportações autenticadas.
+- Suíte completa verde.
+
+### Pendências para o Cassio
+1. 18 requisitórios adquiridos estão com a previsão de recebimento vencida (R$ 1.294.908,13 estimados). Revisar "meses estimados"/data de pagamento para que voltem à projeção.
+2. Bens (imóveis, veículos) ficam para a Etapa 8.

@@ -78,6 +78,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
     Route::get('/loans/{loan}/attachment', \App\Http\Controllers\LoanAttachmentController::class)->name('loans.attachment');
     Volt::route('/recurring', 'banking.recurring.index')->name('recurring.index');
     Volt::route('/reports/cashflow', 'banking.reports.cashflow')->name('reports.cashflow');
+    Route::get('/reports/cashflow/export/{format}', \App\Http\Controllers\CashflowExportController::class)->where('format', 'csv|pdf')->name('reports.cashflow.export');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('brokers')->name('brokers.')->group(function () {
