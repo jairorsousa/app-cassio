@@ -203,6 +203,24 @@ class Etapa8B3ImportBensTest extends TestCase
         $this->assertSame(5, AssetIncomeEvent::count());
     }
 
+    public function test_command_fails_on_missing_or_unreadable_files(): void
+    {
+        $dir = sys_get_temp_dir().'/b3empty'.uniqid();
+        mkdir($dir);
+        $this->artisan('investments:b3-import', ['dir' => $dir])->expectsOutputToContain('Nenhum posicao.csv')->assertFailed();
+        $this->artisan('investments:b3-import', ['dir' => $dir.'/nao-existe'])->assertFailed();
+        file_put_contents("$dir/proventos.csv", self::INC);
+        file_put_contents("$dir/meta.json", '{x');
+        $this->artisan('investments:b3-import', ['dir' => $dir])->expectsOutputToContain('meta.json inválido')->assertFailed();
+        if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
+            unlink("$dir/meta.json");
+            chmod("$dir/proventos.csv", 0000);
+            $this->artisan('investments:b3-import', ['dir' => $dir])->expectsOutputToContain('Sem permissão')->assertFailed();
+            chmod("$dir/proventos.csv", 0600);
+        }
+        $this->assertSame(0, AssetIncomeEvent::count() + InvestmentImportBatch::count());
+    }
+
     public function test_dashboard_uses_b3_snapshot_and_properties_without_double_counting(): void
     {
         $this->confirm($this->preview());

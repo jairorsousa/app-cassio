@@ -17,9 +17,44 @@ class ImportB3MidasCommand extends Command
     public function handle(B3MidasImportService $service): int
     {
         $dir = rtrim((string) $this->argument('dir'), '/');
-        $pos = is_file("$dir/posicao.csv") ? file_get_contents("$dir/posicao.csv") : null;
-        $inc = is_file("$dir/proventos.csv") ? file_get_contents("$dir/proventos.csv") : null;
-        $meta = is_file("$dir/meta.json") ? json_decode(file_get_contents("$dir/meta.json"), true) : null;
+        // Arquivo ausente ou ilegível (ex.: permissão) não pode virar prévia "ok" vazia.
+        if (! is_dir($dir) || ! is_readable($dir)) {
+            $this->error("Pasta inexistente ou sem permissão de leitura: $dir");
+
+            return self::FAILURE;
+        }
+        $read = function (string $name) use ($dir) {
+            $path = "$dir/$name";
+            if (! file_exists($path)) {
+                return null;
+            }
+            $content = is_readable($path) ? file_get_contents($path) : false;
+            if ($content === false) {
+                throw new \RuntimeException("Sem permissão de leitura: $path");
+            }
+
+            return $content;
+        };
+        try {
+            $pos = $read('posicao.csv');
+            $inc = $read('proventos.csv');
+            $metaRaw = $read('meta.json');
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+        if ($pos === null && $inc === null) {
+            $this->error("Nenhum posicao.csv ou proventos.csv encontrado em $dir");
+
+            return self::FAILURE;
+        }
+        $meta = $metaRaw !== null ? json_decode($metaRaw, true) : null;
+        if ($metaRaw !== null && ! is_array($meta)) {
+            $this->error('meta.json inválido.');
+
+            return self::FAILURE;
+        }
         $base = $this->option('base-date') ?: ($meta['posicao_data_base'] ?? null);
         $preview = $service->preview($pos, $inc, $base, $meta);
 

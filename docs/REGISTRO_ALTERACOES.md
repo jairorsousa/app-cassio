@@ -321,3 +321,7 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Correção lacuna 1 (`OwnFinancialService`): compra de ativo não é despesa; venda conta só ganho realizado positivo. Saldo de caixa inalterado.
 - Importação real **não executada** — aguarda prévia/confirmação do Cassio.
 - Testes: `Etapa8B3ImportBensTest` (10); suíte completa 456 passed.
+
+## 2026-11-05 — Etapa 8: correção do comando de prévia B3
+
+- Bug achado na 1ª prévia real: pasta sem permissão de leitura para o usuário do container fazia o comando devolver prévia "ok" vazia. Agora falha com erro claro para pasta inexistente/ilegível, arquivo sem permissão, nenhum CSV presente ou `meta.json` inválido. Teste `test_command_fails_on_missing_or_unreadable_files`. Nenhum dado importado.
