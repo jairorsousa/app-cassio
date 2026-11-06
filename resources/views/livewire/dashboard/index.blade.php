@@ -438,7 +438,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     @endforeach
                                 </div>
                             </div>
-                            <p class="mt-space-2 text-fs-12 text-cryptex-text-tertiary">Bens (imóveis, veículos) ainda não têm módulo e não entram aqui.</p>
+                            <p class="mt-space-2 text-fs-12 text-cryptex-text-tertiary">Inclui Bens ativos ({{ $money($snapshot['patrimony']['properties'] ?? 0) }}). @if (str_starts_with($snapshot['patrimony']['portfolio_source'] ?? '', 'b3:'))Carteira pela posição B3 de {{ \Illuminate\Support\Carbon::parse(substr($snapshot['patrimony']['portfolio_source'], 3))->format('d/m/Y') }}.@endif</p>
                         </x-fx.card>
                         @break
 

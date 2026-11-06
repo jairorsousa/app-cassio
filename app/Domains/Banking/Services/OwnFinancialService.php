@@ -58,6 +58,12 @@ class OwnFinancialService
             if ($row->receivableSettlements->isNotEmpty()) {
                 return (int) round(((float) $row->receivableSettlements->sum('interest_amount') + (float) $row->receivableSettlements->sum('penalty_amount')) * 100);
             }
+            // Venda de ativo: só o ganho realizado é receita; o custo devolvido é conversão de patrimônio em caixa.
+            if ($row->source_type === \App\Domains\Investments\Models\AssetOperation::class) {
+                $op = \App\Domains\Investments\Models\AssetOperation::withTrashed()->find($row->source_id);
+
+                return $op && $op->type === 'sell' ? max(0, (int) round((float) $op->realized_pnl * 100)) : 0;
+            }
             if ($row->loanSettlements->isNotEmpty()) {
                 return (int) round((float) $row->loanSettlements->sum('interest_amount') * 100);
             }
@@ -70,6 +76,10 @@ class OwnFinancialService
             }
             // Empréstimo concedido: conversão de caixa em crédito a recuperar, fora do resultado.
             if ($row->source_type === \App\Domains\Banking\Models\Loan::class) {
+                return 0;
+            }
+            // Compra de ativo: conversão de caixa em investimento, fora do resultado.
+            if ($row->source_type === \App\Domains\Investments\Models\AssetOperation::class) {
                 return 0;
             }
             if ($row->credit_card_invoice_id && $regime !== self::ACCRUAL) {

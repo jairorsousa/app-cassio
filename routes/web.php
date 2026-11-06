@@ -44,6 +44,12 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->na
     Volt::route('/dividends', 'investments.dividends.index')->name('dividends.index');
     Volt::route('/positions', 'investments.positions')->name('positions');
     Volt::route('/reports/profitability', 'investments.reports.profitability')->name('reports');
+    Volt::route('/b3', 'investments.b3.index')->name('b3');
+});
+
+Route::middleware(['auth', 'verified', 'inactivity'])->prefix('bens')->name('bens.')->group(function () {
+    Volt::route('/', 'bens.index')->name('index');
+    Route::get('/{property}/anexo', \App\Http\Controllers\PropertyAttachmentController::class)->name('attachment')->whereNumber('property');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('writs')->name('writs.')->group(function () {

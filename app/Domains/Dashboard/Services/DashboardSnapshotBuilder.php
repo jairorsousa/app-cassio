@@ -79,7 +79,18 @@ class DashboardSnapshotBuilder
                 'invested' => round($g->sum('total_invested'), 2),
                 'market_value' => round($g->sum(fn ($p) => $p->marketValue()), 2),
             ]);
-        $dividends12m = (float) AssetDividend::where('payment_date', '>=', $now->copy()->subYear())->sum('total');
+        $dividends12m = (float) AssetDividend::where('payment_date', '>=', $now->copy()->subYear())->sum('total')
+            + (float) \App\Domains\Investments\Models\AssetIncomeEvent::where('payment_date', '>=', $now->copy()->subYear())->sum('net_amount');
+        // Sem posição calculada por operações, usa a foto B3 confirmada (data-base visível), sem somar as duas.
+        $b3 = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed();
+        $b3Value = round((float) $b3->sum('market_value'), 2);
+        $portfolioSource = 'operations';
+        if ($portfolioMarketValue <= 0 && $b3Value > 0) {
+            $portfolioMarketValue = $b3Value;
+            $portfolioSource = 'b3:'.$b3->first()->base_date->toDateString();
+            $portfolioByClass = $b3->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')->map(fn ($g) => ['invested' => round((float) $g->sum(fn ($p) => $p->cost() ?? 0), 2), 'market_value' => round((float) $g->sum('market_value'), 2)]);
+        }
+        $propertiesValue = \App\Domains\Assets\Models\Property::activeTotal();
 
         // ---- Partnership ----
         $partnerships = Partnership::active()->get();
@@ -136,6 +147,7 @@ class DashboardSnapshotBuilder
             + $partnershipNetExposed
             + $writsCapitalAtRisk
             + $thirdPartyReceivable
+            + $propertiesValue
             - $openInvoicesTotal,
             2
         );
@@ -151,6 +163,7 @@ class DashboardSnapshotBuilder
                 ['label' => 'Sociedade (capital exposto)', 'value' => round($partnershipNetExposed, 2)],
                 ['label' => 'Requisitórios em aberto', 'value' => round($writsCapitalAtRisk, 2)],
                 ['label' => 'Valores a receber de terceiros', 'value' => round($thirdPartyReceivable, 2)],
+                ['label' => 'Bens', 'value' => $propertiesValue],
             ])
             ->filter(fn ($r) => $r['value'] > 0)
             ->values();
@@ -169,6 +182,8 @@ class DashboardSnapshotBuilder
                 'writs_capital_at_risk' => round($writsCapitalAtRisk, 2),
                 'third_party_receivable' => round($thirdPartyReceivable, 2),
                 'open_invoices_total' => round($openInvoicesTotal, 2),
+                'properties' => $propertiesValue,
+                'portfolio_source' => $portfolioSource,
             ],
             'distribution' => $distribution,
             'month' => [

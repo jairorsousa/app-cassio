@@ -308,3 +308,16 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - CSRF continua ativo; nada foi liberado. Com sessão válida o arraste salva normalmente (`moveWidgetTo`). Setas inalteradas.
 - Testes: POST Livewire sem token → 419 sem gravar preferências; aviso/handler presentes no JS-fonte e no build publicado; `?personalizar=1` abre Personalizar. Nenhum dado financeiro alterado.
 - Ajuste: o Dashboard é #[Lazy], então o mount roda no POST do Livewire e não via ?personalizar=1. A raiz do componente agora lê a query após carregar, remove-a da URL (history.replaceState) e ativa Personalizar ($wire.set). Teste de render: padrão desligado, ativação ligada, leitor presente.
+
+## 2026-11-05 — Etapa 8: importação B3 (Midas) com prévia + Bens
+
+- Novas tabelas (migração `2026_11_05_800000`, só cria tabelas; backup prévio `storage/backups/pre_etapa8_*.json`): `investment_import_batches`, `b3_position_snapshots`, `asset_income_events`, `properties`.
+- `B3MidasImportService` + página **Investimentos › Posição B3** (`/investments/b3`) e comando `investments:b3-import {dir}` (padrão: só prévia; `--confirm --user=` grava). Fluxo: upload → prévia (nada gravado) → confirmação explícita; hashes sha256 conferidos na confirmação; checagem contra `meta.json`.
+- Posição exibe fonte B3, data-base, custódia × doador; PM desconhecido fica `null` ("não informado"), nunca zero. SBFG3 (custódia+empréstimo) sem divisão inventada: aviso até a fonte trazer `quantidade_custodia`/`quantidade_emprestada`.
+- Proventos líquidos ficam só em Investimentos (`asset_income_events`, sem observer): nenhum lançamento no Financeiro. Reembolso de aluguel gravado como `lending_reimbursement`; campos `lending_contract_ref`/`lending_fee_rate` reservados para importar taxa/contrato depois. Corretora como texto, sem vincular conta.
+- Idempotência por `source_key` (posição: data-base+ticker; provento: hash da linha + ordinal para linhas idênticas).
+- Bens (`/bens`): cadastro com anexo privado; valor atual dos ativos soma ao patrimônio do dashboard.
+- Dashboard: sem posição calculada por operações, usa a posição B3 confirmada (rotulada com data-base), sem somar as duas.
+- Correção lacuna 1 (`OwnFinancialService`): compra de ativo não é despesa; venda conta só ganho realizado positivo. Saldo de caixa inalterado.
+- Importação real **não executada** — aguarda prévia/confirmação do Cassio.
+- Testes: `Etapa8B3ImportBensTest` (10); suíte completa 456 passed.
