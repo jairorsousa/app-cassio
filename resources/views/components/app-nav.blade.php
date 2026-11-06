@@ -6,8 +6,8 @@
         ['route' => 'banking.dashboard', 'match' => 'banking.*', 'label' => 'Financeiro', 'icon' => 'account_balance_wallet'],
         ['route' => 'investments.dashboard', 'match' => 'investments.*', 'label' => 'Investimentos', 'icon' => 'trending_up'],
         ['route' => 'writs.kanban', 'match' => 'writs.*', 'label' => 'Requisitório', 'icon' => 'gavel'],
-        ['route' => 'contacts.index', 'match' => 'contacts.*', 'label' => 'Contatos', 'icon' => 'person'],
         ['route' => 'brokers.index', 'match' => 'brokers.*', 'label' => 'Corretores', 'icon' => 'groups'],
+        ['route' => 'contacts.index', 'match' => 'contacts.*', 'label' => 'Contatos', 'icon' => 'person'],
         ['route' => 'partnership.index', 'match' => 'partnership.*', 'label' => 'Sociedade', 'icon' => 'business'],
         ['route' => 'broadcasts.index', 'match' => 'broadcasts.*', 'label' => 'Transmissão', 'icon' => 'campaign'],
     ];

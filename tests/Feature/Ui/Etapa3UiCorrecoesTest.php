@@ -22,7 +22,7 @@ class Etapa3UiCorrecoesTest extends TestCase
         $this->actingAs(User::factory()->create());
 
         $html = $this->get(route('dashboard'))->assertOk()->getContent();
-        $labels = ['Dashboard', 'Financeiro', 'Investimentos', 'Requisitório', 'Contatos', 'Corretores', 'Sociedade', 'Transmissão'];
+        $labels = ['Dashboard', 'Financeiro', 'Investimentos', 'Requisitório', 'Corretores', 'Contatos', 'Sociedade', 'Transmissão'];
 
         foreach ($labels as $label) {
             $this->assertStringContainsString($label, $html);
