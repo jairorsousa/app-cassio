@@ -162,6 +162,9 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $linkSearch = '';
 
+    /** Seção opcional "Vínculos e comprovante" recolhida por padrão. */
+    public bool $showOptionalLinks = false;
+
     /** Comprovante (PDF, JPG ou PNG), guardado no disco privado. */
     public $formAttachment = null;
 
@@ -345,6 +348,9 @@ new #[Layout('layouts.app')] class extends Component
         $this->formLinkWritId = $transaction->link_writ_id;
         $this->formLinkBrokerId = $transaction->link_broker_id;
         $this->formLinkContactId = $transaction->link_contact_id;
+        $this->showOptionalLinks = trim((string) $transaction->link_process) !== ''
+            || $transaction->link_writ_id || $transaction->link_broker_id || $transaction->link_contact_id
+            || \App\Domains\Banking\Models\TransactionAttachment::where('transaction_id', $transaction->id)->exists();
         $this->formType = $transaction->type;
         $this->formDate = $transaction->date->format('Y-m-d');
         $this->formAmount = (string) abs((float) $transaction->amount);
@@ -362,6 +368,11 @@ new #[Layout('layouts.app')] class extends Component
         }
         $this->showFormModal = true;
         $this->resetValidation();
+    }
+
+    public function toggleOptionalLinks(): void
+    {
+        $this->showOptionalLinks = ! $this->showOptionalLinks;
     }
 
     public function cancel(): void
@@ -723,7 +734,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->reset([
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
             'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave', 'editingProcessReceipt',
-            'formLinkProcess', 'formLinkWritId', 'formLinkBrokerId', 'formLinkContactId', 'linkSearch', 'formAttachment',
+            'formLinkProcess', 'formLinkWritId', 'formLinkBrokerId', 'formLinkContactId', 'linkSearch', 'formAttachment', 'showOptionalLinks',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -1431,6 +1442,17 @@ new #[Layout('layouts.app')] class extends Component
 
                             @if ($formType !== 'transfer')
                             <section>
+                                @php
+                                    $optionalOpen = $showOptionalLinks || $errors->hasAny(['formLinkProcess', 'formLinkWritId', 'formLinkBrokerId', 'formLinkContactId', 'formAttachment']);
+                                    $optionalCount = (trim($formLinkProcess) !== '' ? 1 : 0) + ($formLinkWritId ? 1 : 0) + ($formLinkBrokerId ? 1 : 0) + ($formLinkContactId ? 1 : 0) + ($formAttachment ? 1 : 0);
+                                @endphp
+                                <button type="button" wire:click="toggleOptionalLinks" aria-expanded="{{ $optionalOpen ? 'true' : 'false' }}" aria-controls="optional-links-panel" data-optional-links-toggle class="inline-flex items-center gap-1 rounded text-xs font-medium text-primary-600 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+                                    <span class="material-icons-outlined text-[16px]">{{ $optionalOpen ? 'expand_less' : 'add_link' }}</span>
+                                    {{ $optionalOpen ? 'Ocultar vínculos e comprovante' : 'Adicionar vínculos ou comprovante (opcional)' }}
+                                    @if (! $optionalOpen && $optionalCount > 0)<span class="text-mono-500">· {{ $optionalCount }} preenchido(s)</span>@endif
+                                </button>
+                                @if ($optionalOpen)
+                                <div id="optional-links-panel" class="mt-4">
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                     <span class="material-icons-outlined text-[20px] text-primary-500">link</span>
                                     <h4 class="text-base font-bold text-mono-900">Vínculos e comprovante <span class="text-sm font-normal text-mono-500">(opcionais)</span></h4>
@@ -1453,6 +1475,8 @@ new #[Layout('layouts.app')] class extends Component
                                         @endif
                                     </div>
                                 </div>
+                                </div>
+                                @endif
                             </section>
                             @endif
 

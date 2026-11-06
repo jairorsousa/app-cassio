@@ -473,3 +473,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Removidos a etiqueta padrão "parceiros" e o job longo antigo (`SendBroadcastMessage` ficou sem uso).
 - Testes: BroadcastReviewTest reescrito, TransmissionQueueTest novo, ListsPaginationTest ajustado. Suíte: 536 passando.
 - Backups: `storage/backups/broadcasts.pre_fase2` e `storage/backups/build.pre_fase2`.
+
+
+## 2026-11-06 — Lançamentos: "Vínculos e comprovante" recolhido por padrão
+
+- No formulário de receita/despesa, a seção opcional agora fica oculta atrás de um link pequeno "Adicionar vínculos ou comprovante (opcional)"; ao abrir, o link vira "Ocultar vínculos e comprovante".
+- Estado no servidor (`showOptionalLinks`); valores preenchidos não são apagados ao recolher, e o link mostra "N preenchido(s)".
+- Abre automaticamente ao editar lançamento que já tem vínculo ou comprovante, e quando há erro de validação nesses campos. Novo lançamento/cancelar volta a recolher.
+- Botão acessível (`type=button`, `aria-expanded`). Teste novo: OptionalLinksCollapseTest; Etapa2RateiosVinculosTest ajustado para abrir a seção.
+- Backup: `storage/backups/transactions.pre_collapse`.

@@ -190,7 +190,7 @@ class Etapa2RateiosVinculosTest extends TestCase
 
         Volt::test('banking.transactions.index')->call('create', 'income')
             ->set('formAmount', '50000')->set('formDescription', 'Venda do carro')->set('formBankAccountId', $bank->id)->set('formCategoryId', $cat->id)
-            ->set('linkSearch', 'Maria')->assertSee('Maria Cedente · 0001')
+            ->call('toggleOptionalLinks')->set('linkSearch', 'Maria')->assertSee('Maria Cedente · 0001')
             ->set('formLinkProcess', '123-45')->set('formLinkWritId', $writ->id)->set('formLinkBrokerId', $broker->id)->set('formLinkContactId', $person->id)
             ->call('saveTransaction')->assertHasNoErrors();
         Transaction::create(['type' => 'income', 'amount' => '10', 'date' => now()->toDateString(), 'description' => 'Sem vínculo', 'status' => 'settled', 'bank_account_id' => $bank->id, 'category_id' => $cat->id]);
