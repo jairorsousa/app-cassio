@@ -16,6 +16,21 @@ Pedido do Cassio no modal **Nova despesa no cartão de crédito**: após gravar,
 Arquivos: `resources/views/livewire/banking/transactions/index.blade.php`, `tests/Feature/Banking/TransactionFlowTest.php`.
 
 
+## 06/11/2026 — Lançamentos: filtro Conta/Cartão em pills horizontais (Auditor Fin)
+
+Pedido do Cassio: o campo **Conta** em Financeiro → Lançamentos estava confuso (tipos empilhados/comprimidos no seletor, sem opção Cartão).
+
+1. Linha principal de filtros limpa: De, Até, Tipo, Categoria, **Conta ou cartão** (dropdown simples), Status — sem pills empilhadas dentro do campo.
+2. Abaixo, pills horizontais curtas **Tipo de conta ou cartão**: Todas, Corrente, Investimento, Fundo, Dinheiro, Repasse, Cartão (só tipos que existem no cadastro; rótulos curtos via `typeShortLabel`).
+3. Ao escolher o tipo, o dropdown lista só as contas daquele tipo; em **Cartão**, lista os cartões. Em **Todas**, optgroups de contas + Cartões.
+4. Backend filtra de verdade: tipo bancário (`bank_account_id` / `whereIn` por tipo), todos os cartões (`credit_card_id IS NOT NULL`) ou cartão específico. Seleção de cartão persiste como `account=card:{id}` (evita colisão de id com conta). Query URL: `accountType` + `account`.
+5. `clearFilters` zera também `accountType`. Demais filtros, paginação, OFX, titular, vínculos e dados financeiros intactos. Formulários de lançamento continuam com o account-picker antigo.
+6. Testes: `TransactionAccountCardFilterTest` (6). Suíte completa: 643 ok; 1 OfxImport flaky isolado passou na reexecução.
+
+Arquivos: `resources/views/livewire/banking/transactions/index.blade.php`, `tests/Feature/Banking/TransactionAccountCardFilterTest.php`.
+
+
+
 
 ## 05/11/2026 — Etapa 6 (ajuste UI): Paguei por alguém nos modais de lançamento (Auditor Fin)
 
