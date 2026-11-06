@@ -410,3 +410,5 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Posição B3: posições e proventos em cartões abaixo de md; tabelas só em md+ (sem mudança no desktop).
 - Extratos › Ver lançamentos: linhas em cartões abaixo de md (data, ticker, tipo, valor com cor, descrição, situação e motivos); chips de filtro em uma linha rolável; busca com fonte menor no mobile.
 - Só visual; nenhum dado alterado. CSS recompilado (`npm run build`).
+
+- /bens: sem registros mostra estado vazio (sem tabela). Com registros, cartões abaixo de md (descrição, tipo/identificação, valor — de venda se vendido —, situação/data da venda, titular, valor atual, aquisição, anexo, Editar/Excluir com os mesmos métodos); tabela inalterada em md+.

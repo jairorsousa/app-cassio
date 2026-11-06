@@ -151,11 +151,35 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="ml-auto text-right"><div class="text-fs-12 text-cryptex-text-tertiary uppercase">Total em bens ativos</div><div class="text-fs-20 font-bold font-mono">{{ $m($total) }}</div></div>
             <button type="button" wire:click="create" class="min-h-[40px] px-3 rounded-sm bg-cryptex-brand-400 text-white font-semibold">Novo bem</button>
         </div>
-        <div class="overflow-x-auto mt-space-3">
+        @if ($properties->isEmpty())
+            <div class="py-10 text-center text-sm text-mono-600" data-empty="bens">Nenhum bem cadastrado.</div>
+        @else
+        <div class="mt-space-3 space-y-3 md:hidden" data-mobile="bens">
+            @foreach ($properties as $p)
+                <div class="rounded-sm border border-cryptex-border-default p-3 text-sm">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0"><strong class="break-words">{{ $p->description }}</strong><div class="text-xs text-mono-600">{{ \App\Domains\Assets\Models\Property::KINDS[$p->kind] ?? $p->kind }}@if ($p->identifier) · {{ $p->identifier }}@endif</div></div>
+                        <div class="text-right"><strong>{{ $m($p->status === 'sold' && $p->sale_value !== null ? $p->sale_value : $p->current_value) }}</strong><div class="text-xs {{ $p->status === 'sold' ? 'text-system-down' : 'text-mono-600' }}">{{ $p->status === 'sold' ? 'Vendido'.($p->sold_at ? ' em '.$p->sold_at->format('d/m/Y') : '') : 'Ativo' }}</div></div>
+                    </div>
+                    <dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        @if ($p->owner)<dt class="text-mono-600">Titular</dt><dd class="text-right">{{ \App\Domains\Assets\Models\Property::OWNERS[$p->owner] ?? $p->owner }}</dd>@endif
+                        @if ($p->bankAccount)<dt class="text-mono-600">Conta</dt><dd class="text-right">{{ $p->bankAccount->name }}</dd>@endif
+                        <dt class="text-mono-600">Valor atual</dt><dd class="text-right">{{ $m($p->current_value) }}@if ($p->current_value_date) · {{ $p->current_value_date->format('d/m/Y') }}@endif</dd>
+                        <dt class="text-mono-600">Aquisição</dt><dd class="text-right">{{ $m($p->acquisition_value) }}@if ($p->acquired_at) · {{ $p->acquired_at->format('d/m/Y') }}@endif</dd>
+                    </dl>
+                    <div class="mt-2 flex gap-4 text-xs">
+                        @if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar anexo</a>@endif
+                        <button type="button" wire:click="edit({{ $p->id }})" class="ml-auto text-cryptex-brand-400">Editar</button>
+                        <button type="button" wire:click="delete({{ $p->id }})" wire:confirm="Excluir este bem?" class="text-system-down">Excluir</button>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+        <div class="mt-space-3 hidden overflow-x-auto md:block">
             <table class="fx-table w-full text-sm">
                 <thead><tr><th class="text-left">Bem</th><th class="text-left">Tipo</th><th class="text-left">Titular</th><th class="text-right">Aquisição</th><th class="text-right">Valor atual</th><th class="text-left">Situação</th><th class="text-left">Anexo</th><th></th></tr></thead>
                 <tbody>
-                    @forelse ($properties as $p)
+                    @foreach ($properties as $p)
                         <tr>
                             <td><strong>{{ $p->description }}</strong>@if ($p->identifier)<div class="text-xs text-mono-600">{{ $p->identifier }}</div>@endif</td>
                             <td>{{ \App\Domains\Assets\Models\Property::KINDS[$p->kind] ?? $p->kind }}</td>
@@ -166,12 +190,11 @@ new #[Layout('layouts.app')] class extends Component {
                             <td>@if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar</a>@else — @endif</td>
                             <td class="text-right whitespace-nowrap"><button type="button" wire:click="edit({{ $p->id }})" class="text-cryptex-brand-400">Editar</button> <button type="button" wire:click="delete({{ $p->id }})" wire:confirm="Excluir este bem?" class="text-system-down ml-2">Excluir</button></td>
                         </tr>
-                    @empty
-                        <tr><td colspan="8" class="text-mono-600">Nenhum bem cadastrado.</td></tr>
-                    @endforelse
+                    @endforeach
                 </tbody>
             </table>
         </div>
+        @endif
     </x-fx.card>
 
     @if ($showForm)
