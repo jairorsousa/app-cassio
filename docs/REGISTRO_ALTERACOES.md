@@ -416,3 +416,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 ## 2026-11-06 — Resultado parcial quando falta PM
 
 - `PortfolioProfitabilityService::summary()`: novos `result_partial`, `known_cost_market_value`, `unknown_cost_market_value`. Ganho de capital já era só dos ativos com PM; o rótulo "Lucro total" sugeria total. Com PM faltando: card vira "Resultado informado" (ganho de capital com PM + proventos), "Valor investido (com PM)", nota com custo→valor dos ativos com PM e valor dos ativos sem PM (fora do ganho); "Retorno total" % mostra "não calculado". Sem mudança de dados.
+
+## 2026-11-06 — Auditoria segurança/confiabilidade Etapa 8
+
+- Nginx:  +  (DNS do Docker re-resolvido; app recriado não deixa 502 por IP em cache). Validado com  em contêiner temporário e no ativo; aplicado com  (sem recriar serviços). Backup em .
+- Verificado sem mudança: anexos de Bens/extratos no disco local privado, rotas com auth; nenhum arquivo de extrato residual (lotes sem file_path); limpeza  de hora em hora; cotações 30 min dias úteis + 18:30, sem jobs falhos.
+- Pendente (não alterado): worker  e  menores que  do job de cotações.
