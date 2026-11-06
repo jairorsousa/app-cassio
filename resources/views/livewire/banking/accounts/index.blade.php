@@ -337,7 +337,7 @@ new #[Layout('layouts.app')] class extends Component
                         <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
                         <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
                             <span class="material-icons-outlined text-[18px]">check</span>
-                            {{ $editingId ? 'Salvar Conta' : 'Criar Conta' }}
+                            Salvar
                         </button>
                     </div>
                 </form>

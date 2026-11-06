@@ -30,6 +30,11 @@ new #[Layout('layouts.app')] class extends Component {
     public string $formStep = 'choose';
     public ?int $editingId = null;
 
+    /** Quando true, save reabre o formulário em branco após gravar com sucesso. */
+    public bool $createAnotherAfterSave = false;
+
+    public ?string $formSuccessMessage = null;
+
     public ?int $asset_id = null;
     public ?int $asset_class_id = null;
     public string $ticker = '';
@@ -289,8 +294,24 @@ new #[Layout('layouts.app')] class extends Component {
         return max(0, round($qty * $unit + ($this->opType === 'buy' ? $fees : -$fees), 2));
     }
 
+    public function saveAndCreateAnother(): void
+    {
+        if ($this->editingId) {
+            $this->save();
+
+            return;
+        }
+
+        $this->createAnotherAfterSave = true;
+        $this->save();
+    }
+
     public function save(): void
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         $this->unit_price = $this->normalizeMoney($this->unit_price);
         $this->fees = $this->normalizeMoney($this->fees);
         if ($this->fees === '') {
@@ -365,6 +386,17 @@ new #[Layout('layouts.app')] class extends Component {
 
         app(\App\Domains\Investments\Services\InvestmentLedgerService::class)->saveOperation($payload, $this->editingId);
 
+        if ($createAnother) {
+            $reopenType = $this->opType;
+            $this->resetFormFields();
+            $this->showFormModal = true;
+            $this->formStep = 'form';
+            $this->opType = $reopenType;
+            $this->formSuccessMessage = 'Operação salva.';
+
+            return;
+        }
+
         $this->resetForm();
         session()->flash('status', 'Operação salva.');
     }
@@ -386,10 +418,8 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetForm();
     }
 
-    private function resetForm(): void
+    private function resetFormFields(): void
     {
-        $this->showFormModal = false;
-        $this->formStep = 'choose';
         $this->resetValidation();
         $this->reset([
             'editingId', 'asset_id', 'asset_class_id', 'ticker', 'lookupStatus', 'willCreateAsset',
@@ -400,6 +430,15 @@ new #[Layout('layouts.app')] class extends Component {
         $this->opType = 'buy';
         $this->fees = '0';
         $this->opDate = \App\Support\BusinessDate::today();
+        $this->createAnotherAfterSave = false;
+    }
+
+    private function resetForm(): void
+    {
+        $this->showFormModal = false;
+        $this->formStep = 'choose';
+        $this->formSuccessMessage = null;
+        $this->resetFormFields();
     }
 
     private function lookupBuyAsset(bool $fillQuote = false): void
@@ -884,7 +923,7 @@ new #[Layout('layouts.app')] class extends Component {
     @endif
 
     @if ($showFormModal && $formStep === 'form')
-        <x-investments.modal :title="$editingId ? 'Editar movimentação' : ($opType === 'sell' ? 'Nova venda' : 'Nova compra')">
+        <x-investments.modal :title="$editingId ? 'Editar movimentação' : ($opType === 'sell' ? 'Nova venda' : 'Nova compra')" :editing="(bool) $editingId" saveAndNew="saveAndCreateAnother" :successMessage="$formSuccessMessage">
             @if ($errors->any())
                 <div class="md:col-span-2">
                     <x-jr.alert variant="error">

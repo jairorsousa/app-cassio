@@ -14,11 +14,20 @@ new #[Layout('layouts.app')] class extends Component {
     public string $payment_method = '';
     public ?int $bank_account_id = null;
     public string $notes = '';
+    public bool $createAnotherAfterSave = false;
+    public ?string $formSuccessMessage = null;
 
     public function mount(Broker $broker): void
     {
         $this->broker = $broker;
         $this->date = now()->format('Y-m-d');
+    }
+
+    public function saveAndCreateAnother(BrokerAdvanceService $advances)
+    {
+        $this->createAnotherAfterSave = true;
+
+        return $this->save($advances);
     }
 
     public function rules(): array
@@ -34,6 +43,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(BrokerAdvanceService $advances)
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         $data = $this->validate();
 
         $result = $advances->register([
@@ -45,7 +58,18 @@ new #[Layout('layouts.app')] class extends Component {
             'notes' => $data['notes'] ?: null,
         ]);
 
-        session()->flash('status', BrokerAdvanceService::statusMessage($result));
+        $message = BrokerAdvanceService::statusMessage($result);
+
+        if ($createAnother) {
+            $this->reset(['amount', 'payment_method', 'bank_account_id', 'notes']);
+            $this->date = now()->format('Y-m-d');
+            $this->resetValidation();
+            $this->formSuccessMessage = $message;
+
+            return null;
+        }
+
+        session()->flash('status', $message);
 
         return $this->redirectRoute('brokers.advances.index', $this->broker, navigate: true);
     }
@@ -92,9 +116,13 @@ new #[Layout('layouts.app')] class extends Component {
             <textarea wire:model="notes" class="fx-form-field" rows="2"></textarea>
         </div>
 
-        <div class="flex gap-xs">
-            <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
+        @if ($formSuccessMessage)
+            <div class="rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm font-medium text-success" data-test="form-success-message">{{ $formSuccessMessage }}</div>
+        @endif
+        <div class="flex flex-wrap gap-xs">
             <a href="{{ route('brokers.advances.index', $broker) }}" class="fx-btn fx-btn--text">Cancelar</a>
+            <button type="submit" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="fx-btn fx-btn--primary">Salvar</button>
+            <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="fx-btn fx-btn--standard" data-test="save-and-create-another">Salvar e novo</button>
         </div>
     </form>
 </x-fx.card>

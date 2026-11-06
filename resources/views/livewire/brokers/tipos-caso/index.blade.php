@@ -80,7 +80,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </label>
                 
                 <div class="flex gap-xs mt-xs">
-                    <button type="submit" class="fx-btn fx-btn--primary fx-btn--sm">{{ $editingId ? 'Atualizar' : 'Cadastrar' }}</button>
+                    <button type="submit" class="fx-btn fx-btn--primary fx-btn--sm">Salvar</button>
                     @if($editingId)
                         <button type="button" wire:click="cancel" class="fx-btn fx-btn--text fx-btn--sm">Cancelar</button>
                     @endif

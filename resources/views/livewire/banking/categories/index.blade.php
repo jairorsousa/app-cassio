@@ -525,7 +525,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="flex items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
                         <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
                         <button type="submit" class="h-11 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
-                            {{ $editingId ? 'Salvar Categoria' : 'Criar Categoria' }}
+                            Salvar
                         </button>
                     </div>
                 </form>

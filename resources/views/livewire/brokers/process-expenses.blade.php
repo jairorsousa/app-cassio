@@ -17,13 +17,28 @@ new class extends Component {
     public ?int $accountId = null;
     public string $process_ref = '';
     public ?int $contactId = null;
+    public bool $createAnotherAfterSave = false;
+    public ?string $formSuccessMessage = null;
 
     public function create(): void
     {
-        $this->reset('editingId', 'amount', 'description', 'accountId', 'process_ref', 'contactId');
+        $this->reset('editingId', 'amount', 'description', 'accountId', 'process_ref', 'contactId', 'formSuccessMessage');
         $this->date = now('America/Sao_Paulo')->toDateString();
+        $this->createAnotherAfterSave = false;
         $this->showForm = true;
         $this->resetValidation();
+    }
+
+    public function saveAndCreateAnother(BrokerProcessExpenseService $service): void
+    {
+        if ($this->editingId) {
+            $this->save($service);
+
+            return;
+        }
+
+        $this->createAnotherAfterSave = true;
+        $this->save($service);
     }
 
     public function edit(int $id): void
@@ -42,14 +57,30 @@ new class extends Component {
 
     public function save(BrokerProcessExpenseService $service): void
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         try {
             $service->save(Broker::findOrFail($this->brokerId), [
                 'date' => $this->date, 'amount' => $this->amount, 'description' => $this->description, 'bank_account_id' => $this->accountId, 'process_ref' => $this->process_ref, 'contact_id' => $this->contactId,
             ], $this->editingId ? BrokerProcessExpense::where('broker_id', $this->brokerId)->findOrFail($this->editingId) : null);
         } catch (\DomainException $e) { $this->addError('expense', $e->getMessage()); return; }
-        $this->showForm = false;
-        $this->resetValidation();
+
         $this->dispatch('broker-process-expenses-updated');
+        $this->resetValidation();
+
+        if ($createAnother) {
+            $this->reset('editingId', 'amount', 'description', 'accountId', 'process_ref', 'contactId');
+            $this->date = now('America/Sao_Paulo')->toDateString();
+            $this->showForm = true;
+            $this->formSuccessMessage = 'Despesa salva.';
+
+            return;
+        }
+
+        $this->showForm = false;
+        $this->formSuccessMessage = null;
     }
 
     public function delete(int $id, BrokerProcessExpenseService $service): void
@@ -95,7 +126,16 @@ new class extends Component {
                 <div><label for="process-expense-account" class="mb-2 block text-sm text-mono-600">Conta do pagamento *</label><select id="process-expense-account" wire:model="accountId" class="h-12 w-full rounded-xl border-mono-200 text-sm" required><option value="">Selecionar</option>@foreach ($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></div>
             </div>
             <p class="text-xs text-mono-600">Ao salvar, a despesa será registrada como uma saída paga na conta selecionada.</p>
-            <div class="flex gap-3"><button type="submit" wire:loading.attr="disabled" class="h-11 rounded-pill bg-primary-500 px-5 text-sm font-semibold text-white disabled:opacity-50">Salvar despesa</button><button type="button" wire:click="$set('showForm', false)" class="text-sm text-mono-600">Cancelar</button></div>
+            @if ($formSuccessMessage)
+                <div class="rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm font-medium text-success" data-test="form-success-message">{{ $formSuccessMessage }}</div>
+            @endif
+            <div class="flex flex-wrap gap-3">
+                <button type="button" wire:click="$set('showForm', false)" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="h-11 rounded-pill bg-mono-100 px-5 text-sm font-semibold text-mono-900 disabled:opacity-50">Cancelar</button>
+                <button type="submit" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="h-11 rounded-pill bg-primary-500 px-5 text-sm font-semibold text-white disabled:opacity-50">Salvar</button>
+                @if (! $editingId)
+                    <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill border border-primary-200 bg-primary-50 px-5 text-sm font-semibold text-primary-700 disabled:opacity-50" data-test="save-and-create-another">Salvar e novo</button>
+                @endif
+            </div>
         </form>
     @endif
     @forelse ($expenses as $expense)

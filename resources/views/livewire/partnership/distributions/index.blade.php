@@ -261,7 +261,7 @@ new #[Layout('layouts.app')] class extends Component
 
                     <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
                         <button type="button" class="fx-btn fx-btn--standard" wire:click="cancel">Cancelar</button>
-                        <button type="submit" class="fx-btn fx-btn--primary">Salvar distribuição</button>
+                        <button type="submit" class="fx-btn fx-btn--primary">Salvar</button>
                     </div>
                 </form>
             </div>

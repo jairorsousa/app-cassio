@@ -19,11 +19,20 @@ new #[Layout('layouts.app')] class extends Component {
     public string $reference_date = '';
     public ?int $bank_account_id = null;
     public string $notes = '';
+    public bool $createAnotherAfterSave = false;
+    public ?string $formSuccessMessage = null;
 
     public function mount(Broker $broker): void
     {
         $this->broker = $broker;
         $this->reference_date = now()->format('Y-m-d');
+    }
+
+    public function saveAndCreateAnother(BrokerCommissionService $service)
+    {
+        $this->createAnotherAfterSave = true;
+
+        return $this->save($service);
     }
 
     public function rules(): array
@@ -44,6 +53,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(BrokerCommissionService $service)
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         $data = $this->validate();
         try {
             $service->registerFlexible([
@@ -59,6 +72,15 @@ new #[Layout('layouts.app')] class extends Component {
                 'bank_account_id' => $data['bank_account_id'] ?? null,
                 'notes' => $data['notes'] ?? null,
             ]);
+            if ($createAnother) {
+                $this->reset(['case_type_id', 'name', 'base_amount', 'rate_or_amount', 'process_ref', 'writ_id', 'bank_account_id', 'notes']);
+                $this->mode = 'percent';
+                $this->reference_date = now()->format('Y-m-d');
+                $this->resetValidation();
+                $this->formSuccessMessage = 'Comissão registrada.';
+
+                return null;
+            }
             session()->flash('status', 'Comissão registrada.');
             return $this->redirectRoute('brokers.commissions.index', $this->broker, navigate: true);
         } catch (\DomainException $e) {
@@ -136,9 +158,13 @@ new #[Layout('layouts.app')] class extends Component {
                 <label class="block text-xxs text-mono-600 mb-xxxs">Observações</label>
                 <textarea wire:model="notes" class="fx-form-field" rows="2"></textarea>
             </div>
-            <div class="flex gap-xs">
-                <button type="submit" class="fx-btn fx-btn--primary">Registrar</button>
+            @if ($formSuccessMessage)
+                <div class="rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm font-medium text-success" data-test="form-success-message">{{ $formSuccessMessage }}</div>
+            @endif
+            <div class="flex flex-wrap gap-xs">
                 <a href="{{ route('brokers.commissions.index', $broker) }}" class="fx-btn fx-btn--text">Cancelar</a>
+                <button type="submit" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="fx-btn fx-btn--primary">Salvar</button>
+                <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="save,saveAndCreateAnother" class="fx-btn fx-btn--standard" data-test="save-and-create-another">Salvar e novo</button>
             </div>
         </form>
     </x-fx.card>

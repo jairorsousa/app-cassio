@@ -1,5 +1,18 @@
 # Registro de alterações
 
+## 06/11/2026 — Padrão Cancelar / Salvar (+ Salvar e novo só em série) (Auditor Fin)
+
+Escopo pedido pelo Cassio:
+
+1. Em **todos** os formulários de criação: rótulos **Cancelar** e **Salvar**.
+2. **Salvar e novo** somente onde se lança em série:
+   - Financeiro › Lançamentos (já existente)
+   - Investimentos › Proventos
+   - Investimentos › Movimentações
+   - Corretores › Registrar comissão / Novo adiantamento / Despesas de processos
+3. Cadastros únicos ficam só com Cancelar + Salvar (sem Salvar e novo): empréstimo, valor a receber, requisitório, contato, corretor, conta, cartão, categoria, recorrência, ativo, bem, tipos de caso, sociedade (aporte/despesa/distribuição).
+4. Em edição: Cancelar + Salvar (sem o terceiro botão). Reset do formulário só após sucesso; em erro os dados permanecem.
+
 ## 06/11/2026 — Lançamentos: rótulos Cancelar / Salvar / Salvar e novo (Auditor Fin)
 
 Somente rótulos e ordem no rodapé dos formulários de criação (despesa no cartão, despesa, receita, transferência). Comportamento inalterado.

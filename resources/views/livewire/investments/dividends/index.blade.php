@@ -28,10 +28,27 @@ new #[Layout('layouts.app')] class extends Component {
     public bool $showFormModal = false;
     public ?int $editingId = null;
 
+    /** Quando true, save reabre o formulário em branco após gravar com sucesso. */
+    public bool $createAnotherAfterSave = false;
+
+    public ?string $formSuccessMessage = null;
+
     public function create(): void
     {
         $this->resetForm();
         $this->showFormModal = true;
+    }
+
+    public function saveAndCreateAnother(): void
+    {
+        if ($this->editingId) {
+            $this->save();
+
+            return;
+        }
+
+        $this->createAnotherAfterSave = true;
+        $this->save();
     }
 
     public ?int $asset_id = null;
@@ -77,6 +94,10 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(): void
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         $data = $this->validate();
         $total = round((float) $data['unit_amount'] * (float) $data['quantity'], 2);
         $payload = [
@@ -96,6 +117,15 @@ new #[Layout('layouts.app')] class extends Component {
             AssetDividend::create($payload);
         }
 
+        if ($createAnother) {
+            $this->resetFormFields();
+            $this->showFormModal = true;
+            $this->formSuccessMessage = 'Provento salvo.';
+            $this->resetPage();
+
+            return;
+        }
+
         $this->resetForm();
         session()->flash('status', 'Provento salvo.');
     }
@@ -108,13 +138,20 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function cancel(): void { $this->resetForm(); }
 
-    private function resetForm(): void
+    private function resetFormFields(): void
     {
-        $this->showFormModal = false;
         $this->resetValidation();
         $this->reset(['editingId', 'asset_id', 'unit_amount', 'quantity', 'bank_account_id', 'divNotes']);
         $this->type = 'dividend';
         $this->payment_date = \App\Support\BusinessDate::today();
+        $this->createAnotherAfterSave = false;
+    }
+
+    private function resetForm(): void
+    {
+        $this->showFormModal = false;
+        $this->formSuccessMessage = null;
+        $this->resetFormFields();
     }
 
     public function with(): array
@@ -184,7 +221,7 @@ new #[Layout('layouts.app')] class extends Component {
     </x-jr.card>
 
     @if ($showFormModal)
-    <x-investments.modal :title="$editingId ? 'Editar provento' : 'Novo provento'">
+    <x-investments.modal :title="$editingId ? 'Editar provento' : 'Novo provento'" :editing="(bool) $editingId" saveAndNew="saveAndCreateAnother" :successMessage="$formSuccessMessage">
 @if ($errors->any())<div class="md:col-span-2"><x-jr.alert variant="error"><ul>@foreach ($errors->all() as $message)<li>{{ $message }}</li>@endforeach</ul></x-jr.alert></div>@endif
             <div>
                 <label class="mb-2 block">Ativo</label>
