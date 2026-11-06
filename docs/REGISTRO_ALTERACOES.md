@@ -380,3 +380,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Classificação só para revisão ("outros movimentos", nenhum lançamento financeiro nem provento): rendimento automático/conta remunerada, transferência (TED/PIX), devolução (sem compensar com o PIX de origem), pagamento de financiamento, taxa, liquidação de operações, indício de provento, outro.
 - Comando `investments:account-csv-preview {arquivos*}` (somente leitura, saída agregada).
 - Layout XP NÃO validado: os CSVs reais citados não estavam no box. Testes com amostras sanitizadas: `BankAccountCsvParserTest`.
+
+## 2026-11-06 — Parser BB Home Broker (PDF movimentação financeira)
+
+- `BbHomeBrokerPdfParser`: calibrado com 1 PDF real BB (01/01–06/11/2026, 2 páginas, só PAG.RENDIMENTOS de FII). Lê data do lançamento, data do evento, custódia, evento, ticker (TTLO.), quantidade (QTDE) e valor creditado. "Total dos lançamentos no período" repete o total geral em cada página: usado só para conferência (não somado). Linha datada fora do layout ou soma ≠ total → não reconcilia (bloqueia confirmação).
+- Integrado ao staging de extratos (layout `bb_home_broker`): rendimentos de FII como provento, possíveis duplicados com eventos B3 (ticker, ±3 dias, ±0,01) exigem decisão humana. Quantidade é a do evento, não posição/PM.
+- Testes `BbHomeBrokerPdfParserTest` (layout anonimizado). Prévia real somente leitura via `investments:statement-preview` (transação revertida).

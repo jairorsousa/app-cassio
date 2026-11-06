@@ -354,6 +354,8 @@ Artisan::command('investments:statement-preview {file} {--broker=BTG Pactual}', 
             'by_status' => $rows->countBy('status'),
             'by_kind' => $rows->groupBy('kind')->map(fn ($g) => ['count' => $g->count(), 'net' => round((float) $g->sum('net_amount'), 2), 'statuses' => $g->countBy('status')]),
             'importable_net' => round((float) $rows->where('status', 'ready')->sum('net_amount'), 2),
+            'ready_rows' => $rows->where('status', 'ready')->map(fn ($r) => $r->date?->format('d/m/Y').' '.$r->kind.' '.($r->ticker ?? '?').' '.number_format((float) $r->net_amount, 2, ',', '.'))->values()->take(200),
+            'duplicate_matches' => $rows->where('status', 'duplicate_candidate')->map(fn ($r) => $r->date?->format('d/m/Y').' '.$r->ticker.' '.number_format((float) $r->net_amount, 2, ',', '.').' ~ B3 '.$r->duplicateOf?->payment_date?->format('d/m/Y').' '.number_format((float) $r->duplicateOf?->net_amount, 2, ',', '.'))->values()->take(200),
             'duplicate_candidates_by_kind' => $rows->where('status', 'duplicate_candidate')->countBy('kind'),
             'errors' => $rows->where('status', 'error')->map(fn ($r) => $r->date?->format('d/m/Y').' '.$r->kind.' '.($r->ticker ?? '?').': '.implode(' ', $r->messages ?? []))->values(),
         ];

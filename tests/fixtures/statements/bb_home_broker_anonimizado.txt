@@ -1,0 +1,13 @@
+HOME BROKER BB - FINANCEIRO - MOVIMENTAÇÃO FINANCEIRA
+
+        Data do           Data do Evento        Custódia                                         Evento                     Valor do
+       25.02.2026            25.02.2026         Corrente          PAG.RENDIMENTOS - TTLO.: AAAA11          QTDE:     10                 8,00
+       13.02.2026            12.02.2026         Corrente         PAG.RENDIMENTOS - TTLO.: BBBB11          QTDE:     1.000              1.100,00
+       23.01.2026            23.01.2026         Corrente          PAG.RENDIMENTOS - TTLO.: AAAA11          QTDE:     10                 7,90
+                                                                                        Total dos lançamentos no período*           1.120,90
+
+Página 1 de 2                                                                                                               06/11/2026 01:09
+HOME BROKER BB - FINANCEIRO - MOVIMENTAÇÃO FINANCEIRA
+       15.01.2026            15.01.2026         Corrente          PAG.DIVIDENDOS - TTLO.: CCCC3         QTDE:     30                  5,00
+                                                                                        Total dos lançamentos no período*           1.120,90
+Página 2 de 2

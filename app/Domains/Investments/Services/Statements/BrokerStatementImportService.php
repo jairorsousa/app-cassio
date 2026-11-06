@@ -36,6 +36,14 @@ class BrokerStatementImportService
         ]);
         if ($kind === 'pdf') {
             $r = $this->pdf->extract($abs);
+            if ($r['status'] === 'text_extracted' && BbHomeBrokerPdfParser::detect($r['text'])) {
+                $bb = app(BbHomeBrokerPdfParser::class);
+                $parsed = $bb->parse($r['text']);
+                $import->update(['text_status' => 'text_extracted', 'headers' => null, 'mapping' => ['layout' => 'bb_home_broker'], 'summary' => ['reconciliation' => $parsed['reconciliation']]]);
+                $this->buildLayoutRows($import, $bb->toStagingRows($parsed), $parsed['reconciliation']);
+
+                return $import->fresh();
+            }
             if ($r['status'] === 'text_extracted' && BtgStatementPdfParser::detect($r['text'])) {
                 $btg = app(BtgStatementPdfParser::class);
                 $parsed = $btg->parse($r['text']);
