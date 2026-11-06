@@ -553,3 +553,14 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Configuração: `GOOGLE_AUTH_CLIENT_ID/SECRET/REDIRECT_URI` opcionais; sem eles reaproveita o cliente OAuth da Agenda. Agenda, permissões e senhas não foram alterados.
 - Envio de convite por e-mail continua pendente: o sistema está com mailer `log` e sem SMTP próprio; o convite segue com link copiado manualmente até haver provedor definido.
 - Testes: `GoogleLoginTest` (11) com provedor falso, sem rede. Migração rodada antes de validar; lint de todos os arquivos.
+
+
+## 2026-11-06 — Convites por e-mail: remetente Google SMTP (preparação) + envio explícito na fila
+
+- Em Configurações → Usuários e acessos, o administrador **id 1** ganha o bloco "Remetente de e-mail (Google SMTP)": remetente estrito `cassio@cassiomota.com`, host `smtp.gmail.com`, porta 587 TLS.
+- Senha de aplicativo: gravada **somente** pelo formulário HTTP da própria tela (`name=smtpPassword` / `wire:model="smtpPassword"` / `data-smtp-password`), com cast `encrypted` (APP_KEY). Salvar com campo em branco **não** apaga a senha já existente; remoção só pelo botão explícito "Remover senha". A UI mostra se há senha gravada, nunca o valor nem o comprimento.
+- Dá para salvar remetente/host sem senha; "pronto para enviar" só com senha. Configurar ≠ teste de entrega.
+- Criar ou regenerar convite **não** envia e-mail. Envio só no botão **"Enviar por e-mail"** (no link gerado ou na linha do convite), com auth admin. Job `SendUserInvitationEmail` na fila Redis já existente (`queue:work` no container `cassio_worker`); claim atômico (`email_delivery_status` + `email_dispatch_token`) evita duplicata enquanto `queued`; retry após `failed` (tries=3, backoff). Status `pending|queued|sent|failed` com timestamps e erro genérico; convite **não** é aceito pelo envio; link manual permanece.
+- Override SMTP só no runtime do envio (`mail.mailers.invitation_smtp`), timeout 15s, From fixo no remetente registrado; `MAIL_MAILER` global permanece (hoje `log` em produção — não tratado como pronto). Autoteste separado: "Testar remetente (só para mim)" envia apenas para o próprio remetente.
+- Migração `2026_11_06_900000_invitation_mail_sender`. Testes: `InvitationMailTest`. Backup: `storage/backups/pre_invite_mail/`.
+- **Ainda sem senha real nesta etapa** (Google App Password indisponível no momento). Nenhum e-mail externo foi enviado; segredo não foi colocado via shell/env. Quando a senha existir, gravar só pela UI e só então usar o botão explícito / autoteste.

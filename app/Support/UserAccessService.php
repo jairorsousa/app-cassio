@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/** Regras de convite/usuários. Nenhum e-mail é enviado: o link é copiado manualmente pelo administrador. */
+/** Regras de convite/usuários. Criar/regenerar não envia e-mail; envio explícito fica em InvitationMailService. */
 class UserAccessService
 {
     private static function admin(?User $actor): User

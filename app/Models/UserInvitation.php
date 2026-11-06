@@ -6,15 +6,47 @@ use Illuminate\Database\Eloquent\Model;
 
 class UserInvitation extends Model
 {
-    protected $fillable = ['name', 'email', 'modules', 'token_hash', 'expires_at', 'accepted_at', 'revoked_at', 'invited_by', 'accepted_user_id'];
+    protected $fillable = [
+        'name',
+        'email',
+        'modules',
+        'token_hash',
+        'expires_at',
+        'accepted_at',
+        'revoked_at',
+        'invited_by',
+        'accepted_user_id',
+        'email_delivery_status',
+        'email_dispatch_token',
+        'email_attempts',
+        'email_queued_at',
+        'email_sent_at',
+        'email_failed_at',
+        'email_last_error',
+    ];
 
-    protected $casts = ['modules' => 'array', 'expires_at' => 'datetime', 'accepted_at' => 'datetime', 'revoked_at' => 'datetime'];
+    protected $casts = [
+        'modules' => 'array',
+        'expires_at' => 'datetime',
+        'accepted_at' => 'datetime',
+        'revoked_at' => 'datetime',
+        'email_queued_at' => 'datetime',
+        'email_sent_at' => 'datetime',
+        'email_failed_at' => 'datetime',
+    ];
 
-    protected $hidden = ['token_hash'];
+    protected $hidden = ['token_hash', 'email_dispatch_token'];
 
     public const VALID_DAYS = 7;
 
     public const STATUS_LABELS = ['pending' => 'Pendente', 'accepted' => 'Aceito', 'revoked' => 'Revogado', 'expired' => 'Expirado'];
+
+    public const DELIVERY_LABELS = [
+        'pending' => 'E-mail não enviado',
+        'queued' => 'E-mail na fila',
+        'sent' => 'E-mail enviado',
+        'failed' => 'Falha no e-mail',
+    ];
 
     public static function hashToken(string $token): string
     {
@@ -29,6 +61,13 @@ class UserInvitation extends Model
             $this->expires_at->isPast() => 'expired',
             default => 'pending',
         };
+    }
+
+    public function deliveryLabel(): string
+    {
+        $s = $this->email_delivery_status;
+
+        return self::DELIVERY_LABELS[$s] ?? 'E-mail não enviado';
     }
 
     public static function findUsable(string $token): ?self
