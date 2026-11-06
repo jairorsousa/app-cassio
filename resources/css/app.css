@@ -124,7 +124,7 @@
 
         --text-primary: var(--colors-mono-g900);
         --text-secondary: var(--colors-mono-g600);
-        --text-tertiary: var(--colors-mono-g300);
+        --text-tertiary: var(--colors-mono-g400); /* contraste de eixos/legendas no escuro */
         --text-disabled: var(--colors-mono-g300);
         --text-inverse: #ffffff;
 
@@ -155,6 +155,21 @@
     html {
         color-scheme: light;
     }
+
+    /* Modo escuro: utilitários cinza/branco herdados (Breeze, perfil, modais) seguem os tokens do tema. */
+    html[data-theme="dark"] .bg-white { background-color: var(--bg-secondary); }
+    html[data-theme="dark"] .bg-gray-50, html[data-theme="dark"] .bg-gray-100 { background-color: var(--bg-tertiary); }
+    html[data-theme="dark"] .text-gray-900, html[data-theme="dark"] .text-gray-800, html[data-theme="dark"] .text-gray-700 { color: var(--text-primary); }
+    html[data-theme="dark"] .text-gray-600, html[data-theme="dark"] .text-gray-500, html[data-theme="dark"] .text-gray-400 { color: var(--text-secondary); }
+    html[data-theme="dark"] .border-gray-100, html[data-theme="dark"] .border-gray-200, html[data-theme="dark"] .border-gray-300 { border-color: var(--border-default); }
+    html[data-theme="dark"] input, html[data-theme="dark"] select, html[data-theme="dark"] textarea { color: var(--text-primary); }
+
+    html[data-text-size="grande"] { font-size: 112.5%; }
+    html[data-text-size="extra"] { font-size: 125%; }
+    html[data-density="compacta"] main { padding: 0.75rem; }
+    html[data-density="compacta"] .fx-table thead th,
+    html[data-density="compacta"] .fx-table tbody td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+    html[data-density="compacta"] .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
 
     html[data-theme="dark"],
     [data-theme="dark"] {

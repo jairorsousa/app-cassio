@@ -53,6 +53,10 @@
                     <span class="material-icons-outlined text-[18px] text-mono-400">settings</span>
                     Perfil
                 </a>
+                <a href="{{ route('settings') }}" class="flex items-center gap-3 px-4 py-2.5 text-sm text-mono-900 transition-colors hover:bg-mono-50">
+                    <span class="material-icons-outlined text-[18px] text-mono-400">palette</span>
+                    Configurações
+                </a>
                 <div class="my-1.5 mx-3 border-t border-mono-100"></div>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf

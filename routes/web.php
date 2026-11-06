@@ -8,13 +8,17 @@ use Livewire\Volt\Volt;
 
 Route::get('/', function () {
     return auth()->check()
-        ? redirect()->to(route('dashboard', absolute: false))
+        ? redirect()->to(\App\Support\UserPreferences::homeUrl(auth()->user()))
         : redirect()->to(route('login', absolute: false));
 });
 
 Volt::route('dashboard', 'dashboard.index')
     ->middleware(['auth', 'verified', 'inactivity'])
     ->name('dashboard');
+
+Volt::route('configuracoes', 'settings.index')
+    ->middleware(['auth', 'inactivity'])
+    ->name('settings');
 
 Route::view('profile', 'profile')
     ->middleware(['auth', 'inactivity'])

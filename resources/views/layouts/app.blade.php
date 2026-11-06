@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+@php($prefs = \App\Support\UserPreferences::for(auth()->user()))
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" data-theme="{{ $prefs['theme'] === 'dark' ? 'dark' : 'light' }}" data-theme-pref="{{ $prefs['theme'] }}" data-text-size="{{ $prefs['text_size'] }}" data-density="{{ $prefs['density'] }}">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,10 +8,19 @@
 
         <title>{{ config('app.name', 'Cassio Finance') }}</title>
 
+        <style id="accent-vars">{!! \App\Support\UserPreferences::accentCss($prefs['accent']) !!}</style>
         <script>
-            if (localStorage.getItem('jr-theme') === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            }
+            (function () {
+                var d = document.documentElement, o = sessionStorage.getItem('jr-theme-session');
+                if (o === 'dark' || o === 'light') { d.dataset.theme = o; }
+                else if (d.dataset.themePref === 'auto') { d.dataset.theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+                var accents = @json(collect(\App\Support\UserPreferences::ACCENTS)->map(fn ($a) => [$a[1], $a[2]]));
+                window.previewAccent = function (k) {
+                    var a = accents[k]; if (!a) return;
+                    var css = ':root,[data-theme="light"]{--colors-primary-g100:' + a[0][0] + ';--colors-primary-g500:' + a[0][1] + ';--colors-primary-g600:' + a[0][2] + '}[data-theme="dark"]{--colors-primary-g100:' + a[1][0] + ';--colors-primary-g500:' + a[1][1] + ';--colors-primary-g600:' + a[1][2] + '}';
+                    document.getElementById('accent-vars').textContent = css;
+                };
+            })();
         </script>
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -41,7 +51,7 @@
 
         <script>
             window.appShell = (config) => ({
-                theme: localStorage.getItem('jr-theme') || 'light',
+                theme: document.documentElement.dataset.theme || 'light',
                 sidebarOpen: false,
                 buffer: '',
                 bufferTimer: null,
@@ -58,10 +68,11 @@
                 },
                 applyTheme() {
                     document.documentElement.dataset.theme = this.theme;
-                    localStorage.setItem('jr-theme', this.theme);
                 },
                 toggleTheme() {
+                    // Troca rápida só nesta aba; a preferência fixa fica em Configurações.
                     this.theme = this.theme === 'dark' ? 'light' : 'dark';
+                    sessionStorage.setItem('jr-theme-session', this.theme);
                     this.applyTheme();
                 },
                 handleShortcut(event) {

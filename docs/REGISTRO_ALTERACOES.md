@@ -429,3 +429,15 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 - As 9 abas do subnav têm rota e renderizam (verificado como usuário real, sem gravação). Carteira, Proventos e Rentabilidade são baseadas em operações/proventos manuais (hoje vazias) e pareciam "sem dados" apesar da B3: aviso com link para Posição B3 quando há posição B3/proventos importados (`components/investments/b3-notice`). Sem remoção de telas nem novas rotas.
 - Notas de corretagem: sem layout real ainda; nenhum parser criado. Quando chegarem, entram pelo importador de extratos (prévia/mapeamento) e viram compras/vendas só após parser validado.
+
+## 2026-11-06 — Configurações visuais (após Etapa 8)
+
+- Nova página `/configuracoes` (rota `settings`), no menu da conta (abaixo de Perfil); navegação principal inalterada.
+- Preferências por usuário em `users.preferences` (JSON nulo; migração `2026_11_06_300000`), validadas por lista fechada em `App\Support\UserPreferences`:
+  - Tema: Claro, Escuro, Automático (segue o sistema). Aplicado no servidor (`data-theme` no `<html>`) antes da primeira pintura; Automático resolve por `prefers-color-scheme` no script do `<head>`. O botão de lua do topo virou troca temporária da aba (sessionStorage).
+  - Cor de destaque: Laranja (padrão), Azul, Verde, Roxo, Rosa, Petróleo, com tons para claro e escuro; prévia ao vivo.
+  - Tamanho do texto: Padrão, Grande (112,5%), Extra grande (125%).
+  - Densidade: Confortável, Compacta (menos espaço em tabelas e margens).
+  - Área inicial: Painel, Financeiro (lançamentos), Investimentos — usada após login e em `/`.
+- Salvar, Cancelar alterações e Restaurar padrões (carrega padrões; aplica ao salvar). Sem dados financeiros, permissões ou importações alteradas.
+- Modo escuro: utilitários bg-white/gray herdados mapeados aos tokens; texto terciário do escuro mais claro (eixos e legendas de gráficos). Gráficos já usam tokens/currentColor.
