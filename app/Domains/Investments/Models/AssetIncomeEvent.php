@@ -13,7 +13,7 @@ class AssetIncomeEvent extends Model
 {
     public const TYPE_LABELS = [
         'dividend' => 'Dividendo', 'jcp' => 'JCP', 'fii_income' => 'Rendimento (FII)',
-        'lending_reimbursement' => 'Reembolso (aluguel)', 'lending_fee' => 'Taxa de aluguel', 'other' => 'Outro',
+        'lending_reimbursement' => 'Reembolso (aluguel)', 'lending_fee' => 'Taxa de aluguel (BTC)', 'yield' => 'Rendimento (ação)', 'other' => 'Outro',
     ];
 
     protected $fillable = ['asset_id', 'import_batch_id', 'ticker', 'payment_date', 'record_date', 'type', 'source_type_label', 'quantity', 'gross_amount', 'withholding_tax', 'net_amount', 'is_lending', 'lending_contract_ref', 'lending_fee_rate', 'broker_name', 'asset_class_label', 'bank_account_id', 'transaction_id', 'source', 'source_file', 'source_key', 'notes'];

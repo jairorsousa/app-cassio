@@ -181,13 +181,17 @@ new #[Layout('layouts.app')] class extends Component {
     <x-fx.card>
         <h3 class="text-fs-16 font-semibold text-cryptex-text-primary mb-space-3">Proventos recebidos (líquido)</h3>
         <p class="text-xs text-mono-600 mb-space-3">Registrados só em Investimentos; não criam lançamentos no Financeiro (as entradas antigas já estão nas contas). Reembolso de aluguel é o valor repassado pelo tomador, não a taxa do empréstimo.</p>
+        @php $btc = \App\Domains\Investments\Models\AssetIncomeEvent::where('type', 'lending_fee')->selectRaw('count(*) n, sum(gross_amount) g, sum(withholding_tax) ir, sum(net_amount) l, min(payment_date) a, max(payment_date) b')->first(); @endphp
+        @if ($btc && $btc->n > 0)
+            <p class="text-xs mb-space-3">Taxas de aluguel (BTC) recebidas: {{ $btc->n }} lançamento(s) de {{ \Illuminate\Support\Carbon::parse($btc->a)->format('d/m/Y') }} a {{ \Illuminate\Support\Carbon::parse($btc->b)->format('d/m/Y') }} · bruto <strong>{{ $m($btc->g) }}</strong> − IR {{ $m($btc->ir) }} = líquido <strong>{{ $m($btc->l) }}</strong>. Corretagem/emolumentos do aluguel ficam no extrato como pendência manual (não descontados aqui).</p>
+        @endif
         @if ($byYear->isNotEmpty())
             <div class="overflow-x-auto mb-space-3">
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Ano</th>@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)@if (! in_array($k, ['lending_fee', 'other']))<th class="text-right">{{ $l }}</th>@endif @endforeach<th class="text-right">Total</th></tr></thead>
+                    <thead><tr><th class="text-left">Ano</th>@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)@if (! in_array($k, ['other', 'yield']))<th class="text-right">{{ $l }}</th>@endif @endforeach<th class="text-right">Total</th></tr></thead>
                     <tbody>
                         @foreach ($byYear as $y => $rows)
-                            <tr><td>{{ $y }}</td>@foreach (['dividend', 'jcp', 'fii_income', 'lending_reimbursement'] as $k)<td class="text-right">{{ $m($rows->firstWhere('type', $k)?->total ?? 0) }}</td>@endforeach<td class="text-right font-semibold">{{ $m($rows->sum('total')) }}</td></tr>
+                            <tr><td>{{ $y }}</td>@foreach (['dividend', 'jcp', 'fii_income', 'lending_reimbursement', 'lending_fee'] as $k)<td class="text-right">{{ $m($rows->firstWhere('type', $k)?->total ?? 0) }}</td>@endforeach<td class="text-right font-semibold">{{ $m($rows->sum('total')) }}</td></tr>
                         @endforeach
                     </tbody>
                 </table>
@@ -201,12 +205,12 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
         <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Pagamento</th><th class="text-left">Ativo</th><th class="text-left">Tipo</th><th class="text-right">Qtd. base</th><th class="text-right">Bruto</th><th class="text-right">Líquido</th><th class="text-left">Corretora</th></tr></thead>
+                <thead><tr><th class="text-left">Pagamento</th><th class="text-left">Ativo</th><th class="text-left">Tipo</th><th class="text-right">Qtd. base</th><th class="text-right">Bruto</th><th class="text-right">IR</th><th class="text-right">Líquido</th><th class="text-left">Corretora</th><th class="text-left">Origem</th></tr></thead>
                 <tbody>
                     @forelse ($events as $e)
-                        <tr><td>{{ $e->payment_date->format('d/m/Y') }}</td><td>{{ $e->ticker }}</td><td>{{ $e->typeLabel() }}</td><td class="text-right">{{ $q($e->quantity) }}</td><td class="text-right">{{ $e->gross_amount === null ? 'não informado' : $m($e->gross_amount) }}</td><td class="text-right font-semibold">{{ $m($e->net_amount) }}</td><td>{{ $e->broker_name }}</td></tr>
+                        <tr><td>{{ $e->payment_date->format('d/m/Y') }}</td><td>{{ $e->ticker }}</td><td>{{ $e->typeLabel() }}</td><td class="text-right">{{ $q($e->quantity) }}</td><td class="text-right">{{ $e->gross_amount === null ? 'não informado' : $m($e->gross_amount) }}</td><td class="text-right">{{ $e->withholding_tax === null ? '—' : $m($e->withholding_tax) }}</td><td class="text-right font-semibold">{{ $m($e->net_amount) }}</td><td>{{ $e->broker_name }}</td><td>{{ $e->source === 'b3_midas' ? 'B3 (Midas)' : ($e->source === 'broker_statement' ? 'Extrato corretora' : $e->source) }}</td></tr>
                     @empty
-                        <tr><td colspan="7" class="text-mono-600">Nenhum provento importado.</td></tr>
+                        <tr><td colspan="9" class="text-mono-600">Nenhum provento importado.</td></tr>
                     @endforelse
                 </tbody>
             </table>
