@@ -356,3 +356,11 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - PDF: só texto via pdftotext se instalado; escaneado/sem extrator/sem layout → "precisa revisão", nada importado. Arquivo alterado após prévia invalida a confirmação.
 - IA opcional (`STATEMENT_AI_URL/KEY/MODEL`): só sugere mapeamento com cabeçalho + 5 linhas; sem config nada é enviado. Limpeza horária `investments:statements-cleanup`.
 - Layouts BTG/XP/BB/Itaú NÃO validados (sem arquivos reais). Testes com dados sintéticos: `BrokerStatementImportTest`.
+
+## 2026-11-06 — poppler-utils (pdftotext) na imagem PHP
+
+- `docker/php/Dockerfile`: adicionado `poppler-utils` (apk). Imagem reconstruída e recriados só `app`, `worker` e `scheduler` (`docker compose up -d --no-deps`); nginx, redis e cloudflared intocados. Backup do Dockerfile anterior em `storage/backups/Dockerfile.pre_poppler`. pdftotext 25.12.0.
+- `PdfTextExtractor`: falha/timeout do binário vira "sem texto" (não derruba upload).
+- Testes `BrokerStatementPdfTest` com PDFs sintéticos (`tests/fixtures/statements/`): extração real, PDF sem texto, PDF com texto continua "precisa revisão" e não importa nada, binário quebrado/ausente. Pulam se pdftotext não existir.
+- Continua sem OCR, sem IA e sem layout de PDF validado de qualquer corretora; PDF só serve para triagem (texto detectado ou não).
+- Observação: o worker roda `queue:work --timeout=120`, menor que o `timeout` 600 do job de cotações; não alterado aqui.

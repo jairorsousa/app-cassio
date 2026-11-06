@@ -9,6 +9,7 @@ RUN apk add --no-cache \
         curl \
         zip \
         unzip \
+        poppler-utils \
         nodejs \
         npm \
         libzip-dev \

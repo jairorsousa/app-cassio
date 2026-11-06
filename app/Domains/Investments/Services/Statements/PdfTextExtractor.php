@@ -21,8 +21,12 @@ class PdfTextExtractor
         }
         $p = new Process([$bin, '-layout', '-enc', 'UTF-8', $path, '-']);
         $p->setTimeout(60);
-        $p->run();
-        $text = $p->isSuccessful() ? trim($p->getOutput()) : '';
+        try {
+            $p->run();
+            $text = $p->isSuccessful() ? trim($p->getOutput()) : '';
+        } catch (\Throwable) { // binário quebrado/timeout: trata como sem texto, nunca derruba o upload
+            $text = '';
+        }
 
         return ['status' => mb_strlen(preg_replace('/\s+/', '', $text)) >= 40 ? 'text_extracted' : 'no_text', 'text' => $text];
     }
