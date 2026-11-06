@@ -13,6 +13,9 @@ new #[Layout('layouts.app')] class extends Component {
     public array $contacts = [];
     public array $labels = [];
     public string $selectedLabel = '';
+    public string $contactSearch = '';
+    public int $contactPage = 1;
+    public const CONTACTS_PER_PAGE = 20;
     public bool $loading = true;
     public bool $loadingLabels = true;
     public string $errorMessage = '';
@@ -22,6 +25,36 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->loadLabels();
         $this->loadContacts();
+    }
+
+    public function updatedContactSearch(): void
+    {
+        $this->contactPage = 1;
+    }
+
+    public function contactPageTo(int $page): void
+    {
+        $this->contactPage = max(1, $page);
+    }
+
+    /** Lista filtrada (antes de paginar). Envio continua usando todos os contatos da label. */
+    private function filteredContacts(): array
+    {
+        $s = mb_strtolower(trim($this->contactSearch));
+        if ($s === '') {
+            return $this->contacts;
+        }
+
+        return array_values(array_filter($this->contacts, fn ($c) => str_contains(mb_strtolower(($c['name'] ?? '').' '.($c['phone_number'] ?? '')), $s)));
+    }
+
+    public function with(): array
+    {
+        $all = $this->filteredContacts();
+        $pages = max(1, (int) ceil(count($all) / self::CONTACTS_PER_PAGE));
+        $page = min($this->contactPage, $pages);
+
+        return ['pageContacts' => array_slice($all, ($page - 1) * self::CONTACTS_PER_PAGE, self::CONTACTS_PER_PAGE), 'contactMatches' => count($all), 'contactPages' => $pages, 'contactPageNow' => $page];
     }
 
     public function updatedSelectedLabel(): void
@@ -61,6 +94,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function loadContacts()
     {
         $this->contacts = [];
+        $this->contactPage = 1;
         $this->errorMessage = '';
         $this->loading = true;
         $page = 1;
@@ -91,7 +125,9 @@ new #[Layout('layouts.app')] class extends Component {
                     $pageContacts = $data['payload'] ?? [];
                     
                     if (!empty($pageContacts)) {
-                        $this->contacts = array_merge($this->contacts, $pageContacts);
+                        // Guarda só o necessário (id/nome/telefone): o objeto completo do Chatwoot pesava o estado da página.
+                        $slim = array_map(fn ($c) => ['id' => $c['id'] ?? null, 'name' => $c['name'] ?? null, 'phone_number' => $c['phone_number'] ?? null], $pageContacts);
+                        $this->contacts = array_merge($this->contacts, $slim);
                     }
                     
                     $page++;
@@ -322,14 +358,24 @@ new #[Layout('layouts.app')] class extends Component {
             @elseif(empty($contacts))
                 <div class="text-sm text-mono-500 italic py-xs">Nenhum contato encontrado.</div>
             @else
-                <div class="flex flex-col gap-xxs max-h-[500px] overflow-y-auto pr-1">
-                    @foreach($contacts as $contact)
+                <p class="text-xs text-mono-600">{{ count($contacts) }} contato(s) na label; a mensagem vai para todos.</p>
+                <input type="search" wire:model.live.debounce.300ms="contactSearch" placeholder="Buscar nome ou telefone" aria-label="Buscar contato" class="h-10 w-full rounded-xl border border-mono-200 bg-mono-white px-3 text-sm">
+                <div class="flex flex-col gap-xxs" data-contact-list>
+                    @if ($contactMatches === 0)<div class="text-sm text-mono-500 italic py-xs">Nenhum contato com esse filtro.</div>@endif
+                    @foreach($pageContacts as $contact)
                         <div class="flex flex-col py-2 px-3 bg-mono-50 border border-mono-100 rounded-md">
                             <span class="text-sm font-medium text-mono-900 truncate">{{ $contact['name'] ?? 'Sem Nome' }}</span>
                             <span class="text-xs text-mono-600">{{ $contact['phone_number'] ?? 'Sem Número' }}</span>
                         </div>
                     @endforeach
                 </div>
+                @if ($contactPages > 1)
+                    <div class="flex items-center justify-between gap-2 text-sm" data-contact-pages>
+                        <button type="button" wire:click="contactPageTo({{ $contactPageNow - 1 }})" class="h-9 rounded-xl border border-mono-200 px-3 disabled:opacity-50" @disabled($contactPageNow <= 1)>Anterior</button>
+                        <span class="text-xs text-mono-600">Página {{ $contactPageNow }} de {{ $contactPages }} · {{ $contactMatches }} contato(s)</span>
+                        <button type="button" wire:click="contactPageTo({{ $contactPageNow + 1 }})" class="h-9 rounded-xl border border-mono-200 px-3 disabled:opacity-50" @disabled($contactPageNow >= $contactPages)>Próxima</button>
+                    </div>
+                @endif
             @endif
         </x-fx.card>
     </div>

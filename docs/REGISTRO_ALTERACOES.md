@@ -449,3 +449,8 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Diagnóstico "site não abre" (08:14): cloudflared sem erros, HTTPS público 200, nginx atendeu o celular às 08:12 (Fortaleza) com o CSS novo; erro de túnel era do lado do navegador/rede, não do servidor.
 
 - 2026-11-06 (menu): ordem alterada para Corretores antes de Contatos, conforme pedido do Cassio. A navegação desktop e mobile usa a mesma definição; testes de navegação e configurações verdes.
+
+## 2026-11-06 — Listas mais leves: Transmissão e Categorias
+
+- Transmissão: a página não tem histórico de envios; o peso era a lista de contatos do Chatwoot guardada inteira (objeto completo) no estado do Livewire. Agora guarda só id/nome/telefone, mostra 20 por página com busca por nome/telefone (filtra antes de paginar e volta à página 1). O envio continua indo para todos os contatos da label. Nenhuma chamada nova ao Chatwoot; leitura de labels/contatos ao abrir a página é a mesma de antes.
+- Categorias: 20 categorias-mãe por página em Despesas e Receitas (paginação separada); subcategorias carregadas só ao clicar "Ver N subcategoria(s)". Contagens totais e de transações inalteradas.

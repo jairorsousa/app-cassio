@@ -4,8 +4,21 @@ use App\Domains\Banking\Models\Category;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
+    use WithPagination;
+
+    public const PER_PAGE = 20;
+
+    /** Categorias-mãe com subcategorias abertas (renderizadas só quando abertas). */
+    public array $expanded = [];
+
+    public function toggle(int $id): void
+    {
+        $this->expanded = in_array($id, $this->expanded, true) ? array_values(array_diff($this->expanded, [$id])) : [...$this->expanded, $id];
+    }
+
     public ?int $editingId = null;
     public string $name = '';
     public string $type = 'expense';
@@ -190,18 +203,21 @@ new #[Layout('layouts.app')] class extends Component {
         $this->status = true;
     }
 
-    private function categoryRoots(string $type): Collection
+    private function categoryRoots(string $type)
     {
+        $open = $this->expanded ?: [0];
+
         return Category::query()
-            ->withCount(['transactions', 'allocations' => fn ($query) => $query->whereHas('transaction')])
+            ->withCount(['transactions', 'allocations' => fn ($query) => $query->whereHas('transaction'), 'children' => fn ($query) => $query->where('type', $type)])
             ->with(['children' => fn ($query) => $query
                 ->where('type', $type)
+                ->whereIn('parent_id', $open)
                 ->withCount(['transactions', 'allocations' => fn ($query) => $query->whereHas('transaction')])
                 ->orderBy('name')])
             ->roots()
             ->where('type', $type)
             ->orderBy('name')
-            ->get();
+            ->paginate(self::PER_PAGE, pageName: $type === 'expense' ? 'despesas' : 'receitas');
     }
 
     public function with(): array
@@ -279,6 +295,12 @@ new #[Layout('layouts.app')] class extends Component {
                             </div>
                         </div>
 
+                        @if ($category->children_count > 0)
+                            <button type="button" wire:click="toggle({{ $category->id }})" class="mt-xs ml-[1.35rem] inline-flex items-center gap-1 text-xs font-semibold text-mono-600 hover:text-mono-900" aria-expanded="{{ in_array($category->id, $expanded, true) ? 'true' : 'false' }}" data-toggle-children="{{ $category->id }}">
+                                <span class="material-icons-outlined text-[16px]">{{ in_array($category->id, $expanded, true) ? 'expand_less' : 'expand_more' }}</span>
+                                {{ in_array($category->id, $expanded, true) ? 'Ocultar' : 'Ver' }} {{ $category->children_count }} subcategoria(s)
+                            </button>
+                        @endif
                         @if ($category->children->isNotEmpty())
                             <div class="mt-xs ml-[1.35rem] flex flex-col gap-xxs border-l border-mono-100 pl-sm">
                                 @foreach ($category->children as $child)
@@ -312,6 +334,7 @@ new #[Layout('layouts.app')] class extends Component {
                         Nenhuma categoria de despesa cadastrada.
                     </div>
                 @endforelse
+                @if ($expenseRoots->hasPages())<div class="mt-sm" data-pages="despesas">{{ $expenseRoots->links() }}</div>@endif
             </div>
         </section>
 
@@ -353,6 +376,12 @@ new #[Layout('layouts.app')] class extends Component {
                             </div>
                         </div>
 
+                        @if ($category->children_count > 0)
+                            <button type="button" wire:click="toggle({{ $category->id }})" class="mt-xs ml-[1.35rem] inline-flex items-center gap-1 text-xs font-semibold text-mono-600 hover:text-mono-900" aria-expanded="{{ in_array($category->id, $expanded, true) ? 'true' : 'false' }}" data-toggle-children="{{ $category->id }}">
+                                <span class="material-icons-outlined text-[16px]">{{ in_array($category->id, $expanded, true) ? 'expand_less' : 'expand_more' }}</span>
+                                {{ in_array($category->id, $expanded, true) ? 'Ocultar' : 'Ver' }} {{ $category->children_count }} subcategoria(s)
+                            </button>
+                        @endif
                         @if ($category->children->isNotEmpty())
                             <div class="mt-xs ml-[1.35rem] flex flex-col gap-xxs border-l border-mono-100 pl-sm">
                                 @foreach ($category->children as $child)
@@ -386,6 +415,7 @@ new #[Layout('layouts.app')] class extends Component {
                         Nenhuma categoria de receita cadastrada.
                     </div>
                 @endforelse
+                @if ($incomeRoots->hasPages())<div class="mt-sm" data-pages="receitas">{{ $incomeRoots->links() }}</div>@endif
             </div>
         </section>
     </div>
