@@ -11,8 +11,11 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component {
     public function with(): array
     {
+        $summary = app(PortfolioProfitabilityService::class)->summary();
+
         return [
-            'summary' => app(PortfolioProfitabilityService::class)->summary(),
+            'summary' => $summary,
+            'b3Positions' => $summary['source'] === 'b3' ? \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed()->sortByDesc('market_value') : collect(),
             'evolution' => app(InvestmentAnalyticsService::class)->portfolioEvolution(),
             'positions' => AssetPosition::with('asset.assetClass')->where('quantity', '>', 0)->get()->sortByDesc(fn ($p) => $p->marketValue()),
             'recent' => AssetOperation::with('asset')->orderByDesc('date')->orderByDesc('id')->limit(5)->get(),
@@ -107,7 +110,9 @@ new #[Layout('layouts.app')] class extends Component {
         </x-jr.card>
     </div>
 
-    @if ($assetCount === 0)
+    @if ($summary['source'] === 'b3')
+        <x-jr.alert variant="info">Carteira pela posição B3 de {{ $summary['base_date']->format('d/m/Y') }} (ainda não há compras/vendas registradas). Preço médio não informado em {{ count($summary['unknown_average_price']) }} ativo(s): valor investido e ganho em aberto consideram só os demais.@if ($summary['custody_split_missing']) Custódia × emprestado não separado no arquivo B3: {{ implode(', ', $summary['custody_split_missing']) }} (quantidade total contada uma vez).@endif <a class="font-semibold underline" href="{{ route('investments.b3') }}">Ver posição B3</a></x-jr.alert>
+    @elseif ($assetCount === 0)
         <x-jr.card>
             <div class="flex flex-wrap items-center justify-between gap-6">
                 <div class="max-w-xl"><span class="material-icons-outlined mb-3 rounded-2xl bg-primary-100 p-3 text-primary-500">rocket_launch</span><h3 class="text-lg font-bold">Comece a construir sua carteira</h3><p class="mt-2 text-sm text-mono-600">Cadastre o primeiro ativo e registre uma compra ou aplicação. Tickers da B3 recebem cotação automática; os demais podem ser informados na Carteira.</p></div>
@@ -141,7 +146,7 @@ new #[Layout('layouts.app')] class extends Component {
                 }
             @endphp
             <div class="mx-auto my-8 flex h-52 w-52 items-center justify-center rounded-full" style="background: {{ $segments ? 'conic-gradient('.implode(', ', $segments).')' : 'var(--colors-mono-g100)' }}">
-                <div class="flex h-36 w-36 flex-col items-center justify-center rounded-full bg-mono-white"><span class="text-3xl font-bold">{{ $positions->count() }}</span><span class="text-xs text-mono-600">ativos na carteira</span></div>
+                <div class="flex h-36 w-36 flex-col items-center justify-center rounded-full bg-mono-white"><span class="text-3xl font-bold">{{ $summary['source'] === 'b3' ? $b3Positions->count() : $positions->count() }}</span><span class="text-xs text-mono-600">ativos na carteira</span></div>
             </div>
             <div class="space-y-3">
                 @forelse ($summary['by_class'] as $label => $row)
@@ -156,13 +161,19 @@ new #[Layout('layouts.app')] class extends Component {
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <x-jr.card>
             <div class="mb-5 flex justify-between"><h3 class="font-bold">Maiores posições</h3><a class="text-sm font-semibold text-primary-500" href="{{ route('investments.positions') }}">Ver carteira</a></div>
-            @forelse ($positions->take(5) as $position)
+            @foreach ($b3Positions->take(5) as $snap)
+                <div class="flex items-center justify-between gap-4 border-b border-mono-100 py-4">
+                    <div class="flex items-center gap-3"><span class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-100 text-sm font-bold text-primary-500">{{ mb_substr($snap->ticker, 0, 2) }}</span><div><p class="font-semibold">{{ $snap->ticker }}</p><p class="text-xs text-mono-600">B3 {{ $snap->base_date->format('d/m/Y') }} · {{ \App\Domains\Investments\Models\B3PositionSnapshot::ORIGIN_LABELS[$snap->origin] ?? $snap->origin }}</p></div></div>
+                    <div class="text-right"><p class="font-semibold">R$ {{ number_format($snap->market_value, 2, ',', '.') }}</p><p class="text-xs text-mono-600">{{ $snap->cost() === null ? 'PM não informado' : 'PM R$ '.number_format($snap->average_price, 2, ',', '.') }}</p></div>
+                </div>
+            @endforeach
+            @forelse ($summary['source'] === 'b3' ? collect() : $positions->take(5) as $position)
                 <div class="flex items-center justify-between gap-4 border-b border-mono-100 py-4">
                     <div class="flex items-center gap-3"><span class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-100 text-sm font-bold text-primary-500">{{ mb_substr($position->asset?->ticker ?? '', 0, 2) }}</span><div><p class="font-semibold">{{ $position->asset?->ticker }}</p><p class="text-xs text-mono-600">{{ $position->asset?->name }}</p></div></div>
                     <div class="text-right"><p class="font-semibold">R$ {{ number_format($position->marketValue(), 2, ',', '.') }}</p><p class="text-xs {{ $position->unrealizedPnL() >= 0 ? 'text-up' : 'text-down' }}">{{ number_format($position->unrealizedPnLPercent(), 2, ',', '.') }}% em aberto</p></div>
                 </div>
             @empty
-                <p class="py-8 text-sm text-mono-600">Registre uma compra para acompanhar suas posições.</p>
+                @if ($summary['source'] !== 'b3')<p class="py-8 text-sm text-mono-600">Registre uma compra para acompanhar suas posições.</p>@endif
             @endforelse
         </x-jr.card>
         <x-jr.card>

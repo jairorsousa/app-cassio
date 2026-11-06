@@ -30,13 +30,41 @@ class PortfolioProfitabilityService
                 ];
             });
 
+        // Fallback: sem posição por operações, usa a última posição B3 confirmada (nunca soma as duas).
+        $source = 'operations';
+        $baseDate = null;
+        $unknownPm = [];
+        $splitMissing = [];
+        if ($positions->isEmpty()) {
+            $b3 = \App\Domains\Investments\Models\B3PositionSnapshot::latestConfirmed();
+            if ($b3->isNotEmpty()) {
+                $source = 'b3';
+                $baseDate = $b3->first()->base_date;
+                $known = $b3->filter(fn ($p) => $p->cost() !== null);
+                $totalInvested = (float) $known->sum(fn ($p) => $p->cost());
+                $marketValue = (float) $b3->sum('market_value');
+                // Ganho em aberto só sobre ativos com PM conhecido.
+                $unrealizedPnL = round((float) $known->sum('market_value') - $totalInvested, 2);
+                $unrealizedPct = $totalInvested > 0 ? round(($unrealizedPnL / $totalInvested) * 100, 3) : 0.0;
+                $byClass = $b3->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')->map(fn ($g) => [
+                    'invested' => round((float) $g->sum(fn ($p) => $p->cost() ?? 0), 2),
+                    'market_value' => round((float) $g->sum('market_value'), 2),
+                ]);
+                $unknownPm = $b3->filter(fn ($p) => $p->cost() === null)->pluck('ticker')->values()->all();
+                $splitMissing = $b3->filter(fn ($p) => $p->quantity_custody === null && $p->quantity_lent === null)->pluck('ticker')->values()->all();
+            }
+        }
+
+        $incomeEvents = \App\Domains\Investments\Models\AssetIncomeEvent::query();
         $dividendsLast12 = (float) AssetDividend::whereDate('payment_date', '>=', Carbon::today()->subYear())->whereDate('payment_date', '<=', Carbon::today())
-            ->sum('total');
+            ->sum('total')
+            + (float) (clone $incomeEvents)->whereDate('payment_date', '>=', Carbon::today()->subYear())->whereDate('payment_date', '<=', Carbon::today())->sum('net_amount');
 
         $yieldOnCost = $totalInvested > 0 ? round(($dividendsLast12 / $totalInvested) * 100, 3) : 0.0;
 
         $realizedTotal = (float) AssetPosition::sum('realized_pnl_total');
-        $dividendsTotal = (float) AssetDividend::whereDate('payment_date', '<=', today())->sum('total');
+        $dividendsTotal = (float) AssetDividend::whereDate('payment_date', '<=', today())->sum('total')
+            + (float) (clone $incomeEvents)->whereDate('payment_date', '<=', today())->sum('net_amount');
         $totalReturn = round($unrealizedPnL + $dividendsTotal + $realizedTotal, 2);
         $totalReturnPct = $totalInvested > 0 ? round(($totalReturn / $totalInvested) * 100, 3) : 0.0;
 
@@ -52,6 +80,10 @@ class PortfolioProfitabilityService
             'total_return' => $totalReturn,
             'total_return_pct' => $totalReturnPct,
             'by_class' => $byClass,
+            'source' => $source,
+            'base_date' => $baseDate,
+            'unknown_average_price' => $unknownPm,
+            'custody_split_missing' => $splitMissing,
         ];
     }
 }

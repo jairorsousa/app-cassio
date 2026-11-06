@@ -325,3 +325,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 ## 2026-11-05 — Etapa 8: correção do comando de prévia B3
 
 - Bug achado na 1ª prévia real: pasta sem permissão de leitura para o usuário do container fazia o comando devolver prévia "ok" vazia. Agora falha com erro claro para pasta inexistente/ilegível, arquivo sem permissão, nenhum CSV presente ou `meta.json` inválido. Teste `test_command_fails_on_missing_or_unreadable_files`. Nenhum dado importado.
+
+## 2026-11-06 — Etapa 8: resumo de Investimentos reflete a posição B3
+
+- Bug: após a importação B3 (#1), `/investments` mostrava R$ 0, 0 ativos e proventos 0 — `PortfolioProfitabilityService::summary()` só lia posições por operações e `asset_dividends`.
+- Correção: sem posição por operações, o resumo usa a última posição B3 confirmada (rotulada com data-base), nunca somando as duas. Valor investido/ganho em aberto só com PM conhecido; PM ausente listado. Proventos totais/12M incluem `asset_income_events` (líquido, inclui reembolsos de aluguel). Aviso visível para ativos sem divisão custódia × emprestado (SBFG3), contados uma vez pela quantidade total da linha.
+- Nenhum dado financeiro alterado (309 transações). Testes em `Etapa8InvestmentsSummaryB3Test`.
