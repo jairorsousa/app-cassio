@@ -25,6 +25,9 @@ class MailSenderSetting extends Model
         'encryption',
         'password',
         'password_set_at',
+        'last_self_test_status',
+        'last_self_test_at',
+        'last_self_test_error',
         'updated_by',
     ];
 
@@ -37,6 +40,7 @@ class MailSenderSetting extends Model
         return [
             'password' => 'encrypted',
             'password_set_at' => 'datetime',
+            'last_self_test_at' => 'datetime',
             'port' => 'integer',
         ];
     }
@@ -46,7 +50,7 @@ class MailSenderSetting extends Model
         return $this->password_set_at !== null && $this->getRawOriginal('password') !== null && $this->getRawOriginal('password') !== '';
     }
 
-    /** Configuração completa para envio real (SMTP + senha). */
+    /** Configuração completa para envio (SMTP + senha). Não implica que o último teste tenha passado. */
     public function isReadyToSend(): bool
     {
         return $this->hasPassword()

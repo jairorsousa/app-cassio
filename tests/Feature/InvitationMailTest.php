@@ -13,7 +13,9 @@ use App\Support\UserAccessService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -282,4 +284,137 @@ class InvitationMailTest extends TestCase
         $this->assertSame($before, Config::get('mail.default'));
         $this->assertSame('array', Config::get('mail.default')); // phpunit
     }
+
+    public function test_classify_auth_failure_is_not_retryable_and_safe(): void
+    {
+        $e = new TransportException('Expected response code "235" but got code "535", with message "535-5.7.8 Username and Password not accepted for cassio@example.invalid".');
+        $info = InvitationMailService::classifyTransportFailure($e);
+        $this->assertSame('auth', $info['kind']);
+        $this->assertFalse($info['retryable']);
+        $this->assertSame(InvitationMailService::MSG_AUTH, $info['message']);
+        $this->assertStringNotContainsString('cassio@', $info['message']);
+        $this->assertStringNotContainsString('535-5.7.8 Username', $info['message']);
+    }
+
+    public function test_self_test_auth_failure_is_friendly_records_status_no_500(): void
+    {
+        Log::spy();
+        $admin = $this->ownerAdmin();
+        $this->withPassword($admin);
+        $this->actingAs($admin);
+
+        $mailer = \Mockery::mock();
+        $mailer->shouldReceive('to')->once()->andReturnSelf();
+        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('535-5.7.8 BadCredentials Username and Password not accepted'));
+        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
+
+        try {
+            InvitationMailService::sendSelfTest($admin);
+            $this->fail('deveria falhar com ValidationException');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('smtpTest', $e->errors());
+            $this->assertSame(InvitationMailService::MSG_AUTH, $e->errors()['smtpTest'][0]);
+            $this->assertStringNotContainsString('BadCredentials', $e->errors()['smtpTest'][0]);
+        }
+
+        $s = MailSenderSetting::current()->fresh();
+        $this->assertSame('failed', $s->last_self_test_status);
+        $this->assertNotNull($s->last_self_test_at);
+        $this->assertSame(InvitationMailService::MSG_AUTH, $s->last_self_test_error);
+        $this->assertTrue($s->isReadyToSend(), 'senha continua; teste falho ≠ apagar config');
+        Log::shouldHaveReceived('warning')->withArgs(fn ($msg, $ctx) => $msg === 'invitation_smtp_failure'
+            && ($ctx['kind'] ?? null) === 'auth'
+            && ! str_contains(json_encode($ctx), 'cassio@cassiomota.com')
+            && ! str_contains(json_encode($ctx), 'BadCredentials'));
+
+        Volt::test('settings.users')
+            ->assertSee('data-smtp-last-test="failed"', false)
+            ->assertSee('O Google recusou a autenticação SMTP')
+            ->assertDontSee('BadCredentials');
+    }
+
+    public function test_deliver_auth_failure_marks_failed_without_rethrow(): void
+    {
+        Log::spy();
+        $admin = $this->ownerAdmin();
+        $this->withPassword($admin);
+        [$inv, $token] = UserAccessService::invite($admin, 'Hal', 'hal@example.com', ['contatos']);
+        $dispatch = 'dispatch-auth-fail-token-bbbbbbbbbbbbbbbb';
+        $inv->forceFill([
+            'email_delivery_status' => 'queued',
+            'email_dispatch_token' => $dispatch,
+            'email_attempts' => 1,
+        ])->save();
+
+        $mailer = \Mockery::mock();
+        $mailer->shouldReceive('to')->once()->andReturnSelf();
+        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('535 BadCredentials'));
+        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
+
+        InvitationMailService::deliver($inv->id, $token, $dispatch); // não deve lançar
+
+        $fresh = $inv->fresh();
+        $this->assertSame('failed', $fresh->email_delivery_status);
+        $this->assertSame(InvitationMailService::MSG_AUTH, $fresh->email_last_error);
+        $this->assertNull($fresh->accepted_at);
+        $this->assertSame('pending', $fresh->status());
+    }
+
+    public function test_deliver_transient_transport_marks_failed_and_rethrows_for_retry(): void
+    {
+        $admin = $this->ownerAdmin();
+        $this->withPassword($admin);
+        [$inv, $token] = UserAccessService::invite($admin, 'Ivo', 'ivo@example.com', ['contatos']);
+        $dispatch = 'dispatch-transient-token-cccccccccccccccc';
+        $inv->forceFill([
+            'email_delivery_status' => 'queued',
+            'email_dispatch_token' => $dispatch,
+            'email_attempts' => 1,
+        ])->save();
+
+        $mailer = \Mockery::mock();
+        $mailer->shouldReceive('to')->once()->andReturnSelf();
+        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('Connection timed out talking to smtp'));
+        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
+
+        try {
+            InvitationMailService::deliver($inv->id, $token, $dispatch);
+            $this->fail('deveria relançar para retry');
+        } catch (TransportException $e) {
+            $this->assertStringContainsString('timed out', $e->getMessage());
+        }
+        $this->assertSame('failed', $inv->fresh()->email_delivery_status);
+        $this->assertSame(InvitationMailService::MSG_TRANSPORT, $inv->fresh()->email_last_error);
+    }
+
+    public function test_self_test_success_records_ok_without_pretending_invite_sent(): void
+    {
+        Mail::fake();
+        $admin = $this->ownerAdmin();
+        $this->withPassword($admin);
+        InvitationMailService::sendSelfTest($admin);
+        $s = MailSenderSetting::current()->fresh();
+        $this->assertSame('ok', $s->last_self_test_status);
+        $this->assertNull($s->last_self_test_error);
+        Mail::assertSent(MailSenderSelfTestMail::class, 1);
+        $this->assertSame(0, UserInvitation::count());
+    }
+
+    public function test_volt_self_test_surfaces_validation_not_server_error(): void
+    {
+        $admin = $this->ownerAdmin();
+        $this->withPassword($admin);
+        $this->actingAs($admin);
+
+        $mailer = \Mockery::mock();
+        $mailer->shouldReceive('to')->andReturnSelf();
+        $mailer->shouldReceive('send')->andThrow(new TransportException('535-5.7.8 Username and Password not accepted'));
+        Mail::shouldReceive('mailer')->with('invitation_smtp')->andReturn($mailer);
+
+        Volt::test('settings.users')
+            ->call('sendSmtpSelfTest')
+            ->assertHasErrors('smtpTest')
+            ->assertSee('O Google recusou a autenticação SMTP');
+    }
+
 }

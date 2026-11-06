@@ -245,13 +245,20 @@ new #[Layout('layouts.app')] class extends Component {
                     @error('smtpPassword')<p class="text-xs text-error">{{ $message }}</p>@enderror
                 </div>
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <p class="text-xs text-mono-600">
+                    <div class="space-y-1 text-xs text-mono-600" data-smtp-status>
                         @if ($smtp['is_ready'] ?? false)
-                            Estado: senha presente — envio de convite por e-mail liberado no botão explícito (não é confirmação de entrega real até um envio/teste).
+                            <p>Configuração: senha gravada (remetente completo). Isso <strong>não</strong> confirma entrega — só o teste explícito ou um envio real mostram o resultado.</p>
                         @else
-                            Estado: configuração incompleta para envio (falta senha ou remetente fora do padrão).
+                            <p>Configuração incompleta para envio (falta senha ou remetente fora do padrão).</p>
                         @endif
-                    </p>
+                        @if (($smtp['last_self_test_status'] ?? null) === 'ok')
+                            <p class="text-primary-600" data-smtp-last-test="ok">Último teste do remetente: ok em {{ optional($smtp['last_self_test_at'])->timezone('America/Fortaleza')?->format('d/m/Y H:i') }} (Fortaleza). Não substitui o envio de cada convite.</p>
+                        @elseif (($smtp['last_self_test_status'] ?? null) === 'failed')
+                            <p class="text-error" data-smtp-last-test="failed">Último teste do remetente: falhou{{ $smtp['last_self_test_at'] ? ' em '.$smtp['last_self_test_at']->timezone('America/Fortaleza')->format('d/m/Y H:i').' (Fortaleza)' : '' }}. {{ $smtp['last_self_test_error'] }} O link manual do convite continua disponível.</p>
+                        @elseif ($smtp['is_ready'] ?? false)
+                            <p data-smtp-last-test="none">Nenhum teste bem-sucedido registrado ainda — não trate a configuração como entrega confirmada.</p>
+                        @endif
+                    </div>
                     <div class="flex flex-wrap gap-2">
                         @if ($smtp['has_password'] ?? false)
                             <button type="button" wire:click="clearSmtpPassword" wire:confirm="Remover a senha de aplicativo salva?" class="h-10 rounded-xl border border-error px-3 text-sm text-error" data-smtp-clear>Remover senha</button>

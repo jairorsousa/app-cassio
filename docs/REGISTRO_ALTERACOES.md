@@ -564,3 +564,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Override SMTP só no runtime do envio (`mail.mailers.invitation_smtp`), timeout 15s, From fixo no remetente registrado; `MAIL_MAILER` global permanece (hoje `log` em produção — não tratado como pronto). Autoteste separado: "Testar remetente (só para mim)" envia apenas para o próprio remetente.
 - Migração `2026_11_06_900000_invitation_mail_sender`. Testes: `InvitationMailTest`. Backup: `storage/backups/pre_invite_mail/`.
 - **Ainda sem senha real nesta etapa** (Google App Password indisponível no momento). Nenhum e-mail externo foi enviado; segredo não foi colocado via shell/env. Quando a senha existir, gravar só pela UI e só então usar o botão explícito / autoteste.
+
+
+## 2026-11-06 — Autoteste SMTP: falha Google 535 sem 500 Livewire
+
+- Causa: o botão "Testar remetente" envia de forma síncrona no request Livewire; `TransportException` (ex.: Google 535 BadCredentials) subia sem captura e virava HTTP 500.
+- `InvitationMailService::sendSelfTest` agora captura qualquer falha de transporte, classifica (auth vs transitória), grava `last_self_test_status/at/error` com mensagem **segura para o operador** (sem username cru nem texto Gmail) e devolve `ValidationException` em `smtpTest` — a UI mostra o alerta e lembra o link manual.
+- Job de convite: falha de **autenticação** marca `email_delivery_status=failed` e **não** relança (sem retry inútil); falha transitória marca failed e relança para as tries da fila. Log só com `kind` + classe da exception (sem mensagem do provedor).
+- Configuração com senha continua "pronta" para tentar envio; o último teste falho fica visível e **não** finge entrega confirmada. Migração `2026_11_06_910000_mail_sender_self_test_status`.
+- Testes novos em `InvitationMailTest` (mock de transporte; sem SMTP real). Nenhum reteste real ao Google nesta correção.

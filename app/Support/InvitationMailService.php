@@ -3,16 +3,18 @@
 namespace App\Support;
 
 use App\Jobs\SendUserInvitationEmail;
-use App\Mail\UserInvitationMail;
 use App\Mail\MailSenderSelfTestMail;
+use App\Mail\UserInvitationMail;
 use App\Models\MailSenderSetting;
 use App\Models\User;
 use App\Models\UserInvitation;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
  * Configuração SMTP do remetente de convites e disparo explícito de e-mail.
@@ -23,6 +25,12 @@ class InvitationMailService
     public const MAILER_NAME = 'invitation_smtp';
 
     public const TRANSPORT_TIMEOUT = 15;
+
+    public const MSG_AUTH = 'O Google recusou a autenticação SMTP (credenciais ou permissão do serviço). Nenhum e-mail foi entregue. Use o link manual do convite ou revise a senha de aplicativo e teste de novo.';
+
+    public const MSG_TRANSPORT = 'Não foi possível concluir o envio pelo servidor de e-mail. Nenhum e-mail foi entregue. Tente de novo mais tarde ou use o link manual do convite.';
+
+    public const MSG_GENERIC = 'Falha ao enviar e-mail. Nenhum e-mail foi entregue. Use o link manual do convite.';
 
     /** Somente o administrador id 1 configura o remetente SMTP. */
     public static function mailAdmin(?User $actor): User
@@ -44,7 +52,14 @@ class InvitationMailService
         $s = MailSenderSetting::current();
         $d = MailSenderSetting::defaults();
         if (! $s) {
-            return $d + ['has_password' => false, 'is_ready' => false, 'password_set_at' => null];
+            return $d + [
+                'has_password' => false,
+                'is_ready' => false,
+                'password_set_at' => null,
+                'last_self_test_status' => null,
+                'last_self_test_at' => null,
+                'last_self_test_error' => null,
+            ];
         }
 
         return [
@@ -55,7 +70,55 @@ class InvitationMailService
             'has_password' => $s->hasPassword(),
             'is_ready' => $s->isReadyToSend(),
             'password_set_at' => $s->password_set_at,
+            'last_self_test_status' => $s->last_self_test_status,
+            'last_self_test_at' => $s->last_self_test_at,
+            'last_self_test_error' => $s->last_self_test_error,
         ];
+    }
+
+    /**
+     * Classifica falha de transporte sem expor usuário/senha nem texto cru do provedor na UI.
+     *
+     * @return array{kind: string, message: string, retryable: bool}
+     */
+    public static function classifyTransportFailure(\Throwable $e): array
+    {
+        $hay = strtolower(class_basename($e).' '.$e->getMessage());
+        $authHints = ['535', 'badcredentials', 'authentication failed', 'authentica', 'username and password not accepted', 'invalid credentials', '5.7.8', '5.7.9', 'not authorized'];
+        foreach ($authHints as $hint) {
+            if (str_contains($hay, $hint)) {
+                return ['kind' => 'auth', 'message' => self::MSG_AUTH, 'retryable' => false];
+            }
+        }
+        if ($e instanceof TransportExceptionInterface) {
+            return ['kind' => 'transport', 'message' => self::MSG_TRANSPORT, 'retryable' => true];
+        }
+
+        return ['kind' => 'other', 'message' => self::MSG_GENERIC, 'retryable' => true];
+    }
+
+    /** Log seguro: só tipo/classe, sem mensagem do provedor (pode trazer username). */
+    public static function logTransportFailure(string $context, \Throwable $e, array $classified): void
+    {
+        Log::warning('invitation_smtp_failure', [
+            'context' => $context,
+            'kind' => $classified['kind'],
+            'exception' => class_basename($e),
+            'retryable' => $classified['retryable'],
+        ]);
+    }
+
+    public static function recordSelfTestResult(string $status, ?string $safeError = null): void
+    {
+        $s = MailSenderSetting::current();
+        if (! $s) {
+            return;
+        }
+        $s->forceFill([
+            'last_self_test_status' => $status,
+            'last_self_test_at' => now(),
+            'last_self_test_error' => $safeError !== null ? mb_substr($safeError, 0, 190) : null,
+        ])->save();
     }
 
     /**
@@ -90,12 +153,19 @@ class InvitationMailService
             if ($clearPassword) {
                 $s->password = null;
                 $s->password_set_at = null;
+                $s->last_self_test_status = null;
+                $s->last_self_test_at = null;
+                $s->last_self_test_error = null;
             } elseif ($password !== null && $password !== '') {
                 if (mb_strlen($password) > 200) {
                     throw ValidationException::withMessages(['smtpPassword' => 'Senha inválida.']);
                 }
                 $s->password = $password;
                 $s->password_set_at = now();
+                // Nova senha invalida o último teste (ainda não confirma entrega).
+                $s->last_self_test_status = null;
+                $s->last_self_test_at = null;
+                $s->last_self_test_error = null;
             }
             $s->save();
 
@@ -120,7 +190,6 @@ class InvitationMailService
         if (! $setting->isReadyToSend()) {
             throw ValidationException::withMessages(['smtp' => 'Remetente SMTP incompleto: salve a senha de aplicativo antes de enviar.']);
         }
-        // Lê a senha via cast encrypted; não logar.
         $password = $setting->password;
         Config::set('mail.mailers.'.self::MAILER_NAME, [
             'transport' => 'smtp',
@@ -137,10 +206,7 @@ class InvitationMailService
     }
 
     /**
-     * Disparo explícito: regenera o token (garante link válido), reivindica entrega atomicamente e enfileira.
-     * Não marca o convite como aceito. Não envia ao criar/regenerar automaticamente.
-     *
-     * @return array{0: UserInvitation, 1: string} convite + token em texto (para o admin copiar se quiser)
+     * @return array{0: UserInvitation, 1: string}
      */
     public static function queueInvitationEmail(?User $actor, int $invitationId, ?string $knownToken = null): array
     {
@@ -159,7 +225,6 @@ class InvitationMailService
                 throw ValidationException::withMessages(['inviteMail' => 'Já existe um envio deste convite na fila. Aguarde o resultado.']);
             }
 
-            $token = null;
             if ($knownToken && hash_equals($inv->token_hash, UserInvitation::hashToken($knownToken))) {
                 $token = $knownToken;
             } else {
@@ -184,7 +249,7 @@ class InvitationMailService
         });
     }
 
-    /** Envia de fato (chamado pelo job). Override só aqui. */
+    /** Envia de fato (job). Falha de autenticação: marca failed e NÃO relança (sem retry inútil). */
     public static function deliver(int $invitationId, string $token, string $dispatchToken): void
     {
         $setting = MailSenderSetting::current();
@@ -196,7 +261,7 @@ class InvitationMailService
 
         $inv = UserInvitation::whereKey($invitationId)->first();
         if (! $inv || $inv->email_dispatch_token !== $dispatchToken || $inv->email_delivery_status !== 'queued') {
-            return; // claim inválido / já processado
+            return;
         }
         if ($inv->status() !== 'pending') {
             self::markFailed($invitationId, $dispatchToken, 'Convite não está mais pendente.');
@@ -223,10 +288,14 @@ class InvitationMailService
                     fromName: config('app.name', 'App'),
                 ));
         } catch (\Throwable $e) {
-            self::markFailed($invitationId, $dispatchToken, 'Falha ao enviar e-mail.');
-            report($e);
+            $info = self::classifyTransportFailure($e);
+            self::logTransportFailure('invitation_deliver', $e, $info);
+            self::markFailed($invitationId, $dispatchToken, $info['message']);
+            if ($info['retryable']) {
+                throw $e;
+            }
 
-            throw $e; // permite retry do queue
+            return; // auth permanente: worker não retenta
         }
 
         DB::transaction(function () use ($invitationId, $dispatchToken) {
@@ -261,8 +330,7 @@ class InvitationMailService
     }
 
     /**
-     * Autoteste: envia somente para o próprio endereço do remetente configurado.
-     * Exige senha. Não convida terceiros.
+     * Autoteste síncrono (Livewire): captura falha de transporte e devolve ValidationException amigável (sem 500).
      */
     public static function sendSelfTest(?User $actor): void
     {
@@ -271,12 +339,22 @@ class InvitationMailService
         if (! $setting || ! $setting->isReadyToSend()) {
             throw ValidationException::withMessages(['smtpTest' => 'Salve a senha de aplicativo antes do teste.']);
         }
-        self::configureRuntimeMailer($setting);
-        Mail::mailer(self::MAILER_NAME)
-            ->to($setting->username)
-            ->send(new MailSenderSelfTestMail(
-                fromAddress: $setting->username,
-                fromName: config('app.name', 'App'),
-            ));
+
+        try {
+            self::configureRuntimeMailer($setting);
+            Mail::mailer(self::MAILER_NAME)
+                ->to($setting->username)
+                ->send(new MailSenderSelfTestMail(
+                    fromAddress: $setting->username,
+                    fromName: config('app.name', 'App'),
+                ));
+        } catch (\Throwable $e) {
+            $info = self::classifyTransportFailure($e);
+            self::logTransportFailure('smtp_self_test', $e, $info);
+            self::recordSelfTestResult('failed', $info['message']);
+            throw ValidationException::withMessages(['smtpTest' => $info['message']]);
+        }
+
+        self::recordSelfTestResult('ok', null);
     }
 }
