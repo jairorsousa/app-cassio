@@ -34,7 +34,7 @@ class ReceivableService
     public function create(array $data): array
     {
         Validator::make($data, [
-            'origin' => 'required|in:bank,card,existing', 'date' => 'required|date_format:Y-m-d|before_or_equal:today',
+            'origin' => 'required|in:bank,card,existing', 'date' => 'required|date_format:Y-m-d|before_or_equal:'.\App\Support\BusinessDate::today(),
             'description' => 'required|string|max:200', 'amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
             'bank_account_id' => 'nullable|integer', 'credit_card_id' => 'nullable|integer', 'transaction_id' => 'nullable|integer',
             'installments' => 'required|integer|min:1|max:120', 'repayment_mode' => 'required|in:dated,process,undated',
@@ -244,7 +244,7 @@ class ReceivableService
 
     private function validateDate(Receivable $receivable, string $date): void
     {
-        Validator::make(['date' => $date], ['date' => 'required|date_format:Y-m-d|before_or_equal:today|after_or_equal:'.$receivable->date->toDateString()])->validate();
+        Validator::make(['date' => $date], ['date' => 'required|date_format:Y-m-d|before_or_equal:'.\App\Support\BusinessDate::today().'|after_or_equal:'.$receivable->date->toDateString()])->validate();
     }
 
     private function repeated(string $key, Receivable $receivable): bool

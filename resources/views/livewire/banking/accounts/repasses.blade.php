@@ -42,7 +42,7 @@ new class extends Component {
         $this->destinationId = $part->id;
         $this->bankId = BankAccount::active()->where('type', '!=', 'repasse')->find($part->receipt->bank_account_id)?->id;
         $this->amount = number_format($part->remainingCents() / 100, 2, '.', '');
-        $this->date = now()->toDateString();
+        $this->date = \App\Support\BusinessDate::today();
         $this->resetValidation();
     }
 
@@ -61,7 +61,7 @@ new class extends Component {
             'bankId' => 'exclude_unless:mode,payment|required|integer',
             'writIncomeId' => 'exclude_unless:mode,writ|required|integer',
             'amount' => 'required|string',
-            'date' => 'exclude_unless:mode,payment|required|date_format:Y-m-d|before_or_equal:today',
+            'date' => 'exclude_unless:mode,payment|required|date_format:Y-m-d|before_or_equal:'.\App\Support\BusinessDate::today(),
         ]);
         $part = $this->part($this->destinationId);
         try {
@@ -154,7 +154,7 @@ new class extends Component {
                     @endif
                     <div class="grid gap-4 md:grid-cols-2">
                         <x-jr.input :label="$mode === 'writ' ? 'Valor a vincular (R$) *' : 'Valor do repasse (R$) *'" name="amount" wire:model="amount" x-money required />
-                        @if ($mode === 'payment')<x-jr.input label="Data do pagamento *" name="date" wire:model="date" type="date" max="{{ now()->toDateString() }}" required />@endif
+                        @if ($mode === 'payment')<x-jr.input label="Data do pagamento *" name="date" wire:model="date" type="date" max="{{ \App\Support\BusinessDate::today() }}" required />@endif
                     </div>
                     @if ($mode === 'payment')<div>
                         <label for="repasse-bank" class="mb-2 block text-sm font-medium text-mono-600">Pagar pela conta *</label>

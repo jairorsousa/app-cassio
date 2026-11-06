@@ -30,7 +30,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->validate([
             'quotePrice' => 'required|numeric|min:0',
-            'quoteDate' => 'required|date|before_or_equal:today',
+            'quoteDate' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
         ]);
 
         $asset = Asset::with('position')->findOrFail($this->editingQuoteAssetId);

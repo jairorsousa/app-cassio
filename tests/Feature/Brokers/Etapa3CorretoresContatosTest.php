@@ -107,7 +107,7 @@ class Etapa3CorretoresContatosTest extends TestCase
             'rate_or_amount' => 10,
             'base_amount' => 1000,
             'process_ref' => '0001111-22.2024.8.10.0001',
-            'reference_date' => Carbon::today()->toDateString(),
+            'reference_date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
         ]);
 
         $this->assertEquals('percent', $percent->commission_mode);
@@ -122,7 +122,7 @@ class Etapa3CorretoresContatosTest extends TestCase
             'mode' => 'fixed',
             'rate_or_amount' => 250,
             'process_ref' => 'PROC-B',
-            'reference_date' => Carbon::today()->toDateString(),
+            'reference_date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
         ]);
 
         $this->assertEquals('fixed', $fixed->commission_mode);
@@ -140,7 +140,7 @@ class Etapa3CorretoresContatosTest extends TestCase
 
         $advances->register([
             'broker_id' => $broker->id,
-            'date' => Carbon::today()->subDay()->toDateString(),
+            'date' => Carbon::today(\App\Support\BusinessDate::timezone())->subDay()->toDateString(),
             'amount' => 1000,
             'bank_account_id' => $account->id,
         ]);
@@ -151,12 +151,12 @@ class Etapa3CorretoresContatosTest extends TestCase
             'name' => 'Caso',
             'mode' => 'fixed',
             'rate_or_amount' => 200,
-            'reference_date' => Carbon::today()->toDateString(),
+            'reference_date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
         ]);
         $commissions->settleWithAdvances($commission);
 
         $expenses->save($broker, [
-            'date' => Carbon::today()->toDateString(),
+            'date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
             'amount' => '300.00',
             'description' => 'Custas do cliente',
             'bank_account_id' => $account->id,
@@ -262,7 +262,7 @@ class Etapa3CorretoresContatosTest extends TestCase
         $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 10000]);
         $result = app(BrokerAdvanceService::class)->register([
             'broker_id' => $broker->id,
-            'date' => Carbon::today()->toDateString(),
+            'date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
             'amount' => 150,
             'bank_account_id' => $account->id,
             'notes' => 'Era pessoal',
@@ -316,7 +316,7 @@ class Etapa3CorretoresContatosTest extends TestCase
         $broker = Broker::create(['name' => 'Legado']);
         $advance = BrokerAdvance::create([
             'broker_id' => $broker->id,
-            'date' => Carbon::today()->toDateString(),
+            'date' => Carbon::today(\App\Support\BusinessDate::timezone())->toDateString(),
             'amount' => 50,
         ]);
         $this->assertEquals('personal', $advance->fresh()->kind);

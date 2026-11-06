@@ -1,5 +1,21 @@
 # Registro de alterações
 
+## 05/11/2026 — Correção de fuso nas validações de data (Auditor Fin)
+
+Base: commit `bfe7212`. Sem migration e sem alteração de dados reais.
+
+### Causa comprovada
+`config/app.php` fixa `timezone = UTC` (o `APP_TIMEZONE` do .env não é lido). Regras `before_or_equal:today` e os valores padrão de data (`now()->toDateString()`) usavam o dia UTC, enquanto `BrokerProcessExpenseService` usava `America/Sao_Paulo`. Entre 21h e 24h em Fortaleza (00h–03h UTC), o "hoje" UTC já é o dia seguinte: os testes da Etapa 3 geravam 06/11 (UTC) e o serviço só aceitava até 05/11 (local) — reproduzido às 21h55 locais (00h55 UTC de 06/11). Em produção, no mesmo horário, as telas aceitavam como "hoje" uma data que localmente é amanhã.
+
+### Correção
+- `config('app.business_timezone')` (padrão `America/Fortaleza`) e `App\Support\BusinessDate` (`now()`, `today()`). Timestamps continuam gravados em UTC (nada muda em dados existentes).
+- "Não pode ser futura" passa a comparar com o dia de Fortaleza em: destinação/repasses de recebimento, Valores a receber, despesas de processo do corretor, repasses da conta, pagamento de fatura, cotação/operações/proventos/rentabilidade de Investimentos. Os padrões de data e o `max` desses formulários usam o mesmo dia.
+- Data de amanhã (local) continua bloqueada — coberto por `tests/Unit/BusinessDateTest.php` (22h30 em Fortaleza = 01h30 UTC).
+- Testes que montavam "hoje" em UTC (`Etapa3CorretoresContatosTest`, `ReceiptDestinationTest`, `RepassePaymentsTest`) agora usam `BusinessDate`; `InvestmentWorkspaceTest` congela o relógio ao meio-dia em vez de 00h UTC (que é 21h do dia anterior em Fortaleza). Nenhuma asserção foi removida.
+
+### Testes
+Suíte completa às 21h56 locais (00h56 UTC, janela do problema): **414 passando, 0 falhas** (2610 asserções).
+
 ## 05/11/2026 — Etapa 5: Cartões e faturas (Auditor Fin)
 
 Base: commit `d365cd2`. Backup lógico antes da migration: `/root/app-cassio-backups/etapa5-antes-20261105.json` (8 cartões, 5 faturas, 4 compras no cartão). Nenhum pagamento real foi lançado; nenhum dado existente foi alterado.

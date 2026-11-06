@@ -50,7 +50,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $this->opDate = now()->format('Y-m-d');
+        $this->opDate = \App\Support\BusinessDate::today();
     }
 
     public function updated($property): void
@@ -148,7 +148,7 @@ new #[Layout('layouts.app')] class extends Component {
                 : 'nullable|exists:asset_classes,id',
             'assetName' => $this->opType === 'buy' ? 'required|string|max:200' : 'nullable|string|max:200',
             'assetSector' => 'nullable|string|max:120',
-            'opDate' => 'required|date|before_or_equal:today',
+            'opDate' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
             'opType' => 'required|in:buy,sell',
             'quantity' => 'required|numeric|min:0.000001',
             'unit_price' => 'required|numeric|min:0.0001|max:999999999.99',
@@ -399,7 +399,7 @@ new #[Layout('layouts.app')] class extends Component {
         ]);
         $this->opType = 'buy';
         $this->fees = '0';
-        $this->opDate = now()->format('Y-m-d');
+        $this->opDate = \App\Support\BusinessDate::today();
     }
 
     private function lookupBuyAsset(bool $fillQuote = false): void

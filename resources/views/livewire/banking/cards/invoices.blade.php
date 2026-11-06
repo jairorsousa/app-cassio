@@ -23,7 +23,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->card = $card;
         $this->payment_account_id = $card->default_payment_account_id;
-        $this->payment_date = now()->format('Y-m-d');
+        $this->payment_date = \App\Support\BusinessDate::today();
     }
 
     public function toggle(int $invoiceId): void
@@ -42,7 +42,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->payingInvoiceId = $invoice->id;
         $this->payment_amount = number_format($invoice->remainingAmount(), 2, '.', '');
         $this->payment_account_id = $this->payment_account_id ?: $this->card->default_payment_account_id;
-        $this->payment_date = now()->format('Y-m-d');
+        $this->payment_date = \App\Support\BusinessDate::today();
         $this->payment_notes = '';
         $this->resetValidation();
     }
@@ -61,7 +61,7 @@ new #[Layout('layouts.app')] class extends Component {
         $data = $this->validate([
             'payment_account_id' => 'required|exists:bank_accounts,id',
             'payment_amount' => 'required|numeric|min:0.01',
-            'payment_date' => 'required|date|before_or_equal:today',
+            'payment_date' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
             'payment_notes' => 'nullable|string|max:500',
         ], [
             'payment_account_id.required' => 'Escolha a conta de onde saiu o pagamento.',

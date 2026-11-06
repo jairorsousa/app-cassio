@@ -10,7 +10,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void { $this->from = today()->startOfYear()->format('Y-m-d'); $this->to = today()->format('Y-m-d'); }
 
-    public function rules(): array { return ['from' => 'required|date', 'to' => 'required|date|after_or_equal:from|before_or_equal:today']; }
+    public function rules(): array { return ['from' => 'required|date', 'to' => 'required|date|after_or_equal:from|before_or_equal:'.\App\Support\BusinessDate::today()]; }
 
     public function applyFilters(): void { $this->validate(); }
 

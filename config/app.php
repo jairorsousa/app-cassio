@@ -67,6 +67,9 @@ return [
 
     'timezone' => 'UTC',
 
+    // Fuso das datas de negócio ("hoje" em validações). Timestamps continuam em UTC.
+    'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'America/Fortaleza'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

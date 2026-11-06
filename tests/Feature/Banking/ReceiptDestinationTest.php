@@ -28,7 +28,7 @@ class ReceiptDestinationTest extends TestCase
         $account = BankAccount::create(['name' => 'BB', 'initial_balance' => 1000]);
         $broker = Broker::create(['name' => 'Corretor', 'status' => true]);
         $case = CaseType::create(['name' => 'Caso', 'status' => true]);
-        $receipt = Transaction::create(['type' => 'income', 'amount' => '32531.59', 'date' => now('America/Sao_Paulo')->toDateString(), 'description' => 'Recebimento de caso', 'bank_account_id' => $account->id, 'status' => 'settled', 'ofx_fitid' => 'receipt-imported']);
+        $receipt = Transaction::create(['type' => 'income', 'amount' => '32531.59', 'date' => \App\Support\BusinessDate::now()->toDateString(), 'description' => 'Recebimento de caso', 'bank_account_id' => $account->id, 'status' => 'settled', 'ofx_fitid' => 'receipt-imported']);
         $rows = [
             ['key' => 'a', 'kind' => 'client', 'beneficiary' => 'Cliente', 'amount' => '15387.44'],
             ['key' => 'b', 'kind' => 'broker', 'beneficiary' => '', 'amount' => '3147.43', 'broker_id' => $broker->id, 'case_type_id' => $case->id],
@@ -70,22 +70,22 @@ class ReceiptDestinationTest extends TestCase
         $service->replace($receipt, $rows);
         $client = $receipt->destinations()->where('kind', 'client')->sole();
         $office = $receipt->destinations()->where('kind', 'office')->sole();
-        $service->pay($client, '1000.00', now()->toDateString(), $account->id);
+        $service->pay($client, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
         $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertViewHas('canEdit', false);
         $this->assertSame(1438744, $client->fresh()->remainingCents());
         $this->assertDatabaseCount('transactions', 2);
         $this->assertSame(32531.59, $account->fresh()->balance());
         try {
-            $service->pay($client, '20000.00', now()->toDateString(), $account->id);
+            $service->pay($client, '20000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
             $this->fail('Repasse excessivo foi aceito.');
         } catch (\DomainException $e) {
             $this->assertStringContainsString('saldo', $e->getMessage());
         }
         $this->assertDatabaseCount('transactions', 2);
 
-        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now()->toDateString(), 'amount' => '6998.36', 'description' => 'Pix ao escritório', 'bank_account_id' => $account->id, 'ofx_fitid' => 'expense-imported']);
+        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now()->toDateString(), 'amount' => '6998.36', 'description' => 'Pix ao escritório', 'bank_account_id' => $account->id, 'ofx_fitid' => 'expense-imported']);
         $before = $account->fresh()->balance();
-        $service->pay($office, (string) $expense->amount, now()->toDateString(), $account->id, $expense->id);
+        $service->pay($office, (string) $expense->amount, \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
         $this->assertSame(0, $office->fresh()->remainingCents());
         $this->assertDatabaseCount('transactions', 3);
         $this->assertSame($before, $account->fresh()->balance());
@@ -102,7 +102,7 @@ class ReceiptDestinationTest extends TestCase
         [$receipt, $account, , , $rows] = $this->example();
         app(ReceiptDestinationService::class)->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
-        app(BrokerCommissionService::class)->payAmount($part->commission, 1000, now()->toDateString(), $account->id);
+        app(BrokerCommissionService::class)->payAmount($part->commission, 1000, \App\Support\BusinessDate::now()->toDateString(), $account->id);
         $component = Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id]);
         $this->assertDatabaseCount('broker_commission_payments', 1);
         $this->assertDatabaseCount('transactions', 2);
@@ -118,12 +118,12 @@ class ReceiptDestinationTest extends TestCase
     public function test_existing_commission_can_be_linked_and_cannot_be_used_twice(): void
     {
         [$receipt, $account, $broker, $case, $rows] = $this->example();
-        $commission = app(BrokerCommissionService::class)->registerFixedAmount(['broker_id' => $broker->id, 'case_type_id' => $case->id, 'commission_amount' => 3147.43, 'reference_date' => now()->toDateString()]);
+        $commission = app(BrokerCommissionService::class)->registerFixedAmount(['broker_id' => $broker->id, 'case_type_id' => $case->id, 'commission_amount' => 3147.43, 'reference_date' => \App\Support\BusinessDate::now()->toDateString()]);
         $rows[1]['commission_id'] = $commission->id;
         $service = app(ReceiptDestinationService::class);
         $service->replace($receipt, $rows);
         $this->assertDatabaseCount('broker_commissions', 1);
-        $other = Transaction::create(['type' => 'income', 'status' => 'settled', 'date' => now(), 'amount' => '32531.59', 'description' => 'Outro', 'bank_account_id' => $account->id]);
+        $other = Transaction::create(['type' => 'income', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now(), 'amount' => '32531.59', 'description' => 'Outro', 'bank_account_id' => $account->id]);
         Volt::test('banking.transactions.distribution', ['receiptId' => $other->id])->set('rows', $rows)->call('save')->assertHasErrors(['division']);
         $this->assertCount(0, $other->fresh()->destinations);
         $service->clear($receipt);
@@ -178,7 +178,7 @@ class ReceiptDestinationTest extends TestCase
     {
         [$receipt, $account, $broker, , $rows] = $this->example();
         app(BrokerAdvanceService::class)->register([
-            'broker_id' => $broker->id, 'amount' => 1000, 'date' => now()->toDateString(), 'bank_account_id' => $account->id,
+            'broker_id' => $broker->id, 'amount' => 1000, 'date' => \App\Support\BusinessDate::now()->toDateString(), 'bank_account_id' => $account->id,
         ]);
         app(ReceiptDestinationService::class)->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
@@ -195,10 +195,10 @@ class ReceiptDestinationTest extends TestCase
         $service->replace($receipt, $rows);
         $client = $receipt->destinations()->where('kind', 'client')->sole();
         $office = $receipt->destinations()->where('kind', 'office')->sole();
-        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now(), 'amount' => '1000.00', 'description' => 'Saída importada', 'bank_account_id' => $account->id]);
-        $service->pay($client, '1000.00', now()->toDateString(), $account->id, $expense->id);
+        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now(), 'amount' => '1000.00', 'description' => 'Saída importada', 'bank_account_id' => $account->id]);
+        $service->pay($client, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
         foreach ([
-            fn () => $service->pay($office, '1000.00', now()->toDateString(), $account->id, $expense->id),
+            fn () => $service->pay($office, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id),
             fn () => app(TransactionService::class)->update($expense, ['amount' => '2000.00']),
             fn () => app(TransactionService::class)->delete($expense),
             fn () => $service->clear($receipt),
@@ -221,9 +221,9 @@ class ReceiptDestinationTest extends TestCase
         $service = app(ReceiptDestinationService::class);
         $service->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
-        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now(), 'amount' => '3147.43', 'description' => 'Pix ao corretor', 'bank_account_id' => $account->id, 'ofx_fitid' => 'broker-ofx']);
+        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now(), 'amount' => '3147.43', 'description' => 'Pix ao corretor', 'bank_account_id' => $account->id, 'ofx_fitid' => 'broker-ofx']);
         $balance = $account->fresh()->balance();
-        $service->pay($part, (string) $expense->amount, now()->toDateString(), $account->id, $expense->id);
+        $service->pay($part, (string) $expense->amount, \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Saída vinculada ao corretor');
         $this->assertSame(0, $part->fresh()->remainingCents());
         $this->assertSame('paid', $part->commission->fresh()->status);
@@ -235,7 +235,7 @@ class ReceiptDestinationTest extends TestCase
         $this->assertSame(314743, $part->fresh()->remainingCents());
         $this->assertFalse($expense->fresh()->trashed());
         $this->assertSame($balance, $account->fresh()->balance());
-        $service->pay($part, '3147.43', now()->toDateString(), $account->id, $expense->id);
+        $service->pay($part, '3147.43', \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
         $service->undo($part->payments()->sole());
         $this->assertDatabaseCount('receipt_destination_payments', 0);
         $this->assertDatabaseCount('broker_commission_payments', 0);
@@ -267,7 +267,7 @@ class ReceiptDestinationTest extends TestCase
     {
         [$receipt, $account, $broker, , $rows] = $this->example();
         BrokerAdvance::create([
-            'broker_id' => $broker->id, 'amount' => 1000, 'date' => now(), 'bank_account_id' => $account->id,
+            'broker_id' => $broker->id, 'amount' => 1000, 'date' => \App\Support\BusinessDate::now(), 'bank_account_id' => $account->id,
         ]);
         $advance = BrokerAdvance::sole();
         $service = app(ReceiptDestinationService::class);
@@ -275,14 +275,14 @@ class ReceiptDestinationTest extends TestCase
         $client = $receipt->destinations()->where('kind', 'client')->sole();
         $brokerPart = $receipt->destinations()->where('kind', 'broker')->sole();
         $office = $receipt->destinations()->where('kind', 'office')->sole();
-        $service->pay($client, '100.00', now()->toDateString(), $account->id);
-        $service->pay($brokerPart, '100.00', now()->toDateString(), $account->id);
+        $service->pay($client, '100.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
+        $service->pay($brokerPart, '100.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
         $generatedClient = $client->payments()->sole()->transaction;
         $generatedBroker = $brokerPart->commission->payments()->sole()->transaction;
         $imported = [];
         foreach ([[$office, '200.00'], [$brokerPart, '100.00']] as [$part, $amount]) {
-            $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now(), 'amount' => $amount, 'description' => 'Pix importado', 'bank_account_id' => $account->id, 'ofx_fitid' => 'linked-'.$part->id]);
-            $service->pay($part, $amount, now()->toDateString(), $account->id, $expense->id);
+            $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now(), 'amount' => $amount, 'description' => 'Pix importado', 'bank_account_id' => $account->id, 'ofx_fitid' => 'linked-'.$part->id]);
+            $service->pay($part, $amount, \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
             $imported[] = $expense;
         }
         $this->assertSame(1000.0, $brokerPart->commission->settledAmount());
@@ -309,7 +309,7 @@ class ReceiptDestinationTest extends TestCase
     {
         [$receipt, $account, $broker, $case, $rows] = $this->example();
         $commissions = app(BrokerCommissionService::class);
-        $commission = $commissions->registerFixedAmount(['broker_id' => $broker->id, 'case_type_id' => $case->id, 'commission_amount' => 3147.43, 'reference_date' => now()->toDateString(), 'bank_account_id' => $account->id]);
+        $commission = $commissions->registerFixedAmount(['broker_id' => $broker->id, 'case_type_id' => $case->id, 'commission_amount' => 3147.43, 'reference_date' => \App\Support\BusinessDate::now()->toDateString(), 'bank_account_id' => $account->id]);
         $payment = $commissions->payAmount($commission, 100);
         $rows[1]['commission_id'] = $commission->id;
         app(ReceiptDestinationService::class)->replace($receipt, $rows);
@@ -328,8 +328,8 @@ class ReceiptDestinationTest extends TestCase
         $service = app(ReceiptDestinationService::class);
         $service->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'broker')->sole();
-        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => now(), 'amount' => '1000.00', 'description' => 'Pix ao corretor', 'bank_account_id' => $account->id]);
-        $service->pay($part, '1000.00', now()->toDateString(), $account->id, $expense->id);
+        $expense = Transaction::create(['type' => 'expense', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now(), 'amount' => '1000.00', 'description' => 'Pix ao corretor', 'bank_account_id' => $account->id]);
+        $service->pay($part, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id, $expense->id);
         Volt::test('banking.transactions.index')->call('delete', $expense->id)
             ->assertSee('O valor voltará a ficar pendente de repasse')
             ->call('confirmDeletion')->assertHasNoErrors();
@@ -346,7 +346,7 @@ class ReceiptDestinationTest extends TestCase
         $service = app(ReceiptDestinationService::class);
         $service->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'client')->sole();
-        $service->pay($part, '1000.00', now()->toDateString(), $account->id);
+        $service->pay($part, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
         $expense = $part->payments()->sole()->transaction;
         Volt::test('banking.transactions.index')->call('delete', $expense->id)
             ->assertSet('deletingId', $expense->id)->call('confirmDeletion')->assertHasNoErrors();
@@ -362,7 +362,7 @@ class ReceiptDestinationTest extends TestCase
         $service = app(ReceiptDestinationService::class);
         $service->replace($receipt, $rows);
         $part = $receipt->destinations()->where('kind', 'client')->sole();
-        $service->pay($part, '1000.00', now()->toDateString(), $account->id);
+        $service->pay($part, '1000.00', \App\Support\BusinessDate::now()->toDateString(), $account->id);
         $expense = $part->payments()->sole()->transaction;
         $balance = $account->fresh()->balance();
         $dispatcher = Transaction::getEventDispatcher();

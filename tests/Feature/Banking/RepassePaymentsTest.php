@@ -34,7 +34,7 @@ class RepassePaymentsTest extends TestCase
         $client = BankAccount::create(['name' => 'Cliente', 'type' => 'repasse']);
         $office = BankAccount::create(['name' => 'Mota e Silva Advogados', 'type' => 'repasse']);
         $broker = Broker::create(['name' => 'Corretor', 'status' => true]);
-        $receipt = Transaction::create(['type' => 'income', 'amount' => '10000.00', 'description' => 'Recebimento exemplo', 'date' => now()->subDay()->toDateString(), 'status' => 'settled', 'bank_account_id' => $bank->id, 'ofx_fitid' => 'original-bb-001']);
+        $receipt = Transaction::create(['type' => 'income', 'amount' => '10000.00', 'description' => 'Recebimento exemplo', 'date' => \App\Support\BusinessDate::now()->subDay()->toDateString(), 'status' => 'settled', 'bank_account_id' => $bank->id, 'ofx_fitid' => 'original-bb-001']);
         app(ProcessReceiptService::class)->save($receipt, [
             'broker_id' => $broker->id, 'client_name' => 'Maria ou processo', 'fees_mode' => 'amount', 'fees' => '3000',
             'commission_mode' => 'amount', 'broker_amount' => '1000', 'office_amount' => '1000', 'expenses' => [], 'advances' => [],
@@ -68,7 +68,7 @@ class RepassePaymentsTest extends TestCase
         $officeComponent->call('startPayment', $officePart->id)->call('savePayment')->assertHasNoErrors();
         $this->assertSame(2000.0, $bank->fresh()->balance());
         $this->assertSame(0.0, $office->fresh()->balance());
-        app(BrokerCommissionService::class)->payAmount(BrokerCommission::sole(), 1000, now()->toDateString(), $bank->id);
+        app(BrokerCommissionService::class)->payAmount(BrokerCommission::sole(), 1000, \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         $this->assertSame(1000.0, $bank->fresh()->balance());
         $this->assertSame('10000.00', $receipt->fresh()->amount);
         $this->assertSame('original-bb-001', $receipt->fresh()->ofx_fitid);
@@ -84,13 +84,13 @@ class RepassePaymentsTest extends TestCase
         $service = app(ReceiptDestinationService::class);
         foreach (['7000.01', '0', '-1', '1.001', '1,00'] as $amount) {
             try {
-                $service->pay($part, $amount, now()->toDateString(), $bank->id);
+                $service->pay($part, $amount, \App\Support\BusinessDate::now()->toDateString(), $bank->id);
                 $this->fail('Invalid payment must be rejected');
             } catch (\DomainException $e) {
                 $this->assertNotEmpty($e->getMessage());
             }
         }
-        foreach ([now()->addDay()->toDateString(), now()->subDays(2)->toDateString(), 'invalid'] as $date) {
+        foreach ([\App\Support\BusinessDate::now()->addDay()->toDateString(), \App\Support\BusinessDate::now()->subDays(2)->toDateString(), 'invalid'] as $date) {
             try {
                 $service->pay($part, '10', $date, $bank->id);
                 $this->fail('Invalid date must be rejected');
@@ -124,7 +124,7 @@ class RepassePaymentsTest extends TestCase
         [$receipt, $bank, $client] = $this->example();
         $otherBank = BankAccount::create(['name' => 'Itaú', 'initial_balance' => 500]);
         $part = $receipt->destinations()->where('kind', 'client')->sole();
-        app(ReceiptDestinationService::class)->pay($part, '100.01', now()->toDateString(), $otherBank->id);
+        app(ReceiptDestinationService::class)->pay($part, '100.01', \App\Support\BusinessDate::now()->toDateString(), $otherBank->id);
         $payment = $part->payments()->sole();
         $this->assertSame(399.99, $otherBank->fresh()->balance());
         $this->assertSame(-6899.99, $client->fresh()->balance());
@@ -145,11 +145,11 @@ class RepassePaymentsTest extends TestCase
         [$receipt, $bank, $client, $office] = $this->example();
         $part = $receipt->destinations()->where('kind', 'client')->sole();
         $service = app(ReceiptDestinationService::class);
-        $service->pay($part, '10', now()->toDateString(), $bank->id);
+        $service->pay($part, '10', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         app(TransactionService::class)->deleteWithDestinations($part->payments()->sole()->transaction);
         $this->assertSame(10000.0, $bank->fresh()->balance());
         $this->assertSame(-7000.0, $client->fresh()->balance());
-        $service->pay($part, '2000', now()->toDateString(), $bank->id);
+        $service->pay($part, '2000', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         app(TransactionService::class)->deleteWithDestinations($receipt);
         $this->assertSame(0.0, $bank->fresh()->balance());
         $this->assertSame(0.0, $client->fresh()->balance());
@@ -161,9 +161,9 @@ class RepassePaymentsTest extends TestCase
     public function test_linking_an_imported_expense_settles_without_another_bank_debit_and_unlink_preserves_it(): void
     {
         [$receipt, $bank, $client] = $this->example();
-        $expense = Transaction::create(['type' => 'expense', 'amount' => '1500', 'date' => now()->toDateString(), 'status' => 'settled', 'description' => 'PIX importado', 'bank_account_id' => $bank->id, 'ofx_fitid' => 'expense-fitid']);
+        $expense = Transaction::create(['type' => 'expense', 'amount' => '1500', 'date' => \App\Support\BusinessDate::now()->toDateString(), 'status' => 'settled', 'description' => 'PIX importado', 'bank_account_id' => $bank->id, 'ofx_fitid' => 'expense-fitid']);
         $part = $receipt->destinations()->where('kind', 'client')->sole();
-        app(ReceiptDestinationService::class)->pay($part, '0', now()->toDateString(), $bank->id, $expense->id);
+        app(ReceiptDestinationService::class)->pay($part, '0', \App\Support\BusinessDate::now()->toDateString(), $bank->id, $expense->id);
         $this->assertSame(8500.0, $bank->fresh()->balance());
         $this->assertSame(-5500.0, $client->fresh()->balance());
         $payment = $part->payments()->sole();
@@ -180,7 +180,7 @@ class RepassePaymentsTest extends TestCase
         [$receipt, $bank] = $this->example();
         $part = $receipt->destinations()->where('kind', 'client')->sole();
         $service = app(ReceiptDestinationService::class);
-        $service->pay($part, '1', now()->toDateString(), $bank->id);
+        $service->pay($part, '1', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         try {
             $service->clear($receipt);
             $this->fail('Cannot erase a paid division');
@@ -204,7 +204,7 @@ class RepassePaymentsTest extends TestCase
             }
         });
         try {
-            app(ReceiptDestinationService::class)->pay($receipt->destinations()->where('kind', 'client')->sole(), '1000', now()->toDateString(), $bank->id);
+            app(ReceiptDestinationService::class)->pay($receipt->destinations()->where('kind', 'client')->sole(), '1000', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
             $this->fail('Failure must propagate');
         } catch (\RuntimeException $e) {
             $this->assertSame('Falha no crédito virtual', $e->getMessage());
@@ -221,7 +221,7 @@ class RepassePaymentsTest extends TestCase
     {
         [$receipt, $bank, $client, $office] = $this->example();
         $officePart = $receipt->destinations()->where('kind', 'office')->sole();
-        app(ReceiptDestinationService::class)->pay($officePart, '100', now()->toDateString(), $bank->id);
+        app(ReceiptDestinationService::class)->pay($officePart, '100', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         foreach ([['startPayment', $officePart->id], ['undoPayment', $officePart->payments()->sole()->id]] as [$action, $id]) {
             try {
                 Volt::test('banking.accounts.repasses', ['accountId' => $client->id])->call($action, $id);
@@ -237,7 +237,7 @@ class RepassePaymentsTest extends TestCase
     public function test_virtual_obligations_do_not_appear_as_cash_outflows_and_payments_do_not_add_expenses(): void
     {
         [$receipt, $bank, $client] = $this->example();
-        app(ReceiptDestinationService::class)->pay($receipt->destinations()->where('kind', 'client')->sole(), '2000', now()->toDateString(), $bank->id);
+        app(ReceiptDestinationService::class)->pay($receipt->destinations()->where('kind', 'client')->sole(), '2000', \App\Support\BusinessDate::now()->toDateString(), $bank->id);
         $report = Volt::test('banking.reports.cashflow')->set('month', $receipt->date->format('Y-m'));
         $this->assertSame(['in' => 10000.0, 'out' => 2000.0], $report->viewData('byAccount')->get('Bradesco'));
         $this->assertFalse($report->viewData('byAccount')->has('Cliente'));
@@ -267,12 +267,12 @@ class RepassePaymentsTest extends TestCase
         $part = $receipt->destinations()->where('kind', 'client')->sole();
         $payment = $part->payments()->create(['transaction_created' => true]);
         $expense = Transaction::create([
-            'type' => 'expense', 'amount' => '500.00', 'status' => 'settled', 'date' => now()->toDateString(),
+            'type' => 'expense', 'amount' => '500.00', 'status' => 'settled', 'date' => \App\Support\BusinessDate::now()->toDateString(),
             'description' => 'Repasse anterior', 'bank_account_id' => $bank->id,
             'source_type' => ReceiptDestinationPayment::class, 'source_id' => $payment->id,
         ]);
         $payment->update(['transaction_id' => $expense->id]);
-        $manual = app(TransferService::class)->execute($bank, $client, 50, now()->toDateString());
+        $manual = app(TransferService::class)->execute($bank, $client, 50, \App\Support\BusinessDate::now()->toDateString());
         $this->assertSame(1450.0, $bank->fresh()->balance());
         $migration = require database_path('migrations/2026_10_20_040000_convert_repasse_balances_to_obligations.php');
         $migration->up();
@@ -300,13 +300,13 @@ class RepassePaymentsTest extends TestCase
         $part = $receipt->destinations()->where('kind', 'client')->sole();
         $key = (string) Str::uuid();
         $service = app(ReceiptDestinationService::class);
-        $service->pay($part, '1000', now()->toDateString(), $bank->id, requestKey: $key);
-        $service->pay($part, '1000', now()->toDateString(), $bank->id, requestKey: $key);
+        $service->pay($part, '1000', \App\Support\BusinessDate::now()->toDateString(), $bank->id, requestKey: $key);
+        $service->pay($part, '1000', \App\Support\BusinessDate::now()->toDateString(), $bank->id, requestKey: $key);
         $this->assertDatabaseCount('receipt_destination_payments', 1);
         $this->assertSame(9000.0, $bank->fresh()->balance());
         $this->assertSame(-6000.0, $client->fresh()->balance());
         // A new confirmation permits a legitimate second payment of the same amount.
-        $service->pay($part, '1000', now()->toDateString(), $bank->id, requestKey: (string) Str::uuid());
+        $service->pay($part, '1000', \App\Support\BusinessDate::now()->toDateString(), $bank->id, requestKey: (string) Str::uuid());
         $this->assertDatabaseCount('receipt_destination_payments', 2);
         $this->assertSame(8000.0, $bank->fresh()->balance());
         $this->assertSame(-5000.0, $client->fresh()->balance());

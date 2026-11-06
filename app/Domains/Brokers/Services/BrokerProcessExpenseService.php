@@ -14,7 +14,7 @@ class BrokerProcessExpenseService
     public function save(Broker $broker, array $data, ?BrokerProcessExpense $expense = null): BrokerProcessExpense
     {
         $data = Validator::make($data, [
-            'date' => 'required|date|before_or_equal:'.now('America/Sao_Paulo')->toDateString(),
+            'date' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
             'amount' => ['required', 'regex:/^\d{1,10}(?:\.\d{1,2})?$/', 'numeric', 'min:0.01'],
             'description' => 'required|string|max:200',
             'bank_account_id' => ['required', Rule::exists('bank_accounts', 'id')->where('status', true)->whereNull('deleted_at')],

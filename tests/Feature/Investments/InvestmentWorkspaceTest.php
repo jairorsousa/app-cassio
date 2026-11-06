@@ -26,7 +26,7 @@ class InvestmentWorkspaceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->travelTo(now()->setDate(2026, 9, 9)->startOfDay());
+        $this->travelTo(now()->setDate(2026, 9, 9)->setTime(12, 0));
         $this->actingAs(User::factory()->create());
     }
 

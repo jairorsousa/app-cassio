@@ -44,14 +44,14 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        $this->payment_date = now()->format('Y-m-d');
+        $this->payment_date = \App\Support\BusinessDate::today();
     }
 
     public function rules(): array
     {
         return [
             'asset_id' => 'required|exists:assets,id',
-            'payment_date' => 'required|date|before_or_equal:today',
+            'payment_date' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
             'type' => 'required|in:dividend,jcp,fii',
             'unit_amount' => 'required|numeric|min:0.000001',
             'quantity' => 'required|numeric|min:0.000001',
@@ -114,7 +114,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetValidation();
         $this->reset(['editingId', 'asset_id', 'unit_amount', 'quantity', 'bank_account_id', 'divNotes']);
         $this->type = 'dividend';
-        $this->payment_date = now()->format('Y-m-d');
+        $this->payment_date = \App\Support\BusinessDate::today();
     }
 
     public function with(): array

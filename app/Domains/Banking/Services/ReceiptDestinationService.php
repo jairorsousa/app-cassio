@@ -219,7 +219,7 @@ class ReceiptDestinationService
                 $part->setRelation('commission', BrokerCommission::lockForUpdate()->findOrFail($part->commission_id));
             }
             Validator::make(['date' => $date], [
-                'date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today', 'after_or_equal:'.$receipt->date->toDateString()],
+                'date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.\App\Support\BusinessDate::today(), 'after_or_equal:'.$receipt->date->toDateString()],
             ])->validate();
             $account = BankAccount::active()->where('type', '!=', 'repasse')->find($accountId);
             if (! $account) {
