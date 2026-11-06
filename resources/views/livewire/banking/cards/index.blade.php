@@ -2,6 +2,9 @@
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\CreditCard;
+use App\Domains\Contacts\Models\Contact;
+use Illuminate\Validation\Rule;
+use Livewire\Attributes\Url;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -27,6 +30,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $status = true;
 
+    public string $holder_type = '';
+
+    public string $holder_name = '';
+
+    public ?int $holder_contact_id = null;
+
+    #[Url]
+    public string $titular = '';
+
     public function rules(): array
     {
         return [
@@ -38,6 +50,9 @@ new #[Layout('layouts.app')] class extends Component
             'due_day' => 'required|integer|min:1|max:31',
             'default_payment_account_id' => 'nullable|exists:bank_accounts,id',
             'status' => 'boolean',
+            'holder_type' => ['nullable', Rule::in(array_keys(CreditCard::HOLDER_TYPES))],
+            'holder_name' => [Rule::requiredIf($this->holder_type === 'filho'), 'nullable', 'string', 'max:120'],
+            'holder_contact_id' => [Rule::requiredIf($this->holder_type === 'contato'), 'nullable', 'integer', Rule::exists('contacts', 'id')->whereNull('deleted_at')],
         ];
     }
 
@@ -53,6 +68,9 @@ new #[Layout('layouts.app')] class extends Component
         $this->due_day = $c->due_day;
         $this->default_payment_account_id = $c->default_payment_account_id;
         $this->status = (bool) $c->status;
+        $this->holder_type = (string) $c->holder_type;
+        $this->holder_name = (string) $c->holder_name;
+        $this->holder_contact_id = $c->holder_contact_id;
         $this->showFormModal = true;
         $this->resetValidation();
     }
@@ -65,7 +83,13 @@ new #[Layout('layouts.app')] class extends Component
 
     public function save(): void
     {
-        $data = $this->validate();
+        $data = $this->validate($this->rules(), [
+            'holder_name.required' => 'Informe o nome do(a) filho(a) titular.',
+            'holder_contact_id.required' => 'Escolha o contato titular.',
+        ]);
+        $data['holder_type'] = $data['holder_type'] ?: null;
+        $data['holder_name'] = $data['holder_type'] === 'filho' ? trim((string) $data['holder_name']) : null;
+        $data['holder_contact_id'] = $data['holder_type'] === 'contato' ? $data['holder_contact_id'] : null;
 
         if ($this->editingId) {
             CreditCard::find($this->editingId)?->update($data);
@@ -90,7 +114,7 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status']);
+        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status', 'holder_type', 'holder_name', 'holder_contact_id']);
         $this->closing_day = 1;
         $this->due_day = 10;
         $this->status = true;
@@ -101,7 +125,11 @@ new #[Layout('layouts.app')] class extends Component
     public function with(): array
     {
         return [
-            'cards' => CreditCard::orderBy('name')->get(),
+            'cards' => CreditCard::with(['holderContact', 'invoices'])
+                ->when($this->titular !== '', fn ($q) => $q->whereIn('id', CreditCard::idsForHolderKey($this->titular)))
+                ->orderBy('name')->get(),
+            'holderOptions' => CreditCard::holderFilterOptions(),
+            'contacts' => Contact::orderBy('name')->get(['id', 'name']),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -115,11 +143,20 @@ new #[Layout('layouts.app')] class extends Component
     <x-fx.card>
         <div class="mb-space-4 flex items-center justify-between">
             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Cartões de crédito</h3>
+            <div class="flex items-center gap-2">
+            <select wire:model.live="titular" aria-label="Filtrar por titular" class="h-9 rounded-pill border border-mono-200 bg-mono-white px-3 text-xs">
+                <option value="">Todos os titulares</option>
+                @foreach ($holderOptions as $key => $label)<option value="{{ $key }}">{{ $label }}</option>@endforeach
+            </select>
             <x-jr.button type="button" size="sm" wire:click="create">
                 <span class="material-icons-outlined text-[18px]">add</span>
                 Novo cartão
             </x-jr.button>
+            </div>
         </div>
+        @if (session('status'))
+            <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
+        @endif
 
         @if ($cards->isEmpty())
             <x-fx.empty-state
@@ -132,24 +169,28 @@ new #[Layout('layouts.app')] class extends Component
                 </x-jr.button>
             </x-fx.empty-state>
         @else
+            <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm">
                 <thead>
                     <tr>
-                        <th class="text-left">Nome</th>
-                        <th class="text-left">Bandeira</th>
+                        <th class="text-left">Cartão</th>
+                        <th class="text-left">Titular</th>
                         <th class="text-right">Limite</th>
                         <th class="text-center">Fech./Venc.</th>
+                        <th class="text-right">A pagar</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach ($cards as $c)
+                        @php $due = $c->invoices->filter(fn ($i) => $i->status !== 'open')->sum(fn ($i) => $i->remainingAmount()); $late = $c->invoices->contains(fn ($i) => $i->isOverdue()); @endphp
                         <tr>
-                            <td>{{ $c->name }} @unless($c->status)<span class="text-xxs text-mono-600">(inativo)</span>@endunless</td>
-                            <td>{{ $c->brand }}</td>
-                            <td class="text-right">R$ {{ number_format($c->limit, 2, ',', '.') }}</td>
-                            <td class="text-center text-xxs">dia {{ $c->closing_day }} / dia {{ $c->due_day }}</td>
-                            <td class="text-right">
+                            <td>{{ $c->name }} @if($c->brand)<span class="text-xxs text-mono-500">· {{ $c->brand }}</span>@endif @unless($c->status)<span class="text-xxs text-mono-600">(inativo)</span>@endunless</td>
+                            <td>@if ($c->hasHolder()){{ $c->holderLabel() }}@else<span class="rounded-pill bg-amber-50 px-2 py-0.5 text-xxs font-semibold text-amber-700">Não informado</span>@endif</td>
+                            <td class="text-right whitespace-nowrap">R$ {{ number_format($c->limit, 2, ',', '.') }}</td>
+                            <td class="text-center text-xxs whitespace-nowrap">dia {{ $c->closing_day }} / dia {{ $c->due_day }}</td>
+                            <td class="text-right whitespace-nowrap {{ $late ? 'font-semibold text-red-700' : '' }}">R$ {{ number_format($due, 2, ',', '.') }}@if ($late) <span class="text-xxs">(vencida)</span>@endif</td>
+                            <td class="text-right whitespace-nowrap">
                                 <a href="{{ route('banking.cards.invoices', $c) }}" class="fx-btn fx-btn--text fx-btn--sm">Faturas</a>
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $c->id }})">Editar</button>
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $c->id }})" wire:confirm="Excluir cartão?">Excluir</button>
@@ -158,6 +199,7 @@ new #[Layout('layouts.app')] class extends Component
                     @endforeach
                 </tbody>
             </table>
+            </div>
         @endif
     </x-fx.card>
 
@@ -187,6 +229,28 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-jr.input label="Bandeira" icon="sell" name="brand" wire:model="brand" />
                                     <x-jr.input label="Banco emissor" icon="account_balance" name="bank" wire:model="bank" />
                                     <x-jr.input label="Limite *" icon="payments" name="limit" wire:model="limit" x-money required />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Titular</label>
+                                        <select wire:model.live="holder_type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
+                                            <option value="">Não informado</option>
+                                            @foreach (\App\Domains\Banking\Models\CreditCard::HOLDER_TYPES as $k => $label)<option value="{{ $k }}">{{ $label }}</option>@endforeach
+                                        </select>
+                                        @error('holder_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
+                                    @if ($holder_type === 'filho')
+                                        <div>
+                                            <x-jr.input label="Nome do(a) filho(a) *" icon="person" name="holder_name" wire:model="holder_name" />
+                                        </div>
+                                    @elseif ($holder_type === 'contato')
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Contato titular *</label>
+                                            <select wire:model="holder_contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
+                                                <option value="">Escolha…</option>
+                                                @foreach ($contacts as $ct)<option value="{{ $ct->id }}">{{ $ct->name }}</option>@endforeach
+                                            </select>
+                                            @error('holder_contact_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+                                    @endif
                                 </div>
                             </section>
 

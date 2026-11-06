@@ -1,5 +1,25 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 5: Cartões e faturas (Auditor Fin)
+
+Base: commit `d365cd2`. Backup lógico antes da migration: `/root/app-cassio-backups/etapa5-antes-20261105.json` (8 cartões, 5 faturas, 4 compras no cartão). Nenhum pagamento real foi lançado; nenhum dado existente foi alterado.
+
+### Mudanças
+1. **Titular por cartão** (`holder_type`: Cássio, Filho(a) + nome, Luciane, Contato + vínculo). Cartões antigos ficam **Não informado** (selo amarelo) — nada é inferido do nome do cartão. Filtro por titular em Cartões e em Lançamentos (“Cartão: <titular>”, gastos por pessoa).
+2. **Faturas**: status exibido Aberta / Fechada / Parcial / Paga / **Vencida** (derivada de vencimento passado + saldo). Botão **Pagar** para toda fatura com restante > 0 (antes só aparecia em Aberta/Parcial — faturas Fechadas e vencidas ficavam sem pagamento); em fatura aberta aparece **Antecipar**.
+3. **Pagamento** em modal: conta (ativa), valor total ou parcial (pré-preenchido com o restante; aceita 1.234,56), data (não futura), observação; bloqueia valor acima do restante e fatura já quitada. Histórico de pagamentos e compras (com parcela n/N e categoria) ao expandir a fatura. Resumo por cartão: a pagar, vencido, em aberto.
+4. **Quitação, não despesa**: pagamento continua `invoice_payment`, sai da conta; `paid_amount`/status são recalculados a partir dos pagamentos liquidados (`InvoiceService::syncPayments`). Excluir um pagamento devolve a fatura para devida; compra nova/alterada/movida de fatura recalcula as duas faturas. Regimes mantidos: Caixa = pelo pagamento; Competência = pela data da compra (pagamento ignorado) — coberto por teste.
+5. **Fechamento automático** (`CloseInvoiceJob`) passa a fechar toda fatura aberta cujo fechamento já passou (antes dependia do dia exato e perdia dias sem agendador).
+
+### Migration
+- `2026_11_05_500000_etapa5_credit_card_holder` — colunas nulas `holder_type`, `holder_name`, `holder_contact_id` em `credit_cards`. Efeito em antigos: nenhum (todos “Não informado”).
+
+### Observações de dados (não alterados)
+- Nubank: faturas 2026-11 (fechada) e 2026-12 (aberta) com total R$ 500,00 e **nenhuma compra vinculada** — conferir com o Cássio antes de pagar; se uma compra for lançada/alterada nelas, o total é recalculado pelas compras.
+
+### Testes
+- Novo `tests/Feature/Banking/Etapa5CartoesFaturasTest.php` (9 casos). Suíte completa: 411 ok, 2 falhas pré-existentes em `Etapa3CorretoresContatosTest` (data “hoje” em UTC após 21h de Fortaleza; sem relação com cartões).
+
 ## 05/11/2026 — Etapa 4 (ajuste visual): Perdido, Assinatura e Fluxo de caixa (Auditor Fin)
 
 Base: commit `50fd288`. Sem migration e sem alteração de dados reais.

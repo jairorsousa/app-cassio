@@ -69,11 +69,16 @@ class TransactionObserver
 
     private function refreshInvoice(Transaction $transaction): void
     {
-        if ($transaction->credit_card_invoice_id && $transaction->type === 'expense') {
-            $invoice = $transaction->invoice()->first();
-            if ($invoice) {
-                $this->invoices->recalculateTotal($invoice);
-            }
+        $ids = array_filter(array_unique([
+            $transaction->credit_card_invoice_id,
+            $transaction->getOriginal('credit_card_invoice_id'),
+        ]));
+        if ($ids === [] || ! in_array($transaction->type, ['expense', 'invoice_payment'], true) && ! in_array($transaction->getOriginal('type'), ['expense', 'invoice_payment'], true)) {
+            return;
+        }
+        foreach (\App\Domains\Banking\Models\CreditCardInvoice::whereIn('id', $ids)->get() as $invoice) {
+            // Total = compras (despesas) da fatura; pago = pagamentos liquidados. Ao mudar de fatura, as duas são refeitas.
+            $this->invoices->recalculateTotal($invoice);
         }
     }
 }

@@ -56,8 +56,35 @@ class InvoiceService
 
             $invoice->update(['total' => $sum]);
 
-            return $invoice->fresh();
+            return $this->syncPayments($invoice->fresh());
         });
+    }
+
+    /**
+     * Recalcula o pago (soma dos pagamentos liquidados) e o status armazenado.
+     * Pagamento excluído/estornado volta a deixar a fatura devida.
+     */
+    public function syncPayments(CreditCardInvoice $invoice): CreditCardInvoice
+    {
+        $paidCents = (int) round((float) $invoice->transactions()->whereNull('deleted_at')
+            ->where('type', 'invoice_payment')->where('status', 'settled')->sum('amount') * 100);
+        $totalCents = (int) round((float) $invoice->total * 100);
+        $cycleClosed = $invoice->closed_at !== null
+            || in_array($invoice->status, ['closed', 'partially_paid'], true);
+
+        $status = match (true) {
+            $totalCents > 0 && $paidCents >= $totalCents => 'paid',
+            ! $cycleClosed => 'open',
+            $paidCents > 0 => 'partially_paid',
+            default => 'closed',
+        };
+
+        $invoice->forceFill(['paid_amount' => $paidCents / 100, 'status' => $status]);
+        if ($invoice->isDirty()) {
+            $invoice->save();
+        }
+
+        return $invoice;
     }
 
     public function closeInvoice(CreditCardInvoice $invoice): CreditCardInvoice

@@ -58,6 +58,15 @@ new #[Layout('layouts.app')] class extends Component
     #[Url]
     public string $type = '';
 
+    /** Gastos por pessoa: titular do cartão (chave de CreditCard::holderKey). */
+    #[Url]
+    public string $titular = '';
+
+    public function updatedTitular(): void
+    {
+        $this->resetPage();
+    }
+
     /** '' = oculta testes; '1' = mostra também os lançamentos marcados como teste. */
     #[Url]
     public string $testes = '';
@@ -796,6 +805,9 @@ new #[Layout('layouts.app')] class extends Component
         if ($this->type) {
             $q->where('type', $this->type);
         }
+        if ($this->titular !== '') {
+            $q->whereIn('credit_card_id', CreditCard::idsForHolderKey($this->titular) ?: [0]);
+        }
 
         return [
             'deletingTransaction' => $this->deletingId ? Transaction::withCount('destinations')->with('destinationPayment')->find($this->deletingId) : null,
@@ -808,6 +820,7 @@ new #[Layout('layouts.app')] class extends Component
             'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
             'linkOptions' => $this->linkOptions(),
             'linkFilterOptions' => $this->linkFilterOptions(),
+            'holderOptions' => CreditCard::holderFilterOptions(),
             'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
         ];
     }
@@ -873,6 +886,10 @@ new #[Layout('layouts.app')] class extends Component
                     <option value="">Mostrar</option>
                     <option value="ocultar">Ocultar</option>
                     <option value="somente">Somente históricos</option>
+                </select>
+                <select wire:model.live="titular" aria-label="Gastos por titular do cartão" class="ml-2 h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
+                    <option value="">Todos os titulares</option>
+                    @foreach ($holderOptions as $value => $label)<option value="{{ $value }}">Cartão: {{ $label }}</option>@endforeach
                 </select>
                 <select wire:model.live="vinculo" aria-label="Filtrar por vínculo" class="ml-2 h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
                     <option value="">Todos os vínculos</option>
