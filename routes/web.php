@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\BrokerReportPdfController;
 use App\Http\Controllers\GoogleCalendarController;
+use App\Http\Controllers\GmailSendOAuthController;
 use App\Http\Controllers\WritPdfController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
@@ -22,6 +23,13 @@ Volt::route('configuracoes', 'settings.index')
 Volt::route('configuracoes/usuarios', 'settings.users')
     ->middleware(['auth', 'inactivity'])
     ->name('settings.users');
+
+Route::middleware(['auth', 'inactivity', 'throttle:20,1'])->prefix('configuracoes/email/google')->name('settings.email.google.')->group(function () {
+    Route::get('/connect', [GmailSendOAuthController::class, 'connect'])->name('connect');
+    Route::get('/callback', [GmailSendOAuthController::class, 'callback'])->name('callback');
+    Route::post('/disconnect', [GmailSendOAuthController::class, 'disconnect'])->name('disconnect');
+});
+
 
 // Aceite de convite (público; o token é conferido a cada requisição).
 Volt::route('convite/{token}', 'invite.accept')

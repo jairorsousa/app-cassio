@@ -5,20 +5,23 @@ namespace App\Support;
 use App\Jobs\SendUserInvitationEmail;
 use App\Mail\MailSenderSelfTestMail;
 use App\Mail\UserInvitationMail;
+use App\Models\GmailSendCredential;
 use App\Models\MailSenderSetting;
 use App\Models\User;
 use App\Models\UserInvitation;
+use App\Support\GmailSend\GmailSendAuthException;
+use App\Support\GmailSend\GmailSendOAuthService;
+use App\Support\GmailSend\GmailSendRetryableException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
- * Configuração SMTP do remetente de convites e disparo explícito de e-mail.
- * Override de transport só no momento do envio — não altera MAIL_MAILER global nem bootstrap.
+ * Envio de convites: transporte preferido google-oauth (Gmail API).
+ * SMTP legado permanece no banco/UI recolhida, mas NÃO é usado em silencio se OAuth não estiver pronto.
  */
 class InvitationMailService
 {
@@ -32,7 +35,6 @@ class InvitationMailService
 
     public const MSG_GENERIC = 'Falha ao enviar e-mail. Nenhum e-mail foi entregue. Use o link manual do convite.';
 
-    /** Somente o administrador id 1 configura o remetente SMTP. */
     public static function mailAdmin(?User $actor): User
     {
         abort_unless($actor && $actor->isActive() && $actor->isAdmin() && (int) $actor->id === 1, 403);
@@ -47,86 +49,82 @@ class InvitationMailService
         return $actor;
     }
 
+    public static function oauth(): GmailSendOAuthService
+    {
+        return app(GmailSendOAuthService::class);
+    }
+
+    /** Pronto para envio real = OAuth Gmail conectado (sem fallback SMTP). */
+    public static function isReadyToSend(): bool
+    {
+        return self::oauth()->isReady();
+    }
+
     public static function settingOrDefaults(): array
     {
         $s = MailSenderSetting::current();
         $d = MailSenderSetting::defaults();
-        if (! $s) {
-            return $d + [
-                'has_password' => false,
-                'password_format_ok' => false,
-                'is_ready' => false,
-                'password_set_at' => null,
-                'last_self_test_status' => null,
-                'last_self_test_at' => null,
-                'last_self_test_error' => null,
-            ];
-        }
+        $oauth = self::oauth()->status();
+        $smtp = [
+            'username' => $s->username ?? $d['username'],
+            'host' => $s->host ?? $d['host'],
+            'port' => (int) ($s->port ?? $d['port']),
+            'encryption' => $s->encryption ?? $d['encryption'],
+            'has_password' => $s?->hasPassword() ?? false,
+            'password_format_ok' => $s?->passwordFormatOk() ?? false,
+            'password_set_at' => $s?->password_set_at,
+            'last_self_test_status' => $s?->last_self_test_status,
+            'last_self_test_at' => $s?->last_self_test_at,
+            'last_self_test_error' => $s?->last_self_test_error,
+            'legacy_only' => true,
+        ];
 
-        return [
-            'username' => $s->username,
-            'host' => $s->host,
-            'port' => (int) $s->port,
-            'encryption' => $s->encryption,
-            'has_password' => $s->hasPassword(),
-            'password_format_ok' => $s->passwordFormatOk(),
-            'is_ready' => $s->isReadyToSend(),
-            'password_set_at' => $s->password_set_at,
-            'last_self_test_status' => $s->last_self_test_status,
-            'last_self_test_at' => $s->last_self_test_at,
-            'last_self_test_error' => $s->last_self_test_error,
+        return $smtp + [
+            'is_ready' => self::isReadyToSend(),
+            'transport' => $oauth['transport'],
+            'oauth' => $oauth,
         ];
     }
 
-    /**
-     * Classifica falha de transporte sem expor usuário/senha nem texto cru do provedor na UI.
-     *
-     * @return array{kind: string, message: string, retryable: bool}
-     */
     public static function classifyTransportFailure(\Throwable $e): array
     {
+        if ($e instanceof GmailSendAuthException) {
+            return ['kind' => 'auth', 'message' => GmailSendOAuthService::MSG_AUTH, 'retryable' => false];
+        }
+        if ($e instanceof GmailSendRetryableException) {
+            return ['kind' => 'transport', 'message' => GmailSendOAuthService::MSG_RETRY, 'retryable' => true];
+        }
         $hay = strtolower(class_basename($e).' '.$e->getMessage());
-        $authHints = ['535', 'badcredentials', 'authentication failed', 'authentica', 'username and password not accepted', 'invalid credentials', '5.7.8', '5.7.9', 'not authorized'];
+        $authHints = ['535', 'badcredentials', 'authentication failed', 'authentica', 'username and password not accepted', 'invalid credentials', '5.7.8', '5.7.9', 'not authorized', 'gmail_api_auth', 'refresh_failed'];
         foreach ($authHints as $hint) {
             if (str_contains($hay, $hint)) {
                 return ['kind' => 'auth', 'message' => self::MSG_AUTH, 'retryable' => false];
             }
         }
-        if ($e instanceof TransportExceptionInterface) {
+        if ($e instanceof \Symfony\Component\Mailer\Exception\TransportExceptionInterface) {
             return ['kind' => 'transport', 'message' => self::MSG_TRANSPORT, 'retryable' => true];
         }
 
         return ['kind' => 'other', 'message' => self::MSG_GENERIC, 'retryable' => true];
     }
 
-    /** Log seguro: só tipo/classe, sem mensagem do provedor (pode trazer username). */
     public static function logTransportFailure(string $context, \Throwable $e, array $classified): void
     {
-        Log::warning('invitation_smtp_failure', [
+        Log::warning('invitation_mail_failure', [
             'context' => $context,
             'kind' => $classified['kind'],
             'exception' => class_basename($e),
             'retryable' => $classified['retryable'],
+            'transport' => self::oauth()->isReady() ? 'google-oauth' : 'none',
         ]);
     }
 
     public static function recordSelfTestResult(string $status, ?string $safeError = null): void
     {
-        $s = MailSenderSetting::current();
-        if (! $s) {
-            return;
-        }
-        $s->forceFill([
-            'last_self_test_status' => $status,
-            'last_self_test_at' => now(),
-            'last_self_test_error' => $safeError !== null ? mb_substr($safeError, 0, 190) : null,
-        ])->save();
+        self::oauth()->recordSelfTest($status, $safeError);
+        // SMTP legado: não grava mais como fonte de verdade do teste.
     }
 
-    /**
-     * Salva remetente/host/porta. Senha em branco NÃO apaga a existente.
-     * $password null/'' = manter; string não vazia = gravar; $clearPassword=true = remover.
-     */
     public static function saveSettings(?User $actor, string $username, string $host, int $port, ?string $password = null, bool $clearPassword = false): MailSenderSetting
     {
         $actor = self::mailAdmin($actor);
@@ -162,14 +160,12 @@ class InvitationMailService
                 if (mb_strlen($password) > 200) {
                     throw ValidationException::withMessages(['smtpPassword' => 'Senha inválida.']);
                 }
-                // Google mostra a senha em grupos; espaços ASCII são opcionais e removidos.
                 $normalized = MailSenderSetting::normalizeAppPassword($password);
                 if (! preg_match('/^[a-z]{16}$/', $normalized)) {
                     throw ValidationException::withMessages(['smtpPassword' => 'Use a senha de aplicativo do Google (16 letras; os espaços entre grupos são opcionais). Não use a senha normal da conta.']);
                 }
                 $s->password = $normalized;
                 $s->password_set_at = now();
-                // Nova senha invalida o último teste (ainda não confirma entrega).
                 $s->last_self_test_status = null;
                 $s->last_self_test_at = null;
                 $s->last_self_test_error = null;
@@ -191,13 +187,11 @@ class InvitationMailService
         return self::saveSettings($actor, $s->username, $s->host, (int) $s->port, null, true);
     }
 
-    /** Aplica mailer SMTP só em memória para esta execução. */
     public static function configureRuntimeMailer(MailSenderSetting $setting): void
     {
         if (! $setting->isReadyToSend()) {
-            throw ValidationException::withMessages(['smtp' => 'Remetente SMTP incompleto: salve a senha de aplicativo antes de enviar.']);
+            throw ValidationException::withMessages(['smtp' => 'Remetente SMTP incompleto.']);
         }
-        // Laravel 12 resolve scheme smtp (STARTTLS) para porta 587; encryption legado é informativo.
         $password = MailSenderSetting::normalizeAppPassword((string) $setting->password);
         Config::set('mail.mailers.'.self::MAILER_NAME, [
             'transport' => 'smtp',
@@ -213,15 +207,12 @@ class InvitationMailService
         ]);
     }
 
-    /**
-     * @return array{0: UserInvitation, 1: string}
-     */
+    /** @return array{0: UserInvitation, 1: string} */
     public static function queueInvitationEmail(?User $actor, int $invitationId, ?string $knownToken = null): array
     {
         $actor = self::anyAdmin($actor);
-        $setting = MailSenderSetting::current();
-        if (! $setting || ! $setting->isReadyToSend()) {
-            throw ValidationException::withMessages(['inviteMail' => 'Configure o remetente SMTP (com senha) antes de enviar o convite por e-mail.']);
+        if (! self::isReadyToSend()) {
+            throw ValidationException::withMessages(['inviteMail' => GmailSendOAuthService::MSG_NOT_CONNECTED.' O envio por senha de aplicativo está desativado.']);
         }
 
         return DB::transaction(function () use ($actor, $invitationId, $knownToken) {
@@ -257,12 +248,10 @@ class InvitationMailService
         });
     }
 
-    /** Envia de fato (job). Falha de autenticação: marca failed e NÃO relança (sem retry inútil). */
     public static function deliver(int $invitationId, string $token, string $dispatchToken): void
     {
-        $setting = MailSenderSetting::current();
-        if (! $setting || ! $setting->isReadyToSend()) {
-            self::markFailed($invitationId, $dispatchToken, 'Remetente SMTP não configurado.');
+        if (! self::isReadyToSend()) {
+            self::markFailed($invitationId, $dispatchToken, GmailSendOAuthService::MSG_NOT_CONNECTED);
 
             return;
         }
@@ -282,19 +271,18 @@ class InvitationMailService
             return;
         }
 
-        self::configureRuntimeMailer($setting);
         $link = route('invite.accept', ['token' => $token]);
+        $from = (string) config('gmail-send.allowed_account');
+        $html = '<p>Olá, '.e($inv->name).'.</p><p>Você recebeu um convite. Use o link (válido até '
+            .e($inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i')).' Fortaleza):</p><p><a href="'.e($link).'">'.e($link).'</a></p>';
 
         try {
-            Mail::mailer(self::MAILER_NAME)
-                ->to($inv->email)
-                ->send(new UserInvitationMail(
-                    inviteeName: $inv->name,
-                    acceptUrl: $link,
-                    expiresAt: $inv->expires_at,
-                    fromAddress: $setting->username,
-                    fromName: config('app.name', 'App'),
-                ));
+            self::oauth()->sendHtml(
+                to: $inv->email,
+                subject: 'Convite para acessar '.config('app.name', 'o sistema'),
+                htmlBody: $html,
+                from: $from,
+            );
         } catch (\Throwable $e) {
             $info = self::classifyTransportFailure($e);
             self::logTransportFailure('invitation_deliver', $e, $info);
@@ -303,7 +291,7 @@ class InvitationMailService
                 throw $e;
             }
 
-            return; // auth permanente: worker não retenta
+            return;
         }
 
         DB::transaction(function () use ($invitationId, $dispatchToken) {
@@ -337,32 +325,27 @@ class InvitationMailService
         });
     }
 
-    /**
-     * Autoteste síncrono (Livewire): captura falha de transporte e devolve ValidationException amigável (sem 500).
-     */
+    /** Autoteste síncrono via Gmail API (OAuth). Sem SMTP. */
     public static function sendSelfTest(?User $actor): void
     {
         $actor = self::mailAdmin($actor);
-        $setting = MailSenderSetting::current();
-        if (! $setting || ! $setting->isReadyToSend()) {
-            throw ValidationException::withMessages(['smtpTest' => 'Salve a senha de aplicativo antes do teste.']);
+        if (! self::isReadyToSend()) {
+            throw ValidationException::withMessages(['smtpTest' => GmailSendOAuthService::MSG_NOT_CONNECTED]);
         }
-
+        $from = (string) config('gmail-send.allowed_account');
         try {
-            self::configureRuntimeMailer($setting);
-            Mail::mailer(self::MAILER_NAME)
-                ->to($setting->username)
-                ->send(new MailSenderSelfTestMail(
-                    fromAddress: $setting->username,
-                    fromName: config('app.name', 'App'),
-                ));
+            self::oauth()->sendHtml(
+                to: $from,
+                subject: 'Teste de remetente Gmail (convites)',
+                htmlBody: '<p>Este é um e-mail de teste do remetente Gmail OAuth. Nenhum convite foi criado.</p>',
+                from: $from,
+            );
         } catch (\Throwable $e) {
             $info = self::classifyTransportFailure($e);
-            self::logTransportFailure('smtp_self_test', $e, $info);
+            self::logTransportFailure('gmail_self_test', $e, $info);
             self::recordSelfTestResult('failed', $info['message']);
             throw ValidationException::withMessages(['smtpTest' => $info['message']]);
         }
-
         self::recordSelfTestResult('ok', null);
     }
 }

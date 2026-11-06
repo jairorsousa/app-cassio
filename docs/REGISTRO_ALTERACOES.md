@@ -581,3 +581,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Meta do segredo no DB (só booleanos/comprimento): **não** é senha de aplicativo Google — comprimento ≠ 16 letras a–z (havia mistura de maiúsculas/dígitos/outros). Isso basta para explicar BadCredentials com 2SV e app passwords geradas: o valor persistido não era o formato esperado.
 - Correção: ao salvar, remove espaços ASCII dos grupos e exige `^[a-z]{16}$`; UI mostra aviso `data-smtp-format-bad` se a senha já gravada estiver fora do formato (sem mostrar comprimento/valor). Log de produção: e-mail do remetente e dumps longos de BadCredentials redigidos; views cache limpo.
 - Sem envio real nesta correção. Próximo teste só após o operador colar de novo a senha de aplicativo (16 letras) e salvar.
+
+## 2026-11-06 — Convites: Gmail OAuth (gmail.send) no lugar de senha de aplicativo
+
+- Transporte preferido: **google-oauth** via Gmail API `users/me/messages/send`. Sem fallback silencioso para SMTP/senha de app (legado permanece no banco, UI recolhida, não usado automaticamente).
+- OAuth isolado da Agenda e do login: callback próprio `https://app.cassiomota.com/configuracoes/email/google/callback`, `include_granted_scopes=false`, PKCE S256, `prompt=consent`, `access_type=offline`, state de uso único na sessão.
+- Escopos: `openid` + `email` (verificar conta) + `https://www.googleapis.com/auth/gmail.send`. Conta deve ser exatamente `cassio@cassiomota.com`. Tokens em `gmail_send_credentials` (encrypted). Desconectar apaga tokens locais (sem revoke automático no Google).
+- Reaproveita client_id/secret da Agenda via `config/gmail-send.php` (sem imprimir segredos). Calendar scopes inalterados.
+- UI: “Conectar Gmail somente para envio de convites”; teste explícito; enviar convite na fila Redis. Conectar ≠ enviar.
+- Testes: `GmailSendOAuthTest` + `InvitationMailTest` com `FakeGmailSendClient` (sem rede). Registrar callback no Console e ativar Gmail API antes do connect real.

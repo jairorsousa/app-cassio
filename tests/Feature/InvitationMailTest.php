@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Jobs\SendUserInvitationEmail;
 use App\Mail\MailSenderSelfTestMail;
 use App\Mail\UserInvitationMail;
+use App\Models\GmailSendCredential;
 use App\Models\MailSenderSetting;
+use App\Support\GmailSend\GmailSendClient;
 use App\Models\User;
 use App\Models\UserInvitation;
 use App\Support\InvitationMailService;
@@ -20,10 +22,43 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
+use Tests\Feature\FakeGmailSendClient;
 
 class InvitationMailTest extends TestCase
 {
     use RefreshDatabase;
+
+    private FakeGmailSendClient $gmailFake;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config([
+            'gmail-send.enabled' => true,
+            'gmail-send.client_id' => 'test-client-id',
+            'gmail-send.client_secret' => 'test-client-secret',
+            'gmail-send.redirect_uri' => 'https://app.cassiomota.com/configuracoes/email/google/callback',
+            'gmail-send.allowed_account' => 'cassio@cassiomota.com',
+        ]);
+        $this->gmailFake = new FakeGmailSendClient;
+        $this->app->instance(GmailSendClient::class, $this->gmailFake);
+    }
+
+    private function connectOAuth(User $admin): void
+    {
+        GmailSendCredential::query()->updateOrCreate(
+            ['provider' => GmailSendCredential::PROVIDER],
+            [
+                'account_email' => 'cassio@cassiomota.com',
+                'access_token' => 'access-test-token',
+                'refresh_token' => 'refresh-test-token',
+                'expires_at' => now()->addHour(),
+                'scopes' => ['openid', 'email', 'https://www.googleapis.com/auth/gmail.send'],
+                'connected_by_user_id' => $admin->id,
+                'connected_at' => now(),
+            ]
+        );
+    }
 
     private function ownerAdmin(): User
     {
@@ -48,13 +83,17 @@ class InvitationMailTest extends TestCase
 
     private function withPassword(User $admin, string $password = 'abcd efgh ijkl mnop'): MailSenderSetting
     {
-        return InvitationMailService::saveSettings(
+        $s = InvitationMailService::saveSettings(
             $admin,
             MailSenderSetting::ALLOWED_USERNAME,
             MailSenderSetting::DEFAULT_HOST,
             MailSenderSetting::DEFAULT_PORT,
             $password,
         );
+        // Envio agora exige OAuth; SMTP legado sozinho não habilita transporte.
+        $this->connectOAuth($admin);
+
+        return $s;
     }
 
     public function test_id1_can_save_sender_without_password_and_blank_save_keeps_secret(): void
@@ -114,43 +153,35 @@ class InvitationMailTest extends TestCase
         [$inv] = UserAccessService::invite($admin, 'Ana', 'ana@example.com', ['contatos']);
         $this->assertNull($inv->email_delivery_status);
         Queue::assertNothingPushed();
-        Mail::assertNothingSent();
+        $this->assertCount(0, $this->gmailFake->sent);
 
         UserAccessService::regenerate($admin, $inv->id);
         Queue::assertNothingPushed();
-        Mail::assertNothingSent();
+        $this->assertCount(0, $this->gmailFake->sent);
         $this->assertNull($inv->fresh()->email_delivery_status);
         $this->assertNull($inv->fresh()->accepted_at);
     }
 
     public function test_explicit_send_queues_uses_fixed_from_and_marks_sent_without_accepting(): void
     {
-        Mail::fake();
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
         $this->actingAs($admin);
         [$inv, $token] = UserAccessService::invite($admin, 'Bia', 'bia@example.com', ['financeiro']);
 
         [$queued, $sendToken] = InvitationMailService::queueInvitationEmail($admin, $inv->id, $token);
-        // QUEUE_CONNECTION=sync em phpunit: o job roda dentro do dispatch e já marca sent.
         $fresh = $inv->fresh();
         $this->assertSame('sent', $fresh->email_delivery_status);
         $this->assertContains($queued->email_delivery_status, ['queued', 'sent']);
         $this->assertNotNull($fresh->email_sent_at);
         $this->assertNull($fresh->accepted_at);
         $this->assertSame('pending', $fresh->status());
-
-        Mail::assertSent(UserInvitationMail::class, function (UserInvitationMail $mail) use ($sendToken) {
-            return $mail->hasTo('bia@example.com')
-                && $mail->fromAddress === 'cassio@cassiomota.com'
-                && str_contains($mail->acceptUrl, $sendToken)
-                && str_starts_with($mail->acceptUrl, 'http');
-        });
-
-        $this->assertSame('smtp.gmail.com', Config::get('mail.mailers.invitation_smtp.host'));
-        $this->assertSame(587, Config::get('mail.mailers.invitation_smtp.port'));
-        $this->assertSame(15, Config::get('mail.mailers.invitation_smtp.timeout'));
-        $this->assertNotSame('invitation_smtp', Config::get('mail.default'));
+        $this->assertNotEmpty($this->gmailFake->sent);
+        $raw = $this->gmailFake->sent[0]['raw'];
+        $this->assertStringContainsString('From: cassio@cassiomota.com', $raw);
+        $this->assertStringContainsString('To: bia@example.com', $raw);
+        $this->assertStringContainsString($sendToken, $raw);
+        $this->assertSame('array', Config::get('mail.default'));
     }
 
     public function test_parallel_send_is_idempotent_while_queued(): void
@@ -176,12 +207,11 @@ class InvitationMailTest extends TestCase
 
     public function test_failed_delivery_can_retry_and_does_not_accept(): void
     {
-        Mail::fake();
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
         [$inv, $token] = UserAccessService::invite($admin, 'Dan', 'dan@example.com', ['contatos']);
 
-        InvitationMailService::markFailed($inv->id, 'tok', 'x'); // token errado: no-op
+        InvitationMailService::markFailed($inv->id, 'tok', 'x');
         $dispatch = 'dispatch-token-for-fail-test-aaaaaaaa';
         $inv->forceFill([
             'email_delivery_status' => 'queued',
@@ -192,21 +222,21 @@ class InvitationMailTest extends TestCase
         $this->assertSame('failed', $inv->fresh()->email_delivery_status);
         $this->assertNull($inv->fresh()->accepted_at);
 
-        // Retry após falha
         InvitationMailService::queueInvitationEmail($admin, $inv->id, null);
         $this->assertSame('sent', $inv->fresh()->email_delivery_status);
         $this->assertSame(2, (int) $inv->fresh()->email_attempts);
-        Mail::assertSent(UserInvitationMail::class, 1);
+        $this->assertNotEmpty($this->gmailFake->sent);
     }
 
     public function test_send_blocked_without_password_and_non_admin(): void
     {
         $admin = $this->ownerAdmin();
         InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, null);
+        // sem connectOAuth
         [$inv] = UserAccessService::invite($admin, 'Eva', 'eva@example.com', ['contatos']);
         try {
             InvitationMailService::queueInvitationEmail($admin, $inv->id);
-            $this->fail('enviou sem senha');
+            $this->fail('enviou sem oauth');
         } catch (ValidationException $e) {
             $this->assertArrayHasKey('inviteMail', $e->errors());
         }
@@ -223,12 +253,12 @@ class InvitationMailTest extends TestCase
 
     public function test_self_test_only_to_configured_sender(): void
     {
-        Mail::fake();
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
         InvitationMailService::sendSelfTest($admin);
-        Mail::assertSent(MailSenderSelfTestMail::class, fn ($m) => $m->hasTo('cassio@cassiomota.com'));
-        Mail::assertNotSent(UserInvitationMail::class);
+        $this->assertCount(1, $this->gmailFake->sent);
+        $this->assertStringContainsString('To: cassio@cassiomota.com', $this->gmailFake->sent[0]['raw']);
+        $this->assertSame(0, UserInvitation::count());
     }
 
     public function test_volt_ui_hides_password_and_supports_send_button(): void
@@ -238,7 +268,7 @@ class InvitationMailTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('settings.users')
-            ->assertSee('Remetente de e-mail')
+            ->assertSee('Remetente de e-mail (Gmail OAuth)')
             ->set('smtpUsername', 'cassio@cassiomota.com')
             ->set('smtpHost', 'smtp.gmail.com')
             ->set('smtpPort', 587)
@@ -249,7 +279,9 @@ class InvitationMailTest extends TestCase
 
         $html = $this->get(route('settings.users'))->assertOk()->getContent();
         $this->assertStringNotContainsString('abcdefghijklmnop', $html);
-        $this->assertStringContainsString('Senha já gravada', $html);
+        $this->assertStringContainsString('Há senha de aplicativo ainda gravada', $html);
+
+        $this->connectOAuth($admin);
 
         $c = Volt::test('settings.users')
             ->set('inviteName', 'Fê')
@@ -260,10 +292,10 @@ class InvitationMailTest extends TestCase
         $id = $c->get('generatedInvitationId');
         $this->assertNotNull($id);
         // Criar não envia
-        Mail::assertNothingSent();
+        $this->assertCount(0, $this->gmailFake->sent);
 
         $c->call('sendInvitationEmail', $id)->assertHasNoErrors();
-        Mail::assertSent(UserInvitationMail::class, 1);
+        $this->assertNotEmpty($this->gmailFake->sent);
         $this->assertSame('sent', UserInvitation::find($id)->email_delivery_status);
 
         // Snapshot Livewire não deve reidratar senha do banco
@@ -303,41 +335,34 @@ class InvitationMailTest extends TestCase
         $this->withPassword($admin);
         $this->actingAs($admin);
 
-        $mailer = \Mockery::mock();
-        $mailer->shouldReceive('to')->once()->andReturnSelf();
-        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('535-5.7.8 BadCredentials Username and Password not accepted'));
-        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
+        $this->gmailFake->sendFail = 'auth';
 
         try {
             InvitationMailService::sendSelfTest($admin);
             $this->fail('deveria falhar com ValidationException');
         } catch (ValidationException $e) {
             $this->assertArrayHasKey('smtpTest', $e->errors());
-            $this->assertSame(InvitationMailService::MSG_AUTH, $e->errors()['smtpTest'][0]);
-            $this->assertStringNotContainsString('BadCredentials', $e->errors()['smtpTest'][0]);
+            $this->assertSame(\App\Support\GmailSend\GmailSendOAuthService::MSG_AUTH, $e->errors()['smtpTest'][0]);
         }
 
-        $s = MailSenderSetting::current()->fresh();
-        $this->assertSame('failed', $s->last_self_test_status);
-        $this->assertNotNull($s->last_self_test_at);
-        $this->assertSame(InvitationMailService::MSG_AUTH, $s->last_self_test_error);
-        $this->assertTrue($s->isReadyToSend(), 'senha continua; teste falho ≠ apagar config');
-        Log::shouldHaveReceived('warning')->withArgs(fn ($msg, $ctx) => $msg === 'invitation_smtp_failure'
+        $cred = GmailSendCredential::current()->fresh();
+        $this->assertSame('failed', $cred->last_self_test_status);
+        $this->assertNotNull($cred->last_self_test_at);
+        $this->assertTrue(InvitationMailService::isReadyToSend());
+        Log::shouldHaveReceived('warning')->withArgs(fn ($msg, $ctx) => $msg === 'invitation_mail_failure'
             && ($ctx['kind'] ?? null) === 'auth'
-            && ! str_contains(json_encode($ctx), 'cassio@cassiomota.com')
-            && ! str_contains(json_encode($ctx), 'BadCredentials'));
+            && ! str_contains(json_encode($ctx), 'refresh-test-token'));
 
         Volt::test('settings.users')
             ->assertSee('data-smtp-last-test="failed"', false)
-            ->assertSee('O Google recusou a autenticação SMTP')
-            ->assertDontSee('BadCredentials');
+            ->assertDontSee('refresh-test-token');
     }
 
     public function test_deliver_auth_failure_marks_failed_without_rethrow(): void
     {
-        Log::spy();
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
+        $this->gmailFake->sendFail = 'auth';
         [$inv, $token] = UserAccessService::invite($admin, 'Hal', 'hal@example.com', ['contatos']);
         $dispatch = 'dispatch-auth-fail-token-bbbbbbbbbbbbbbbb';
         $inv->forceFill([
@@ -346,16 +371,11 @@ class InvitationMailTest extends TestCase
             'email_attempts' => 1,
         ])->save();
 
-        $mailer = \Mockery::mock();
-        $mailer->shouldReceive('to')->once()->andReturnSelf();
-        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('535 BadCredentials'));
-        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
-
-        InvitationMailService::deliver($inv->id, $token, $dispatch); // não deve lançar
+        InvitationMailService::deliver($inv->id, $token, $dispatch);
 
         $fresh = $inv->fresh();
         $this->assertSame('failed', $fresh->email_delivery_status);
-        $this->assertSame(InvitationMailService::MSG_AUTH, $fresh->email_last_error);
+        $this->assertSame(\App\Support\GmailSend\GmailSendOAuthService::MSG_AUTH, $fresh->email_last_error);
         $this->assertNull($fresh->accepted_at);
         $this->assertSame('pending', $fresh->status());
     }
@@ -364,6 +384,7 @@ class InvitationMailTest extends TestCase
     {
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
+        $this->gmailFake->sendFail = 'rate';
         [$inv, $token] = UserAccessService::invite($admin, 'Ivo', 'ivo@example.com', ['contatos']);
         $dispatch = 'dispatch-transient-token-cccccccccccccccc';
         $inv->forceFill([
@@ -372,31 +393,24 @@ class InvitationMailTest extends TestCase
             'email_attempts' => 1,
         ])->save();
 
-        $mailer = \Mockery::mock();
-        $mailer->shouldReceive('to')->once()->andReturnSelf();
-        $mailer->shouldReceive('send')->once()->andThrow(new TransportException('Connection timed out talking to smtp'));
-        Mail::shouldReceive('mailer')->once()->with('invitation_smtp')->andReturn($mailer);
-
         try {
             InvitationMailService::deliver($inv->id, $token, $dispatch);
             $this->fail('deveria relançar para retry');
-        } catch (TransportException $e) {
-            $this->assertStringContainsString('timed out', $e->getMessage());
+        } catch (\Throwable $e) {
+            $this->assertStringContainsString('gmail_api_rate', $e->getMessage());
         }
         $this->assertSame('failed', $inv->fresh()->email_delivery_status);
-        $this->assertSame(InvitationMailService::MSG_TRANSPORT, $inv->fresh()->email_last_error);
+        $this->assertSame(\App\Support\GmailSend\GmailSendOAuthService::MSG_RETRY, $inv->fresh()->email_last_error);
     }
 
     public function test_self_test_success_records_ok_without_pretending_invite_sent(): void
     {
-        Mail::fake();
         $admin = $this->ownerAdmin();
         $this->withPassword($admin);
         InvitationMailService::sendSelfTest($admin);
-        $s = MailSenderSetting::current()->fresh();
-        $this->assertSame('ok', $s->last_self_test_status);
-        $this->assertNull($s->last_self_test_error);
-        Mail::assertSent(MailSenderSelfTestMail::class, 1);
+        $cred = GmailSendCredential::current()->fresh();
+        $this->assertSame('ok', $cred->last_self_test_status);
+        $this->assertNull($cred->last_self_test_error);
         $this->assertSame(0, UserInvitation::count());
     }
 
@@ -406,15 +420,11 @@ class InvitationMailTest extends TestCase
         $this->withPassword($admin);
         $this->actingAs($admin);
 
-        $mailer = \Mockery::mock();
-        $mailer->shouldReceive('to')->andReturnSelf();
-        $mailer->shouldReceive('send')->andThrow(new TransportException('535-5.7.8 Username and Password not accepted'));
-        Mail::shouldReceive('mailer')->with('invitation_smtp')->andReturn($mailer);
+        $this->gmailFake->sendFail = 'auth';
 
         Volt::test('settings.users')
             ->call('sendSmtpSelfTest')
-            ->assertHasErrors('smtpTest')
-            ->assertSee('O Google recusou a autenticação SMTP');
+            ->assertHasErrors('smtpTest');
     }
 
 

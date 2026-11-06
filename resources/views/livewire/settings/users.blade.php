@@ -4,6 +4,7 @@ use App\Models\MailSenderSetting;
 use App\Models\User;
 use App\Models\UserInvitation;
 use App\Support\Access;
+use App\Support\GmailSend\GmailSendOAuthService;
 use App\Support\InvitationMailService;
 use App\Support\UserAccessService;
 use Illuminate\Validation\ValidationException;
@@ -185,8 +186,16 @@ new #[Layout('layouts.app')] class extends Component {
         abort_unless((int) auth()->id() === 1, 403);
         $this->guarded(function () {
             InvitationMailService::sendSelfTest(auth()->user());
-            $this->notice = 'E-mail de teste enviado apenas para o próprio remetente configurado.';
+            $this->notice = 'E-mail de teste enviado via Gmail OAuth apenas para o próprio remetente.';
         });
+    }
+
+    public function disconnectGmail(): void
+    {
+        $this->resetErrorBag();
+        abort_unless((int) auth()->id() === 1, 403);
+        app(GmailSendOAuthService::class)->disconnect(auth()->user());
+        $this->notice = 'Conexão Gmail de convites removida (tokens locais apagados).';
     }
 
     public function with(): array
@@ -221,56 +230,57 @@ new #[Layout('layouts.app')] class extends Component {
     @error('smtpTest')<x-jr.alert variant="error">{{ $message }}</x-jr.alert>@enderror
 
     @if ($canConfigureSmtp)
-        <x-jr.card data-smtp-settings>
-            <h3 class="font-bold">Remetente de e-mail (Google SMTP)</h3>
-            <p class="mt-1 text-sm text-mono-600">Somente o administrador principal (id 1) configura. Remetente fixo <code>{{ \App\Models\MailSenderSetting::ALLOWED_USERNAME }}</code>, host <code>smtp.gmail.com</code>, porta 587 TLS. A senha de aplicativo é gravada criptografada; nunca aparece de volta neste formulário.</p>
-            <form wire:submit="saveSmtp" class="mt-3 space-y-3" autocomplete="off">
-                <div class="grid gap-3 md:grid-cols-3">
-                    <x-jr.input label="Remetente / usuário *" name="smtpUsername" wire:model="smtpUsername" maxlength="190" data-smtp-username />
-                    <x-jr.input label="Host *" name="smtpHost" wire:model="smtpHost" maxlength="190" data-smtp-host />
-                    <x-jr.input label="Porta *" name="smtpPort" type="number" wire:model="smtpPort" data-smtp-port />
-                </div>
-                @error('smtpUsername')<p class="text-xs text-error">{{ $message }}</p>@enderror
-                @error('smtpHost')<p class="text-xs text-error">{{ $message }}</p>@enderror
-                @error('smtpPort')<p class="text-xs text-error">{{ $message }}</p>@enderror
-                <div>
-                    <x-jr.input label="Senha de aplicativo Google" name="smtpPassword" type="password" wire:model="smtpPassword" maxlength="200" autocomplete="new-password" data-smtp-password />
-                    <p class="mt-1 text-xs text-mono-600">
-                        @if ($smtp['has_password'] ?? false)
-                            Senha já gravada (valor oculto). Deixe em branco ao salvar para manter a atual.
-                            @if (!($smtp['password_format_ok'] ?? false))
-                                <span class="mt-1 block text-error" data-smtp-format-bad>A senha gravada não está no formato de senha de aplicativo Google (16 letras a–z; espaços entre grupos ok). Isso explica recusa 535 — cole de novo a senha de aplicativo (não a senha normal da conta) e salve.</span>
-                            @endif
-                        @else
-                            Ainda sem senha: dá para salvar remetente/host agora; o envio só fica disponível depois de gravar a senha aqui. Cole a senha de 16 letras; espaços entre grupos são aceitos.
-                        @endif
+        <x-jr.card data-gmail-oauth>
+            <h3 class="font-bold">Remetente de e-mail (Gmail OAuth)</h3>
+            <p class="mt-1 text-sm text-mono-600">Somente o administrador principal (id 1). Conecta o Google <strong>só para enviar convites</strong> (escopo <code>gmail.send</code> + verificação de e-mail). Não altera Agenda nem login Google. Remetente fixo <code>{{ $smtp['oauth']['allowed_account'] ?? 'cassio@cassiomota.com' }}</code>.</p>
+            @error('gmailOAuth')<x-jr.alert variant="error">{{ $message }}</x-jr.alert>@enderror
+            @if (session('status'))<x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>@endif
+
+            <div class="mt-3 space-y-2 text-sm" data-gmail-oauth-status>
+                @if (!($smtp['oauth']['configured'] ?? false))
+                    <p class="text-error">Cliente OAuth não configurado no servidor (reaproveita o client da Agenda). Avise o operador.</p>
+                @elseif ($smtp['oauth']['connected'] ?? false)
+                    <p class="text-primary-600" data-gmail-connected>
+                        Conectado: <strong>{{ $smtp['oauth']['account_email'] }}</strong>
+                        @if ($smtp['oauth']['connected_at']) · desde {{ $smtp['oauth']['connected_at']->timezone('America/Fortaleza')->format('d/m/Y H:i') }} (Fortaleza)@endif
+                        · transporte <code>google-oauth</code>
                     </p>
-                    @error('smtpPassword')<p class="text-xs text-error">{{ $message }}</p>@enderror
-                </div>
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="space-y-1 text-xs text-mono-600" data-smtp-status>
-                        @if ($smtp['is_ready'] ?? false)
-                            <p>Configuração: senha gravada (remetente completo). Isso <strong>não</strong> confirma entrega — só o teste explícito ou um envio real mostram o resultado.</p>
-                        @else
-                            <p>Configuração incompleta para envio (falta senha ou remetente fora do padrão).</p>
-                        @endif
-                        @if (($smtp['last_self_test_status'] ?? null) === 'ok')
-                            <p class="text-primary-600" data-smtp-last-test="ok">Último teste do remetente: ok em {{ optional($smtp['last_self_test_at'])->timezone('America/Fortaleza')?->format('d/m/Y H:i') }} (Fortaleza). Não substitui o envio de cada convite.</p>
-                        @elseif (($smtp['last_self_test_status'] ?? null) === 'failed')
-                            <p class="text-error" data-smtp-last-test="failed">Último teste do remetente: falhou{{ $smtp['last_self_test_at'] ? ' em '.$smtp['last_self_test_at']->timezone('America/Fortaleza')->format('d/m/Y H:i').' (Fortaleza)' : '' }}. {{ $smtp['last_self_test_error'] }} O link manual do convite continua disponível.</p>
-                        @elseif ($smtp['is_ready'] ?? false)
-                            <p data-smtp-last-test="none">Nenhum teste bem-sucedido registrado ainda — não trate a configuração como entrega confirmada.</p>
-                        @endif
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        @if ($smtp['has_password'] ?? false)
-                            <button type="button" wire:click="clearSmtpPassword" wire:confirm="Remover a senha de aplicativo salva?" class="h-10 rounded-xl border border-error px-3 text-sm text-error" data-smtp-clear>Remover senha</button>
-                            <button type="button" wire:click="sendSmtpSelfTest" wire:confirm="Enviar e-mail de teste só para {{ $smtp['username'] }}?" class="h-10 rounded-xl border border-mono-200 px-3 text-sm" data-smtp-self-test>Testar remetente (só para mim)</button>
-                        @endif
-                        <button type="submit" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white" data-smtp-save>Salvar remetente</button>
-                    </div>
-                </div>
-            </form>
+                    <p class="text-xs text-mono-600">Escopos gravados: {{ implode(' ', $smtp['oauth']['scopes'] ?? []) }}</p>
+                    @if (($smtp['oauth']['last_self_test_status'] ?? null) === 'ok')
+                        <p class="text-xs text-primary-600" data-smtp-last-test="ok">Último teste: ok{{ $smtp['oauth']['last_self_test_at'] ? ' em '.$smtp['oauth']['last_self_test_at']->timezone('America/Fortaleza')->format('d/m/Y H:i') : '' }}. Conectar ≠ entrega confirmada até o teste explícito.</p>
+                    @elseif (($smtp['oauth']['last_self_test_status'] ?? null) === 'failed')
+                        <p class="text-xs text-error" data-smtp-last-test="failed">Último teste: falhou. {{ $smtp['oauth']['last_self_test_error'] }} Link manual do convite continua disponível.</p>
+                    @else
+                        <p class="text-xs text-mono-600" data-smtp-last-test="none">Conectado, mas ainda sem teste de envio. Nenhum e-mail sai só por conectar.</p>
+                    @endif
+                @else
+                    <p data-gmail-disconnected>Status: <strong>não conectado</strong>. Envio por e-mail indisponível (senha de aplicativo não é mais usada automaticamente).</p>
+                @endif
+            </div>
+
+            <div class="mt-3 flex flex-wrap gap-2">
+                @if ($smtp['oauth']['configured'] ?? false)
+                    @if (!($smtp['oauth']['connected'] ?? false))
+                        <a href="{{ route('settings.email.google.connect') }}" class="inline-flex h-10 items-center rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white" data-gmail-connect>Conectar Gmail somente para envio de convites</a>
+                    @else
+                        <button type="button" wire:click="sendSmtpSelfTest" wire:confirm="Enviar e-mail de teste só para {{ $smtp['oauth']['allowed_account'] }} via Gmail API?" class="h-10 rounded-xl border border-mono-200 px-3 text-sm" data-smtp-self-test>Testar remetente (só para mim)</button>
+                        <button type="button" wire:click="disconnectGmail" wire:confirm="Remover tokens Gmail deste sistema? (não revoga no Google automaticamente)" class="h-10 rounded-xl border border-error px-3 text-sm text-error" data-gmail-disconnect>Desconectar</button>
+                        <a href="{{ route('settings.email.google.connect') }}" class="inline-flex h-10 items-center rounded-xl border border-mono-200 px-3 text-sm" data-gmail-reconnect>Reconectar</a>
+                    @endif
+                @endif
+            </div>
+            <p class="mt-3 text-xs text-mono-600">Callback a registrar no Google Cloud Console: <code>{{ $smtp['oauth']['redirect_uri'] ?? '' }}</code>. Ative a Gmail API. Escopo de correio: só gmail.send.</p>
+        </x-jr.card>
+
+        <x-jr.card data-smtp-settings data-smtp-legacy>
+            <h3 class="font-bold text-mono-600">Legado SMTP (não usado para envio)</h3>
+            <p class="mt-1 text-xs text-mono-600">Mantido só como registro. O envio de convites usa Gmail OAuth quando conectado; não há fallback silencioso para senha de aplicativo.</p>
+            @if ($smtp['has_password'] ?? false)
+                <p class="mt-2 text-xs text-mono-600">Há senha de aplicativo ainda gravada (oculta).@if (!($smtp['password_format_ok'] ?? false)) <span class="text-error" data-smtp-format-bad> Formato inválido para senha de aplicativo Google.</span>@endif Não é usada automaticamente.</p>
+                <button type="button" wire:click="clearSmtpPassword" wire:confirm="Remover a senha de aplicativo legada?" class="mt-2 h-9 rounded-xl border border-error px-3 text-xs text-error" data-smtp-clear>Remover senha legada</button>
+            @else
+                <p class="mt-2 text-xs text-mono-600">Nenhuma senha SMTP gravada.</p>
+            @endif
         </x-jr.card>
     @endif
 
@@ -283,7 +293,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <button type="button" class="h-10 rounded-xl border border-mono-200 px-3 text-sm" @click="navigator.clipboard.writeText(@js($generatedLink)); copied = true">
                     <span x-text="copied ? 'Copiado' : 'Copiar link'">Copiar link</span>
                 </button>
-                @php($mailReady = \App\Models\MailSenderSetting::current()?->isReadyToSend())
+                @php($mailReady = \App\Support\InvitationMailService::isReadyToSend())
                 @if ($generatedInvitationId && $mailReady)
                     <button type="button" wire:click="sendInvitationEmail({{ $generatedInvitationId }})" class="h-10 rounded-xl bg-primary-500 px-3 text-sm font-semibold text-white" data-send-invite-email>Enviar por e-mail</button>
                 @endif
@@ -322,7 +332,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <p class="font-semibold">{{ $u->name }} @if ($u->is_admin)<span class="ml-1 rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-600">Administrador</span>@endif</p>
                             <p class="text-xs text-mono-600">{{ $u->email }} · {{ $u->status === 'blocked' ? 'Bloqueado' : 'Ativo' }}</p>
                         </div>
-                        @unless ($u->is_admin || $u->id === auth()->id())
+                        @if (!($u->is_admin || $u->id === auth()->id()))
                             <div class="flex gap-2 text-xs">
                                 @if ($u->status === 'blocked')
                                     <button type="button" wire:click="reactivate({{ $u->id }})" class="h-9 rounded-xl border border-mono-200 px-3">Reativar</button>
@@ -330,7 +340,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     <button type="button" wire:click="block({{ $u->id }})" wire:confirm="Bloquear {{ $u->name }}? Ele sai do sistema na próxima ação." class="h-9 rounded-xl border border-error px-3 text-error">Bloquear</button>
                                 @endif
                             </div>
-                        @endunless
+                        @endif
                     </div>
                     @if ($u->is_admin)
                         <p class="mt-1 text-xs text-mono-600">Acesso total, incluindo esta página.</p>
@@ -352,7 +362,7 @@ new #[Layout('layouts.app')] class extends Component {
         <ul class="mt-3 divide-y divide-mono-100 text-sm">
             @forelse ($invitations as $inv)
                 @php($st = $inv->status())
-                @php($mailReady = \App\Models\MailSenderSetting::current()?->isReadyToSend())
+                @php($mailReady = \App\Support\InvitationMailService::isReadyToSend())
                 <li class="flex flex-wrap items-center justify-between gap-2 py-2" wire:key="inv-{{ $inv->id }}" data-invitation="{{ $inv->id }}">
                     <span>{{ $inv->name }} <span class="text-xs text-mono-600">{{ $inv->email }} · {{ \App\Models\UserInvitation::STATUS_LABELS[$st] }} · {{ $inv->deliveryLabel() }}@if ($inv->email_last_error) ({{ $inv->email_last_error }})@endif · válido até {{ $inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ implode(', ', array_map(fn ($m) => $moduleLabels[$m] ?? $m, (array) $inv->modules)) }}</span></span>
                     @if ($st !== 'accepted')
