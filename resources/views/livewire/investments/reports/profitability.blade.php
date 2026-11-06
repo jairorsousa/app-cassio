@@ -40,6 +40,7 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Investimentos</x-slot>
 <div class="investment-area">
     <x-investments.subnav />
+    <x-investments.b3-notice what="report" />
     <div><h2 class="text-2xl font-bold">Rentabilidade e resultados</h2><p class="mt-2 text-sm text-mono-600">Analise o resultado das vendas e os proventos efetivamente recebidos no período.</p></div>
     <x-jr.card>
         <form wire:submit="applyFilters" class="flex flex-wrap items-end gap-4">

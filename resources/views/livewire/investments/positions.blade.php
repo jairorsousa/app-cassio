@@ -105,7 +105,7 @@ new #[Layout('layouts.app')] class extends Component {
 
 <x-slot name="header">Investimentos · Posições</x-slot>
 
-<div class="investment-area"><x-investments.subnav />
+<div class="investment-area"><x-investments.subnav /><x-investments.b3-notice what="positions" />
 <div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-2xl font-bold">Minha carteira</h2><p class="mt-2 text-sm text-mono-600">Posições abertas, preço médio, valor atual e resultado por ativo.</p></div><div class="flex flex-wrap gap-2"><x-jr.button variant="standard" wire:click="refreshQuotes" wire:loading.attr="disabled"><span class="material-icons-outlined text-[18px]">sync</span><span wire:loading.remove>Atualizar cotações</span><span wire:loading>Atualizando...</span></x-jr.button><x-jr.button href="{{ route('investments.operations.index') }}">Registrar movimentação</x-jr.button></div></div>
 <x-jr.card><x-jr.input label="Buscar na carteira" icon="search" wire:model.live.debounce.300ms="search" placeholder="Código ou nome do ativo" /></x-jr.card>
 <x-jr.card>

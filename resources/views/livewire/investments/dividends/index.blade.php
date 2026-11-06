@@ -134,6 +134,7 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="investment-area">
     <x-investments.subnav />
+    <x-investments.b3-notice what="income" />
     @if (session('error'))<x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>@endif
     <div class="flex flex-wrap items-center justify-between gap-4"><div><h2 class="text-xl font-bold">Proventos</h2><p class="mt-1 text-sm text-mono-600">Histórico dos dividendos e rendimentos recebidos por ativo.</p></div><x-jr.button wire:click="create"><span class="material-icons-outlined text-[18px]">add</span>Novo provento</x-jr.button></div>
 <x-jr.card>

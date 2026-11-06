@@ -424,3 +424,8 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Pendente (não alterado): worker `--timeout=120` e `retry_after=90` menores que `timeout=600` do job de cotações.
 - Resolvido: worker `queue:work --timeout=660` (docker-compose.yml) e `REDIS_QUEUE_RETRY_AFTER=700` no .env (não versionado; documentado em .env.example), acima do `timeout=600` do job de cotações. `queue:restart` + recriado só o worker (`up -d --no-deps --force-recreate worker`), sem rebuild. Config sem cache; app e worker leem retry_after=700. Agenda de cotações inalterada.
 - Limpeza: removido 1 arquivo temporário do Livewire com mais de 24 h (livewire-tmp). Bens compartilhados entre usuários por decisão (uso doméstico).
+
+## 2026-11-06 — Conferência de navegação (Investimentos)
+
+- As 9 abas do subnav têm rota e renderizam (verificado como usuário real, sem gravação). Carteira, Proventos e Rentabilidade são baseadas em operações/proventos manuais (hoje vazias) e pareciam "sem dados" apesar da B3: aviso com link para Posição B3 quando há posição B3/proventos importados (`components/investments/b3-notice`). Sem remoção de telas nem novas rotas.
+- Notas de corretagem: sem layout real ainda; nenhum parser criado. Quando chegarem, entram pelo importador de extratos (prévia/mapeamento) e viram compras/vendas só após parser validado.
