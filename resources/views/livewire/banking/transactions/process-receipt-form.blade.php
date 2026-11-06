@@ -165,7 +165,7 @@ new class extends Component {
     <div class="grid gap-4 md:grid-cols-2">
         <div><label for="process-client-contact" class="mb-2 block text-sm text-mono-600">Contato do cliente</label><select id="process-client-contact" wire:model.live="form.client_contact_id" class="h-12 w-full rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Não vinculado</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
         <x-jr.input label="Cliente (nome no repasse) *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
-        <x-jr.input label="Processo (número)" name="form.process_ref" wire:model="form.process_ref" maxlength="120" placeholder="0000000-00.0000.0.00.0000" />
+        <x-jr.input label="Processo (número)" name="form.process_ref" wire:model="form.process_ref" x-process-number maxlength="120" placeholder="0000000-00.0000.0.00.0000" />
     </div>
     <section class="space-y-3 rounded-xl border border-mono-100 p-4">
         <label class="inline-flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model.live="form.includes_writ" class="rounded border-mono-200 text-primary-500"> Este valor inclui crédito que eu já comprei (requisitório)</label>

@@ -497,3 +497,13 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - No modal de registrar repasse (`resources/views/livewire/banking/accounts/repasses.blade.php`), novo seletor "Tipo de conta" (Todos os tipos, Corrente, Poupança, Investimento, Fundo, Dinheiro) que filtra as contas ativas do campo "Pagar pela conta".
 - Contas exibidas como "Nome · Tipo" (`BankAccount::pickerOptions`). Padrão "Todos os tipos" (não bloqueia o fluxo atual); a conta pré-selecionada é mantida; trocar o tipo só limpa a conta se ela for de outro tipo. Tipo inválido volta para todos.
 - Validação e cálculo do pagamento inalterados. Teste novo: RepasseBankTypeFilterTest. Backup: `storage/backups/repasses.pre_tipo`.
+
+
+## 2026-11-06 — Número de processo sempre no padrão CNJ (máscara + histórico)
+
+- `App\Support\ProcessNumber::format`: só formata texto com exatamente 20 dígitos e separadores comuns para `NNNNNNN-DD.AAAA.J.TR.OOOO`; texto livre ou com outra quantidade de dígitos fica como está (nunca completa com zeros).
+- Trait `NormalizesProcessNumbers` (evento `saving`) em Writ, Transaction (link_process), ProcessReceipt, BrokerCommission, BrokerAdvance, BrokerProcessExpense (process_ref) e Receivable (process_reference).
+- Máscara `x-process-number` aplicada também em: Lançamentos (vínculo), Processar recebimento, Comissões, Despesas de processo e Recebíveis. A diretiva agora roda antes do wire:model (captura), funciona ao colar e não mexe em texto com letras.
+- Comando `php artisan process-numbers:normalize [--confirm]` (prévia por padrão; backup JSON em `storage/app/backups/`).
+- Histórico em produção: 3 registros formatados — writs #45, transactions #310 e process_receipts #13 (os dois últimos eram 01369335520264019198 → 0136933-55.2026.4.01.9198). Demais tabelas sem números a ajustar.
+- Teste novo: ProcessNumberTest. Backup de código: `storage/backups/pre_pn/`.

@@ -90,7 +90,7 @@ new class extends Component {
                 <x-jr.input label="Valor (R$) *" name="amount" type="number" min="0.01" step="0.01" wire:model="amount" required />
                 <x-jr.input label="Data *" name="date" type="date" wire:model="date" required />
                 <x-jr.input label="Descrição *" name="description" wire:model="description" maxlength="200" required />
-                <x-jr.input label="Processo (número)" name="process_ref" wire:model="process_ref" maxlength="120" />
+                <x-jr.input label="Processo (número)" name="process_ref" wire:model="process_ref" x-process-number maxlength="120" />
                 <div><label class="mb-2 block text-sm text-mono-600">Cliente (contato)</label><select wire:model="contactId" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">— opcional —</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
                 <div><label for="process-expense-account" class="mb-2 block text-sm text-mono-600">Conta do pagamento *</label><select id="process-expense-account" wire:model="accountId" class="h-12 w-full rounded-xl border-mono-200 text-sm" required><option value="">Selecionar</option>@foreach ($accounts as $account)<option value="{{ $account->id }}">{{ $account->name }}</option>@endforeach</select></div>
             </div>

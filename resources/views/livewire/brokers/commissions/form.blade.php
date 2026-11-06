@@ -111,7 +111,7 @@ new #[Layout('layouts.app')] class extends Component {
                 @if ($mode === 'percent')
                     <x-fx.input label="Base de cálculo *" type="text" x-money wire:model="base_amount" />
                 @endif
-                <x-fx.input label="Processo (número)" wire:model="process_ref" placeholder="Ex.: 0001234-56.2024.8.10.0001" />
+                <x-fx.input label="Processo (número)" wire:model="process_ref" x-process-number placeholder="Ex.: 0001234-56.2024.8.10.0001" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Requisitório</label>
                     <select wire:model="writ_id" class="fx-form-field">

@@ -13,6 +13,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BrokerAdvance extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_ref'];
+
     public const KIND_PERSONAL = 'personal';
 
     public const KIND_PROCESS_EXPENSE = 'process_expense';

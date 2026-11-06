@@ -12,6 +12,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class BrokerCommission extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_ref'];
+
     protected $fillable = [
         'broker_id', 'case_type_id', 'name', 'process_ref', 'writ_id',
         'base_amount', 'percentage_applied', 'commission_mode', 'rate_or_amount', 'base',

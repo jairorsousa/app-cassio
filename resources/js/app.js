@@ -33,6 +33,8 @@ function maskPhone(val) {
 
 // --- Diretiva Alpine x-process-number ---
 function maskProcessNumber(val) {
+    // Texto livre (com letras etc.) não é mexido; só números e separadores viram máscara CNJ.
+    if (!/^[\d\s.\-\/\u2010-\u2015]*$/.test(val)) return val;
     const d = val.replace(/\D/g, '').slice(0, 20);
 
     return d
@@ -84,15 +86,18 @@ document.addEventListener('alpine:init', () => {
     });
 
     Alpine.directive('process-number', (el, {}, { cleanup }) => {
-        el.maxLength = 25;
-        el.inputMode = 'numeric';
+        if (!el.maxLength || el.maxLength < 0) el.maxLength = 120;
         el.placeholder = '0000000-00.0000.0.00.0000';
 
         if (el.value) el.value = maskProcessNumber(el.value);
 
-        const onInput = () => { el.value = maskProcessNumber(el.value); };
-        el.addEventListener('input', onInput);
-        cleanup(() => el.removeEventListener('input', onInput));
+        // Captura: formata antes do wire:model ler o valor (digitação e colagem).
+        const onInput = () => {
+            const masked = maskProcessNumber(el.value);
+            if (masked !== el.value) el.value = masked;
+        };
+        el.addEventListener('input', onInput, true);
+        cleanup(() => el.removeEventListener('input', onInput, true));
     });
 
     // x-money: o que aparece é 1.234,56. O Livewire recebe 1234.56.

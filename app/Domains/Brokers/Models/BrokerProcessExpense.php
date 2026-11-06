@@ -12,6 +12,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BrokerProcessExpense extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_ref'];
+
     protected $fillable = [
         'broker_id', 'date', 'amount', 'description',
         'process_ref', 'writ_id', 'contact_id',

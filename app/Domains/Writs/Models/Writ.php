@@ -16,6 +16,10 @@ use Spatie\Activitylog\Support\LogOptions;
 
 class Writ extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_number'];
+
     use LogsActivity;
     use SoftDeletes;
 

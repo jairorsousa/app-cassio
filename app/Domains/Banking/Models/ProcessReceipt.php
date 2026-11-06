@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProcessReceipt extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_ref'];
+
     protected $fillable = ['receipt_id', 'broker_id', 'writ_id', 'writ_amount', 'process_ref', 'fees_amount', 'category_id'];
 
     protected $casts = ['fees_amount' => 'decimal:2', 'writ_amount' => 'decimal:2'];

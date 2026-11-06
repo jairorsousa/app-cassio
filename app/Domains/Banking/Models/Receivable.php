@@ -14,6 +14,10 @@ use Spatie\Activitylog\Support\LogOptions;
 
 class Receivable extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['process_reference'];
+
     use LogsActivity;
     use \App\Support\HidesTestRecords;
 

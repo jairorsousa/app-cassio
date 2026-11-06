@@ -15,6 +15,10 @@ use Spatie\Activitylog\Support\LogOptions;
 
 class Transaction extends Model
 {
+    use \App\Support\NormalizesProcessNumbers;
+
+    public const PROCESS_NUMBER_FIELDS = ['link_process'];
+
     use LogsActivity;
     use HidesTestRecords;
     use SoftDeletes;
