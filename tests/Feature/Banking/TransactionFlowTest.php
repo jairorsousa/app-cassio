@@ -252,6 +252,137 @@ class TransactionFlowTest extends TestCase
         $this->assertEquals(2, Transaction::where('type', 'transfer')->where('status', 'settled')->count());
     }
 
+    public function test_save_and_create_another_keeps_card_modal_open_and_resets_fields_after_success(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 1000]);
+        $card = CreditCard::create(['name' => 'Visa', 'limit' => 5000, 'closing_day' => 25, 'due_day' => 5, 'default_payment_account_id' => $account->id]);
+        $category = Category::create(['name' => 'Compras', 'type' => 'expense']);
+
+        $component = Volt::test('banking.transactions.index')
+            ->call('create', 'card_expense')
+            ->assertSee('Salvar e criar outro')
+            ->assertSeeHtml('data-test="save-and-create-another"')
+            ->set('formDate', '2026-10-26')
+            ->set('formCreditCardId', $card->id)
+            ->assertSet('formInvoiceMonth', '2026-11')
+            ->set('formAmount', '80.00')
+            ->set('formDescription', 'Primeira compra')
+            ->set('formCategoryId', $category->id)
+            ->set('formInstallments', 1)
+            ->set('formNotes', 'nota temporária')
+            ->set('formLinkProcess', '0001234-56.2024.8.10.0001')
+            ->call('saveAndCreateAnother')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', true)
+            ->assertSet('formIsCard', true)
+            ->assertSet('formType', 'expense')
+            ->assertSet('editingId', null)
+            ->assertSet('formAmount', '')
+            ->assertSet('formDescription', '')
+            ->assertSet('formNotes', '')
+            ->assertSet('formCategoryId', null)
+            ->assertSet('formCreditCardId', null)
+            ->assertSet('formInvoiceMonth', '')
+            ->assertSet('formInstallments', 1)
+            ->assertSet('formLinkProcess', '')
+            ->assertSet('formSuccessMessage', 'Lançamento criado.')
+            ->assertSee('Nova despesa no cartão de crédito')
+            ->assertSee('Lançamento criado.');
+
+        $this->assertDatabaseCount('transactions', 1);
+        $this->assertDatabaseHas('transactions', [
+            'credit_card_id' => $card->id,
+            'description' => 'Primeira compra',
+            'amount' => '80.00',
+        ]);
+        $this->assertEquals(1000, $account->fresh()->balance());
+
+        // Segundo lançamento no formulário já reaberto; payload limpo (sem resíduo do anterior).
+        $component
+            ->set('formDate', '2026-10-27')
+            ->set('formCreditCardId', $card->id)
+            ->set('formAmount', '45.50')
+            ->set('formDescription', 'Segunda compra')
+            ->set('formCategoryId', $category->id)
+            ->call('saveAndCreateAnother')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', true)
+            ->assertSet('formAmount', '')
+            ->assertSet('formDescription', '');
+
+        $this->assertDatabaseCount('transactions', 2);
+        $this->assertDatabaseHas('transactions', [
+            'credit_card_id' => $card->id,
+            'description' => 'Segunda compra',
+            'amount' => '45.50',
+        ]);
+    }
+
+    public function test_save_and_create_another_preserves_input_on_validation_error(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        Volt::test('banking.transactions.index')
+            ->call('create', 'card_expense')
+            ->set('formAmount', '30.00')
+            ->set('formDescription', 'Sem cartão')
+            ->call('saveAndCreateAnother')
+            ->assertHasErrors(['formCreditCardId', 'formInvoiceMonth'])
+            ->assertSet('showFormModal', true)
+            ->assertSet('formIsCard', true)
+            ->assertSet('formAmount', '30.00')
+            ->assertSet('formDescription', 'Sem cartão')
+            ->assertSet('formSuccessMessage', null)
+            ->assertSet('createAnotherAfterSave', false);
+
+        $this->assertDatabaseCount('transactions', 0);
+    }
+
+    public function test_edit_mode_hides_save_and_create_another_button(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $card = CreditCard::create(['name' => 'Visa', 'limit' => 5000, 'closing_day' => 25, 'due_day' => 5]);
+        $transaction = app(InstallmentService::class)->split($card, Carbon::parse('2026-10-10'), 100, 1, 'Compra')[0];
+
+        Volt::test('banking.transactions.index')
+            ->call('edit', $transaction->id)
+            ->assertSee('Editar despesa no cartão')
+            ->assertDontSeeHtml('data-test="save-and-create-another"')
+            ->assertDontSee('Salvar e criar outro');
+    }
+
+    public function test_save_and_create_another_works_for_bank_expense_create_mode(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $account = BankAccount::create(['name' => 'Conta', 'initial_balance' => 500]);
+        $category = Category::create(['name' => 'Escritório', 'type' => 'expense']);
+
+        Volt::test('banking.transactions.index')
+            ->call('create', 'expense')
+            ->assertSee('Salvar e criar outro')
+            ->set('formAmount', '12.00')
+            ->set('formDescription', 'Material')
+            ->set('formBankAccountId', $account->id)
+            ->set('formCategoryId', $category->id)
+            ->call('saveAndCreateAnother')
+            ->assertHasNoErrors()
+            ->assertSet('showFormModal', true)
+            ->assertSet('formIsCard', false)
+            ->assertSet('formType', 'expense')
+            ->assertSet('formAmount', '')
+            ->assertSet('formDescription', '')
+            ->assertSet('formBankAccountId', null)
+            ->assertSet('formSuccessMessage', 'Lançamento criado.');
+
+        $this->assertDatabaseHas('transactions', [
+            'bank_account_id' => $account->id,
+            'description' => 'Material',
+            'amount' => '12.00',
+            'type' => 'expense',
+        ]);
+    }
+
     public function test_card_purchase_requires_an_active_card_and_has_its_own_form(): void
     {
         $this->actingAs(User::factory()->create());

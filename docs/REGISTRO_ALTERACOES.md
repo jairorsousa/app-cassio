@@ -1,5 +1,22 @@
 # Registro de alterações
 
+## 06/11/2026 — Lançamentos: Salvar e criar outro (Auditor Fin)
+
+Pedido do Cassio no modal **Nova despesa no cartão de crédito**: após gravar, poder abrir imediatamente outro formulário em branco sem fechar a janela.
+
+1. Botões no rodapé (somente criação; edição permanece Cancelar + Salvar Lançamento):
+   - **Cancelar** — fecha sem gravar
+   - **Salvar e criar outro** — grava com a mesma validação de **Criar Lançamento**, mantém o modal aberto e limpa o formulário
+   - **Criar Lançamento** — grava e fecha (comportamento anterior)
+2. Após sucesso do “Salvar e criar outro”: limpa valor, descrição, categoria/rateio, cartão/conta, parcelas, primeira fatura, notas, vínculos, comprovante e “Paguei por alguém” (atalho); mantém data atual e demais padrões iniciais; foco no campo Valor; listagem atualizada (`resetPage`); mensagem de sucesso no próprio modal.
+3. Erro de validação preserva o que foi digitado; `createAnotherAfterSave` não fica preso após falha; loading desabilita os três botões para evitar clique duplo.
+4. O mesmo botão vale nos modais compartilhados de **Nova despesa**, **Nova receita** e **Nova transferência** (create mode), com a mesma nomenclatura.
+5. Nenhum lançamento real de produção foi criado nos testes.
+
+Arquivos: `resources/views/livewire/banking/transactions/index.blade.php`, `tests/Feature/Banking/TransactionFlowTest.php`.
+
+
+
 ## 05/11/2026 — Etapa 6 (ajuste UI): Paguei por alguém nos modais de lançamento (Auditor Fin)
 
 Base: commit `f769b58`. Sem migration e sem registros reais.

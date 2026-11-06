@@ -52,6 +52,13 @@ new #[Layout('layouts.app')] class extends Component
     #[Url]
     public string $account = '';
 
+    /**
+     * Tipo do filtro Conta/Cartão: '' = todas; checking|savings|investment|fund|cash|repasse|card.
+     * Persistido na URL. Seleção de cartão usa account=card:{id} (evita colisão com id de conta).
+     */
+    #[Url]
+    public string $accountType = '';
+
     #[Url]
     public string $status = '';
 
@@ -148,6 +155,12 @@ new #[Layout('layouts.app')] class extends Component
     public ?int $formTransferToId = null;
 
     public int $formInstallments = 1;
+
+    /** Quando true, saveTransaction reabre o formulário em branco após gravar com sucesso. */
+    public bool $createAnotherAfterSave = false;
+
+    /** Feedback intermediário dentro do modal (Salvar e criar outro). */
+    public ?string $formSuccessMessage = null;
 
     public bool $formAllocationEnabled = false;
 
@@ -257,9 +270,104 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
+    /**
+     * Pills horizontais curtas. Só tipos existentes no cadastro (+ Cartão se houver).
+     *
+     * @return array<string, string>
+     */
+    public function accountTypeFilterOptions(): array
+    {
+        $options = ['' => 'Todas'];
+        $present = BankAccount::query()->select('type')->distinct()->pluck('type')->all();
+        foreach (BankAccount::TYPE_ORDER as $type) {
+            if (in_array($type, $present, true)) {
+                $options[$type] = (new BankAccount(['type' => $type]))->typeShortLabel();
+            }
+        }
+        if (CreditCard::query()->exists()) {
+            $options['card'] = 'Cartão';
+        }
+
+        return $options;
+    }
+
+    public function updatedAccountType(): void
+    {
+        $allowed = array_keys($this->accountTypeFilterOptions());
+        if (! in_array($this->accountType, $allowed, true)) {
+            $this->accountType = '';
+        }
+
+        $account = trim((string) $this->account);
+        $isCardValue = str_starts_with($account, 'card:');
+
+        if ($this->accountType === 'card') {
+            if ($account !== '' && ! $isCardValue) {
+                $this->account = ctype_digit($account) && CreditCard::whereKey((int) $account)->exists()
+                    ? 'card:'.$account
+                    : '';
+            } elseif ($isCardValue && ! CreditCard::whereKey((int) substr($account, 5))->exists()) {
+                $this->account = '';
+            }
+        } elseif ($this->accountType !== '') {
+            if ($isCardValue) {
+                $this->account = '';
+            } elseif ($account !== '' && ctype_digit($account)) {
+                if (BankAccount::whereKey((int) $account)->value('type') !== $this->accountType) {
+                    $this->account = '';
+                }
+            } elseif ($account !== '') {
+                $this->account = '';
+            }
+        }
+
+        $this->resetPage();
+    }
+
+    public function updatedAccount(): void
+    {
+        $this->resetPage();
+    }
+
+    /** Aplica filtro de conta bancária e/ou cartão (tipo + item específico). */
+    private function applyAccountOrCardFilter($query): void
+    {
+        $type = $this->accountType;
+        $account = trim((string) $this->account);
+        $isCardValue = str_starts_with($account, 'card:');
+        $cardId = $isCardValue ? (int) substr($account, 5) : null;
+
+        if ($type === 'card' || $isCardValue) {
+            if ($cardId) {
+                $query->where('credit_card_id', $cardId);
+            } elseif ($type === 'card') {
+                $query->whereNotNull('credit_card_id');
+            }
+
+            return;
+        }
+
+        if ($type !== '' && in_array($type, BankAccount::TYPE_ORDER, true)) {
+            if ($account !== '' && ctype_digit($account)) {
+                $query->where('bank_account_id', (int) $account);
+            } else {
+                $ids = BankAccount::where('type', $type)->pluck('id');
+                $query->whereIn('bank_account_id', $ids->isEmpty() ? [0] : $ids);
+            }
+
+            return;
+        }
+
+        if ($cardId) {
+            $query->where('credit_card_id', $cardId);
+        } elseif ($account !== '' && ctype_digit($account)) {
+            $query->where('bank_account_id', (int) $account);
+        }
+    }
+
     public function clearFilters(): void
     {
-        $this->reset(['from', 'to', 'category', 'account', 'status', 'type', 'testes', 'historico', 'vinculo']);
+        $this->reset(['from', 'to', 'category', 'account', 'accountType', 'status', 'type', 'testes', 'historico', 'vinculo']);
         $this->from = now()->startOfMonth()->format('Y-m-d');
         $this->to = now()->endOfMonth()->format('Y-m-d');
         $this->resetPage();
@@ -548,8 +656,24 @@ new #[Layout('layouts.app')] class extends Component
         session()->flash('status', 'Rateio removido. O lançamento ficou sem categoria.');
     }
 
+    public function saveAndCreateAnother(TransactionService $service, TransferService $transfer, InstallmentService $installment, TransactionAllocationService $allocations): void
+    {
+        if ($this->editingId) {
+            $this->saveTransaction($service, $transfer, $installment, $allocations);
+
+            return;
+        }
+
+        $this->createAnotherAfterSave = true;
+        $this->saveTransaction($service, $transfer, $installment, $allocations);
+    }
+
     public function saveTransaction(TransactionService $service, TransferService $transfer, InstallmentService $installment, TransactionAllocationService $allocations): void
     {
+        $createAnother = $this->createAnotherAfterSave;
+        $this->createAnotherAfterSave = false;
+        $this->formSuccessMessage = null;
+
         if ($this->formType === 'transfer') {
             $this->formCategoryId = null;
             $this->formAllocationEnabled = false;
@@ -721,11 +845,20 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $destinate = $this->formType === 'income' && $this->formDestinateAfterSave;
+        $reopenType = null;
+        if ($createAnother && ! $destinate) {
+            $reopenType = $this->formIsCard ? 'card_expense' : $this->formType;
+        }
+
         $this->resetForm();
         $this->resetPage();
         session()->flash('status', $result['message']);
         if ($destinate) {
             $this->distributingId = $result['receipt_id'];
+        } elseif ($reopenType !== null) {
+            $this->create($reopenType);
+            $this->formSuccessMessage = $result['message'];
+            $this->dispatch('focus-transaction-amount');
         }
     }
 
@@ -735,6 +868,7 @@ new #[Layout('layouts.app')] class extends Component
             'showFormModal', 'editingId', 'formAmount', 'formDescription', 'formNotes',
             'formCategoryId', 'formBankAccountId', 'formCreditCardId', 'formTransferToId', 'editingHasAllocations', 'formIsCard', 'formIsCardRefund', 'formInvoiceMonth', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode', 'formDestinateAfterSave', 'editingProcessReceipt',
             'formLinkProcess', 'formLinkWritId', 'formLinkBrokerId', 'formLinkContactId', 'linkSearch', 'formAttachment', 'showOptionalLinks',
+            'createAnotherAfterSave', 'formSuccessMessage',
         ]);
         $this->formType = 'expense';
         $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
@@ -822,6 +956,76 @@ new #[Layout('layouts.app')] class extends Component
         return $options;
     }
 
+    /**
+     * Opções do dropdown "Conta ou cartão" conforme o tipo selecionado.
+     *
+     * @return array{groups: list<array{label: string, options: list<array{value: string, label: string}}>}, placeholder: string}
+     */
+    private function filterAccountOptions(): array
+    {
+        $type = $this->accountType;
+        if ($type === 'card') {
+            $cards = CreditCard::orderBy('name')->get();
+
+            return [
+                'placeholder' => 'Todos os cartões',
+                'groups' => [[
+                    'label' => 'Cartões',
+                    'options' => $cards->map(fn (CreditCard $c) => [
+                        'value' => 'card:'.$c->id,
+                        'label' => $c->name.($c->brand ? ' · '.$c->brand : ''),
+                    ])->all(),
+                ]],
+            ];
+        }
+
+        if ($type !== '' && in_array($type, BankAccount::TYPE_ORDER, true)) {
+            $accounts = BankAccount::where('type', $type)->orderBy('name')->get();
+            $label = (new BankAccount(['type' => $type]))->typeShortLabel();
+
+            return [
+                'placeholder' => 'Todas · '.$label,
+                'groups' => [[
+                    'label' => $label,
+                    'options' => $accounts->map(fn (BankAccount $a) => [
+                        'value' => (string) $a->id,
+                        'label' => $a->name,
+                    ])->all(),
+                ]],
+            ];
+        }
+
+        $accounts = BankAccount::orderBy('name')->get()->groupBy('type');
+        $groups = [];
+        foreach (BankAccount::TYPE_ORDER as $t) {
+            if (! $accounts->has($t) || $accounts[$t]->isEmpty()) {
+                continue;
+            }
+            $groups[] = [
+                'label' => (new BankAccount(['type' => $t]))->typeShortLabel(),
+                'options' => $accounts[$t]->map(fn (BankAccount $a) => [
+                    'value' => (string) $a->id,
+                    'label' => $a->name,
+                ])->values()->all(),
+            ];
+        }
+        $cards = CreditCard::orderBy('name')->get();
+        if ($cards->isNotEmpty()) {
+            $groups[] = [
+                'label' => 'Cartões',
+                'options' => $cards->map(fn (CreditCard $c) => [
+                    'value' => 'card:'.$c->id,
+                    'label' => $c->name.($c->brand ? ' · '.$c->brand : ''),
+                ])->all(),
+            ];
+        }
+
+        return [
+            'placeholder' => 'Todas (contas e cartões)',
+            'groups' => $groups,
+        ];
+    }
+
     public function with(): array
     {
         if ($this->preview === 'ofx') {
@@ -863,9 +1067,7 @@ new #[Layout('layouts.app')] class extends Component
                     ->orWhere(fn ($q) => $q->whereDoesntHave('processReceipt')->whereHas('allocations', fn ($allocations) => $allocations->where('category_id', $this->category)));
             });
         }
-        if ($this->account) {
-            $q->where('bank_account_id', $this->account);
-        }
+        $this->applyAccountOrCardFilter($q);
         if ($this->status) {
             $q->where('status', $this->status);
         }
@@ -876,11 +1078,14 @@ new #[Layout('layouts.app')] class extends Component
             $q->whereIn('credit_card_id', CreditCard::idsForHolderKey($this->titular) ?: [0]);
         }
 
+        $filterAccountOptions = $this->filterAccountOptions();
+
         return [
             'deletingTransaction' => $this->deletingId ? Transaction::withCount('destinations')->with('destinationPayment')->find($this->deletingId) : null,
             'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(25),
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
+            'filterAccountOptions' => $filterAccountOptions,
             'activeCategories' => Category::active()->selectable()->orderBy('name')->get(),
             'formIsHistorical' => ! $this->formIsCard && $this->formBankAccountId && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)
                 && (bool) BankAccount::find($this->formBankAccountId)?->isHistoricalDate($this->formDate),
@@ -934,8 +1139,20 @@ new #[Layout('layouts.app')] class extends Component
             <div class="flex flex-col gap-space-1">
                 <x-banking.category-picker :categories="$categories" :selected-id="$category" model="category" id="transaction-category-filter" placeholder="Todas" clear-value="" />
             </div>
-            <div class="flex flex-col gap-space-1">
-                <x-banking.account-picker :accounts="$accounts" :selected-id="$account" model="account" id="transaction-account-filter" label="Conta" placeholder="Todas" clear-value="" />
+            <div class="flex flex-col gap-space-1 min-w-0">
+                <label for="transaction-account-filter" class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Conta ou cartão</label>
+                <select id="transaction-account-filter" wire:model.live="account" data-test="account-or-card-filter" class="h-[48px] w-full px-space-4 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors">
+                    <option value="">{{ $filterAccountOptions['placeholder'] }}</option>
+                    @foreach ($filterAccountOptions['groups'] as $group)
+                        @if (count($group['options']) > 0)
+                            <optgroup label="{{ $group['label'] }}">
+                                @foreach ($group['options'] as $option)
+                                    <option value="{{ $option['value'] }}">{{ $option['label'] }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endif
+                    @endforeach
+                </select>
             </div>
             <div class="flex flex-col gap-space-1">
                 <label class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Status</label>
@@ -944,6 +1161,20 @@ new #[Layout('layouts.app')] class extends Component
                     <option value="settled">Liquidado</option>
                     <option value="pending">Pendente</option>
                 </select>
+            </div>
+        </div>
+        <div class="mt-space-3 flex flex-col gap-space-2" data-test="account-type-filter">
+            <span class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Tipo de conta ou cartão</span>
+            <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Tipo de conta ou cartão">
+                @foreach ($this->accountTypeFilterOptions() as $value => $label)
+                    <button type="button"
+                        wire:click="$set('accountType', '{{ $value }}')"
+                        aria-pressed="{{ $accountType === $value ? 'true' : 'false' }}"
+                        data-test="account-type-{{ $value === '' ? 'all' : $value }}"
+                        class="rounded-pill border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap {{ $accountType === $value ? 'bg-primary-500 text-white border-primary-500' : 'bg-mono-white text-mono-600 border-mono-200 hover:border-primary-300' }}">
+                        {{ $label }}
+                    </button>
+                @endforeach
             </div>
         </div>
         <div class="mt-space-3 flex flex-wrap items-center gap-space-4 text-fs-12">
@@ -1270,7 +1501,7 @@ new #[Layout('layouts.app')] class extends Component
                 default => 'trending_down',
             };
         @endphp
-        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6" x-data @keydown.escape.window=" $wire.cancel()">
+        <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6" x-data @keydown.escape.window=" $wire.cancel()" @focus-transaction-amount="$nextTick(() => { const el = document.getElementById('formAmount'); if (el) { el.focus(); if (typeof el.select === 'function') el.select(); } })">
             <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="cancel" aria-label="Fechar modal"></button>
 
             <div role="dialog" aria-modal="true" aria-labelledby="transaction-form-title" x-trap.inert.noscroll="true" class="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-elevated">
@@ -1286,6 +1517,9 @@ new #[Layout('layouts.app')] class extends Component
 
                 <form wire:submit="saveTransaction" class="flex min-h-0 flex-1 flex-col">
                     <div class="flex-1 overflow-y-auto px-6 py-5">
+                        @if ($formSuccessMessage)
+                            <p class="mb-4 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm font-medium text-success" role="status" data-test="form-success-message">{{ $formSuccessMessage }}</p>
+                        @endif
                         @error('transaction') <p class="mb-4 text-sm font-medium text-error" role="alert">{{ $message }}</p> @enderror
                         <div class="space-y-8">
                             <section>
@@ -1504,9 +1738,15 @@ new #[Layout('layouts.app')] class extends Component
                                 <p class="mt-1 text-xs text-mono-600">Abre Valores a receber com estes dados. Não cria outra saída — a parte de terceiros é separada da despesa própria.</p>
                             @endif
                         </div>
-                        <div class="flex shrink-0 items-center justify-end gap-3">
-                            <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
-                            <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                        <div class="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                            <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200 disabled:opacity-50" wire:click="cancel" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother">Cancelar</button>
+                            @if (! $editingId)
+                                <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill border border-primary-200 bg-primary-50 px-5 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:opacity-50" data-test="save-and-create-another">
+                                    <span class="material-icons-outlined text-[18px]" aria-hidden="true">add_task</span>
+                                    Salvar e criar outro
+                                </button>
+                            @endif
+                            <button type="submit" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600 disabled:opacity-50">
                                 <span class="material-icons-outlined text-[18px]">check</span>
                                 {{ $editingId ? 'Salvar Lançamento' : 'Criar Lançamento' }}
                             </button>
