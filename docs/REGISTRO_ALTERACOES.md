@@ -419,6 +419,6 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 ## 2026-11-06 — Auditoria segurança/confiabilidade Etapa 8
 
-- Nginx:  +  (DNS do Docker re-resolvido; app recriado não deixa 502 por IP em cache). Validado com  em contêiner temporário e no ativo; aplicado com  (sem recriar serviços). Backup em .
-- Verificado sem mudança: anexos de Bens/extratos no disco local privado, rotas com auth; nenhum arquivo de extrato residual (lotes sem file_path); limpeza  de hora em hora; cotações 30 min dias úteis + 18:30, sem jobs falhos.
-- Pendente (não alterado): worker  e  menores que  do job de cotações.
+- Nginx: `resolver 127.0.0.11 valid=10s ipv6=off` + `fastcgi_pass $app_upstream` (DNS do Docker re-resolvido; app recriado não deixa 502 por IP em cache). Validado com `nginx -t` em contêiner temporário e no ativo; aplicado com `nginx -s reload` (sem recriar serviços). Backup em `storage/backups/nginx.default.conf.pre_resolver`.
+- Verificado sem mudança: anexos de Bens/extratos no disco local privado, rotas com auth; nenhum arquivo de extrato residual (lotes sem file_path); limpeza `investments:statements-cleanup` de hora em hora; cotações 30 min dias úteis + 18:30, sem jobs falhos.
+- Pendente (não alterado): worker `--timeout=120` e `retry_after=90` menores que `timeout=600` do job de cotações.
