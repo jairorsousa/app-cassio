@@ -159,7 +159,7 @@ new #[Layout('layouts.app')] class extends Component
     /** Quando true, saveTransaction reabre o formulário em branco após gravar com sucesso. */
     public bool $createAnotherAfterSave = false;
 
-    /** Feedback intermediário dentro do modal (Salvar e criar outro). */
+    /** Feedback intermediário dentro do modal (Salvar e novo). */
     public ?string $formSuccessMessage = null;
 
     public bool $formAllocationEnabled = false;
@@ -1740,16 +1740,16 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                         <div class="flex shrink-0 flex-wrap items-center justify-end gap-3">
                             <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200 disabled:opacity-50" wire:click="cancel" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother">Cancelar</button>
+                            <button type="submit" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600 disabled:opacity-50">
+                                <span class="material-icons-outlined text-[18px]">check</span>
+                                {{ $editingId ? 'Salvar Lançamento' : 'Salvar' }}
+                            </button>
                             @if (! $editingId)
                                 <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill border border-primary-200 bg-primary-50 px-5 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:opacity-50" data-test="save-and-create-another">
                                     <span class="material-icons-outlined text-[18px]" aria-hidden="true">add_task</span>
-                                    Salvar e criar outro
+                                    Salvar e novo
                                 </button>
                             @endif
-                            <button type="submit" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600 disabled:opacity-50">
-                                <span class="material-icons-outlined text-[18px]">check</span>
-                                {{ $editingId ? 'Salvar Lançamento' : 'Criar Lançamento' }}
-                            </button>
                         </div>
                     </div>
                 </form>

@@ -1,5 +1,14 @@
 # Registro de alterações
 
+## 06/11/2026 — Lançamentos: rótulos Cancelar / Salvar / Salvar e novo (Auditor Fin)
+
+Somente rótulos e ordem no rodapé dos formulários de criação (despesa no cartão, despesa, receita, transferência). Comportamento inalterado.
+
+1. **Cancelar**
+2. **Salvar** — grava e fecha (antes: Criar Lançamento)
+3. **Salvar e novo** — grava, mantém o modal aberto e limpa o formulário (antes: Salvar e criar outro)
+4. Edição permanece **Cancelar** + **Salvar Lançamento** (sem o terceiro botão).
+
 ## 06/11/2026 — Lançamentos: Salvar e criar outro (Auditor Fin)
 
 Pedido do Cassio no modal **Nova despesa no cartão de crédito**: após gravar, poder abrir imediatamente outro formulário em branco sem fechar a janela.

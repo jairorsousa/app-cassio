@@ -261,7 +261,9 @@ class TransactionFlowTest extends TestCase
 
         $component = Volt::test('banking.transactions.index')
             ->call('create', 'card_expense')
-            ->assertSee('Salvar e criar outro')
+            ->assertSee('Salvar')
+            ->assertSee('Salvar e novo')
+            ->assertDontSee('Criar Lançamento')
             ->assertSeeHtml('data-test="save-and-create-another"')
             ->set('formDate', '2026-10-26')
             ->set('formCreditCardId', $card->id)
@@ -349,7 +351,8 @@ class TransactionFlowTest extends TestCase
             ->call('edit', $transaction->id)
             ->assertSee('Editar despesa no cartão')
             ->assertDontSeeHtml('data-test="save-and-create-another"')
-            ->assertDontSee('Salvar e criar outro');
+            ->assertDontSee('Salvar e novo')
+            ->assertSee('Salvar Lançamento');
     }
 
     public function test_save_and_create_another_works_for_bank_expense_create_mode(): void
@@ -360,7 +363,9 @@ class TransactionFlowTest extends TestCase
 
         Volt::test('banking.transactions.index')
             ->call('create', 'expense')
-            ->assertSee('Salvar e criar outro')
+            ->assertSee('Salvar')
+            ->assertSee('Salvar e novo')
+            ->assertDontSee('Criar Lançamento')
             ->set('formAmount', '12.00')
             ->set('formDescription', 'Material')
             ->set('formBankAccountId', $account->id)
