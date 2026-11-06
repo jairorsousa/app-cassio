@@ -1,5 +1,18 @@
 # Registro de alterações
 
+## 05/11/2026 — Etapa 6 (ajuste UI): Paguei por alguém nos modais de lançamento (Auditor Fin)
+
+Base: commit `f769b58`. Sem migration e sem registros reais.
+
+Pendência: o botão **Paguei por alguém** existia só na lista de lançamentos já salvos; os modais **Nova despesa** e **Nova despesa no cartão** não mostravam o atalho (Receita/Transferência corretamente sem o botão).
+
+Correção:
+1. Botão visível no rodapé dos modais de **despesa bancária** e **despesa no cartão** (novo e edição). Ausente em Receita e Transferência.
+2. Novo: redireciona para Valores a receber com rascunho (`criar=1`, origem bank/card, data, valor, descrição, conta/cartão) — **não** grava o lançamento no modal; a saída nasce só ao salvar em Valores a receber.
+3. Edição: redireciona com `transaction=ID` (fluxo existente, sem duplicar).
+4. Teste `Etapa6PagueiPorAlguemModalTest` cobre presença/ausência nos quatro tipos e o redirecionamento.
+
+
 ## 05/11/2026 — Etapa 6: Valores a receber com juros e Empréstimos (Auditor Fin)
 
 Base: commit `8719f60`. Backup lógico: `/root/app-cassio-backups/etapa6-antes-20261105.json`. Nenhum empréstimo/baixa real criado; dados antigos preservados (encargos padrão zero; baixas antigas = principal).

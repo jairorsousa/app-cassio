@@ -36,7 +36,48 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->resetCreate();
-        if ($this->transaction !== '') { $this->startCreate((int) $this->transaction); }
+        if ($this->transaction !== '') {
+            $this->startCreate((int) $this->transaction);
+
+            return;
+        }
+        $this->applyCreateDraft(request()->query());
+    }
+
+    /** Prefill a partir do atalho "Paguei por alguém" no modal de lançamento (sem criar saída duplicada). */
+    private function applyCreateDraft(array $query): void
+    {
+        $origin = $query['origin'] ?? null;
+        $criar = ($query['criar'] ?? '') === '1';
+        if (! $criar && ! in_array($origin, ['bank', 'card'], true)) {
+            return;
+        }
+        $this->startCreate();
+        if (in_array($origin, ['bank', 'card'], true)) {
+            $this->form['origin'] = $origin;
+            $this->form['use_invoice_dates'] = $origin === 'card';
+        }
+        foreach (['date', 'description', 'amount', 'notes', 'process_reference'] as $field) {
+            if (! empty($query[$field]) && is_string($query[$field])) {
+                $this->form[$field] = mb_substr($query[$field], 0, $field === 'notes' ? 5000 : 200);
+            }
+        }
+        if (isset($query['installments']) && is_numeric($query['installments'])) {
+            $this->form['installments'] = max(1, min(120, (int) $query['installments']));
+        }
+        if (! empty($query['bank_account_id']) && is_numeric($query['bank_account_id'])) {
+            $this->form['bank_account_id'] = (int) $query['bank_account_id'];
+        }
+        if (! empty($query['credit_card_id']) && is_numeric($query['credit_card_id'])) {
+            $this->form['credit_card_id'] = (int) $query['credit_card_id'];
+        }
+        if ($this->form['amount'] !== '') {
+            $this->form['people'][0]['amount'] = $this->form['amount'];
+        }
+        if (! empty($query['contact']) && is_numeric($query['contact'])) {
+            $this->form['people'][0]['contact_id'] = (int) $query['contact'];
+            $this->contact = (string) (int) $query['contact'];
+        }
     }
 
     public function updatedContact(): void { $this->resetPage(); }
@@ -46,10 +87,15 @@ new #[Layout('layouts.app')] class extends Component {
     private function resetCreate(): void
     {
         $this->createKey = (string) Str::uuid();
-        $this->form = ['origin' => 'bank', 'date' => today()->toDateString(), 'description' => '', 'amount' => '',
+        $today = \App\Support\BusinessDate::today();
+        $this->form = [
+            'origin' => 'bank', 'date' => $today, 'description' => '', 'amount' => '',
             'bank_account_id' => null, 'credit_card_id' => null, 'transaction_id' => null, 'installments' => 1,
-            'repayment_mode' => 'dated', 'first_due_date' => today()->addMonthNoOverflow()->toDateString(),
-            'use_invoice_dates' => false, 'writ_id' => null, 'process_reference' => '', 'notes' => '', 'people' => [['contact_id' => $this->contact ?: null, 'amount' => '']]];
+            'repayment_mode' => 'dated', 'first_due_date' => \Illuminate\Support\Carbon::parse($today)->addMonthNoOverflow()->toDateString(),
+            'use_invoice_dates' => false, 'writ_id' => null, 'process_reference' => '', 'notes' => '',
+            'interest_rate_am' => '0', 'penalty_pct' => '0', 'late_interest_rate_am' => '0', 'interest_start_date' => '',
+            'people' => [['contact_id' => $this->contact ?: null, 'amount' => '']],
+        ];
     }
 
     public function startCreate(?int $transactionId = null): void
@@ -136,13 +182,21 @@ new #[Layout('layouts.app')] class extends Component {
         $row = Receivable::with('installments.settlements')->findOrFail($id);
         $this->selectedId = $id;
         $this->paymentKey = (string) Str::uuid();
-        $this->payment = ['kind' => 'cash', 'amount' => app(ReceivableService::class)->money($row->remainingCents()), 'date' => today()->toDateString(),
-            'bank_account_id' => null, 'transaction_id' => null, 'destination_id' => null, 'installment_id' => null, 'reason' => ''];
+        $this->payment = ['kind' => 'cash', 'amount' => app(ReceivableService::class)->money($row->balanceCents()), 'date' => \App\Support\BusinessDate::today(),
+            'bank_account_id' => null, 'transaction_id' => null, 'destination_id' => null, 'installment_id' => null, 'reason' => '', 'cash' => false];
         $this->dates = $row->installments->mapWithKeys(fn ($part) => [$part->id => $part->due_date?->toDateString() ?? ''])->all();
         $this->resetValidation();
     }
 
     public function closeDetail(): void { $this->selectedId = null; $this->resetValidation(); }
+
+    public function updatedPaymentCash($value): void
+    {
+        if ($value) {
+            $cash = BankAccount::active()->where('type', BankAccount::TYPE_CASH)->orderBy('id')->first();
+            $this->payment['bank_account_id'] = $cash?->id;
+        }
+    }
 
     public function settle(ReceivableService $service): void
     {

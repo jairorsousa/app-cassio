@@ -369,6 +369,62 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetForm();
     }
 
+    /** Atalho Etapa 6: abre Valores a receber sem duplicar a saída. */
+    public function payForSomeone(): void
+    {
+        if ($this->formIsCardRefund || (! $this->formIsCard && $this->formType !== 'expense')) {
+            $this->addError('transaction', 'Paguei por alguém vale para despesa bancária ou despesa no cartão.');
+
+            return;
+        }
+
+        if ($this->editingId) {
+            $transaction = Transaction::findOrFail($this->editingId);
+            if ($transaction->type !== 'expense' || (! $transaction->bank_account_id && ! $transaction->credit_card_id)) {
+                $this->addError('transaction', 'Selecione uma despesa bancária ou compra no cartão.');
+
+                return;
+            }
+            $this->redirect(route('banking.receivables.index', ['transaction' => $transaction->id]), navigate: true);
+
+            return;
+        }
+
+        $this->validate([
+            'formDate' => 'required|date',
+            'formAmount' => 'required|numeric|min:0.01',
+            'formDescription' => 'required|string|max:200',
+            'formBankAccountId' => [Rule::requiredIf(! $this->formIsCard), 'nullable', 'exists:bank_accounts,id'],
+            'formCreditCardId' => [Rule::requiredIf($this->formIsCard), 'nullable', Rule::exists('credit_cards', 'id')->whereNull('deleted_at')->where('status', true)],
+            'formInstallments' => 'nullable|integer|min:1|max:36',
+            'formNotes' => 'nullable|string|max:5000',
+        ]);
+
+        $params = [
+            'criar' => '1',
+            'origin' => $this->formIsCard ? 'card' : 'bank',
+            'date' => \Illuminate\Support\Carbon::parse($this->formDate)->toDateString(),
+            'amount' => number_format((float) $this->formAmount, 2, '.', ''),
+            'description' => $this->formDescription,
+            'installments' => max(1, (int) $this->formInstallments),
+        ];
+        if ($this->formNotes !== '') {
+            $params['notes'] = $this->formNotes;
+        }
+        if ($this->formIsCard) {
+            $params['credit_card_id'] = $this->formCreditCardId;
+        } else {
+            $params['bank_account_id'] = $this->formBankAccountId;
+        }
+        if ($this->formLinkContactId) {
+            $params['contact'] = $this->formLinkContactId;
+        }
+
+        $this->redirect(route('banking.receivables.index', $params), navigate: true);
+    }
+
+
+
     public function updatedFormCreditCardId(): void
     {
         $this->suggestInvoiceMonth();
@@ -1414,12 +1470,23 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                     </div>
 
-                    <div class="flex shrink-0 items-center justify-end gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4">
-                        <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
-                        <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
-                            <span class="material-icons-outlined text-[18px]">check</span>
-                            {{ $editingId ? 'Salvar Lançamento' : 'Criar Lançamento' }}
-                        </button>
+                    <div class="flex shrink-0 flex-col gap-3 border-t border-mono-100 bg-mono-50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="min-w-0">
+                            @if (($formIsCard || $formType === 'expense') && ! $formIsCardRefund)
+                                <button type="button" wire:click="payForSomeone" wire:loading.attr="disabled" wire:target="payForSomeone" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-pill border border-primary-200 bg-primary-50 px-5 text-sm font-semibold text-primary-600 transition-colors hover:bg-primary-100 sm:w-auto">
+                                    <span class="material-icons-outlined text-[18px]" aria-hidden="true">request_quote</span>
+                                    Paguei por alguém
+                                </button>
+                                <p class="mt-1 text-xs text-mono-600">Abre Valores a receber com estes dados. Não cria outra saída — a parte de terceiros é separada da despesa própria.</p>
+                            @endif
+                        </div>
+                        <div class="flex shrink-0 items-center justify-end gap-3">
+                            <button type="button" class="h-11 rounded-pill bg-mono-100 px-6 text-sm font-semibold text-mono-900 transition-colors hover:bg-mono-200" wire:click="cancel">Cancelar</button>
+                            <button type="submit" class="inline-flex h-11 items-center gap-2 rounded-pill bg-primary-500 px-6 text-sm font-semibold text-white transition-colors hover:bg-primary-600">
+                                <span class="material-icons-outlined text-[18px]">check</span>
+                                {{ $editingId ? 'Salvar Lançamento' : 'Criar Lançamento' }}
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>

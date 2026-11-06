@@ -30,7 +30,12 @@ Em **Financeiro → Empréstimos**: dinheiro emprestado a um contato.
 
 ## Fluxos de uso
 
-Em **Lançamentos**, use **Paguei por alguém** para classificar uma saída existente sem duplicar. Ou crie pelo menu **Valores a receber**.
+Em **Lançamentos**:
+- Na **lista**, o link **Paguei por alguém** classifica uma saída já salva (`transaction=ID`), sem duplicar.
+- Nos modais **Nova/Editar despesa** e **Nova/Editar despesa no cartão**, o botão **Paguei por alguém** (rodapé) abre Valores a receber. Em lançamento novo, leva os dados como rascunho e **não** grava a despesa no modal — a saída é criada só ao salvar em Valores a receber. Em edição, usa o lançamento existente.
+- Não aparece em **Receita** nem **Transferência**.
+
+Ou crie direto pelo menu **Valores a receber**.
 
 ## Relatórios
 
