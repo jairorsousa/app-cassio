@@ -48,7 +48,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </span>
             </div>
             <div class="investment-summary-detail">
-                <span>Valor investido</span>
+                <span>{{ ($summary['result_partial'] ?? false) ? 'Valor investido (com PM)' : 'Valor investido' }}</span>
                 <strong>R$ {{ number_format($summary['total_invested'], 2, ',', '.') }}</strong>
             </div>
         </x-jr.card>
@@ -56,14 +56,14 @@ new #[Layout('layouts.app')] class extends Component {
         <x-jr.card class="investment-summary-card">
             <div class="investment-summary-title">
                 <span class="investment-summary-icon material-icons-outlined">paid</span>
-                <span>Lucro total</span>
+                <span>{{ $summary['result_partial'] ? 'Resultado informado' : 'Lucro total' }}</span>
             </div>
             <p @class(['investment-summary-value mt-5', 'text-up' => $summary['total_return'] >= 0, 'text-down' => $summary['total_return'] < 0])>
                 {{ $summary['total_return'] < 0 ? '- ' : '' }}R$ {{ number_format(abs($summary['total_return']), 2, ',', '.') }}
             </p>
             <div class="mt-5 grid grid-cols-2 gap-4">
                 <div class="investment-summary-detail mt-0">
-                    <span>Ganho de capital</span>
+                    <span>{{ $summary['result_partial'] ? 'Ganho de capital (com PM)' : 'Ganho de capital' }}</span>
                     <strong>R$ {{ number_format($summary['unrealized_pnl'] + $summary['realized_pnl_total'], 2, ',', '.') }}</strong>
                 </div>
                 <div class="investment-summary-detail mt-0">
@@ -71,6 +71,9 @@ new #[Layout('layouts.app')] class extends Component {
                     <strong>R$ {{ number_format($summary['dividends_total'], 2, ',', '.') }}</strong>
                 </div>
             </div>
+            @if ($summary['result_partial'])
+                <p class="mt-3 text-xs text-mono-600" data-partial-result>Parcial: ganho só dos ativos com PM informado (custo R$ {{ number_format($summary['total_invested'], 2, ',', '.') }} → valor R$ {{ number_format($summary['known_cost_market_value'], 2, ',', '.') }}) + proventos. Sem PM: {{ count($summary['unknown_average_price']) }} ativo(s), R$ {{ number_format($summary['unknown_cost_market_value'], 2, ',', '.') }} em valor atual, fora do ganho.</p>
+            @endif
         </x-jr.card>
 
         <x-jr.card class="investment-summary-card">
@@ -100,13 +103,17 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
                 <div>
                     <p class="text-xs font-medium text-mono-600">Retorno total</p>
+                    @if ($summary['result_partial'])
+                    <span class="investment-rate-pill mt-2">não calculado</span>
+                    @else
                     <span @class(['investment-rate-pill mt-2', 'is-positive' => $summary['total_return_pct'] >= 0, 'is-negative' => $summary['total_return_pct'] < 0])>
                         {{ number_format(abs($summary['total_return_pct']), 2, ',', '.') }}%
                         <span class="material-icons-outlined">{{ $summary['total_return_pct'] >= 0 ? 'north_east' : 'south_east' }}</span>
                     </span>
+                    @endif
                 </div>
             </div>
-            <p class="mt-5 text-xs text-mono-600">Resultado sobre o capital atualmente investido</p>
+            <p class="mt-5 text-xs text-mono-600">{{ $summary['result_partial'] ? 'Em aberto: só ativos com PM informado. Retorno total exige PM de todos os ativos.' : 'Resultado sobre o capital atualmente investido' }}</p>
         </x-jr.card>
     </div>
 

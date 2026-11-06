@@ -34,6 +34,7 @@ class PortfolioProfitabilityService
         $source = 'operations';
         $baseDate = null;
         $unknownPm = [];
+        $knownMarket = null;
         $splitMissing = [];
         $b3MarketValue = null;
         $quotedCount = 0;
@@ -53,7 +54,8 @@ class PortfolioProfitabilityService
                 $quotedCount = $quoted->count();
                 $quoteTime = $quoted->max(fn ($q) => $q->market_time ?? $q->date);
                 // Ganho em aberto só sobre ativos com PM conhecido.
-                $unrealizedPnL = round((float) $known->sum($value) - $totalInvested, 2);
+                $knownMarket = (float) $known->sum($value);
+                $unrealizedPnL = round($knownMarket - $totalInvested, 2);
                 $unrealizedPct = $totalInvested > 0 ? round(($unrealizedPnL / $totalInvested) * 100, 3) : 0.0;
                 $byClass = $b3->groupBy(fn ($p) => $p->asset?->assetClass?->name ?? '—')->map(fn ($g) => [
                     'invested' => round((float) $g->sum(fn ($p) => $p->cost() ?? 0), 2),
@@ -89,6 +91,10 @@ class PortfolioProfitabilityService
             'total_return' => $totalReturn,
             'total_return_pct' => $totalReturnPct,
             'by_class' => $byClass,
+            // Resultado só é "total" quando todo PM é conhecido; senão é parcial (capital com PM + proventos).
+            'result_partial' => $unknownPm !== [],
+            'known_cost_market_value' => round($knownMarket ?? $marketValue, 2),
+            'unknown_cost_market_value' => round($marketValue - ($knownMarket ?? $marketValue), 2),
             'source' => $source,
             'base_date' => $baseDate,
             'unknown_average_price' => $unknownPm,

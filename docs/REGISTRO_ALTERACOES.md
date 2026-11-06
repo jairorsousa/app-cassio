@@ -412,3 +412,7 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Só visual; nenhum dado alterado. CSS recompilado (`npm run build`).
 
 - /bens: sem registros mostra estado vazio (sem tabela). Com registros, cartões abaixo de md (descrição, tipo/identificação, valor — de venda se vendido —, situação/data da venda, titular, valor atual, aquisição, anexo, Editar/Excluir com os mesmos métodos); tabela inalterada em md+.
+
+## 2026-11-06 — Resultado parcial quando falta PM
+
+- `PortfolioProfitabilityService::summary()`: novos `result_partial`, `known_cost_market_value`, `unknown_cost_market_value`. Ganho de capital já era só dos ativos com PM; o rótulo "Lucro total" sugeria total. Com PM faltando: card vira "Resultado informado" (ganho de capital com PM + proventos), "Valor investido (com PM)", nota com custo→valor dos ativos com PM e valor dos ativos sem PM (fora do ganho); "Retorno total" % mostra "não calculado". Sem mudança de dados.
