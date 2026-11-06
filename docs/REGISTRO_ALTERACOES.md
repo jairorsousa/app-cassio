@@ -573,3 +573,11 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Job de convite: falha de **autenticação** marca `email_delivery_status=failed` e **não** relança (sem retry inútil); falha transitória marca failed e relança para as tries da fila. Log só com `kind` + classe da exception (sem mensagem do provedor).
 - Configuração com senha continua "pronta" para tentar envio; o último teste falho fica visível e **não** finge entrega confirmada. Migração `2026_11_06_910000_mail_sender_self_test_status`.
 - Testes novos em `InvitationMailTest` (mock de transporte; sem SMTP real). Nenhum reteste real ao Google nesta correção.
+
+
+## 2026-11-06 — Diagnóstico SMTP 535: segredo gravado fora do formato Google + validação
+
+- Investigação (sem reteste SMTP, sem exibir segredo): código novo em host/app/worker (mesmo md5); `sendSelfTest` na linha ~335 (não 277); `MAIL_USERNAME`/`MAIL_PASSWORD` ausentes; mailer default continua `log`; override só `invitation_smtp` em runtime; scheme Laravel 12 = `smtp` (STARTTLS) na porta 587; conexão autentica no Google (535), então host/porta/TLS ok.
+- Meta do segredo no DB (só booleanos/comprimento): **não** é senha de aplicativo Google — comprimento ≠ 16 letras a–z (havia mistura de maiúsculas/dígitos/outros). Isso basta para explicar BadCredentials com 2SV e app passwords geradas: o valor persistido não era o formato esperado.
+- Correção: ao salvar, remove espaços ASCII dos grupos e exige `^[a-z]{16}$`; UI mostra aviso `data-smtp-format-bad` se a senha já gravada estiver fora do formato (sem mostrar comprimento/valor). Log de produção: e-mail do remetente e dumps longos de BadCredentials redigidos; views cache limpo.
+- Sem envio real nesta correção. Próximo teste só após o operador colar de novo a senha de aplicativo (16 letras) e salvar.

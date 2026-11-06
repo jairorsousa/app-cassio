@@ -54,6 +54,7 @@ class InvitationMailService
         if (! $s) {
             return $d + [
                 'has_password' => false,
+                'password_format_ok' => false,
                 'is_ready' => false,
                 'password_set_at' => null,
                 'last_self_test_status' => null,
@@ -68,6 +69,7 @@ class InvitationMailService
             'port' => (int) $s->port,
             'encryption' => $s->encryption,
             'has_password' => $s->hasPassword(),
+            'password_format_ok' => $s->passwordFormatOk(),
             'is_ready' => $s->isReadyToSend(),
             'password_set_at' => $s->password_set_at,
             'last_self_test_status' => $s->last_self_test_status,
@@ -160,7 +162,12 @@ class InvitationMailService
                 if (mb_strlen($password) > 200) {
                     throw ValidationException::withMessages(['smtpPassword' => 'Senha inválida.']);
                 }
-                $s->password = $password;
+                // Google mostra a senha em grupos; espaços ASCII são opcionais e removidos.
+                $normalized = MailSenderSetting::normalizeAppPassword($password);
+                if (! preg_match('/^[a-z]{16}$/', $normalized)) {
+                    throw ValidationException::withMessages(['smtpPassword' => 'Use a senha de aplicativo do Google (16 letras; os espaços entre grupos são opcionais). Não use a senha normal da conta.']);
+                }
+                $s->password = $normalized;
                 $s->password_set_at = now();
                 // Nova senha invalida o último teste (ainda não confirma entrega).
                 $s->last_self_test_status = null;
@@ -190,7 +197,8 @@ class InvitationMailService
         if (! $setting->isReadyToSend()) {
             throw ValidationException::withMessages(['smtp' => 'Remetente SMTP incompleto: salve a senha de aplicativo antes de enviar.']);
         }
-        $password = $setting->password;
+        // Laravel 12 resolve scheme smtp (STARTTLS) para porta 587; encryption legado é informativo.
+        $password = MailSenderSetting::normalizeAppPassword((string) $setting->password);
         Config::set('mail.mailers.'.self::MAILER_NAME, [
             'transport' => 'smtp',
             'host' => $setting->host,
@@ -199,7 +207,7 @@ class InvitationMailService
             'username' => $setting->username,
             'password' => $password,
             'timeout' => self::TRANSPORT_TIMEOUT,
-            'scheme' => null,
+            'scheme' => 'smtp',
             'url' => null,
             'local_domain' => parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'localhost',
         ]);

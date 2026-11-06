@@ -46,7 +46,7 @@ class InvitationMailTest extends TestCase
         return $u->fresh();
     }
 
-    private function withPassword(User $admin, string $password = 'app-password-secret-value'): MailSenderSetting
+    private function withPassword(User $admin, string $password = 'abcd efgh ijkl mnop'): MailSenderSetting
     {
         return InvitationMailService::saveSettings(
             $admin,
@@ -68,17 +68,17 @@ class InvitationMailTest extends TestCase
         $this->assertFalse($s->hasPassword());
         $this->assertFalse($s->isReadyToSend());
 
-        $this->withPassword($admin, 'super-secret-app-pass');
+        $this->withPassword($admin, 'abcdefghijklmnop');
         $s = MailSenderSetting::current()->fresh();
         $this->assertTrue($s->hasPassword());
         $raw = $s->getRawOriginal('password');
-        $this->assertNotSame('super-secret-app-pass', $raw);
-        $this->assertSame('super-secret-app-pass', $s->password);
+        $this->assertNotSame('abcdefghijklmnop', $raw);
+        $this->assertSame('abcdefghijklmnop', $s->password);
 
         InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, null);
         $s2 = MailSenderSetting::current()->fresh();
         $this->assertTrue($s2->hasPassword());
-        $this->assertSame('super-secret-app-pass', $s2->password);
+        $this->assertSame('abcdefghijklmnop', $s2->password);
 
         InvitationMailService::clearPassword($admin);
         $this->assertFalse(MailSenderSetting::current()->fresh()->hasPassword());
@@ -242,13 +242,13 @@ class InvitationMailTest extends TestCase
             ->set('smtpUsername', 'cassio@cassiomota.com')
             ->set('smtpHost', 'smtp.gmail.com')
             ->set('smtpPort', 587)
-            ->set('smtpPassword', 'ui-secret-password-xyz')
+            ->set('smtpPassword', 'abcdefghijklmnop')
             ->call('saveSmtp')
             ->assertHasNoErrors()
             ->assertSet('smtpPassword', '');
 
         $html = $this->get(route('settings.users'))->assertOk()->getContent();
-        $this->assertStringNotContainsString('ui-secret-password-xyz', $html);
+        $this->assertStringNotContainsString('abcdefghijklmnop', $html);
         $this->assertStringContainsString('Senha já gravada', $html);
 
         $c = Volt::test('settings.users')
@@ -270,7 +270,7 @@ class InvitationMailTest extends TestCase
         $c2 = Volt::test('settings.users');
         $this->assertSame('', $c2->get('smtpPassword'));
         $payload = json_encode($c2->effects);
-        $this->assertStringNotContainsString('ui-secret-password-xyz', (string) $payload);
+        $this->assertStringNotContainsString('abcdefghijklmnop', (string) $payload);
     }
 
     public function test_global_mail_default_untouched_and_spoof_from_blocked_by_contract(): void
@@ -415,6 +415,58 @@ class InvitationMailTest extends TestCase
             ->call('sendSmtpSelfTest')
             ->assertHasErrors('smtpTest')
             ->assertSee('O Google recusou a autenticação SMTP');
+    }
+
+
+    public function test_app_password_spaces_normalized_and_invalid_rejected(): void
+    {
+        $admin = $this->ownerAdmin();
+        $grouped = 'abcd efgh ijkl mnop';
+        $s = InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, $grouped);
+        $this->assertTrue($s->passwordFormatOk());
+        $this->assertSame('abcdefghijklmnop', $s->password);
+        $this->assertStringNotContainsString(' ', $s->password);
+
+        try {
+            InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, 'short');
+            $this->fail('aceitou senha curta');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('smtpPassword', $e->errors());
+        }
+
+        try {
+            InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, 'AbcdEfghIjklMn12');
+            $this->fail('aceitou formato não Google');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('smtpPassword', $e->errors());
+        }
+
+        // Mantém a senha boa anterior (blank save)
+        InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, null);
+        $this->assertSame('abcdefghijklmnop', MailSenderSetting::current()->fresh()->password);
+        $meta = InvitationMailService::settingOrDefaults();
+        $this->assertTrue($meta['password_format_ok']);
+        $this->assertArrayNotHasKey('password', $meta);
+    }
+
+    public function test_setting_meta_flags_bad_stored_format_without_exposing_secret(): void
+    {
+        $admin = $this->ownerAdmin();
+        $s = InvitationMailService::saveSettings($admin, 'cassio@cassiomota.com', 'smtp.gmail.com', 587, 'abcdefghijklmnop');
+        // Simula valor legado inválido já no banco (bypass validação de save).
+        $s->password = 'NotGoogle!13';
+        $s->password_set_at = now();
+        $s->save();
+        $fresh = MailSenderSetting::current()->fresh();
+        $this->assertTrue($fresh->hasPassword());
+        $this->assertFalse($fresh->passwordFormatOk());
+        $meta = InvitationMailService::settingOrDefaults();
+        $this->assertTrue($meta['has_password']);
+        $this->assertFalse($meta['password_format_ok']);
+        $this->actingAs($admin);
+        $this->get(route('settings.users'))->assertOk()
+            ->assertSee('data-smtp-format-bad', false)
+            ->assertDontSee('NotGoogle');
     }
 
 }

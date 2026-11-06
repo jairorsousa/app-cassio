@@ -50,7 +50,7 @@ class MailSenderSetting extends Model
         return $this->password_set_at !== null && $this->getRawOriginal('password') !== null && $this->getRawOriginal('password') !== '';
     }
 
-    /** Configuração completa para envio (SMTP + senha). Não implica que o último teste tenha passado. */
+    /** Configuração completa para envio (SMTP + senha). Não implica teste ok nem formato Google. */
     public function isReadyToSend(): bool
     {
         return $this->hasPassword()
@@ -58,6 +58,30 @@ class MailSenderSetting extends Model
             && $this->host === self::DEFAULT_HOST
             && (int) $this->port === self::DEFAULT_PORT
             && $this->encryption === self::DEFAULT_ENCRYPTION;
+    }
+
+    /**
+     * Senha de aplicativo Google: 16 letras a-z (espaços entre grupos são opcionais e ignorados).
+     * Só meta booleana — nunca expõe valor/comprimento na UI.
+     */
+    public function passwordFormatOk(): bool
+    {
+        if (! $this->hasPassword()) {
+            return false;
+        }
+        $plain = $this->password;
+        if (! is_string($plain)) {
+            return false;
+        }
+        $normalized = self::normalizeAppPassword($plain);
+
+        return (bool) preg_match('/^[a-z]{16}$/', $normalized);
+    }
+
+    /** Remove apenas espaços ASCII (formato "xxxx xxxx xxxx xxxx"). */
+    public static function normalizeAppPassword(string $password): string
+    {
+        return str_replace(' ', '', $password);
     }
 
     public static function current(): ?self

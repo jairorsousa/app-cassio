@@ -238,8 +238,11 @@ new #[Layout('layouts.app')] class extends Component {
                     <p class="mt-1 text-xs text-mono-600">
                         @if ($smtp['has_password'] ?? false)
                             Senha já gravada (valor oculto). Deixe em branco ao salvar para manter a atual.
+                            @if (!($smtp['password_format_ok'] ?? false))
+                                <span class="mt-1 block text-error" data-smtp-format-bad>A senha gravada não está no formato de senha de aplicativo Google (16 letras a–z; espaços entre grupos ok). Isso explica recusa 535 — cole de novo a senha de aplicativo (não a senha normal da conta) e salve.</span>
+                            @endif
                         @else
-                            Ainda sem senha: dá para salvar remetente/host agora; o envio só fica disponível depois de gravar a senha aqui.
+                            Ainda sem senha: dá para salvar remetente/host agora; o envio só fica disponível depois de gravar a senha aqui. Cole a senha de 16 letras; espaços entre grupos são aceitos.
                         @endif
                     </p>
                     @error('smtpPassword')<p class="text-xs text-error">{{ $message }}</p>@enderror
