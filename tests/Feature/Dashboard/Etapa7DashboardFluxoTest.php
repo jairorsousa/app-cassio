@@ -153,6 +153,14 @@ class Etapa7DashboardFluxoTest extends TestCase
             ->assertSet('customizing', true)->assertSee('Restaurar padrão');
         Livewire::withQueryParams([])->withoutLazyLoading()->test('dashboard.index')->assertSet('customizing', false);
         $this->get('/dashboard?personalizar=1')->assertOk();
+
+        // Caminho real (componente lazy): a página traz o leitor da query; ativar = set('customizing', true).
+        $html = Livewire::withQueryParams([])->withoutLazyLoading()->test('dashboard.index')->html();
+        $this->assertStringContainsString("q.get('personalizar') === '1'", $html);
+        $this->assertStringContainsString("\$wire.set('customizing', true)", $html);
+        $this->assertStringContainsString('history.replaceState', $html);
+        Livewire::withQueryParams([])->withoutLazyLoading()->test('dashboard.index')
+            ->assertDontSee('Restaurar padrão')->set('customizing', true)->assertSee('Restaurar padrão')->assertSee('Mover Saldos por conta para cima');
     }
 
     public function test_dashboard_renders_widgets_hides_and_keeps_launch_shortcut(): void

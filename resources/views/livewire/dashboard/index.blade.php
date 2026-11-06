@@ -171,7 +171,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     $title = fn ($k) => \App\Domains\Dashboard\Support\DashboardPreferences::WIDGETS[$k][0];
 @endphp
 
-<div class="flex flex-col gap-space-5">
+{{-- O componente é #[Lazy]: o mount roda no POST do Livewire e não enxerga a query. Por isso ?personalizar=1 também é lido aqui, após carregar, e removido da URL. --}}
+<div class="flex flex-col gap-space-5" data-open-customize
+     x-data
+     x-init="const q = new URLSearchParams(window.location.search); if (q.get('personalizar') === '1') { q.delete('personalizar'); history.replaceState(null, '', window.location.pathname + (q.toString() ? '?' + q : '')); if (! $wire.customizing) $wire.set('customizing', true); }">
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
