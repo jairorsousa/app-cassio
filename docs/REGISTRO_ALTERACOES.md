@@ -766,3 +766,13 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - O campo "Preço por unidade" do modal de cotação passou a ser texto com a máscara `x-decimal.pad="4"`: aceita vírgula ao digitar e ao colar e mostra sempre 4 casas. O saldo de liquidez automática usa 2 casas. O modificador `.pad` é novo na diretiva `x-decimal`.
 - Backend: `Money::decimal()` normaliza o valor antes de validar e salvar ("12,3456" → 12.3456).
 - Teste: tests/Feature/Investments/PositionPriceFourDecimalsTest.php. Suíte completa: 717 testes passando, no banco isolado.
+
+## 2026-11-07 — Divisões: adicionar pessoa já cadastrada ao grupo
+
+- Na página do grupo, no quadro "Participantes" (só admin), há o novo bloco "Adicionar pessoa já cadastrada": uma busca por nome, e-mail ou celular em usuários com conta, participantes de outros grupos e Contatos. Cada pessoa aparece uma vez, e quem já está no grupo não aparece. O botão "Adicionar" coloca a pessoa no grupo:
+  - quem já tem conta fica ligado à conta, sem convite novo; se a conta não tinha o módulo Divisões, ele é liberado e os outros módulos continuam;
+  - o celular vem de outro grupo ou do Contato;
+  - a mesma pessoa não entra duas vezes no mesmo grupo (mesmo e-mail ou mesma conta).
+- Logo abaixo continua o formulário "Adicionar novo participante", para quem ainda não está no sistema.
+- `DivisionService::searchExistingPeople()` e `addExistingPerson()`. Backup antes: `/root/app-cassio-backups/divisoes-antes-adicionar-existente-20261107.json`. Nenhum participante foi adicionado em produção.
+- Teste: tests/Feature/Divisions/AddExistingPersonTest.php. Suíte completa: 718 testes passando, no banco isolado.

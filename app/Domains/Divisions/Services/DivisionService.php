@@ -189,6 +189,115 @@ class DivisionService
     }
 
     /**
+     * Pessoas já cadastradas (usuários, participantes de outros grupos e Contatos) para adicionar ao grupo.
+     * Busca por nome, e-mail ou celular; quem já está no grupo não aparece. Uma linha por pessoa (por e-mail quando houver).
+     *
+     * @return list<array{key:string,name:string,email:?string,phone:?string,source:string,has_account:bool}>
+     */
+    public function searchExistingPeople(DivisionGroup $group, string $term, int $limit = 8): array
+    {
+        $term = trim($term);
+        if (mb_strlen($term) < 2) {
+            return [];
+        }
+        $like = '%'.mb_strtolower($term).'%';
+        $digits = \App\Support\BrazilianDocuments::digits($term);
+        $inGroupEmails = $group->members()->whereNotNull('email')->pluck('email')->map(fn ($e) => mb_strtolower($e))->all();
+        $inGroupUsers = $group->members()->whereNotNull('user_id')->pluck('user_id')->all();
+        $out = [];
+        $put = function (string $key, string $name, ?string $email, ?string $phone, string $source) use (&$out, $inGroupEmails) {
+            $email = $email ? mb_strtolower(trim($email)) : null;
+            if ($email && in_array($email, $inGroupEmails, true)) {
+                return;
+            }
+            $k = $email ? 'e:'.$email : $key;
+            if (isset($out[$k])) {
+                $out[$k]['phone'] ??= $phone;
+
+                return;
+            }
+            $out[$k] = ['key' => $key, 'name' => $name, 'email' => $email, 'phone' => $phone, 'source' => $source,
+                'has_account' => $email ? User::whereRaw('lower(email) = ?', [$email])->exists() : false];
+        };
+        $phoneMatch = fn (?string $p) => $digits !== '' && strlen($digits) >= 4 && str_contains(\App\Support\BrazilianDocuments::digits($p), $digits);
+
+        foreach (User::where('is_admin', false)->whereNotIn('id', $inGroupUsers)->where(fn ($q) => $q->whereRaw('lower(name) like ?', [$like])->orWhereRaw('lower(email) like ?', [$like]))->limit(20)->get() as $u) {
+            $put('u:'.$u->id, $u->name, $u->email, null, 'Usuário com conta');
+        }
+        $members = DivisionMember::where('group_id', '!=', $group->id)->where('is_owner', false)->with('group')->get()
+            ->filter(fn ($m) => str_contains(mb_strtolower($m->name), mb_strtolower($term)) || str_contains(mb_strtolower((string) $m->email), mb_strtolower($term)) || $phoneMatch($m->phone));
+        foreach ($members as $m) {
+            if ($m->user_id && in_array($m->user_id, $inGroupUsers, true)) {
+                continue;
+            }
+            $put('m:'.$m->id, $m->name, $m->email, $m->phone, 'Participante de '.$m->group?->name);
+        }
+        $contacts = \App\Domains\Contacts\Models\Contact::where('status', true)->where(fn ($q) => $q->whereRaw('lower(name) like ?', [$like])->orWhereRaw('lower(email) like ?', [$like])->orWhere('phone', 'like', '%'.$term.'%'))->limit(20)->get();
+        if ($digits !== '' && strlen($digits) >= 4) {
+            $contacts = $contacts->merge(\App\Domains\Contacts\Models\Contact::where('status', true)->whereNotNull('phone')->get()->filter(fn ($c) => $phoneMatch($c->phone)));
+        }
+        foreach ($contacts->unique('id') as $c) {
+            $put('c:'.$c->id, $c->name, $c->email, $c->phone ? $this->safePhone($c->phone) : null, 'Contato');
+        }
+
+        return array_slice(array_values($out), 0, $limit);
+    }
+
+    private function safePhone(?string $raw): ?string
+    {
+        try {
+            return $this->normalizePhone($raw);
+        } catch (ValidationException) {
+            return null;
+        }
+    }
+
+    /**
+     * Adiciona ao grupo uma pessoa já cadastrada. Se ela já tem conta, liga a conta e libera Divisões sem gerar convite.
+     * Evita duplicar no mesmo grupo (mesmo e-mail ou mesma conta).
+     */
+    public function addExistingPerson(?User $actor, DivisionGroup $group, string $key): DivisionMember
+    {
+        $actor = $this->assertAdmin($actor);
+        [$type, $id] = array_pad(explode(':', $key, 2), 2, null);
+        $id = (int) $id;
+        [$name, $email, $phone] = match ($type) {
+            'u' => (function () use ($id) {
+                $u = User::where('is_admin', false)->findOrFail($id);
+                return [$u->name, $u->email, null];
+            })(),
+            'm' => (function () use ($id) {
+                $m = DivisionMember::where('is_owner', false)->findOrFail($id);
+                return [$m->name, $m->email, $m->phone];
+            })(),
+            'c' => (function () use ($id) {
+                $c = \App\Domains\Contacts\Models\Contact::findOrFail($id);
+                return [$c->name, $c->email, $this->safePhone($c->phone)];
+            })(),
+            default => throw ValidationException::withMessages(['personSearch' => 'Escolha uma pessoa da lista.']),
+        };
+        $email = $email ? mb_strtolower(trim($email)) : null;
+        if (! $phone && $email) {
+            // Mesmo celular que a pessoa já tem em outro grupo.
+            $phone = DivisionMember::whereRaw('lower(email) = ?', [$email])->whereNotNull('phone')->value('phone');
+        }
+        $user = $email ? User::whereRaw('lower(email) = ?', [$email])->first() : null;
+        if (($email && $group->members()->whereRaw('lower(email) = ?', [$email])->exists()) || ($user && $group->members()->where('user_id', $user->id)->exists())) {
+            throw ValidationException::withMessages(['personSearch' => $name.' já participa deste grupo.']);
+        }
+        if (! $email && $group->members()->whereRaw('lower(name) = ?', [mb_strtolower(trim($name))])->exists()) {
+            throw ValidationException::withMessages(['personSearch' => 'Já existe um participante com este nome no grupo.']);
+        }
+        $member = $this->addMember($actor, $group, $name, $email, $phone ? '+'.ltrim($phone, '+') : null);
+        if ($user && ! $user->isAdmin() && ! in_array(self::MODULE, (array) $user->modules, true)) {
+            // Conta existente: só libera o módulo Divisões (nenhum convite é criado).
+            $this->inviteMember($actor, $member->fresh());
+        }
+
+        return $member->fresh();
+    }
+
+    /**
      * Gera o link de convite (o mesmo sistema da Transmissão), liberando só o módulo Divisões. Não envia e-mail.
      * Se a pessoa já tem conta, só libera o módulo e devolve null.
      */

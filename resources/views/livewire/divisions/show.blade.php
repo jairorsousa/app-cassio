@@ -78,6 +78,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $memberPhone = '';
 
+    public string $personSearch = '';
+
     public ?int $phoneEditId = null;
 
     public string $phoneDraft = '';
@@ -369,6 +371,19 @@ new #[Layout('layouts.app')] class extends Component
         $this->notice = 'Cobrança aberta no WhatsApp e registrada no histórico.';
     }
 
+    public function addExisting(string $key): void
+    {
+        try {
+            $m = $this->service()->addExistingPerson(auth()->user(), $this->group, $key);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->personSearch = '';
+        $this->notice = $m->user_id ? $m->name.' foi adicionado e já entra com a conta que tem (nenhum convite novo).' : $m->name.' foi adicionado ao grupo.';
+    }
+
     public function invite(int $memberId): void
     {
         try {
@@ -434,6 +449,7 @@ new #[Layout('layouts.app')] class extends Component
                 return $e && ($e->paid_by_member_id === $m->id || $e->shares->contains('member_id', $m->id));
             }),
             'net' => $net,
+            'peopleFound' => $user->isAdmin() ? $service->searchExistingPeople($this->group, $this->personSearch) : [],
             'groupAudits' => $this->group->audits()->whereNull('expense_id')->with('user')->latest('id')->limit(30)->get(),
             'chargeMember' => $this->chargeMemberId ? $members[$this->chargeMemberId] ?? null : null,
             'transfers' => $service->simplify($net),
@@ -556,6 +572,25 @@ new #[Layout('layouts.app')] class extends Component
                 </div>
             @endif
             @if ($isAdmin)
+                <div class="mt-4 rounded-xl border border-mono-100 p-3" data-add-existing>
+                    <p class="mb-2 text-sm font-semibold">Adicionar pessoa já cadastrada</p>
+                    <input type="search" wire:model.live.debounce.300ms="personSearch" placeholder="Buscar por nome, e-mail ou celular" class="h-11 w-full rounded-pill border border-mono-200 px-4 text-sm" data-person-search>
+                    @error('personSearch')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
+                    @if (mb_strlen(trim($personSearch)) >= 2)
+                        <ul class="mt-2 divide-y divide-mono-100 text-sm">
+                            @forelse ($peopleFound as $p)
+                                <li class="flex items-center justify-between gap-2 py-2" wire:key="pf-{{ $p['key'] }}">
+                                    <span class="min-w-0"><strong>{{ $p['name'] }}</strong>
+                                        <span class="text-xs text-mono-600">{{ $p['email'] ?? 'sem e-mail' }}@if ($p['phone']) · {{ \App\Support\BrazilianDocuments::formatPhone(substr($p['phone'], 3)) }}@endif · {{ $p['has_account'] ? 'Já tem conta' : $p['source'] }}</span></span>
+                                    <button type="button" class="fx-btn fx-btn--standard shrink-0" wire:click="addExisting(@js($p['key']))" data-add-person>Adicionar</button>
+                                </li>
+                            @empty
+                                <li class="py-2 text-xs text-mono-600">Ninguém encontrado. Use "Adicionar novo participante" abaixo.</li>
+                            @endforelse
+                        </ul>
+                    @endif
+                </div>
+                <p class="mt-4 text-sm font-semibold">Adicionar novo participante</p>
                 <form wire:submit="addMember" class="mt-3 grid grid-cols-1 items-end gap-3 md:grid-cols-3">
                     <x-jr.input label="Nome" name="memberName" wire:model="memberName" />
                     <x-jr.input label="E-mail (para o convite)" name="memberEmail" type="email" wire:model="memberEmail" />
