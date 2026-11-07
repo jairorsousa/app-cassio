@@ -1130,6 +1130,10 @@ new #[Layout('layouts.app')] class extends Component
                     <span class="material-icons-outlined text-[18px]">upload_file</span>
                     Importar OFX
                 </x-jr.button>
+                <a href="{{ route('banking.transactions.statement-import') }}" class="inline-flex h-9 items-center gap-1 rounded-pill border border-mono-200 px-3 text-sm font-semibold text-mono-900 hover:bg-mono-100" data-statement-import-link>
+                    <span class="material-icons-outlined text-[18px]">document_scanner</span>
+                    Extrato/fatura (CSV, XLSX, PDF, foto)
+                </a>
                 <x-banking.new-transaction size="sm" />
             </div>
         </div>

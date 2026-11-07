@@ -111,6 +111,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('banking')->name('
     Volt::route('/cards', 'banking.cards.index')->name('cards.index');
     Volt::route('/cards/{card}/invoices', 'banking.cards.invoices')->name('cards.invoices');
     Volt::route('/transactions', 'banking.transactions.index')->name('transactions.index');
+    Volt::route('/transactions/importar-extrato', 'banking.transactions.statement-import')->name('transactions.statement-import');
     Route::get('/transactions/create', function () {
         $type = request()->query('type', 'expense');
         if (! in_array($type, ['income', 'expense', 'transfer'], true)) {
