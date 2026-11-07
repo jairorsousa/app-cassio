@@ -13,7 +13,7 @@ class CreditCard extends Model
 
     protected $fillable = [
         'name', 'brand', 'bank', 'limit',
-        'holder_type', 'holder_name', 'holder_contact_id',
+        'card_holder_id', 'holder_type', 'holder_name', 'holder_contact_id',
         'closing_day', 'due_day',
         'default_payment_account_id', 'status', 'notes',
     ];
@@ -33,6 +33,11 @@ class CreditCard extends Model
         'contato' => 'Contato',
     ];
 
+    public function holder(): BelongsTo
+    {
+        return $this->belongsTo(CardHolder::class, 'card_holder_id');
+    }
+
     public function holderContact(): BelongsTo
     {
         return $this->belongsTo(\App\Domains\Contacts\Models\Contact::class, 'holder_contact_id')->withTrashed();
@@ -40,12 +45,16 @@ class CreditCard extends Model
 
     public function hasHolder(): bool
     {
-        return $this->holder_type !== null && $this->holder_type !== '';
+        return $this->card_holder_id !== null || ($this->holder_type !== null && $this->holder_type !== '');
     }
 
     /** Chave estável para filtro por pessoa: cassio, luciane, filho:Nome, contato:ID ou none. */
     public function holderKey(): string
     {
+        if ($this->card_holder_id) {
+            return 'titular:'.(int) $this->card_holder_id;
+        }
+
         return match ($this->holder_type) {
             'cassio', 'luciane' => $this->holder_type,
             'filho' => 'filho:'.mb_strtolower(trim((string) $this->holder_name)),
@@ -56,6 +65,10 @@ class CreditCard extends Model
 
     public function holderLabel(): string
     {
+        if ($this->card_holder_id) {
+            return $this->holder?->name ?? 'Titular removido';
+        }
+
         return match ($this->holder_type) {
             'cassio' => 'Cássio',
             'luciane' => 'Luciane',
@@ -69,7 +82,7 @@ class CreditCard extends Model
     public static function holderFilterOptions(): array
     {
         $options = [];
-        foreach (static::withTrashed()->with('holderContact')->get() as $card) {
+        foreach (static::withTrashed()->with(['holderContact', 'holder'])->get() as $card) {
             $options[$card->holderKey()] = $card->holderLabel();
         }
         asort($options);

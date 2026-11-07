@@ -64,7 +64,7 @@ class CashflowReportService
 
     public function cleanFilters(array $filters): array
     {
-        $person = isset($filters['person']) && is_string($filters['person']) && preg_match('/^(cassio|luciane|filho:.{1,80}|contato:\d+)$/u', $filters['person']) ? $filters['person'] : null;
+        $person = isset($filters['person']) && is_string($filters['person']) && preg_match('/^(cassio|luciane|titular:\d+|filho:.{1,80}|contato:\d+)$/u', $filters['person']) ? $filters['person'] : null;
 
         return [
             'account_id' => ! empty($filters['account_id']) ? (int) $filters['account_id'] : null,
@@ -97,7 +97,9 @@ class CashflowReportService
         }
         if ($person = $f['person'] ?? null) {
             $query->where(function ($q) use ($person) {
-                if (str_starts_with($person, 'contato:')) {
+                if (str_starts_with($person, 'titular:')) {
+                    $q->whereHas('creditCard', fn ($c) => $c->where('card_holder_id', (int) substr($person, 8)));
+                } elseif (str_starts_with($person, 'contato:')) {
                     $id = (int) substr($person, 8);
                     $q->where('link_contact_id', $id)
                         ->orWhereHas('creditCard', fn ($c) => $c->where('holder_type', 'contato')->where('holder_contact_id', $id))
@@ -409,12 +411,12 @@ class CashflowReportService
     public function personOptions(): Collection
     {
         $options = collect();
-        foreach (\App\Domains\Banking\Models\CreditCard::with('holderContact')->get() as $card) {
+        foreach (\App\Domains\Banking\Models\CreditCard::with(['holderContact', 'holder'])->get() as $card) {
             if (! $card->hasHolder()) {
                 continue;
             }
             $key = $card->holderKey();
-            $label = match ($card->holder_type) {
+            $label = $card->card_holder_id ? $card->holderLabel().' (titular)' : match ($card->holder_type) {
                 'cassio' => 'Cassio (titular)', 'luciane' => 'Luciane (titular)',
                 'filho' => trim((string) $card->holder_name).' (titular)',
                 'contato' => ($card->holderContact?->name ?? 'Contato').' (titular)',

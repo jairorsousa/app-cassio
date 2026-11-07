@@ -62,30 +62,35 @@ class Etapa5CartoesFaturasTest extends TestCase
         $this->assertSame('none', $card->holderKey());
     }
 
-    public function test_card_form_saves_each_holder_type_and_validates(): void
+    public function test_card_form_uses_editable_holder_list(): void
     {
-        $contact = Contact::create(['name' => 'Maria Contato', 'type' => 'pessoal']);
+        $cassio = \App\Domains\Banking\Models\CardHolder::firstOrCreate(['name' => 'Cássio']);
 
-        Volt::test('banking.cards.index')->call('create')
-            ->set('name', 'Filho card')->set('closing_day', 10)->set('due_day', 20)
-            ->set('holder_type', 'filho')->set('holder_name', '')
-            ->call('save')->assertHasErrors(['holder_name'])
-            ->set('holder_name', 'Isabela')->call('save')->assertHasNoErrors();
+        $c = Volt::test('banking.cards.index')->call('create')->assertSet('card_holder_id', $cassio->id)
+            ->set('name', 'Cartão Isa')->set('closing_day', 10)->set('due_day', 20)
+            ->set('addingHolder', true)->set('newHolderName', '')->call('addHolder')->assertHasErrors(['newHolderName'])
+            ->set('newHolderName', '  Isabela ')->call('addHolder')->assertHasNoErrors();
+        $isa = \App\Domains\Banking\Models\CardHolder::where('name', 'Isabela')->firstOrFail();
+        $c->assertSet('card_holder_id', $isa->id)->call('save')->assertHasNoErrors();
 
-        Volt::test('banking.cards.index')->call('create')
-            ->set('name', 'Contato card')->set('closing_day', 10)->set('due_day', 20)
-            ->set('holder_type', 'contato')->call('save')->assertHasErrors(['holder_contact_id'])
-            ->set('holder_contact_id', $contact->id)->call('save')->assertHasNoErrors();
+        // Mesmo nome não duplica.
+        Volt::test('banking.cards.index')->call('create')->set('newHolderName', 'isabela')->call('addHolder')->assertSet('card_holder_id', $isa->id);
+        $this->assertSame(1, \App\Domains\Banking\Models\CardHolder::whereRaw('LOWER(name) = ?', ['isabela'])->count());
 
-        Volt::test('banking.cards.index')->call('create')
-            ->set('name', 'Lu')->set('closing_day', 10)->set('due_day', 20)
-            ->set('holder_type', 'luciane')->set('holder_name', 'lixo')->call('save')->assertHasNoErrors();
+        $card = CreditCard::where('name', 'Cartão Isa')->first();
+        $this->assertSame('Isabela', $card->holderLabel());
+        $this->assertSame('titular:'.$isa->id, $card->holderKey());
+        $this->assertSame([$card->id], CreditCard::idsForHolderKey('titular:'.$isa->id));
+        $this->assertArrayHasKey('titular:'.$isa->id, CreditCard::holderFilterOptions());
+    }
 
-        $this->assertSame('Isabela (filho/a)', CreditCard::where('name', 'Filho card')->first()->holderLabel());
-        $this->assertSame('Maria Contato', CreditCard::where('name', 'Contato card')->first()->holderLabel());
-        $lu = CreditCard::where('name', 'Lu')->first();
-        $this->assertSame('luciane', $lu->holderKey());
-        $this->assertNull($lu->holder_name);
+    public function test_cashflow_filters_by_new_holder(): void
+    {
+        $lu = \App\Domains\Banking\Models\CardHolder::create(['name' => 'Luciane']);
+        $card = $this->card(['name' => 'Cartão Lu', 'card_holder_id' => $lu->id]);
+        $this->assertSame('Luciane (titular)', app(\App\Domains\Banking\Services\CashflowReportService::class)->personOptions()['titular:'.$lu->id]);
+        $this->assertSame('titular:'.$lu->id, app(\App\Domains\Banking\Services\CashflowReportService::class)->cleanFilters(['person' => 'titular:'.$lu->id])['person']);
+        $this->assertTrue($card->hasHolder());
     }
 
     public function test_transactions_can_be_filtered_by_card_holder(): void

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\CardHolder;
 use App\Domains\Banking\Models\CreditCard;
 use App\Domains\Contacts\Models\Contact;
 use Illuminate\Validation\Rule;
@@ -30,6 +31,12 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $status = true;
 
+    public ?int $card_holder_id = null;
+
+    public string $newHolderName = '';
+
+    public bool $addingHolder = false;
+
     public string $holder_type = '';
 
     public string $holder_name = '';
@@ -50,9 +57,7 @@ new #[Layout('layouts.app')] class extends Component
             'due_day' => 'required|integer|min:1|max:31',
             'default_payment_account_id' => 'nullable|exists:bank_accounts,id',
             'status' => 'boolean',
-            'holder_type' => ['nullable', Rule::in(array_keys(CreditCard::HOLDER_TYPES))],
-            'holder_name' => [Rule::requiredIf($this->holder_type === 'filho'), 'nullable', 'string', 'max:120'],
-            'holder_contact_id' => [Rule::requiredIf($this->holder_type === 'contato'), 'nullable', 'integer', Rule::exists('contacts', 'id')->whereNull('deleted_at')],
+            'card_holder_id' => ['nullable', 'integer', Rule::exists('card_holders', 'id')],
         ];
     }
 
@@ -68,9 +73,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->due_day = $c->due_day;
         $this->default_payment_account_id = $c->default_payment_account_id;
         $this->status = (bool) $c->status;
-        $this->holder_type = (string) $c->holder_type;
-        $this->holder_name = (string) $c->holder_name;
-        $this->holder_contact_id = $c->holder_contact_id;
+        $this->card_holder_id = $c->card_holder_id;
         $this->showFormModal = true;
         $this->resetValidation();
     }
@@ -83,13 +86,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function save(): void
     {
-        $data = $this->validate($this->rules(), [
-            'holder_name.required' => 'Informe o nome do(a) filho(a) titular.',
-            'holder_contact_id.required' => 'Escolha o contato titular.',
-        ]);
-        $data['holder_type'] = $data['holder_type'] ?: null;
-        $data['holder_name'] = $data['holder_type'] === 'filho' ? trim((string) $data['holder_name']) : null;
-        $data['holder_contact_id'] = $data['holder_type'] === 'contato' ? $data['holder_contact_id'] : null;
+        $data = $this->validate($this->rules());
+        // Titular agora vem da lista (card_holders); os campos antigos ficam como estavam.
 
         if ($this->editingId) {
             CreditCard::find($this->editingId)?->update($data);
@@ -99,6 +97,18 @@ new #[Layout('layouts.app')] class extends Component
 
         $this->resetForm();
         session()->flash('status', 'Cartão salvo.');
+    }
+
+    /** "+ Novo titular": cadastra o nome na hora e já seleciona no cartão. */
+    public function addHolder(): void
+    {
+        $name = trim(preg_replace('/\s+/u', ' ', $this->newHolderName));
+        $this->validate(['newHolderName' => 'required|string|max:120'], [], ['newHolderName' => 'nome do titular']);
+        $holder = CardHolder::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])->first()
+            ?? CardHolder::create(['name' => $name]);
+        $this->card_holder_id = $holder->id;
+        $this->newHolderName = '';
+        $this->addingHolder = false;
     }
 
     public function cancel(): void
@@ -114,7 +124,8 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status', 'holder_type', 'holder_name', 'holder_contact_id']);
+        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status', 'card_holder_id', 'newHolderName', 'addingHolder']);
+        $this->card_holder_id = CardHolder::defaultId();
         $this->closing_day = 1;
         $this->due_day = 10;
         $this->status = true;
@@ -125,11 +136,11 @@ new #[Layout('layouts.app')] class extends Component
     public function with(): array
     {
         return [
-            'cards' => CreditCard::with(['holderContact', 'invoices'])
+            'cards' => CreditCard::with(['holderContact', 'holder', 'invoices'])
                 ->when($this->titular !== '', fn ($q) => $q->whereIn('id', CreditCard::idsForHolderKey($this->titular)))
                 ->orderBy('name')->get(),
             'holderOptions' => CreditCard::holderFilterOptions(),
-            'contacts' => Contact::orderBy('name')->get(['id', 'name']),
+            'holders' => CardHolder::orderBy('name')->get(['id', 'name']),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -231,26 +242,23 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-jr.input label="Limite *" icon="payments" name="limit" wire:model="limit" x-money required />
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Titular</label>
-                                        <select wire:model.live="holder_type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
-                                            <option value="">Não informado</option>
-                                            @foreach (\App\Domains\Banking\Models\CreditCard::HOLDER_TYPES as $k => $label)<option value="{{ $k }}">{{ $label }}</option>@endforeach
-                                        </select>
-                                        @error('holder_type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
-                                    </div>
-                                    @if ($holder_type === 'filho')
-                                        <div>
-                                            <x-jr.input label="Nome do(a) filho(a) *" icon="person" name="holder_name" wire:model="holder_name" />
-                                        </div>
-                                    @elseif ($holder_type === 'contato')
-                                        <div>
-                                            <label class="mb-2 block text-sm font-medium text-mono-600">Contato titular *</label>
-                                            <select wire:model="holder_contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
-                                                <option value="">Escolha…</option>
-                                                @foreach ($contacts as $ct)<option value="{{ $ct->id }}">{{ $ct->name }}</option>@endforeach
+                                        <div class="flex items-center gap-2">
+                                            <select wire:model="card_holder_id" class="h-12 min-w-0 flex-1 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900" data-holder-select>
+                                                @if ($card_holder_id === null)<option value="">Não informado</option>@endif
+                                                @foreach ($holders as $h)<option value="{{ $h->id }}">{{ $h->name }}</option>@endforeach
                                             </select>
-                                            @error('holder_contact_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                            <button type="button" class="fx-btn fx-btn--mono shrink-0 whitespace-nowrap" wire:click="$set('addingHolder', true)">+ Novo titular</button>
                                         </div>
-                                    @endif
+                                        @if ($addingHolder)
+                                            <div class="mt-2 flex gap-2" data-new-holder-form>
+                                                <input type="text" wire:model="newHolderName" wire:keydown.enter.prevent="addHolder" placeholder="Nome do titular (ex.: Isabela)" maxlength="120" class="h-10 min-w-0 flex-1 rounded-pill border border-mono-200 px-4 text-sm" />
+                                                <button type="button" class="fx-btn fx-btn--primary" wire:click="addHolder">Adicionar</button>
+                                                <button type="button" class="fx-btn fx-btn--text" wire:click="$set('addingHolder', false)">Cancelar</button>
+                                            </div>
+                                            @error('newHolderName') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        @endif
+                                        @error('card_holder_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                    </div>
                                 </div>
                             </section>
 
