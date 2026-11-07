@@ -74,7 +74,8 @@ class OfxImportService
                 throw new InvalidArgumentException('O lançamento '.($index + 1).' possui data inválida.');
             }
 
-            if (! preg_match('/^([+-]?)(\d{1,13})(?:\.(\d{1,2}))?$/', $amountValue, $amountParts)) {
+            $amountParts = $this->amountParts($amountValue);
+            if ($amountParts === null) {
                 throw new InvalidArgumentException('O lançamento '.($index + 1).' possui valor inválido.');
             }
 
@@ -100,7 +101,13 @@ class OfxImportService
             }
 
             if (isset($seen[$fitid])) {
-                throw new InvalidArgumentException('O OFX contém identificadores de lançamento repetidos: '.$fitid);
+                // Alguns bancos (ex.: Caixa) repetem o FITID em lançamentos diferentes: gera um id estável por conteúdo.
+                $n = 2;
+                do {
+                    $candidate = $fitid.':'.substr(hash('sha256', implode('|', [substr($dateValue, 0, 8), ($amountParts[1] ?? '').$amount, $name, $memo, $n])), 0, 16);
+                    $n++;
+                } while (isset($seen[$candidate]));
+                $fitid = $candidate;
             }
 
             $seen[$fitid] = true;
@@ -265,6 +272,40 @@ class OfxImportService
             $invoices->recalculateTotal($invoice);
             return ['imported' => $imported, 'skipped' => count($transactions) - $imported];
         });
+    }
+
+    /**
+     * Valor do TRNAMT tolerante a formatos de banco: "-1234.56", "-1.234,56", "1,234.56" e o da Caixa "-8.629.72"
+     * (ponto como milhar e como decimal). O último separador seguido de 1 ou 2 dígitos é o decimal.
+     *
+     * @return array{0: string, 1: string, 2: string, 3?: string}|null  [inteiro, sinal, parte inteira, decimais]
+     */
+    private function amountParts(string $raw): ?array
+    {
+        $v = str_replace([' ', "\u{A0}", 'R$'], '', trim($raw));
+        $sign = '';
+        if ($v !== '' && ($v[0] === '-' || $v[0] === '+')) {
+            $sign = $v[0];
+            $v = substr($v, 1);
+        } elseif (str_ends_with($v, '-')) {
+            $sign = '-';
+            $v = substr($v, 0, -1);
+        }
+        if (! preg_match('/^\d[\d.,]*$/', $v)) {
+            return null;
+        }
+        if (preg_match('/^(.*)[.,](\d{1,2})$/', $v, $m)) {
+            $int = preg_replace('/[.,]/', '', $m[1]);
+            $dec = $m[2];
+        } else {
+            $int = preg_replace('/[.,]/', '', $v);
+            $dec = '';
+        }
+        if ($int === '' || strlen($int) > 13) {
+            return null;
+        }
+
+        return $dec === '' ? [$raw, $sign, $int] : [$raw, $sign, $int, $dec];
     }
 
     private function field(string $contents, string $tag): string
