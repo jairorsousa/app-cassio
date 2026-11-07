@@ -117,6 +117,26 @@ export function sanitizeTyped(raw, { allowNegative = false } = {}) {
     return { display, empty, cents: empty ? 0 : (negative ? -1 : 1) * digitsToCents(integers, fraction) };
 }
 
+// Campo mostrando zero ("0,00", "0,0", "0"): o que a pessoa digitar substitui o zero.
+// Ex.: "0,00" + "2" (em qualquer posição do cursor) → "2". Devolve null quando não se aplica.
+export function typedOverZero(previous, next) {
+    if (!/^-?0(,0{0,2})?$/.test(String(previous ?? '').trim()) || next === previous) {
+        return null;
+    }
+    const prev = String(previous);
+    const now = String(next ?? '');
+    let p = 0;
+    while (p < prev.length && p < now.length && prev[p] === now[p]) p += 1;
+    let s = 0;
+    while (s < prev.length - p && s < now.length - p && prev[prev.length - 1 - s] === now[now.length - 1 - s]) s += 1;
+    const inserted = now.slice(p, now.length - s);
+    if (!/^[\d]+$/.test(inserted)) {
+        return null;
+    }
+
+    return inserted;
+}
+
 function significantBefore(text, position) {
     return (text.slice(0, position).match(/[\d,-]/g) || []).length;
 }
@@ -135,7 +155,7 @@ function positionAfterSignificant(text, count) {
 }
 
 export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false } = {}) {
-    const state = { cents: 0, empty: true, touched: false };
+    const state = { cents: 0, empty: true, touched: false, last: '' };
 
     el.type = 'text';
     el.inputMode = 'decimal';
@@ -152,11 +172,18 @@ export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false 
         try { el.setSelectionRange(position, position); } catch { /* sem seleção */ }
     };
 
+    // Zero não é exibido: o campo fica vazio com o placeholder "0,00" e a digitação começa limpa (celular).
     const showFull = () => {
-        el.value = state.empty ? '' : formatCents(state.cents);
+        el.value = state.empty || state.cents === 0 ? '' : formatCents(state.cents);
+        state.last = el.value;
     };
 
     const applyTyped = () => {
+        const over = typedOverZero(state.last, el.value);
+        if (over !== null) {
+            el.value = over;
+            setCaret(el.value.length);
+        }
         const caret = el.selectionStart ?? el.value.length;
         const keep = significantBefore(el.value, caret);
         const result = sanitizeTyped(el.value, { allowNegative });
@@ -167,6 +194,7 @@ export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false 
         state.cents = result.cents;
         state.empty = result.empty;
         state.touched = true;
+        state.last = el.value;
         onChange(state.cents);
     };
 
@@ -218,9 +246,9 @@ export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false 
     };
 
     const onFocus = () => {
-        if (!state.empty && state.cents === 0) {
+        if (state.cents === 0 && el.value !== '' && !/[1-9]/.test(el.value)) {
             el.value = '';
-            state.empty = true;
+            state.last = '';
         }
     };
 
@@ -238,7 +266,7 @@ export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false 
         const blank = value === null || value === undefined || String(value).trim() === '';
         const cents = blank ? 0 : parseToCents(value);
         state.cents = allowNegative ? cents : Math.abs(cents);
-        state.empty = blank;
+        state.empty = blank || state.cents === 0;
         showFull();
     };
 
