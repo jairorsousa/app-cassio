@@ -27,6 +27,9 @@ Volt::route('configuracoes', 'settings.index')
 Volt::route('configuracoes/usuarios', 'settings.users')
     ->middleware(['auth', 'inactivity'])
     ->name('settings.users');
+Volt::route('configuracoes/auditoria', 'settings.audit')
+    ->middleware(['auth', 'inactivity'])
+    ->name('settings.audit');
 
 Route::middleware(['auth', 'inactivity', 'throttle:20,1'])->prefix('configuracoes/email/google')->name('settings.email.google.')->group(function () {
     Route::get('/connect', [GmailSendOAuthController::class, 'connect'])->name('connect');

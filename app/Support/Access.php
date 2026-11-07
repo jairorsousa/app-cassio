@@ -34,6 +34,7 @@ final class Access
         'divisions.' => 'divisoes',
         'broadcasts.' => 'transmissao',
         'settings.users' => self::ADMIN,
+        'settings.audit' => self::ADMIN,
     ];
 
     /** Prefixo de NOME de componente Livewire → módulo. */
@@ -49,6 +50,7 @@ final class Access
         'divisions.' => 'divisoes',
         'broadcasts.' => 'transmissao',
         'settings.users' => self::ADMIN,
+        'settings.audit' => self::ADMIN,
     ];
 
     /** Componentes usados dentro de páginas de outro módulo: basta ter um dos módulos listados. */

@@ -61,6 +61,18 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Log de auditoria: criar/editar/excluir de qualquer modelo do sistema, e entrar/sair.
+        foreach (['created', 'updated', 'deleted'] as $auditEvent) {
+            \Illuminate\Support\Facades\Event::listen('eloquent.'.$auditEvent.': *', function (string $event, array $payload) use ($auditEvent) {
+                $model = $payload[0] ?? null;
+                if ($model instanceof \Illuminate\Database\Eloquent\Model && str_starts_with(get_class($model), 'App\\')) {
+                    \App\Support\AuditLogger::model($auditEvent, $model);
+                }
+            });
+        }
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Login::class, fn ($e) => rescue(fn () => \App\Support\AuditLogger::shouldLog(new \App\Models\User) ? \App\Support\AuditLogger::write('login', 'User', $e->user->id, $e->user->name, null, null, $e->user) : null, report: true));
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Auth\Events\Logout::class, fn ($e) => $e->user ? rescue(fn () => \App\Support\AuditLogger::shouldLog(new \App\Models\User) ? \App\Support\AuditLogger::write('logout', 'User', $e->user->id, $e->user->name, null, null, $e->user) : null, report: true) : null);
+
         // Perfis Operador / Somente leitura: cada ação Livewire passa pela política antes de executar.
         \Livewire\on('call', function ($component, $method) {
             $reason = \App\Support\RolePolicy::blockReason(auth()->user(), (string) $component->getName(), (string) $method);

@@ -67,6 +67,11 @@ new #[Layout('layouts.app')] class extends Component {
             <p class="mb-3 text-sm text-mono-600">Convidar pessoas por e-mail e escolher os módulos de cada uma.</p>
             <a href="{{ route('settings.users') }}" class="text-sm font-semibold text-primary-600">Abrir usuários e acessos →</a>
         </x-jr.card>
+        <x-jr.card data-settings-audit>
+            <h3 class="font-bold">Log de auditoria</h3>
+            <p class="mb-3 text-sm text-mono-600">Quem criou, editou ou excluiu cada registro (com antes e depois) e os acessos.</p>
+            <a href="{{ route('settings.audit') }}" class="text-sm font-semibold text-primary-600">Abrir log de auditoria →</a>
+        </x-jr.card>
     @endif
 
     @include('livewire.settings.logo-section')
