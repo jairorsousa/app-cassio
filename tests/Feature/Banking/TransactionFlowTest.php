@@ -284,8 +284,9 @@ class TransactionFlowTest extends TestCase
             ->assertSet('formDescription', '')
             ->assertSet('formNotes', '')
             ->assertSet('formCategoryId', null)
-            ->assertSet('formCreditCardId', null)
-            ->assertSet('formInvoiceMonth', '')
+            ->assertSet('formCreditCardId', $card->id)
+            ->assertSet('formInvoiceMonth', '2026-11')
+            ->assertSet('formDate', '2026-10-26')
             ->assertSet('formInstallments', 1)
             ->assertSet('formLinkProcess', '')
             ->assertSet('formSuccessMessage', 'Lançamento criado.')
@@ -302,8 +303,6 @@ class TransactionFlowTest extends TestCase
 
         // Segundo lançamento no formulário já reaberto; payload limpo (sem resíduo do anterior).
         $component
-            ->set('formDate', '2026-10-27')
-            ->set('formCreditCardId', $card->id)
             ->set('formAmount', '45.50')
             ->set('formDescription', 'Segunda compra')
             ->set('formCategoryId', $category->id)
@@ -319,6 +318,11 @@ class TransactionFlowTest extends TestCase
             'description' => 'Segunda compra',
             'amount' => '45.50',
         ]);
+        $this->assertSame(
+            \App\Domains\Banking\Models\Transaction::where('description', 'Primeira compra')->value('credit_card_invoice_id'),
+            \App\Domains\Banking\Models\Transaction::where('description', 'Segunda compra')->value('credit_card_invoice_id'),
+            'mesma fatura nas compras em série'
+        );
     }
 
     public function test_save_and_create_another_preserves_input_on_validation_error(): void

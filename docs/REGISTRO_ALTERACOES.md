@@ -776,3 +776,8 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Logo abaixo continua o formulário "Adicionar novo participante", para quem ainda não está no sistema.
 - `DivisionService::searchExistingPeople()` e `addExistingPerson()`. Backup antes: `/root/app-cassio-backups/divisoes-antes-adicionar-existente-20261107.json`. Nenhum participante foi adicionado em produção.
 - Teste: tests/Feature/Divisions/AddExistingPersonTest.php. Suíte completa: 718 testes passando, no banco isolado.
+
+## 2026-11-07 — Lançamento de cartão: "Salvar e novo" mantém cartão e fatura
+
+- O modal de despesa no cartão já tinha Cancelar, Salvar e "Salvar e novo" (commit b87a8ac), mas "Salvar e novo" limpava também o cartão e a fatura. Agora, no lançamento de cartão, ele salva, limpa valor, descrição, categoria, observações e vínculos, e **mantém cartão, fatura e data** para a próxima compra da série. Lançamentos de conta seguem como antes.
+- Teste atualizado: tests/Feature/Banking/TransactionFlowTest.php (a segunda compra cai na mesma fatura sem escolher o cartão de novo). Suíte completa: 718 testes passando, no banco isolado.

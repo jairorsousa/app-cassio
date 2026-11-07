@@ -846,8 +846,13 @@ new #[Layout('layouts.app')] class extends Component
 
         $destinate = $this->formType === 'income' && $this->formDestinateAfterSave;
         $reopenType = null;
+        $keepCard = null;
         if ($createAnother && ! $destinate) {
             $reopenType = $this->formIsCard ? 'card_expense' : $this->formType;
+            // Lançamento em série no cartão: mantém cartão, fatura e data para a próxima compra.
+            if ($this->formIsCard) {
+                $keepCard = ['card' => $this->formCreditCardId, 'invoice' => $this->formInvoiceMonth, 'date' => $this->formDate];
+            }
         }
 
         $this->resetForm();
@@ -857,6 +862,11 @@ new #[Layout('layouts.app')] class extends Component
             $this->distributingId = $result['receipt_id'];
         } elseif ($reopenType !== null) {
             $this->create($reopenType);
+            if ($keepCard) {
+                $this->formDate = $keepCard['date'];
+                $this->formCreditCardId = $keepCard['card'];
+                $this->formInvoiceMonth = $keepCard['invoice'];
+            }
             $this->formSuccessMessage = $result['message'];
             $this->dispatch('focus-transaction-amount');
         }
