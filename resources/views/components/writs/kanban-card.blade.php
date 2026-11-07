@@ -116,9 +116,18 @@
             ];
         }
     }
+    $deadlineStatus = $writ->deadlineStatus();
+    $statusColors = [
+        'on_time' => ['#16a34a', '#dcfce7', '#166534'],
+        'due_soon' => ['#eab308', '#fef9c3', '#854d0e'],
+        'overdue' => ['#dc2626', '#fee2e2', '#991b1b'],
+        'received' => ['#9ca3af', '#f3f4f6', '#374151'],
+    ];
+    $sc = $deadlineStatus ? $statusColors[$deadlineStatus['key']] : null;
 @endphp
 
 <article
+    @if ($sc) style="border-color: {{ $sc[0] }};" data-deadline-status="{{ $deadlineStatus['key'] }}" @endif
     class="kanban-card flex cursor-grab overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
     data-id="{{ $writ->id }}"
     wire:key="writ-{{ $writ->id }}"
@@ -151,6 +160,15 @@
                 <span class="material-icons-outlined text-[22px] transition-transform duration-200" :class="expanded && 'rotate-180'">keyboard_arrow_down</span>
             </button>
         </div>
+
+        @if ($sc)
+            <div class="mt-2">
+                <span class="inline-flex items-center gap-1 rounded-pill px-2.5 py-1 text-xs font-bold" style="background: {{ $sc[1] }}; color: {{ $sc[2] }};">
+                    <span class="inline-block h-2 w-2 rounded-full" style="background: {{ $sc[0] }};" aria-hidden="true"></span>
+                    {{ $deadlineStatus['label'] }}
+                </span>
+            </div>
+        @endif
 
         <div id="writ-details-{{ $writ->id }}" x-show="expanded" x-transition.opacity style="display: none;">
         <div class="mt-4 flex items-center gap-2 text-sm text-mono-600">

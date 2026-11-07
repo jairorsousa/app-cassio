@@ -328,6 +328,52 @@ class Writ extends Model
     }
 
     /** Atraso: prazo estimado estourado sem inventar dados quando faltam paid_at/estimated_months. */
+    public const DEADLINE_STATUS_LABELS = ['on_time' => 'No prazo', 'due_soon' => 'Vencendo', 'overdue' => 'Atrasado', 'received' => 'Recebido'];
+
+    /** Nome(s) do beneficiário/cedente para exibição. */
+    public function beneficiaryName(): string
+    {
+        $names = $this->relationLoaded('assignors') || $this->exists
+            ? $this->assignors->map(fn ($a) => $a->contact?->name)->filter()->unique()->values()->all() : [];
+
+        return $names !== [] ? implode(', ', $names) : ($this->assignor_name ?: 'Beneficiário não informado');
+    }
+
+    /**
+     * Situação do prazo: received (finalizado), overdue, due_soon (<= 60 dias) ou on_time (> 60 dias).
+     * Null quando não há data da compra/prazo ou o requisitório ainda não foi comprado.
+     *
+     * @return array{key: string, label: string, days: int}|null
+     */
+    public function deadlineStatus(?Carbon $asOf = null): ?array
+    {
+        if ($this->stage === 'finalized') {
+            return ['key' => 'received', 'label' => 'Recebido', 'days' => 0];
+        }
+        if (! in_array($this->stage, ['paid', 'petitioning', 'awaiting_receipt'], true)) {
+            return null;
+        }
+        $deadline = $this->estimatedReceiptDeadline();
+        if (! $deadline) {
+            return null;
+        }
+        $today = ($asOf ? $asOf->copy() : now())->startOfDay();
+        $deadline = $deadline->copy()->startOfDay();
+        if ($deadline->lt($today)) {
+            $days = (int) $deadline->diffInDays($today);
+            $months = (int) floor($deadline->diffInMonths($today));
+            $label = $months >= 1 ? 'Atrasado há '.$months.' '.($months === 1 ? 'mês' : 'meses') : 'Atrasado há '.$days.' dia'.($days === 1 ? '' : 's');
+
+            return ['key' => 'overdue', 'label' => $label, 'days' => $days, 'months' => $months];
+        }
+        $days = (int) $today->diffInDays($deadline);
+        if ($days <= 60) {
+            return ['key' => 'due_soon', 'label' => $days === 0 ? 'Vence hoje' : 'Vence em '.$days.' dia'.($days === 1 ? '' : 's'), 'days' => $days];
+        }
+
+        return ['key' => 'on_time', 'label' => 'No prazo', 'days' => $days];
+    }
+
     public function isOverdue(?Carbon $asOf = null): bool
     {
         $deadline = $this->estimatedReceiptDeadline();

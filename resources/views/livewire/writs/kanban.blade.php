@@ -49,6 +49,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
     public string $debtor = '';
 
     #[Url]
+    public string $situation = '';
+
+    #[Url]
     public string $from = '';
 
     #[Url]
@@ -1003,6 +1006,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         }
 
         $filteredWrits = $q->orderByDesc('id')->get();
+        $situationCounts = collect(['on_time', 'due_soon', 'overdue'])->mapWithKeys(fn ($k) => [$k => $filteredWrits->filter(fn (Writ $w) => ($w->deadlineStatus()['key'] ?? null) === $k)->count()])->all();
+        if (in_array($this->situation, ['on_time', 'due_soon', 'overdue'], true)) {
+            $filteredWrits = $filteredWrits->filter(fn (Writ $w) => ($w->deadlineStatus()['key'] ?? null) === $this->situation)->values();
+        }
         $writs = $filteredWrits->groupBy('stage');
 
         $stages = [];
@@ -1042,6 +1049,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             : null;
 
         return compact(
+            'situationCounts',
             'stages', 'totalFaceAcquired', 'totalNegotiated', 'totalInvested', 'totalOpenInvested', 'totalFinalizedCost',
             'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'openWithoutCost',
             'totalReceived', 'profitAmount', 'profitPercentage'
@@ -1173,6 +1181,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                 <option value="rpv">RPV</option>
                 <option value="precatorio">Precatório</option>
             </select>
+            <div class="flex w-full gap-1 overflow-x-auto rounded-pill border border-mono-200 bg-mono-white p-1 sm:w-auto" role="group" aria-label="Situação do prazo" data-situation-filter>
+                @foreach (['' => ['Todos', '#6b7280'], 'on_time' => ['No prazo', '#16a34a'], 'due_soon' => ['Vencendo', '#eab308'], 'overdue' => ['Atrasado', '#dc2626']] as $sk => [$sl, $scol])
+                    <button type="button" wire:click="$set('situation', '{{ $sk }}')"
+                        class="flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-pill px-3 text-sm font-semibold transition-colors {{ $situation === $sk ? 'bg-mono-900 text-mono-white' : 'text-mono-600 hover:bg-mono-100' }}">
+                        <span class="inline-block h-2 w-2 rounded-full" style="background: {{ $scol }};" aria-hidden="true"></span>
+                        {{ $sl }}@if ($sk !== '') <span class="text-xs opacity-75">({{ $situationCounts[$sk] }})</span>@endif
+                    </button>
+                @endforeach
+            </div>
 
             <input type="date" wire:model.live="from" aria-label="Data inicial" title="Data inicial" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />
             <input type="date" wire:model.live="to" aria-label="Data final" title="Data final" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 transition-colors focus:border-primary-500 focus:ring-0" />

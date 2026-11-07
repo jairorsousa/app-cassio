@@ -11,6 +11,9 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $timeRows = $times->rows();
         $timeSummary = $times->summary();
+        $situationByType = Writ::with('assignors.contact')->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt', 'finalized'])
+            ->orderBy('paid_at')->get()
+            ->groupBy(fn (Writ $w) => $w->type === 'rpv' ? 'RPV' : 'Precatório')->sortKeys(SORT_STRING | SORT_FLAG_CASE)->reverse();
         $finalized = Writ::where('stage', 'finalized')
             ->whereNotNull('actual_receipt_amount')
             ->orderByDesc('finalized_at')
@@ -32,7 +35,7 @@ new #[Layout('layouts.app')] class extends Component {
             : 0;
         $avgMonthly = $rows->whereNotNull('profitability.monthly_rate')->avg(fn ($r) => $r['profitability']['monthly_rate']);
 
-        return compact('rows', 'totalInvested', 'totalReceived', 'totalProfit', 'avgPct', 'avgMonthly', 'timeRows', 'timeSummary');
+        return compact('rows', 'totalInvested', 'totalReceived', 'totalProfit', 'avgPct', 'avgMonthly', 'timeRows', 'timeSummary', 'situationByType');
     }
 }; ?>
 
@@ -60,6 +63,33 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="text-xxs text-mono-600">{{ $avgMonthly !== null ? number_format((float) $avgMonthly, 3, ',', '.').'% a.m.' : '—' }}</div>
         </x-fx.card>
     </div>
+
+    <x-fx.card data-situation-report>
+        <h3 class="text-md font-semibold mb-sm">Situação dos requisitórios comprados</h3>
+        @forelse ($situationByType as $typeLabel => $list)
+            <h4 class="mt-sm mb-xs text-sm font-semibold">{{ $typeLabel }} ({{ $list->count() }})</h4>
+            <div class="overflow-x-auto">
+            <table class="fx-table w-full text-sm mb-sm">
+                <thead><tr><th class="text-left">Beneficiário</th><th class="text-left">Processo</th><th class="text-left">Tipo</th><th class="text-right">Compra</th><th class="text-right">Previsão</th><th class="text-left">Situação</th></tr></thead>
+                <tbody>
+                    @foreach ($list as $w)
+                        @php $st = $w->deadlineStatus(); $col = ['on_time' => '#16a34a', 'due_soon' => '#ca8a04', 'overdue' => '#dc2626', 'received' => '#6b7280'][$st['key'] ?? ''] ?? '#6b7280'; @endphp
+                        <tr>
+                            <td class="font-semibold">{{ $w->beneficiaryName() }}</td>
+                            <td><a href="{{ route('writs.show', $w) }}" class="hover:text-primary-500 whitespace-nowrap">{{ $w->process_number ?: '#'.$w->id }}</a></td>
+                            <td>{{ $w->type === 'rpv' ? 'RPV' : 'Precatório' }}</td>
+                            <td class="text-right">{{ $w->paid_at?->format('d/m/Y') ?? 'sem data' }}</td>
+                            <td class="text-right">{{ $w->estimatedReceiptDeadline()?->format('d/m/Y') ?? '—' }}</td>
+                            <td style="color: {{ $col }};" class="font-semibold whitespace-nowrap">{{ $st['label'] ?? 'Sem previsão' }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+            </div>
+        @empty
+            <div class="text-sm text-mono-600">Nenhum requisitório comprado.</div>
+        @endforelse
+    </x-fx.card>
 
     <x-fx.card data-receipt-times>
         <h3 class="text-md font-semibold mb-sm">Tempo de recebimento (compra → recebimento)</h3>
