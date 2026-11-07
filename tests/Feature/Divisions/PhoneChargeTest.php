@@ -57,7 +57,7 @@ class PhoneChargeTest extends TestCase
         [$admin, $g, $a, $b] = $this->setup2();
         $this->assertSame('+5585999998888', $b->fresh()->phone);
         $this->assertSame('(85) 99999-8888', $b->fresh()->phoneDisplay());
-        Volt::test('divisions.show', ['group' => $g])->set('memberName', 'Ana')->set('memberPhone', '123')->call('addMember')->assertHasErrors('memberPhone');
+        Volt::test('divisions.show', ['group' => $g])->set('memberName', 'Ana')->set('memberEmail', 'ana@example.com')->set('memberPhone', '123')->call('addMember')->assertHasErrors('memberPhone');
         $this->assertFalse(DivisionMember::where('name', 'Ana')->exists());
     }
 

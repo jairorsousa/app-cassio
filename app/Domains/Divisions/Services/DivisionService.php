@@ -163,6 +163,9 @@ class DivisionService
         $actor = $this->assertAdmin($actor);
         $name = trim($name);
         $email = $email !== null && trim($email) !== '' ? mb_strtolower(trim($email)) : null;
+        if ($name === '' && $email !== null && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $name = \App\Support\UserAccessService::nickname('', $email); // apelido provisório até o cadastro
+        }
         if ($name === '' || mb_strlen($name) > 120) {
             throw ValidationException::withMessages(['memberName' => 'Informe o nome do participante.']);
         }

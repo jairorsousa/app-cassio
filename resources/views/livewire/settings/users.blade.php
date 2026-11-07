@@ -14,6 +14,7 @@ use Livewire\Volt\Component;
 new #[Layout('layouts.app')] class extends Component {
     public string $inviteName = '';
     public string $inviteEmail = '';
+    public string $invitePhone = '';
     public array $inviteModules = [];
     /** Grupos de Divisões em que a pessoa convidada já entra. */
     public array $inviteGroups = [];
@@ -73,12 +74,12 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $this->resetErrorBag();
         $this->guarded(function () {
-            [$inv, $token] = UserAccessService::invite(auth()->user(), $this->inviteName, $this->inviteEmail, $this->inviteModules);
+            [$inv, $token] = UserAccessService::invite(auth()->user(), $this->inviteName, $this->inviteEmail, $this->inviteModules, $this->invitePhone);
             if (in_array('divisoes', (array) $inv->modules, true)) {
                 $svc = app(\App\Domains\Divisions\Services\DivisionService::class);
                 foreach (\App\Domains\Divisions\Models\DivisionGroup::whereIn('id', array_map('intval', $this->inviteGroups))->get() as $g) {
                     if (! $g->members()->whereRaw('lower(email) = ?', [$inv->email])->exists()) {
-                        $svc->addMember(auth()->user(), $g, $inv->name, $inv->email);
+                        $svc->addMember(auth()->user(), $g, $inv->name, $inv->email, $inv->phone);
                     }
                 }
             }
@@ -87,7 +88,7 @@ new #[Layout('layouts.app')] class extends Component {
             $this->generatedInvitationId = $inv->id;
             $this->generatedToken = $token;
             $this->notice = 'Convite criado. Copie o link ou use "Enviar por e-mail" (envio não é automático). O link vale por 7 dias e só pode ser usado uma vez.';
-            $this->reset('inviteName', 'inviteEmail', 'inviteModules', 'inviteGroups');
+            $this->reset('inviteName', 'inviteEmail', 'invitePhone', 'inviteModules', 'inviteGroups');
         });
     }
 
@@ -399,11 +400,14 @@ new #[Layout('layouts.app')] class extends Component {
     <x-jr.card>
         <h3 class="font-bold">Convidar pessoa</h3>
         <form wire:submit="invite" class="mt-3 space-y-3">
-            <div class="grid gap-3 md:grid-cols-2">
-                <x-jr.input label="Nome *" name="inviteName" wire:model="inviteName" maxlength="120" />
+            <div class="grid gap-3 md:grid-cols-3" data-invite-fields>
                 <x-jr.input label="E-mail *" name="inviteEmail" type="email" wire:model="inviteEmail" maxlength="190" />
+                <x-jr.input label="Apelido (opcional)" name="inviteName" wire:model="inviteName" maxlength="120" helper="Só para você identificar na lista. Vira o nome real quando a pessoa completar o cadastro." />
+                <x-jr.input label="Celular (opcional)" name="invitePhone" type="tel" x-phone placeholder="(99) 99999-9999" maxlength="15" wire:model="invitePhone" />
             </div>
             @error('inviteEmail')<p class="text-xs text-error">{{ $message }}</p>@enderror
+            @error('inviteName')<p class="text-xs text-error">{{ $message }}</p>@enderror
+            @error('invitePhone')<p class="text-xs text-error">{{ $message }}</p>@enderror
             <fieldset>
                 <legend class="text-sm font-medium text-mono-700">Módulos liberados</legend>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">

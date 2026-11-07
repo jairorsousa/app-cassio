@@ -781,3 +781,14 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 
 - O modal de despesa no cartão já tinha Cancelar, Salvar e "Salvar e novo" (commit b87a8ac), mas "Salvar e novo" limpava também o cartão e a fatura. Agora, no lançamento de cartão, ele salva, limpa valor, descrição, categoria, observações e vínculos, e **mantém cartão, fatura e data** para a próxima compra da série. Lançamentos de conta seguem como antes.
 - Teste atualizado: tests/Feature/Banking/TransactionFlowTest.php (a segunda compra cai na mesma fatura sem escolher o cartão de novo). Suíte completa: 718 testes passando, no banco isolado.
+
+## 2026-11-07 — Convites simplificados (e-mail + apelido + celular) e nome real no cadastro
+
+- **Convite** (Configurações › Usuários › Convidar pessoa):
+  - **E-mail é obrigatório**; Apelido e Celular são opcionais;
+  - sem apelido, a lista mostra a parte do e-mail antes do @;
+  - o celular é validado e guardado no convite (nova coluna `user_invitations.phone`, E.164), vai para os grupos marcados e pré-preenche o "Complete seu cadastro".
+- **Divisões › grupo › Adicionar novo participante:** E-mail * e Apelido (opcional), além do Celular (opcional).
+- **Complete seu cadastro:** obrigatórios: nome completo, celular, data de nascimento, CPF, CEP, rua, número, bairro, cidade e UF. Opcionais: complemento e Pix. Ao concluir, o nome real substitui o apelido no usuário, nos participantes de todos os grupos (mesmo e-mail), no Contato e no convite.
+- Backup antes da migração: `/root/app-cassio-backups/user_invitations-antes-celular-20261107.json`.
+- Teste: tests/Feature/SimpleInviteNicknameTest.php. Suíte completa: 721 testes passando, no banco isolado.

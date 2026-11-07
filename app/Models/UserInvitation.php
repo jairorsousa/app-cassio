@@ -9,6 +9,7 @@ class UserInvitation extends Model
     protected $fillable = [
         'name',
         'email',
+        'phone',
         'modules',
         'token_hash',
         'token_encrypted',

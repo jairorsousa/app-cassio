@@ -30,24 +30,53 @@ class UserAccessService
     }
 
     /** @return array{0: UserInvitation, 1: string} convite + token em texto (mostrado uma única vez) */
-    public static function invite(?User $actor, string $name, string $email, array $modules): array
+    /** Apelido vazio → parte do e-mail antes do @ (só para identificar até a pessoa completar o cadastro). */
+    public static function nickname(string $name, string $email): string
+    {
+        $name = trim($name);
+
+        return $name !== '' ? $name : (string) strstr(mb_strtolower(trim($email)), '@', true);
+    }
+
+    /** Celular opcional do convite → E.164 (+55…); vazio → null. */
+    public static function invitePhone(?string $raw): ?string
+    {
+        $digits = \App\Support\BrazilianDocuments::digits($raw);
+        if ($digits === '') {
+            return null;
+        }
+        if (strlen($digits) >= 12 && str_starts_with($digits, '55')) {
+            $digits = substr($digits, 2);
+        }
+        if (! preg_match('/^\d{10,11}$/', $digits)) {
+            throw ValidationException::withMessages(['invitePhone' => 'Celular inválido. Use (99) 99999-9999.']);
+        }
+
+        return '+55'.$digits;
+    }
+
+    public static function invite(?User $actor, string $name, string $email, array $modules, ?string $phone = null): array
     {
         $actor = self::admin($actor);
         $email = mb_strtolower(trim($email));
-        $name = trim($name);
-        if ($name === '' || mb_strlen($name) > 120 || ! filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 190) {
-            throw ValidationException::withMessages(['inviteEmail' => 'Informe nome e e-mail válidos.']);
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 190) {
+            throw ValidationException::withMessages(['inviteEmail' => 'Informe um e-mail válido.']);
         }
+        $name = self::nickname($name, $email);
+        if (mb_strlen($name) > 120) {
+            throw ValidationException::withMessages(['inviteName' => 'Apelido muito longo.']);
+        }
+        $phone = self::invitePhone($phone);
         if (User::whereRaw('lower(email) = ?', [$email])->exists()) {
             throw ValidationException::withMessages(['inviteEmail' => 'Já existe um usuário com este e-mail.']);
         }
         $modules = self::modules($modules);
 
-        return DB::transaction(function () use ($actor, $name, $email, $modules) {
+        return DB::transaction(function () use ($actor, $name, $email, $modules, $phone) {
             // Um convite válido por e-mail: os pendentes anteriores deixam de valer.
             UserInvitation::where('email', $email)->whereNull('accepted_at')->delete();
             $token = Str::random(64);
-            $inv = UserInvitation::create(['name' => $name, 'email' => $email, 'modules' => $modules, 'token_hash' => UserInvitation::hashToken($token), 'token_encrypted' => \Illuminate\Support\Facades\Crypt::encryptString($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'invited_by' => $actor->id]);
+            $inv = UserInvitation::create(['name' => $name, 'email' => $email, 'phone' => $phone, 'modules' => $modules, 'token_hash' => UserInvitation::hashToken($token), 'token_encrypted' => \Illuminate\Support\Facades\Crypt::encryptString($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'invited_by' => $actor->id]);
 
             return [$inv, $token];
         });

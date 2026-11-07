@@ -282,6 +282,12 @@ new #[Layout('layouts.app')] class extends Component
 
     public function addMember(): void
     {
+        $this->resetErrorBag(['memberName', 'memberEmail', 'memberPhone']);
+        if (trim($this->memberEmail) === '') {
+            $this->addError('memberEmail', 'Informe o e-mail (o convite vai para ele).');
+
+            return;
+        }
         try {
             $this->service()->addMember(auth()->user(), $this->group, $this->memberName, $this->memberEmail ?: null, $this->memberPhone ?: null);
         } catch (ValidationException $e) {
@@ -592,8 +598,8 @@ new #[Layout('layouts.app')] class extends Component
                 </div>
                 <p class="mt-4 text-sm font-semibold">Adicionar novo participante</p>
                 <form wire:submit="addMember" class="mt-3 grid grid-cols-1 items-end gap-3 md:grid-cols-3">
-                    <x-jr.input label="Nome" name="memberName" wire:model="memberName" />
-                    <x-jr.input label="E-mail (para o convite)" name="memberEmail" type="email" wire:model="memberEmail" />
+                    <x-jr.input label="E-mail *" name="memberEmail" type="email" wire:model="memberEmail" />
+                    <x-jr.input label="Apelido (opcional)" name="memberName" wire:model="memberName" helper="Vira o nome real quando a pessoa completar o cadastro." />
                     <x-jr.input label="Celular (opcional)" name="memberPhone" type="tel" x-phone placeholder="(99) 99999-9999" wire:model="memberPhone" />
                     <button type="submit" class="fx-btn fx-btn--standard h-12">Adicionar participante</button>
                 </form>

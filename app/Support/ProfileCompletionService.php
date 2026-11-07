@@ -47,7 +47,9 @@ class ProfileCompletionService
     {
         $contact = $this->findContact($user, null);
         $memberPhone = DivisionMember::whereRaw('lower(email) = ?', [mb_strtolower((string) $user->email)])->whereNotNull('phone')->value('phone');
-        $phone = $memberPhone ? BrazilianDocuments::formatPhone(substr($memberPhone, 3)) : (string) ($contact?->phone ?? '');
+        $invitePhone = \App\Models\UserInvitation::whereRaw('lower(email) = ?', [mb_strtolower((string) $user->email)])->whereNotNull('phone')->orderByDesc('id')->value('phone');
+        $e164 = $memberPhone ?: $invitePhone;
+        $phone = $e164 ? BrazilianDocuments::formatPhone(substr($e164, 3)) : (string) ($contact?->phone ?? '');
 
         return [
             'name' => (string) ($contact?->name ?: $user->name),
@@ -98,6 +100,9 @@ class ProfileCompletionService
             $user->forceFill(['name' => $fields['name'], 'contact_id' => $contact->id, 'profile_completed_at' => now()])->save();
             // Liga participantes deste e-mail à conta e preenche o celular só onde está vazio (manual não é sobrescrito).
             DivisionMember::whereNull('user_id')->whereRaw('lower(email) = ?', [$email])->update(['user_id' => $user->id]);
+            // Nome real substitui o apelido nos grupos e no convite.
+            DivisionMember::whereRaw('lower(email) = ?', [$email])->where('is_owner', false)->update(['name' => $fields['name']]);
+            \App\Models\UserInvitation::whereRaw('lower(email) = ?', [$email])->update(['name' => $fields['name']]);
             DivisionMember::whereRaw('lower(email) = ?', [$email])->where('is_owner', false)->whereNull('phone')
                 ->update(['phone' => '+55'.BrazilianDocuments::digits($data['phone'])]);
 
