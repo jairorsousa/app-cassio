@@ -32,7 +32,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
     public function with(): array
     {
-        $summary = Cache::remember('banking.dashboard.summary.v2.'.\App\Domains\Banking\Services\OwnFinancialService::currentRegime(), 300, function () {
+        // Sem cache: os números precisam ser os mesmos do painel inicial a qualquer momento.
+        $summary = (function () {
             $accounts = BankAccount::active()->get();
             $cash = app(CashPositionService::class)->summarize($accounts);
             $totalBalance = $cash['accounts_balance'];
@@ -73,12 +74,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                 'monthExpense',
                 'pending',
             );
-        });
+        })();
 
-        $totalReceivable = Receivable::with('installments.settlements')->get()->sum(fn ($receivable) => $receivable->remainingCents()) / 100;
+        // Mesmo cálculo do widget "Valores a receber" do painel inicial (sem testes, até hoje, com encargos).
+        $receivables = app(\App\Domains\Dashboard\Services\DashboardWidgetService::class)->receivablesAt(now()->toDateString());
 
         return $summary + [
-            'totalReceivable' => $totalReceivable,
+            'totalReceivable' => $receivables['total'],
+            'receivablePrincipal' => $receivables['principal'],
+            'receivableCount' => $receivables['count'],
             'result' => $summary['monthIncome'] - $summary['monthExpense'],
         ];
     }
@@ -97,7 +101,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-space-5">
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
-                <span class="uppercase tracking-[0.05em]">Resultado do período</span>
+                <span class="uppercase tracking-[0.05em]">Resultado próprio do mês</span>
                 <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Receitas próprias menos despesas próprias do mês atual, incluindo perdas reconhecidas." aria-label="Receitas próprias menos despesas próprias do mês atual, incluindo perdas reconhecidas.">info</span>
             </div>
             <div class="mt-space-2 text-fs-24 font-bold font-mono [font-variant-numeric:tabular-nums] {{ $result >= 0 ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">{{ $result < 0 ? '-R$' : 'R$' }} {{ number_format(abs($result), 2, ',', '.') }}</div>
@@ -122,9 +126,10 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         <x-fx.card class="min-w-0">
             <div class="flex items-center gap-space-2 text-fs-12 text-cryptex-text-tertiary font-medium">
                 <span class="uppercase tracking-[0.05em]">Total a receber</span>
-                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Saldo em aberto de adiantamentos e pagamentos feitos em nome de terceiros, incluindo parcelas futuras e valores sem data definida." aria-label="Saldo em aberto de adiantamentos e pagamentos feitos em nome de terceiros, incluindo parcelas futuras e valores sem data definida.">info</span>
+                <span class="material-icons-outlined text-fs-16 text-cryptex-brand-400" tabindex="0" title="Valores a receber em aberto até hoje, com encargos (mesmo número do painel inicial). Não inclui registros de teste." aria-label="Valores a receber em aberto até hoje, com encargos (mesmo número do painel inicial). Não inclui registros de teste.">info</span>
             </div>
-            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-brand-400 font-mono [font-variant-numeric:tabular-nums]">R$ {{ number_format($totalReceivable, 2, ',', '.') }}</div>
+            <div class="mt-space-2 text-fs-24 font-bold text-cryptex-brand-400 font-mono [font-variant-numeric:tabular-nums]" data-total-receivable>R$ {{ number_format($totalReceivable, 2, ',', '.') }}</div>
+            <div class="text-fs-12 text-cryptex-text-secondary">{{ $receivableCount }} em aberto · principal R$ {{ number_format($receivablePrincipal, 2, ',', '.') }}</div>
             <a href="{{ route('banking.receivables.index') }}" class="mt-space-1 inline-block text-fs-12 font-medium text-cryptex-brand-400 hover:underline">Ver valores a receber</a>
         </x-fx.card>
     </div>

@@ -269,7 +269,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                             <div class="grid grid-cols-1 sm:grid-cols-4 gap-space-4">
                                 <div><div class="{{ $label }}">Receitas próprias</div><div class="text-fs-20 font-bold {{ $num }} text-cryptex-green-500">{{ $money($w['flows']['income']) }}</div></div>
                                 <div><div class="{{ $label }}">Despesas próprias</div><div class="text-fs-20 font-bold {{ $num }} text-cryptex-red-500">{{ $money($w['flows']['expense']) }}</div></div>
-                                <div><div class="{{ $label }}">Resultado próprio</div><div class="text-fs-24 font-bold {{ $num }} {{ $tone($w['flows']['result']) }}">{{ $money($w['flows']['result']) }}</div></div>
+                                <div><div class="{{ $label }}">Resultado próprio</div><div class="text-fs-12 text-cryptex-text-tertiary">= "Resultado próprio do mês" no Financeiro</div><div class="text-fs-24 font-bold {{ $num }} {{ $tone($w['flows']['result']) }}">{{ $money($w['flows']['result']) }}</div></div>
                                 <div>
                                     <div class="{{ $label }}">x período anterior</div>
                                     <div class="text-fs-14 {{ $num }} {{ $tone($cmp['diff']) }}">{{ $cmp['diff'] >= 0 ? '+' : '' }}{{ $money($cmp['diff']) }} · {{ $cmp['pct'] === null ? 'sem base' : ($cmp['pct'] >= 0 ? '+' : '').number_format($cmp['pct'], 1, ',', '.').'%' }}</div>
@@ -329,6 +329,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     @case('receivables')
                         <x-fx.card>
                             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Valores a receber · {{ $posLabel }}</h3>
+                            <p class="text-fs-12 text-cryptex-text-tertiary">Mesmo número de "Total a receber" no Financeiro (com encargos, sem testes).</p>
                             <div class="grid grid-cols-3 gap-space-3 mt-space-3">
                                 <div><div class="{{ $label }}">Em aberto</div><div class="text-fs-18 font-bold {{ $num }}">{{ $w['receivables']['count'] }}</div></div>
                                 <div><div class="{{ $label }}">Principal</div><div class="text-fs-14 font-bold {{ $num }}">{{ $money($w['receivables']['principal']) }}</div></div>
@@ -433,7 +434,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     <div class="text-fs-32 font-bold text-cryptex-text-primary {{ $num }}">{{ $money($snapshot['patrimony']['total']) }}</div>
                                 </div>
                                 <div class="grid grid-cols-2 md:grid-cols-5 gap-space-3 text-fs-12 text-cryptex-text-secondary md:flex-1 md:max-w-2xl">
-                                    @foreach ([['Saldo próprio', $snapshot['patrimony']['own_balance'] ?? $snapshot['patrimony']['cash_balance']], ['Carteira', $snapshot['patrimony']['portfolio_market_value']], ['Sociedade', $snapshot['patrimony']['partnership_exposed']], ['Requisitórios', $snapshot['patrimony']['writs_capital_at_risk']], ['(−) Faturas', $snapshot['patrimony']['open_invoices_total']]] as [$l, $v])
+                                    @foreach ([['Saldo próprio', $w['cash']['own_balance'] ?? $snapshot['patrimony']['own_balance'] ?? $snapshot['patrimony']['cash_balance']], ['Carteira', $snapshot['patrimony']['portfolio_market_value']], ['Sociedade', $snapshot['patrimony']['partnership_exposed']], ['Requisitórios', $snapshot['patrimony']['writs_capital_at_risk']], ['(−) Faturas', $snapshot['patrimony']['open_invoices_total']]] as [$l, $v])
                                         <div><div class="uppercase tracking-[0.05em] text-[10px]">{{ $l }}</div><div class="font-medium text-cryptex-text-primary text-fs-14 {{ $num }}">{{ $money($v) }}</div></div>
                                     @endforeach
                                 </div>
