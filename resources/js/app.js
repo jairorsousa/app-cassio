@@ -137,11 +137,15 @@ document.addEventListener('alpine:init', () => {
         el._moneyMask = mask;
         let disposed = false;
 
+        // Em foco o campo é de quem digita: o eco do Livewire (wire:model.live) nunca reescreve o texto
+        // nem move o cursor (era isso que virava "5" em "5,00" no celular). Formata só no blur.
         const applyExternal = (value) => {
-            const parsed = parseToCents(value);
-            const incoming = allowNegative ? parsed : Math.abs(parsed);
-            if (mask.isTouched() && document.activeElement === el && incoming !== mask.getCents()) {
-                queueMicrotask(syncWire);
+            if (document.activeElement === el) {
+                const parsed = parseToCents(value);
+                const incoming = allowNegative ? parsed : Math.abs(parsed);
+                if (mask.isTouched() && incoming !== mask.getCents()) {
+                    queueMicrotask(syncWire);
+                }
                 return;
             }
 
@@ -167,7 +171,7 @@ document.addEventListener('alpine:init', () => {
             }
 
             wrapModel();
-            if (mask.isTouched() && document.activeElement === el) {
+            if (document.activeElement === el) {
                 return;
             }
 
@@ -282,7 +286,7 @@ document.addEventListener('livewire:initialized', () => {
                         return;
                     }
 
-                    if (document.activeElement === el && mask.isTouched()) {
+                    if (document.activeElement === el) {
                         return;
                     }
 

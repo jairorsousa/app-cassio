@@ -245,11 +245,14 @@ export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false 
         onChange(state.cents);
     };
 
+    // Em foco o texto fica editável: sem ",00" automático (1.234,00 → 1.234); centavos digitados ficam.
     const onFocus = () => {
         if (state.cents === 0 && el.value !== '' && !/[1-9]/.test(el.value)) {
             el.value = '';
-            state.last = '';
+        } else if (/,00$/.test(el.value)) {
+            el.value = el.value.slice(0, -3);
         }
+        state.last = el.value;
     };
 
     const onBlur = () => {
