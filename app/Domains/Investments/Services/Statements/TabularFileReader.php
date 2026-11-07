@@ -11,6 +11,19 @@ class TabularFileReader
 {
     public const MAX_ROWS = 20000;
 
+    private bool $rawMode = false;
+
+    /** Todas as linhas não vazias, sem escolher cabeçalho (leitor genérico decide). @return list<list<string>> */
+    public function rawRows(string $path, string $kind): array
+    {
+        $this->rawMode = true;
+        try {
+            return $this->read($path, $kind)['rows'];
+        } finally {
+            $this->rawMode = false;
+        }
+    }
+
     /** @return array{headers: list<string>, rows: list<list<string>>} */
     public function read(string $path, string $kind): array
     {
@@ -136,9 +149,36 @@ class TabularFileReader
         return $n - 1;
     }
 
-    /** Cabeçalho = primeira linha com ≥ 3 células preenchidas (extratos costumam ter título antes). */
+    /**
+     * Cabeçalho: a linha (entre as 80 primeiras) com mais nomes de coluna conhecidos (data, valor, descrição, saldo…);
+     * sem nenhuma, a primeira linha com ≥ 3 células preenchidas (extratos costumam ter título antes).
+     */
     private function split(array $rows): array
     {
+        if ($this->rawMode) {
+            return ['headers' => [], 'rows' => array_values($rows)];
+        }
+        $bestIndex = null;
+        $bestScore = 1;
+        foreach (array_slice($rows, 0, 80, true) as $i => $r) {
+            $score = 0;
+            foreach ($r as $cell) {
+                $c = mb_strtolower(trim((string) $cell));
+                if ($c !== '' && mb_strlen($c) <= 40 && preg_match('/^(data|dt\b|movimenta|liquida|descri|hist[oó]r|lan[cç]amento|valor|saldo|ativo|ticker|produto|quantidade|qtd|pre[cç]o|tipo|evento|cr[eé]dito|d[eé]bito|entrada|sa[ií]da)/u', $c)) {
+                    $score++;
+                }
+            }
+            if ($score > $bestScore && count(array_filter($r, fn ($v) => $v !== '')) >= 3) {
+                $bestScore = $score;
+                $bestIndex = $i;
+            }
+        }
+        if ($bestIndex !== null) {
+            $r = $rows[$bestIndex];
+            $headers = array_map(fn ($h, $k) => $h !== '' ? $h : 'Coluna '.($k + 1), $r, array_keys($r));
+
+            return ['headers' => $headers, 'rows' => array_values(array_slice($rows, $bestIndex + 1))];
+        }
         foreach ($rows as $i => $r) {
             if (count(array_filter($r, fn ($v) => $v !== '')) >= 3) {
                 $headers = array_map(fn ($h, $k) => $h !== '' ? $h : 'Coluna '.($k + 1), $r, array_keys($r));
