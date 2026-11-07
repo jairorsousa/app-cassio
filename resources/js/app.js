@@ -203,9 +203,10 @@ document.addEventListener('alpine:init', () => {
     });
 
     // x-decimal="N": percentuais e quantidades com vírgula (N casas). O Livewire recebe "12.5".
-    Alpine.directive('decimal', (el, { expression }, { cleanup }) => {
+    Alpine.directive('decimal', (el, { expression, modifiers }, { cleanup }) => {
         const decimals = Math.max(0, Math.min(8, Number.parseInt(expression, 10) || 2));
-        const pad = decimals <= 3 ? Math.min(decimals, 2) : 0;
+        // x-decimal.pad="4": sempre mostra todas as casas (ex.: preço R$ 12,3456).
+        const pad = modifiers.includes('pad') ? decimals : (decimals <= 3 ? Math.min(decimals, 2) : 0);
         let commitTimer = null;
         let mask;
         let disposed = false;

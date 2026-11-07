@@ -22,12 +22,15 @@ new #[Layout('layouts.app')] class extends Component {
         $this->quoteDate = today()->format("Y-m-d");
         $this->resetValidation();
         $this->quotePrice = $position?->asset?->usesAutomaticLiquidity()
-            ? (string) $position->marketValue()
-            : (string) ($position?->current_price ?? $position?->average_price ?? 0);
+            ? \App\Support\Money::decimal(round($position->marketValue(), 2), 2)
+            : \App\Support\Money::decimal((float) ($position?->current_price ?? $position?->average_price ?? 0), 4);
     }
 
     public function saveQuote(AssetPositionService $service): void
     {
+        // Preço com 4 casas no padrão BR ("12,3456"); saldo de liquidez automática com 2 casas.
+        $isLiquidity = Asset::find($this->editingQuoteAssetId)?->usesAutomaticLiquidity() ?? false;
+        $this->quotePrice = \App\Support\Money::decimal($this->quotePrice, $isLiquidity ? 2 : 4);
         $this->validate([
             'quotePrice' => 'required|numeric|min:0',
             'quoteDate' => 'required|date|before_or_equal:'.\App\Support\BusinessDate::today(),
@@ -170,7 +173,7 @@ new #[Layout('layouts.app')] class extends Component {
 @if ($editingQuoteAssetId)
 <x-investments.modal :title="$this->editingAutomaticLiquidity() ? 'Atualizar saldo da aplicação' : 'Atualizar cotação'" submit="saveQuote">
 <x-jr.input label="Data da cotação *" type="date" name="quoteDate" wire:model="quoteDate" required />
-<x-jr.input :label="$this->editingAutomaticLiquidity() ? 'Saldo atual (R$) *' : 'Preço por unidade (R$) *'" type="number" step="0.0001" min="0" name="quotePrice" wire:model="quotePrice" required />
+<x-jr.input :label="$this->editingAutomaticLiquidity() ? 'Saldo atual (R$) *' : 'Preço por unidade (R$) *'" type="text" x-decimal.pad="{{ $this->editingAutomaticLiquidity() ? 2 : 4 }}" placeholder="{{ $this->editingAutomaticLiquidity() ? '0,00' : '0,0000' }}" name="quotePrice" wire:model="quotePrice" required />
 <p class="text-sm text-mono-600 md:col-span-2">{{ $this->editingAutomaticLiquidity() ? 'Informe o saldo total mostrado pelo banco. A diferença será reconhecida como valorização da aplicação.' : 'O valor mais recente por data será utilizado na carteira.' }}</p>
 </x-investments.modal>
 @endif

@@ -759,3 +759,10 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - `DivisionService::fillPhonesFromContacts()` preenche o celular do participante com o do Contato do usuário ligado (`users.contact_id`), só quando o participante está sem número. Número digitado à mão nunca é sobrescrito. O preenchimento acontece ao adicionar a pessoa ao grupo, ao vincular a conta (claimMemberships/aceite) e ao concluir ou atualizar o "Complete seu cadastro". Este último agora também liga os participantes do mesmo e-mail à conta e só preenche os números vazios.
 - Backfill: o comando `php artisan divisions:fill-phones` (com `--dry-run` para só listar). Execução em produção: 1 participante preenchido, Heleno Mota (participante 4, "SHC - 3 irmãos"), com o celular do contato 447. Sandro já tinha número e ficou igual. Backup: `/root/app-cassio-backups/divisoes-antes-celular-contato-20261107.json`.
 - Testes: tests/Feature/Divisions/PhoneFromContactTest.php. Suíte completa: 716 testes passando, no banco isolado.
+
+## 2026-11-07 — Investimentos › Posições: preço com 4 casas no padrão BR
+
+- Preço médio e cotação aparecem com 4 casas (R$ 12,3456); totais, valor de mercado e resultado continuam com 2.
+- O campo "Preço por unidade" do modal de cotação passou a ser texto com a máscara `x-decimal.pad="4"`: aceita vírgula ao digitar e ao colar e mostra sempre 4 casas. O saldo de liquidez automática usa 2 casas. O modificador `.pad` é novo na diretiva `x-decimal`.
+- Backend: `Money::decimal()` normaliza o valor antes de validar e salvar ("12,3456" → 12.3456).
+- Teste: tests/Feature/Investments/PositionPriceFourDecimalsTest.php. Suíte completa: 717 testes passando, no banco isolado.
