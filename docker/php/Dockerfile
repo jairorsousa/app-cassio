@@ -10,6 +10,8 @@ RUN apk add --no-cache \
         zip \
         unzip \
         poppler-utils \
+        tesseract-ocr \
+        tesseract-ocr-data-por \
         nodejs \
         npm \
         libzip-dev \

@@ -47,8 +47,11 @@ new #[Layout('layouts.app')] class extends Component {
         $ext = strtolower($this->file->getClientOriginalExtension());
         $head = (string) @file_get_contents($this->file->getRealPath(), false, null, 0, 2048);
         $isOfx = in_array($ext, ['ofx', 'qfx'], true) || preg_match('/OFXHEADER|<OFX>/i', $head);
-        if (! $isOfx && ! in_array($ext, ['csv', 'txt', 'xlsx', 'pdf', 'jpg', 'jpeg', 'png', 'webp'], true)) {
-            $this->addError('file', 'Use OFX, CSV, XLSX, PDF, JPG ou PNG.');
+        if (! $isOfx && GenericStatementReader::looksLikeHtml($head)) {
+            $ext = 'html'; // extrato salvo do internet banking (.html, .htm ou .bin): detectado pelo conteúdo
+        }
+        if (! $isOfx && ! in_array($ext, ['csv', 'txt', 'xlsx', 'pdf', 'html', 'htm', 'jpg', 'jpeg', 'png', 'webp'], true)) {
+            $this->addError('file', 'Use OFX, CSV, XLSX, PDF, HTML, JPG ou PNG.');
 
             return;
         }
@@ -235,7 +238,7 @@ new #[Layout('layouts.app')] class extends Component {
                     </label>
                 @endif
                 <label class="text-sm md:col-span-2">Arquivo *
-                    <input type="file" wire:model="file" accept=".ofx,.qfx,.csv,.txt,.xlsx,.pdf,.jpg,.jpeg,.png,.webp" class="mt-1 block w-full text-sm">
+                    <input type="file" wire:model="file" accept=".ofx,.qfx,.csv,.txt,.xlsx,.pdf,.html,.htm,.bin,.jpg,.jpeg,.png,.webp" class="mt-1 block w-full text-sm">
                     <span class="text-xs text-mono-600">OFX, CSV, XLSX, PDF, JPG ou PNG · até 10 MB. Foto precisa da leitura por IA configurada.</span>
                     @error('file')<span class="block text-xs text-error">{{ $message }}</span>@enderror
                 </label>

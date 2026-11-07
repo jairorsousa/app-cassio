@@ -32,11 +32,13 @@ class GenericStatementReader
         $ext = strtolower($extension);
 
         return match (true) {
+            in_array($ext, ['csv', 'txt'], true) && self::isCaixaTxt((string) file_get_contents($path, false, null, 0, 512)) => $this->fromCaixaTxt((string) file_get_contents($path)),
             in_array($ext, ['csv', 'txt'], true) => $this->fromTable($this->tabular->rawRows($path, 'csv'), 'CSV'),
             $ext === 'xlsx' => $this->fromTable($this->tabular->rawRows($path, 'xlsx'), 'XLSX'),
             $ext === 'pdf' => $this->fromPdf($path),
+            in_array($ext, ['html', 'htm'], true) => $this->fromHtml((string) file_get_contents($path)),
             in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true) => $this->fromImage($path, $ext),
-            default => throw new RuntimeException('Formato não suportado. Use CSV, XLSX, PDF, JPG ou PNG.'),
+            default => throw new RuntimeException('Formato não suportado. Use OFX, CSV, XLSX, PDF, HTML, JPG ou PNG.'),
         };
     }
 
@@ -245,13 +247,243 @@ class GenericStatementReader
     private function fromPdf(string $path): array
     {
         $res = $this->pdf->extract($path);
+        if ($res['status'] === 'no_text') {
+            $ocr = $this->pdf->ocr($path);
+            if ($ocr['status'] === 'text_extracted') {
+                return $this->fromOcrText($ocr['text']);
+            }
+        }
         if ($res['status'] !== 'text_extracted') {
             throw new RuntimeException($res['status'] === 'no_text'
-                ? 'Este PDF não tem texto (parece escaneado). Envie como foto (JPG/PNG) ou exporte em CSV/XLSX.'
+                ? 'Este PDF não tem texto (parece escaneado) e a leitura por OCR não encontrou lançamentos. Envie como foto (JPG/PNG) ou exporte em CSV/XLSX/OFX.'
                 : 'Não consegui ler este PDF.');
         }
 
         return $this->fromText($res['text'], 'PDF');
+    }
+
+    /** TXT da Caixa: "Conta";"Data_Mov";"Nr_Doc";"Historico";"Valor";"Deb_Cred" (data AAAAMMDD, valor com ponto). */
+    public static function isCaixaTxt(string $head): bool
+    {
+        return (bool) preg_match('/Data_Mov.{0,40}Nr_Doc.{0,80}Deb_Cred/is', $head);
+    }
+
+    public function fromCaixaTxt(string $text): array
+    {
+        if (! mb_check_encoding($text, 'UTF-8')) {
+            $text = mb_convert_encoding($text, 'UTF-8', 'ISO-8859-1');
+        }
+        $lines = preg_split('/\r\n|\n|\r/', trim($text));
+        $head = array_map(fn ($h) => strtolower(trim($h)), str_getcsv(array_shift($lines), ';', '"', ''));
+        $ix = array_flip($head);
+        $rows = [];
+        $skipped = 0;
+        $ignored = 0;
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            $c = str_getcsv($line, ';', '"', '');
+            $d = trim($c[$ix['data_mov']] ?? '');
+            $desc = trim($c[$ix['historico']] ?? '');
+            $val = trim($c[$ix['valor']] ?? '');
+            $dc = strtoupper(trim($c[$ix['deb_cred']] ?? ''));
+            if (self::isBalanceLine($desc)) {
+                $ignored++;
+
+                continue;
+            }
+            if (! preg_match('/^(\d{4})(\d{2})(\d{2})$/', $d, $m) || ! is_numeric($val) || ! in_array($dc, ['C', 'D'], true)) {
+                $skipped++;
+
+                continue;
+            }
+            $rows[] = ['date' => "$m[1]-$m[2]-$m[3]", 'description' => $desc ?: 'Sem descrição', 'amount' => round(($dc === 'D' ? -1 : 1) * (float) $val, 2), 'balance' => null, 'doc' => trim($c[$ix['nr_doc']] ?? '')];
+        }
+        if ($rows === []) {
+            throw new RuntimeException('Não encontrei lançamentos neste TXT da Caixa.');
+        }
+
+        return ['rows' => $rows, 'source' => 'TXT Caixa', 'mapping' => [], 'skipped' => $skipped, 'warnings' => [], 'ignored_balance_lines' => $ignored];
+    }
+
+    /** Arquivo é página HTML (ex.: extrato salvo do internet banking), qualquer que seja a extensão (.html, .htm, .bin). */
+    public static function looksLikeHtml(string $head): bool
+    {
+        return (bool) preg_match('/<\s*(html|table|!doctype\s+html)\b/i', $head);
+    }
+
+    /**
+     * Extrato salvo como HTML (ex.: Caixa "Extrato por período": Data Mov. | Nr. Doc. | Histórico | Valor C/D | Saldo C/D).
+     * Aceita iso-8859-1 ou UTF-8. Linhas SALDO ANTERIOR / SALDO DIA são ignoradas (o saldo anterior vira referência).
+     */
+    public function fromHtml(string $html): array
+    {
+        if (! mb_check_encoding($html, 'UTF-8')) {
+            $html = mb_convert_encoding($html, 'UTF-8', 'ISO-8859-1');
+        }
+        $html = preg_replace('/<meta[^>]+charset[^>]*>/i', '', $html);
+        $dom = new \DOMDocument;
+        $prev = libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+        $money = '/^\(?-?(?:R\$\s?)?\d{1,3}(?:\.\d{3})*,\d{2}\)?\s?[DC]?$/u';
+        $rows = [];
+        $skipped = 0;
+        $ignored = 0;
+        $opening = null;
+        foreach ($dom->getElementsByTagName('tr') as $tr) {
+            $cells = [];
+            foreach ($tr->childNodes as $td) {
+                if ($td instanceof \DOMElement && in_array(strtolower($td->tagName), ['td', 'th'], true)) {
+                    $cells[] = trim(preg_replace('/\s+/u', ' ', str_replace("\u{a0}", ' ', $td->textContent)));
+                }
+            }
+            $cells = array_values(array_filter($cells, fn ($c) => $c !== ''));
+            if (count($cells) < 3) {
+                continue;
+            }
+            $date = null;
+            $desc = '';
+            $doc = null;
+            $vals = [];
+            foreach ($cells as $c) {
+                if ($doc === null && preg_match('/^\d{4,10}$/', $c)) {
+                    $doc = $c;
+                } elseif ($date === null && preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $c)) {
+                    $date = $this->parseDate($c);
+                } elseif (preg_match($money, $c)) {
+                    $vals[] = $c;
+                } elseif ($desc === '' && preg_match('/\p{L}/u', $c)) {
+                    $desc = $c;
+                }
+            }
+            if ($vals === [] || $desc === '') {
+                continue;
+            }
+            if (self::isBalanceLine($desc)) {
+                if (preg_match('/anterior/iu', $desc)) {
+                    $opening = $this->parseMoney(end($vals));
+                }
+                $ignored++;
+
+                continue;
+            }
+            $amount = $this->parseMoney($vals[0]);
+            if ($date === null || $amount === null) {
+                $skipped++;
+
+                continue;
+            }
+            if (! preg_match('/[DC]$/', $vals[0]) && ! str_contains($vals[0], '-')) {
+                $skipped++; // sem C/D não dá para saber o sinal
+
+                continue;
+            }
+            $rows[] = ['date' => $date, 'description' => $desc, 'amount' => round($amount, 2), 'balance' => count($vals) > 1 ? $this->parseMoney(end($vals)) : null, 'doc' => $doc];
+            if (count($rows) >= self::MAX_ROWS) {
+                break;
+            }
+        }
+        if ($rows === []) {
+            throw new RuntimeException('Não encontrei lançamentos (linhas com data e valor) neste HTML.');
+        }
+
+        return ['rows' => $rows, 'source' => 'HTML', 'mapping' => [], 'skipped' => $skipped, 'warnings' => [], 'opening_balance' => $opening, 'ignored_balance_lines' => $ignored];
+    }
+
+    /** Valor lido por OCR: só os dígitos contam e os 2 últimos são centavos ("5,167,18D" → 5167,18; "50.000,/00" → 50000,00). */
+    public static function ocrMoney(string $token): ?float
+    {
+        $digits = preg_replace('/\D/', '', $token);
+        if (strlen($digits) < 3) {
+            return null;
+        }
+
+        return round(((int) $digits) / 100, 2);
+    }
+
+    /**
+     * Extrato lido por OCR (ex.: Caixa): "08/10/2026 - 17:01:38 003151 CRED LEVANT JUDICIAL 30.181,36 C 97.069,38 C".
+     * Penúltimo valor = lançamento (D = saída, C = entrada), último = saldo. Linhas SALDO são ignoradas.
+     * Se o saldo da linha não fecha com o anterior, o valor é recalculado pela diferença de saldos e avisado.
+     */
+    public function fromOcrText(string $text): array
+    {
+        $money = '\d[\d.,\/]*\d\s?[DC]';
+        $opening = null;
+        if (preg_match('/SALDO\s+ANTERIOR[^\d]*([\d][\d.,\/]*\d)\s?([DC])?/iu', $text, $m)) {
+            $opening = self::ocrMoney($m[1]) * (($m[2] ?? 'C') === 'D' ? -1 : 1);
+        }
+        $rows = [];
+        $skipped = 0;
+        $ignored = 0;
+        foreach (preg_split('/\r\n|\n|\r/', $text) as $i => $line) {
+            $line = trim($line);
+            if (! preg_match('/^(\d{2}\/\d{2}\/\d{4})(?:\s*-?\s*\d{2}:\d{2}(?::\d{2})?)?\s+(.*)$/u', $line, $m)) {
+                continue;
+            }
+            $date = $this->parseDate($m[1]);
+            preg_match_all('/'.$money.'/u', $m[2], $vals, PREG_OFFSET_CAPTURE);
+            $vals = $vals[0];
+            $doc = preg_match('/^(\d{4,10})\b/', $m[2], $dm) ? $dm[1] : null;
+            $desc = trim(preg_replace('/^\d{3,}\s*[—–\-]?\s*/u', '', count($vals) ? substr($m[2], 0, $vals[count($vals) >= 2 ? count($vals) - 2 : 0][1]) : $m[2]));
+            $desc = trim(preg_replace('/\s*\*{2,}[\s\S]*$/u', '', $desc));
+            $desc = trim(preg_replace('/[^\p{L}\d)]+$/u', '', $desc));
+            if (self::isBalanceLine($desc)) {
+                $ignored++;
+
+                continue;
+            }
+            if ($date === null || count($vals) < 1) {
+                $skipped++;
+
+                continue;
+            }
+            $amtTok = count($vals) >= 2 ? $vals[count($vals) - 2][0] : $vals[0][0];
+            $balTok = count($vals) >= 2 ? $vals[count($vals) - 1][0] : null;
+            $amount = self::ocrMoney($amtTok);
+            if ($amount === null) {
+                $skipped++;
+
+                continue;
+            }
+            $sign = str_ends_with(rtrim($amtTok), 'D') ? -1 : 1;
+            $balance = $balTok !== null ? self::ocrMoney($balTok) * (str_ends_with(rtrim($balTok), 'D') ? -1 : 1) : null;
+            $rows[] = ['date' => $date, 'description' => preg_replace('/\s{2,}/', ' ', $desc) ?: 'Sem descrição', 'amount' => round($sign * $amount, 2), 'balance' => $balance, 'doc' => $doc, '_line' => $i];
+        }
+        if ($rows === []) {
+            throw new RuntimeException('O PDF é imagem e a leitura por OCR não encontrou lançamentos. Envie CSV/XLSX/OFX.');
+        }
+        // Extratos vêm do mais novo para o mais antigo: confere em ordem cronológica.
+        if (count($rows) > 1 && $rows[0]['date'] > end($rows)['date']) {
+            $rows = array_reverse($rows);
+        }
+        $warnings = ['PDF sem texto lido por OCR: confira datas e valores antes de aprovar.'];
+        // Saldo corrido (anterior + lançamentos) x saldo lido em cada linha. Um saldo mal lido isolado não importa
+        // se o corrido volta a bater depois; só avisa quando a diferença persiste até o fim.
+        $run = $opening;
+        $bad = [];
+        foreach ($rows as &$r) {
+            unset($r['_line']);
+            if ($run === null) {
+                continue;
+            }
+            $run = round($run + $r['amount'], 2);
+            if ($r['balance'] !== null && abs($run - $r['balance']) > 0.009) {
+                $bad[] = $r;
+            }
+        }
+        unset($r);
+        $last = end($rows);
+        if ($run !== null && $last['balance'] !== null && abs($run - $last['balance']) > 0.009) {
+            foreach ($bad as $b) {
+                $warnings[] = 'Saldo não fecha em '.Carbon::parse($b['date'])->format('d/m').' ('.$b['description'].', '.number_format($b['amount'], 2, ',', '.').'). Confira o valor.';
+            }
+        }
+
+        return ['rows' => array_slice($rows, 0, self::MAX_ROWS), 'source' => 'PDF (OCR)', 'mapping' => [], 'skipped' => $skipped, 'warnings' => $warnings, 'opening_balance' => $opening, 'ignored_balance_lines' => $ignored];
     }
 
     /** Linhas de texto que começam com data e terminam com valor(es): "05/10/2026  POSTO X  -150,17  1.234,00". */

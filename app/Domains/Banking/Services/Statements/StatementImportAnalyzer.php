@@ -51,8 +51,8 @@ class StatementImportAnalyzer
             return [];
         }
         $dates = array_column($rows, 'date');
-        $from = Carbon::parse(min($dates))->subDays(3)->toDateString();
-        $to = Carbon::parse(max($dates))->addDays(3)->toDateString();
+        $from = Carbon::parse(min($dates))->subDays(5)->toDateString();
+        $to = Carbon::parse(max($dates))->addDays(5)->toDateString();
         $col = $target === 'card' ? 'credit_card_id' : 'bank_account_id';
         $same = Transaction::query()->where($col, $targetId)->whereBetween('date', [$from, $to])
             ->get(['id', 'date', 'amount', 'type', 'description', 'ofx_fitid']);
@@ -80,7 +80,10 @@ class StatementImportAnalyzer
             $abs = round(abs($amount), 2);
             $norm = self::normalize($r['description']);
             $occ = $seen[$r['date'].'|'.$amount.'|'.$norm] = ($seen[$r['date'].'|'.$amount.'|'.$norm] ?? 0) + 1;
-            $fitid = ! empty($r['fitid']) ? (string) $r['fitid'] : 'stmt:'.substr(sha1($target.'|'.$targetId.'|'.$r['date'].'|'.number_format($amount, 2, '.', '').'|'.$norm.'|'.$occ), 0, 32);
+            // Nr. do documento do banco (TXT/HTML/PDF da Caixa): mesmo lançamento em qualquer formato → mesma chave.
+            $doc = preg_match('/^\d{4,10}$/', (string) ($r['doc'] ?? '')) && ! preg_match('/^0+$/', (string) $r['doc']) ? ltrim((string) $r['doc'], '0') : null;
+            $docKey = $doc !== null ? 'doc:'.$doc.'|'.number_format($abs, 2, '.', '').'|' : null;
+            $fitid = ! empty($r['fitid']) ? (string) $r['fitid'] : ($docKey !== null ? substr($docKey.$r['date'].'|'.$occ, 0, 64) : 'stmt:'.substr(sha1($target.'|'.$targetId.'|'.$r['date'].'|'.number_format($amount, 2, '.', '').'|'.$norm.'|'.$occ), 0, 32));
             if ($target === 'card') {
                 $kind = preg_match('/pagamento|pagto|pgto/iu', $r['description']) && ($amount * $cardSign) < 0 ? 'payment' : (($amount * $cardSign) < 0 ? 'refund' : 'purchase');
                 $type = 'expense';
@@ -94,7 +97,9 @@ class StatementImportAnalyzer
             $linkId = null;
             $own = $target === 'bank' && preg_match(self::OWNER_PATTERN, $r['description']);
             $counter = $target === 'bank' ? self::counterpart($others, $amount, $r['date']) : null;
-            $exists = isset($fitids[$fitid]) || $same->contains(fn ($t) => $t->date->toDateString() === $r['date'] && round(abs((float) $t->amount), 2) === $abs && self::normalize((string) $t->description) === $norm);
+            $exists = isset($fitids[$fitid])
+                || ($docKey !== null && $same->contains(fn ($t) => str_starts_with((string) $t->ofx_fitid, $docKey) && abs($t->date->diffInDays(Carbon::parse($r['date']), false)) <= 4))
+                || $same->contains(fn ($t) => $t->date->toDateString() === $r['date'] && round(abs((float) $t->amount), 2) === $abs && self::normalize((string) $t->description) === $norm);
             if ($exists) {
                 $status = 'exists';
                 $note = 'Já existe neste destino (mesma data, valor e descrição).';
