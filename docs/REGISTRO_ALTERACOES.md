@@ -753,3 +753,9 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
   - apagados os convites 14 e 15 ("Heleno Mota" <helenomota@gmailc.om>, revogados e sem conta);
   - removido o participante 2 ("Heleno Mota" <helenomota@gmailc.om>) do grupo "SHC - 3 irmãos": não tinha despesas, partes nem acertos, e a remoção ficou registrada na auditoria;
   - o Heleno real (helenomota@gmail.com, usuário 1387) e o Sandro (convite 16 pendente, participante 3) não foram mexidos.
+
+## 2026-11-07 — Divisões: celular do participante preenchido a partir do Contato
+
+- `DivisionService::fillPhonesFromContacts()` preenche o celular do participante com o do Contato do usuário ligado (`users.contact_id`), só quando o participante está sem número. Número digitado à mão nunca é sobrescrito. O preenchimento acontece ao adicionar a pessoa ao grupo, ao vincular a conta (claimMemberships/aceite) e ao concluir ou atualizar o "Complete seu cadastro". Este último agora também liga os participantes do mesmo e-mail à conta e só preenche os números vazios.
+- Backfill: o comando `php artisan divisions:fill-phones` (com `--dry-run` para só listar). Execução em produção: 1 participante preenchido, Heleno Mota (participante 4, "SHC - 3 irmãos"), com o celular do contato 447. Sandro já tinha número e ficou igual. Backup: `/root/app-cassio-backups/divisoes-antes-celular-contato-20261107.json`.
+- Testes: tests/Feature/Divisions/PhoneFromContactTest.php. Suíte completa: 716 testes passando, no banco isolado.

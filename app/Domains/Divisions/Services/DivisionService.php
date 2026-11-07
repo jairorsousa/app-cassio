@@ -54,6 +54,38 @@ class DivisionService
         DivisionMember::whereNull('user_id')->whereNotNull('email')
             ->whereRaw('lower(email) = ?', [mb_strtolower($user->email)])
             ->update(['user_id' => $user->id]);
+        $this->fillPhonesFromContacts($user);
+    }
+
+    /**
+     * Preenche o celular do participante com o do Contato do usuário ligado, só quando o participante está sem número.
+     * Número digitado manualmente nunca é sobrescrito. Devolve quantos participantes receberam celular.
+     */
+    public function fillPhonesFromContacts(?User $user = null, ?int $memberId = null): int
+    {
+        $q = DivisionMember::whereNull('phone')->where('is_owner', false)->whereNotNull('user_id');
+        if ($user) {
+            $q->where('user_id', $user->id);
+        }
+        if ($memberId) {
+            $q->whereKey($memberId);
+        }
+        $n = 0;
+        foreach ($q->get() as $m) {
+            $u = User::find($m->user_id);
+            $contact = $u?->contact_id ? \App\Domains\Contacts\Models\Contact::find($u->contact_id) : null;
+            $raw = $contact ? ($contact->phone ?: (((array) $contact->phones)[0] ?? null)) : null;
+            try {
+                $e164 = $this->normalizePhone($raw);
+            } catch (ValidationException) {
+                $e164 = null;
+            }
+            if ($e164 && DivisionMember::whereKey($m->id)->whereNull('phone')->update(['phone' => $e164])) {
+                $n++;
+            }
+        }
+
+        return $n;
     }
 
     private function audit(DivisionGroup $group, ?User $user, string $action, array $details = [], ?int $expenseId = null, ?int $settlementId = null): void
@@ -147,6 +179,10 @@ class DivisionService
         }
         $user = $email ? User::whereRaw('lower(email) = ?', [$email])->first() : null;
         $member = $group->members()->create(['name' => $name, 'email' => $email, 'phone' => $phone, 'user_id' => $user?->id]);
+        if ($user && ! $phone) {
+            $this->fillPhonesFromContacts($user, $member->id);
+            $member->refresh();
+        }
         $this->audit($group, $actor, 'member_added', ['nome' => $name]);
 
         return $member;
@@ -193,6 +229,7 @@ class DivisionService
                 UserAccessService::reactivate($actor, $user->id);
             }
             DivisionMember::whereNull('user_id')->whereRaw('lower(email) = ?', [$email])->update(['user_id' => $user->id]);
+            $this->fillPhonesFromContacts($user);
 
             return null;
         }

@@ -96,7 +96,9 @@ class ProfileCompletionService
                 $contact = Contact::create($fields + ['type' => $role, 'roles' => [$role], 'phone' => $phone, 'phones' => [$phone], 'email' => $email, 'emails' => [$email], 'status' => true]);
             }
             $user->forceFill(['name' => $fields['name'], 'contact_id' => $contact->id, 'profile_completed_at' => now()])->save();
-            DivisionMember::whereRaw('lower(email) = ?', [$email])->where('is_owner', false)
+            // Liga participantes deste e-mail à conta e preenche o celular só onde está vazio (manual não é sobrescrito).
+            DivisionMember::whereNull('user_id')->whereRaw('lower(email) = ?', [$email])->update(['user_id' => $user->id]);
+            DivisionMember::whereRaw('lower(email) = ?', [$email])->where('is_owner', false)->whereNull('phone')
                 ->update(['phone' => '+55'.BrazilianDocuments::digits($data['phone'])]);
 
             return $contact;

@@ -67,7 +67,7 @@ class ProfileCompletionAndInvitesTest extends TestCase
         $this->assertSame('Heleno Mota', $c->name);
         $this->assertSame('heleno@example.com', $c->email);
         $this->assertContains('pessoal', $c->roleList());
-        $this->assertSame('+5585999998888', $m->fresh()->phone);
+        $this->assertSame('+5585911112222', $m->fresh()->phone, 'número já preenchido no grupo não é sobrescrito');
         $this->get(route('divisions.index'))->assertOk();
 
         // Celular alterado em Divisões volta para o Contato.
