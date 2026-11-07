@@ -18,14 +18,21 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
+        <!-- Ignora caches de produção (bootstrap/cache) nos testes: sem isso, um "optimize" faria os testes usarem o MySQL real. -->
+        <env name="APP_CONFIG_CACHE" value="/tmp/cassio-tests-nao-usar-config.php" force="true"/>
+        <env name="APP_ROUTES_CACHE" value="/tmp/cassio-tests-nao-usar-routes.php" force="true"/>
+        <env name="APP_EVENTS_CACHE" value="/tmp/cassio-tests-nao-usar-events.php" force="true"/>
+        <env name="DB_HOST" value="127.0.0.1" force="true"/>
+        <env name="DB_USERNAME" value="nao-usar" force="true"/>
+        <env name="DB_PASSWORD" value="nao-usar" force="true"/>
+        <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
-        <env name="DB_URL" value=""/>
+        <env name="DB_CONNECTION" value="sqlite" force="true"/>
+        <env name="DB_DATABASE" value=":memory:" force="true"/>
+        <env name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

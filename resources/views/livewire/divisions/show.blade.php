@@ -421,7 +421,7 @@ new #[Layout('layouts.app')] class extends Component
 
         return [
             'isAdmin' => $user->isAdmin(),
-            'invites' => $user->isAdmin() ? \App\Models\UserInvitation::whereIn('email', $members->pluck('email')->filter()->map(fn ($e) => mb_strtolower($e)))->whereNull('accepted_at')->orderBy('id')->get()->keyBy('email') : collect(),
+            'invites' => $user->isAdmin() ? \App\Models\UserInvitation::visible()->whereIn('email', $members->pluck('email')->filter()->map(fn ($e) => mb_strtolower($e)))->whereNull('accepted_at')->orderBy('id')->get()->keyBy('email') : collect(),
             'me' => $me,
             'owner' => $owner,
             'members' => $members,

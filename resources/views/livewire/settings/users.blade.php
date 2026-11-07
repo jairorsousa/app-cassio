@@ -297,7 +297,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         return [
             'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'status', 'modules']),
-            'invitations' => UserInvitation::orderByDesc('id')->limit(50)->get(),
+            'invitations' => UserInvitation::visible()->orderByDesc('id')->limit(50)->get(),
             'moduleLabels' => Access::MODULES,
             'divGroups' => \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(),
             'divPeople' => $this->div()->people(),

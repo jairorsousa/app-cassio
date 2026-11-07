@@ -142,7 +142,8 @@ class AccessControlTest extends TestCase
         $this->assertNotNull(UserInvitation::findUsable($t2));
         UserAccessService::revoke($admin, $inv->id);
         $this->assertNull(UserInvitation::findUsable($t2));
-        $t3 = UserAccessService::regenerate($admin, $inv->id);
+        $this->assertNull(UserInvitation::find($inv->id), 'Revogar convite não aceito apaga o registro.');
+        [$inv, $t3] = UserAccessService::invite($admin, 'Ana', 'ana@example.com', ['contatos']);
         $this->travel(8)->days();
         $this->assertNull(UserInvitation::findUsable($t3), 'Expira em 7 dias.');
         $this->assertSame('expired', $inv->fresh()->status());

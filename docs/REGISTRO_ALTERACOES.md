@@ -726,3 +726,30 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - **Celular (opcional):** é um campo novo `division_members.phone`, guardado em E.164 (+55…). Ele aparece no cadastro de participante do grupo, na edição direta na lista ("Adicionar/Editar celular") e no bloco Divisões de Configurações › Usuários ("Salvar celular"). A máscara é (99) 99999-9999 e a validação é a mesma de Contatos (`BrazilianDocuments::isValidPhone`). O participante pode editar o próprio número. A mesma pessoa (mesmo e-mail) fica com o mesmo número em todos os grupos. Backup antes da migração: `/root/app-cassio-backups/divisoes-db-antes-celular-20261107.json.gz`.
 - **Cobrar:** só o admin vê o botão. Ele aparece em cada linha de "quem paga quem" em que alguém deve ao admin e por pessoa no "Saldo geral por pessoa". O botão abre um modal com uma mensagem educada e editável (nome, valor, grupo e link da página do grupo). "Abrir WhatsApp" abre `wa.me/<número>?text=…` numa nova aba, e o sistema não envia nada. Sem celular, o botão fica desabilitado com a dica "Cadastre o celular". Cada abertura registra "Cobrança aberta", com valor e data, no novo quadro "Histórico do grupo".
 - Testes: tests/Feature/Divisions/PhoneChargeTest.php.
+
+## 2026-11-07 — Testes isolados do banco de produção, "Complete seu cadastro" e limpeza de convites
+
+- **Causa:** o `phpunit.xml` já pedia SQLite em memória, mas, com a configuração em cache (`php artisan optimize`, `bootstrap/cache/config.php`), o Laravel ignorava essas variáveis e os testes conectavam no MySQL de produção (Umbler). Uma sonda confirmou `env=production conn=mysql db=app_cassio`. O `RefreshDatabase` não conseguiu rodar `migrate:fresh` em produção, porque o comando pede confirmação e foi cancelado. Cada teste rodou dentro de uma transação desfeita no final (rollback), e por isso nenhum dado ficou gravado ou foi apagado. Mesmo assim, os contadores de ID (AUTO_INCREMENT) avançaram: users 3→1387 e user_invitations 1→14, entre outros.
+- **Evidência de que os dados estão íntegros:**
+  - a tabela `migrations` tem os 64 lotes com o histórico incremental (um `migrate:fresh` teria deixado tudo no lote 1);
+  - as contagens de todas as tabelas de negócio são iguais às do backup completo de 07/11 às 11:52 (UTC). Exemplos: transactions 320, b3_position_snapshots 31, asset_income_events 2014, contacts 60, writs 36, users 3;
+  - não ficou nenhuma linha órfã: transmission_suppressions tem 0 linhas.
+- **Correção:**
+  - no `phpunit.xml`, as variáveis de banco agora são forçadas (`force="true"`), e `APP_CONFIG_CACHE`, `APP_ROUTES_CACHE` e `APP_EVENTS_CACHE` apontam para arquivos inexistentes, para que os testes ignorem os caches de produção;
+  - a nova trava `tests/TestDatabaseGuard.php`, chamada em `Tests\TestCase::createApplication`, aborta a suíte se o banco não for SQLite em memória, se APP_ENV não for `testing` ou se a configuração estiver em cache;
+  - testes novos: `tests/Unit/TestDatabaseGuardTest.php` e `tests/Feature/TestDatabaseIsolationTest.php`;
+  - a suíte completa rodou com o cache de produção ativo, e as contagens e o AUTO_INCREMENT de produção ficaram iguais antes e depois.
+- **Complete seu cadastro:**
+  - novas colunas `users.contact_id` e `users.profile_completed_at`;
+  - nova tela `/completar-cadastro` (Volt `profile.complete`) com os campos de pessoa de Contatos: nome, e-mail (só leitura), celular, CPF validado, nascimento, CEP com busca, rua, número, complemento, bairro, cidade, UF e Pix;
+  - o middleware `EnsureProfileCompleted` redireciona os convidados (não admin) até o cadastro ser concluído; login, logout, convite e Livewire ficam liberados;
+  - o `ProfileCompletionService` cria ou atualiza o Contato (busca por e-mail e depois por CPF, sem duplicar), adiciona o papel `pessoal` (convidado só de Corretores fica com `corretor`), liga o Contato ao usuário e sincroniza o celular com os participantes de Divisões. Quando o celular é alterado em Divisões, o Contato ligado também é atualizado;
+  - Mateus e Heleno (sem `profile_completed_at`) veem a tela no próximo acesso;
+  - testes: `tests/Feature/ProfileCompletionAndInvitesTest.php`.
+- **Convites:**
+  - revogar um convite não aceito agora apaga o registro, e o mesmo vale para os convites anteriores substituídos por um novo;
+  - as listas de Configurações › Usuários e de Divisões mostram só convites aceitos ou pendentes ainda válidos (`UserInvitation::visible()`).
+- **Limpeza autorizada pelo Cassio** (backup: `/root/app-cassio-backups/convites-revogados-antes-limpeza-20261107.json`):
+  - apagados os convites 14 e 15 ("Heleno Mota" <helenomota@gmailc.om>, revogados e sem conta);
+  - removido o participante 2 ("Heleno Mota" <helenomota@gmailc.om>) do grupo "SHC - 3 irmãos": não tinha despesas, partes nem acertos, e a remoção ficou registrada na auditoria;
+  - o Heleno real (helenomota@gmail.com, usuário 1387) e o Sandro (convite 16 pendente, participante 3) não foram mexidos.

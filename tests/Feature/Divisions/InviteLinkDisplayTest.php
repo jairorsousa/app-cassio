@@ -57,12 +57,15 @@ class InviteLinkDisplayTest extends TestCase
 
         $inv->forceFill(['expires_at' => now()->subMinute()])->save();
         $this->assertNull($inv->fresh()->currentLink());
-        Volt::test('settings.users')->assertDontSee($link)->assertSee('Sem link gerado');
+        // Expirado sem conta não aparece nas listas.
+        Volt::test('settings.users')->assertDontSee($link)->assertDontSee('heleno@example.com');
 
         $inv->forceFill(['expires_at' => now()->addDay()])->save();
+        Volt::test('settings.users')->assertSee('heleno@example.com');
         UserAccessService::revoke($admin, $inv->id);
-        $this->assertNull($inv->fresh()->token_encrypted);
-        Volt::test('settings.users')->assertDontSee($link)->assertSee('Sem link gerado')->assertSeeHtml('data-generate-link');
+        $this->assertNull($inv->fresh());
+        Volt::test('settings.users')->assertDontSee($link)->assertDontSee('heleno@example.com');
+        [$inv] = UserAccessService::invite($admin, 'Heleno', 'heleno@example.com', ['divisoes']);
 
         // Convite antigo, só com hash: pede para gerar novo link.
         UserInvitation::create(['name' => 'Antigo', 'email' => 'antigo@example.com', 'modules' => ['divisoes'], 'token_hash' => UserInvitation::hashToken('x'), 'expires_at' => now()->addDays(3), 'invited_by' => $admin->id]);

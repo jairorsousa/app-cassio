@@ -97,7 +97,7 @@ class DivisionsAccessTest extends TestCase
         $m = $this->svc()->addMember($admin, $g, 'Sandro', 'sandro@example.com');
         $link = $this->svc()->inviteMember($admin, $m);
         Volt::test('settings.users')->call('divRevoke', 'sandro@example.com')->assertHasNoErrors();
-        $this->assertSame('revoked', UserInvitation::first()->status());
+        $this->assertSame(0, UserInvitation::count(), 'Convite revogado sem conta é apagado.');
         $this->assertNull(UserInvitation::findUsable(basename(parse_url($link, PHP_URL_PATH))));
 
         // Novo link no mesmo registro, aceito, depois acesso revogado: conta só com Divisões fica bloqueada.

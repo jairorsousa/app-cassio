@@ -49,6 +49,12 @@ class UserInvitation extends Model
         'failed' => 'Falha no e-mail',
     ];
 
+    /** Visíveis nas listas: aceitos, ou pendentes ainda válidos. Revogado/expirado sem conta não aparece. */
+    public function scopeVisible($q)
+    {
+        return $q->where(fn ($q) => $q->whereNotNull('accepted_at')->orWhere(fn ($q) => $q->whereNull('revoked_at')->where('expires_at', '>', now())));
+    }
+
     public static function hashToken(string $token): string
     {
         return hash_hmac('sha256', $token, (string) config('app.key'));

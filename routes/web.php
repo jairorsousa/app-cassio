@@ -13,6 +13,10 @@ Route::get('/', function () {
         : redirect()->to(route('login', absolute: false));
 });
 
+Volt::route('completar-cadastro', 'profile.complete')
+    ->middleware(['auth', 'inactivity'])
+    ->name('profile.complete');
+
 Volt::route('dashboard', 'dashboard.index')
     ->middleware(['auth', 'verified', 'inactivity'])
     ->name('dashboard');

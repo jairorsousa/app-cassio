@@ -30,6 +30,8 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            // Usuário de teste já com cadastro completo; testes do "Complete seu cadastro" usam profile_completed_at = null.
+            'profile_completed_at' => now(),
             // Permissões explícitas (novo usuário real sem módulos não acessa nada).
             'status' => 'active',
             'modules' => array_keys(\App\Support\Access::MODULES),

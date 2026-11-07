@@ -45,7 +45,7 @@ class UserAccessService
 
         return DB::transaction(function () use ($actor, $name, $email, $modules) {
             // Um convite válido por e-mail: os pendentes anteriores deixam de valer.
-            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now(), 'token_encrypted' => null]);
+            UserInvitation::where('email', $email)->whereNull('accepted_at')->delete();
             $token = Str::random(64);
             $inv = UserInvitation::create(['name' => $name, 'email' => $email, 'modules' => $modules, 'token_hash' => UserInvitation::hashToken($token), 'token_encrypted' => \Illuminate\Support\Facades\Crypt::encryptString($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'invited_by' => $actor->id]);
 
@@ -75,7 +75,8 @@ class UserAccessService
     public static function revoke(?User $actor, int $invitationId): void
     {
         self::admin($actor);
-        UserInvitation::whereKey($invitationId)->whereNull('accepted_at')->update(['revoked_at' => now(), 'token_encrypted' => null]);
+        // Convite revogado que nunca virou conta é apagado (não aparece mais em lugar nenhum).
+        UserInvitation::whereKey($invitationId)->whereNull('accepted_at')->delete();
     }
 
     public static function accept(string $token, string $password): User
