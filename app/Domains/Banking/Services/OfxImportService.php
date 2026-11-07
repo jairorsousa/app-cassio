@@ -265,6 +265,7 @@ class OfxImportService
                     'description' => $row['description'], 'notes' => $row['notes'],
                     'status' => 'settled', 'category_id' => $row['category_id'] ?? null,
                     'credit_card_id' => $card->id, 'credit_card_invoice_id' => $invoice->id,
+                    'additional_card_id' => ! empty($row['additional_card_id']) && (int) $row['additional_card_id'] !== (int) $card->id ? (int) $row['additional_card_id'] : null,
                     'ofx_fitid' => $row['fitid'],
                 ]);
                 $imported++;

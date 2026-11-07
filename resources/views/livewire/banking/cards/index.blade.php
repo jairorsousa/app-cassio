@@ -33,6 +33,12 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $card_holder_id = null;
 
+    public string $last_four = '';
+
+    public ?int $parent_card_id = null;
+
+    public string $card_type = 'principal';
+
     public string $newHolderName = '';
 
     public bool $addingHolder = false;
@@ -52,6 +58,9 @@ new #[Layout('layouts.app')] class extends Component
             'name' => 'required|string|max:120',
             'brand' => 'nullable|string|max:60',
             'bank' => 'nullable|string|max:120',
+            'last_four' => ['nullable', 'regex:/^\d{4}$/'],
+            'card_type' => ['required', Rule::in(array_keys(CreditCard::TYPES))],
+            'parent_card_id' => [Rule::requiredIf($this->card_type !== 'principal'), 'nullable', 'integer', Rule::exists('credit_cards', 'id')->whereNull('parent_card_id')->whereNull('deleted_at'), Rule::notIn([(int) $this->editingId])],
             'limit' => 'required|numeric|min:0',
             'closing_day' => 'required|integer|min:1|max:31',
             'due_day' => 'required|integer|min:1|max:31',
@@ -74,6 +83,9 @@ new #[Layout('layouts.app')] class extends Component
         $this->default_payment_account_id = $c->default_payment_account_id;
         $this->status = (bool) $c->status;
         $this->card_holder_id = $c->card_holder_id;
+        $this->last_four = (string) $c->last_four;
+        $this->parent_card_id = $c->parent_card_id;
+        $this->card_type = $c->card_type ?: 'principal';
         $this->showFormModal = true;
         $this->resetValidation();
     }
@@ -86,7 +98,24 @@ new #[Layout('layouts.app')] class extends Component
 
     public function save(): void
     {
-        $data = $this->validate($this->rules());
+        $data = $this->validate($this->rules(), ['last_four.regex' => 'O final tem 4 dígitos.', 'parent_card_id.required' => 'Escolha o cartão principal ao qual este se vincula.']);
+        $data['last_four'] = $data['last_four'] !== '' ? $data['last_four'] : null;
+        $data['parent_card_id'] = $data['card_type'] === 'principal' ? null : ($data['parent_card_id'] ?: null);
+        if ($data['card_type'] === 'virtual') {
+            $data['card_holder_id'] = null; // virtual usa o titular do principal
+        }
+        if ($data['parent_card_id'] && $this->editingId && CreditCard::where('parent_card_id', $this->editingId)->exists()) {
+            $this->addError('parent_card_id', 'Este cartão tem adicionais: ele não pode ser adicional de outro.');
+
+            return;
+        }
+        // Adicional não tem limite, fechamento, vencimento nem fatura próprios: herda do principal.
+        if ($data['parent_card_id'] && ($p = CreditCard::find($data['parent_card_id']))) {
+            $data['limit'] = $p->limit;
+            $data['closing_day'] = $p->closing_day;
+            $data['due_day'] = $p->due_day;
+            $data['default_payment_account_id'] = $p->default_payment_account_id;
+        }
         // Titular agora vem da lista (card_holders); os campos antigos ficam como estavam.
 
         if ($this->editingId) {
@@ -124,7 +153,8 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status', 'card_holder_id', 'newHolderName', 'addingHolder']);
+        $this->reset(['showFormModal', 'editingId', 'name', 'brand', 'bank', 'limit', 'closing_day', 'due_day', 'default_payment_account_id', 'status', 'card_holder_id', 'newHolderName', 'addingHolder', 'last_four', 'parent_card_id', 'card_type']);
+        $this->card_type = 'principal';
         $this->card_holder_id = CardHolder::defaultId();
         $this->closing_day = 1;
         $this->due_day = 10;
@@ -136,11 +166,12 @@ new #[Layout('layouts.app')] class extends Component
     public function with(): array
     {
         return [
-            'cards' => CreditCard::with(['holderContact', 'holder', 'invoices'])
+            'cards' => CreditCard::with(['holderContact', 'holder', 'invoices', 'parent'])
                 ->when($this->titular !== '', fn ($q) => $q->whereIn('id', CreditCard::idsForHolderKey($this->titular)))
                 ->orderBy('name')->get(),
             'holderOptions' => CreditCard::holderFilterOptions(),
             'holders' => CardHolder::orderBy('name')->get(['id', 'name']),
+            'principals' => CreditCard::whereNull('parent_card_id')->when($this->editingId, fn ($q) => $q->where('id', '!=', $this->editingId))->orderBy('name')->get(['id', 'name', 'last_four']),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -196,13 +227,13 @@ new #[Layout('layouts.app')] class extends Component
                     @foreach ($cards as $c)
                         @php $due = $c->invoices->filter(fn ($i) => $i->status !== 'open')->sum(fn ($i) => $i->remainingAmount()); $late = $c->invoices->contains(fn ($i) => $i->isOverdue()); @endphp
                         <tr>
-                            <td>{{ $c->name }} @if($c->brand)<span class="text-xxs text-mono-500">· {{ $c->brand }}</span>@endif @unless($c->status)<span class="text-xxs text-mono-600">(inativo)</span>@endunless</td>
+                            <td>{{ $c->name }}@if ($c->last_four)<span class="text-xxs text-mono-500"> · final {{ $c->last_four }}</span>@endif @if ($c->parent_card_id)<span class="rounded-pill bg-mono-50 px-2 py-0.5 text-xxs text-mono-600" data-card-type>{{ mb_strtolower($c->typeLabel()) }} · vinculado a {{ $c->parent?->name }}</span>@else<span class="rounded-pill bg-mono-50 px-2 py-0.5 text-xxs text-mono-600" data-card-type>principal</span>@endif @if($c->brand)<span class="text-xxs text-mono-500">· {{ $c->brand }}</span>@endif @unless($c->status)<span class="text-xxs text-mono-600">(inativo)</span>@endunless</td>
                             <td>@if ($c->hasHolder()){{ $c->holderLabel() }}@else<span class="rounded-pill bg-amber-50 px-2 py-0.5 text-xxs font-semibold text-amber-700">Não informado</span>@endif</td>
                             <td class="text-right whitespace-nowrap">R$ {{ number_format($c->limit, 2, ',', '.') }}</td>
                             <td class="text-center text-xxs whitespace-nowrap">dia {{ $c->closing_day }} / dia {{ $c->due_day }}</td>
                             <td class="text-right whitespace-nowrap {{ $late ? 'font-semibold text-red-700' : '' }}">R$ {{ number_format($due, 2, ',', '.') }}@if ($late) <span class="text-xxs">(vencida)</span>@endif</td>
                             <td class="text-right whitespace-nowrap">
-                                <a href="{{ route('banking.cards.invoices', $c) }}" class="fx-btn fx-btn--text fx-btn--sm">Faturas</a>
+                                <a href="{{ route('banking.cards.invoices', $c->parent_card_id ? $c->parent_card_id : $c) }}" class="fx-btn fx-btn--text fx-btn--sm">Faturas</a>
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="edit({{ $c->id }})">Editar</button>
                                 <button class="fx-btn fx-btn--text fx-btn--sm" wire:click="delete({{ $c->id }})" wire:confirm="Excluir cartão?">Excluir</button>
                             </td>
@@ -239,7 +270,29 @@ new #[Layout('layouts.app')] class extends Component
                                     <x-jr.input label="Nome *" icon="badge" name="name" wire:model="name" required />
                                     <x-jr.input label="Bandeira" icon="sell" name="brand" wire:model="brand" />
                                     <x-jr.input label="Banco emissor" icon="account_balance" name="bank" wire:model="bank" />
-                                    <x-jr.input label="Limite *" icon="payments" name="limit" wire:model="limit" x-money required />
+                                    <x-jr.input label="Final (4 dígitos)" icon="pin" name="last_four" wire:model="last_four" inputmode="numeric" maxlength="4" placeholder="0052" />
+                                    <div>
+                                        <label class="mb-2 block text-sm font-medium text-mono-600">Tipo</label>
+                                        <select wire:model.live="card_type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900" data-type-select>
+                                            @foreach (\App\Domains\Banking\Models\CreditCard::TYPES as $tk => $tl)<option value="{{ $tk }}">{{ $tl }}</option>@endforeach
+                                        </select>
+                                    </div>
+                                    @if ($card_type !== 'principal')
+                                        <div>
+                                            <label class="mb-2 block text-sm font-medium text-mono-600">Vinculado a *</label>
+                                            <select wire:model.live="parent_card_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900" data-parent-select>
+                                                <option value="">Escolha o principal…</option>
+                                                @foreach ($principals as $pc)<option value="{{ $pc->id }}">{{ $pc->name }}{{ $pc->last_four ? ' · final '.$pc->last_four : '' }}</option>@endforeach
+                                            </select>
+                                            @error('parent_card_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                                        </div>
+                                    @endif
+                                    @if ($card_type !== 'principal')
+                                        <p class="md:col-span-2 rounded-xl bg-mono-50 p-3 text-xs text-mono-600" data-additional-note>{{ $card_type === 'virtual' ? 'Virtual: usa o titular, o limite, o vencimento e a fatura do principal.' : 'Adicional: tem titular próprio; limite, vencimento e fatura são os do principal.' }} As compras entram na fatura do principal, com filtro por este cartão.</p>
+                                    @else
+                                        <x-jr.input label="Limite *" icon="payments" name="limit" wire:model="limit" x-money required />
+                                    @endif
+                                    @if ($card_type !== 'virtual')
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Titular</label>
                                         <div class="flex items-center gap-2">
@@ -259,9 +312,11 @@ new #[Layout('layouts.app')] class extends Component
                                         @endif
                                         @error('card_holder_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
+                                    @endif
                                 </div>
                             </section>
 
+                            @if ($card_type === 'principal')
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">
                                     <span class="material-icons-outlined text-[20px] text-primary-500">event_repeat</span>
@@ -283,6 +338,7 @@ new #[Layout('layouts.app')] class extends Component
                                     </div>
                                 </div>
                             </section>
+                            @endif
 
                             <section>
                                 <div class="mb-4 flex items-center gap-2 border-b border-mono-100 pb-2">

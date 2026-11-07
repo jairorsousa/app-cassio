@@ -19,8 +19,16 @@ new #[Layout('layouts.app')] class extends Component {
 
     public ?int $expandedInvoiceId = null;
 
-    public function mount(CreditCard $card): void
+    /** Filtros da fatura: por cartão (principal, virtual ou adicional) e por titular. */
+    public string $cardFilter = '';
+    public string $holderFilter = '';
+
+    public function mount(CreditCard $card)
     {
+        if ($card->parent_card_id && $card->parent) {
+            return $this->redirectRoute('banking.cards.invoices', ['card' => $card->parent_card_id, 'cardFilter' => $card->id]);
+        }
+        $this->cardFilter = (string) request()->query('cardFilter', '');
         $this->card = $card;
         $this->payment_account_id = $card->default_payment_account_id;
         $this->payment_date = \App\Support\BusinessDate::today();
@@ -99,7 +107,23 @@ new #[Layout('layouts.app')] class extends Component {
             ->with(['transactions' => fn ($q) => $q->with(['category', 'bankAccount'])->orderBy('date')->orderBy('id')])
             ->orderByDesc('reference_month')->get();
 
+        $linked = $this->card->additionals()->with(['holder', 'parent'])->orderBy('name')->get();
+        $cardsById = $linked->keyBy('id')->put($this->card->id, $this->card);
+        $match = function ($t) use ($cardsById) {
+            $owner = $cardsById[$t->additional_card_id ?? $this->card->id] ?? $this->card;
+            if ($this->cardFilter !== '' && (string) $owner->id !== $this->cardFilter) {
+                return false;
+            }
+
+            return $this->holderFilter === '' || $owner->holderKey() === $this->holderFilter;
+        };
+        $holderOpts = $cardsById->mapWithKeys(fn ($c) => [$c->holderKey() => $c->holderLabel()])->sort()->all();
+
         return [
+            'linked' => $linked,
+            'cardsById' => $cardsById,
+            'match' => $match,
+            'holderOpts' => $holderOpts,
             'invoices' => $invoices,
             'paying' => $this->payingInvoiceId ? $invoices->firstWhere('id', $this->payingInvoiceId) : null,
             'accounts' => BankAccount::active()->orderBy('name')->get(),
@@ -136,7 +160,25 @@ new #[Layout('layouts.app')] class extends Component {
                     <span>Titular: <strong class="{{ $card->hasHolder() ? 'text-mono-900' : 'text-amber-700' }}">{{ $card->holderLabel() }}</strong></span>
                     <span>Fecha dia {{ $card->closing_day }} · vence dia {{ $card->due_day }}</span>
                     @if ($card->defaultPaymentAccount)<span>Conta padrão: {{ $card->defaultPaymentAccount->name }}</span>@endif
+                    @if ($card->last_four)<span>Final {{ $card->last_four }} · principal</span>@endif
                 </div>
+                @if ($linked->isNotEmpty())
+                    <div class="mt-2 flex flex-wrap gap-1 text-xxs" data-linked-cards>
+                        @foreach ($linked as $lc)<span class="rounded-pill bg-mono-50 px-2 py-0.5 text-mono-700">{{ $lc->typeLabel() }} {{ $lc->last_four ? 'final '.$lc->last_four : $lc->name }} · {{ $lc->holderLabel() }}</span>@endforeach
+                    </div>
+                @endif
+                @if ($linked->isNotEmpty())
+                    <div class="mt-2 flex flex-wrap gap-2" data-invoice-filters>
+                        <select wire:model.live="cardFilter" class="h-9 rounded-xl border border-mono-200 px-2 text-xs" aria-label="Filtrar por cartão">
+                            <option value="">Todos os cartões</option>
+                            @foreach ($cardsById as $fc)<option value="{{ $fc->id }}">{{ $fc->typeLabel() }} · {{ $fc->last_four ? 'final '.$fc->last_four : $fc->name }}</option>@endforeach
+                        </select>
+                        <select wire:model.live="holderFilter" class="h-9 rounded-xl border border-mono-200 px-2 text-xs" aria-label="Filtrar por titular">
+                            <option value="">Todos os titulares</option>
+                            @foreach ($holderOpts as $hk => $hl)<option value="{{ $hk }}">{{ $hl }}</option>@endforeach
+                        </select>
+                    </div>
+                @endif
             </div>
             <div class="grid grid-cols-3 gap-2 text-center text-xs" data-testid="invoice-summary">
                 <div class="rounded-xl bg-mono-50 px-3 py-2"><div class="text-mono-600">A pagar (fechadas)</div><div class="font-semibold text-mono-900">{{ $brl($summary['due']) }}</div></div>
@@ -152,7 +194,7 @@ new #[Layout('layouts.app')] class extends Component {
         @else
             <div class="flex flex-col divide-y divide-mono-100">
                 @foreach ($invoices as $inv)
-                    @php $st = $inv->displayStatus(); $purchases = $inv->transactions->where('type', 'expense'); $payments = $inv->transactions->where('type', 'invoice_payment'); @endphp
+                    @php $st = $inv->displayStatus(); $allPurchases = $inv->transactions->where('type', 'expense'); $purchases = $allPurchases->filter($match); $filtered = $cardFilter !== '' || $holderFilter !== ''; $payments = $inv->transactions->where('type', 'invoice_payment'); @endphp
                     <div class="py-3" wire:key="inv-{{ $inv->id }}">
                         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <div class="flex items-center gap-3">
@@ -183,10 +225,10 @@ new #[Layout('layouts.app')] class extends Component {
                         @if ($expandedInvoiceId === $inv->id)
                             <div class="mt-3 grid grid-cols-1 gap-4 rounded-xl bg-mono-50 p-3 text-xs md:grid-cols-2">
                                 <div>
-                                    <div class="mb-1 font-semibold text-mono-700">Compras ({{ $purchases->count() }})</div>
+                                    <div class="mb-1 font-semibold text-mono-700">Compras ({{ $purchases->count() }})@if ($filtered) <span class="font-normal text-mono-500" data-filtered-total>· filtrado: {{ $brl($purchases->sum('amount')) }} de {{ $brl($allPurchases->sum('amount')) }}</span>@endif</div>
                                     @forelse ($purchases as $t)
                                         <div class="flex justify-between gap-2 py-0.5">
-                                            <span>{{ $t->date->format('d/m') }} · {{ $t->description }}@if ($t->installment_total) <span class="text-mono-500">({{ $t->installment_number }}/{{ $t->installment_total }})</span>@endif @if ($t->category)<span class="text-mono-500">· {{ $t->category->name }}</span>@endif</span>
+                                            <span>{{ $t->date->format('d/m') }} · {{ $t->description }}@if ($t->additional_card_id && isset($cardsById[$t->additional_card_id])) <span class="text-mono-500">· final {{ $cardsById[$t->additional_card_id]->last_four ?? $cardsById[$t->additional_card_id]->name }}</span>@endif@if ($t->installment_total) <span class="text-mono-500">({{ $t->installment_number }}/{{ $t->installment_total }})</span>@endif @if ($t->category)<span class="text-mono-500">· {{ $t->category->name }}</span>@endif</span>
                                             <span class="whitespace-nowrap">{{ $brl($t->amount) }}</span>
                                         </div>
                                     @empty

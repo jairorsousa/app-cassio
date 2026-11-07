@@ -98,7 +98,9 @@ class CashflowReportService
         if ($person = $f['person'] ?? null) {
             $query->where(function ($q) use ($person) {
                 if (str_starts_with($person, 'titular:')) {
-                    $q->whereHas('creditCard', fn ($c) => $c->where('card_holder_id', (int) substr($person, 8)));
+                    $hid = (int) substr($person, 8);
+                    $q->whereHas('additionalCard', fn ($c) => $c->where('card_holder_id', $hid))
+                        ->orWhere(fn ($x) => $x->whereNull('additional_card_id')->whereHas('creditCard', fn ($c) => $c->where('card_holder_id', $hid)));
                 } elseif (str_starts_with($person, 'contato:')) {
                     $id = (int) substr($person, 8);
                     $q->where('link_contact_id', $id)

@@ -34,7 +34,14 @@ class InstallmentService
             throw new \InvalidArgumentException('Valor total deve ser positivo.');
         }
 
-        return DB::transaction(function () use ($card, $purchaseDate, $totalAmount, $installments, $description, $categoryId, $notes, $firstReferenceMonth) {
+        // Adicional não tem fatura própria: lança na fatura do principal e guarda qual adicional comprou.
+        $additional = null;
+        if ($card->isAdditional() && $card->parent) {
+            $additional = $card;
+            $card = $card->parent;
+        }
+
+        return DB::transaction(function () use ($card, $additional, $purchaseDate, $totalAmount, $installments, $description, $categoryId, $notes, $firstReferenceMonth) {
             $groupId = (string) Str::uuid();
             $perInstallment = round($totalAmount / $installments, 2);
             $remainder = round($totalAmount - ($perInstallment * $installments), 2);
@@ -65,6 +72,7 @@ class InstallmentService
                     'status' => 'settled',
                     'category_id' => $categoryId,
                     'credit_card_id' => $card->id,
+                    'additional_card_id' => $additional?->id,
                     'credit_card_invoice_id' => $invoice->id,
                     'installment_group_id' => $installments > 1 ? $groupId : null,
                     'installment_number' => $installments > 1 ? $i : null,

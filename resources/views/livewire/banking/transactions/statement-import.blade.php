@@ -27,6 +27,10 @@ new #[Layout('layouts.app')] class extends Component {
     public array $warnings = [];
     public ?string $result = null;
     public string $filter = 'all';
+    /** Fatura com adicionais: final (4 dígitos) => cartão, contagem, total e escolha pendente. */
+    public array $finals = [];
+    public string $filterFinal = '';
+    public array $invoiceSummary = [];
 
     public function mount(): void
     {
@@ -69,6 +73,99 @@ new #[Layout('layouts.app')] class extends Component {
         $this->ignoredBalance = $analyzer->ignored;
         $this->warnings = $read['warnings'];
         $this->filter = 'all';
+        $this->invoiceSummary = $read['summary'] ?? [];
+        $this->finals = [];
+        $this->filterFinal = '';
+        if ($this->target === 'card') {
+            $card = CreditCard::find($this->cardId);
+            if ($card && $card->isAdditional() && $card->parent) {
+                $this->cardId = $card->parent_card_id; // adicional não tem fatura própria: vai tudo para a do principal
+                $this->warnings[] = 'Cartão escolhido é adicional: a fatura é a do principal ('.$card->parent->name.').';
+            }
+            $this->resolveFinals();
+        }
+    }
+
+    /** Associa cada "Final Cartão" ao principal, a um adicional dele ou pede para escolher (final desconhecido). */
+    private function resolveFinals(): void
+    {
+        $principal = CreditCard::with('additionals')->find($this->cardId);
+        if (! $principal) {
+            return;
+        }
+        $finals = [];
+        foreach ($this->rows as $k => $r) {
+            $f = $r['card_final'] ?? null;
+            if (! $f) {
+                continue;
+            }
+            $finals[$f] ??= ['count' => 0, 'total' => 0.0];
+            if (($r['status'] ?? '') !== 'payment') {
+                $finals[$f]['count']++;
+                $finals[$f]['total'] += ($r['card_kind'] ?? '') === 'refund' ? -abs((float) $r['signed']) : abs((float) $r['signed']);
+            }
+        }
+        ksort($finals);
+        foreach ($finals as $f => $info) {
+            $prev = $this->finals[$f] ?? [];
+            $state = 'unknown';
+            $cardId = null;
+            if ((string) $principal->last_four === (string) $f) {
+                [$state, $cardId] = ['principal', $principal->id];
+            } elseif ($add = $principal->additionals->firstWhere('last_four', $f)) {
+                [$state, $cardId] = ['additional', $add->id];
+            } elseif ($other = CreditCard::where('last_four', $f)->where('id', '!=', $principal->id)->first()) {
+                [$state, $cardId] = ['other', $other->id];
+            }
+            $this->finals[$f] = ['count' => $info['count'], 'total' => round($info['total'], 2), 'state' => $state, 'card_id' => $cardId,
+                'choice' => $prev['choice'] ?? ($state === 'other' ? 'card:'.$cardId : ''), 'new_name' => $prev['new_name'] ?? '', 'new_holder' => $prev['new_holder'] ?? null];
+        }
+        foreach ($this->rows as $k => $r) {
+            $f = $r['card_final'] ?? null;
+            $this->rows[$k]['additional_card_id'] = $f && in_array($this->finals[$f]['state'] ?? '', ['additional'], true) ? $this->finals[$f]['card_id'] : null;
+        }
+    }
+
+    /** Responde "de quem é o final X": cartão existente vira adicional deste principal, ou cria um adicional. Fica memorizado no cartão. */
+    public function assignFinal(string $final): void
+    {
+        $this->resetErrorBag();
+        $principal = CreditCard::find($this->cardId);
+        $info = $this->finals[$final] ?? null;
+        if (! $principal || ! $info || ! preg_match('/^\d{4}$/', $final)) {
+            return;
+        }
+        $choice = (string) ($info['choice'] ?? '');
+        if (str_starts_with($choice, 'card:')) {
+            $card = CreditCard::find((int) substr($choice, 5));
+            if (! $card) {
+                return;
+            }
+            if ($card->id !== $principal->id) {
+                if ($card->additionals()->exists()) {
+                    $this->addError('finals', $card->name.' tem adicionais próprios e não pode virar adicional.');
+
+                    return;
+                }
+                $card->update(['parent_card_id' => $principal->id, 'card_type' => $card->card_type === 'virtual' ? 'virtual' : 'adicional', 'last_four' => $card->last_four ?: $final]);
+            } elseif (! $principal->last_four) {
+                $principal->update(['last_four' => $final]);
+            }
+        } elseif ($choice === 'new') {
+            $name = trim((string) ($info['new_name'] ?? '')) ?: trim($principal->name).' adicional '.$final;
+            CreditCard::create([
+                'name' => mb_substr($name, 0, 120), 'last_four' => $final, 'card_type' => 'adicional', 'parent_card_id' => $principal->id,
+                'card_holder_id' => ($info['new_holder'] ?? null) ? (int) $info['new_holder'] : null,
+                'brand' => $principal->brand, 'bank' => $principal->bank, 'limit' => $principal->limit,
+                'closing_day' => $principal->closing_day, 'due_day' => $principal->due_day,
+                'default_payment_account_id' => $principal->default_payment_account_id, 'status' => true,
+            ]);
+        } else {
+            $this->addError('finals', 'Escolha de quem é o final '.$final.'.');
+
+            return;
+        }
+        $this->resolveFinals();
     }
 
     /** OFX entra na mesma revisão: mesmo formato de linha (data, descrição, valor com sinal) e FITID do banco. */
@@ -119,7 +216,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function cancelReview(): void
     {
-        $this->reset('rows', 'source', 'skipped', 'ignoredBalance', 'warnings', 'file', 'result');
+        $this->reset('rows', 'source', 'skipped', 'ignoredBalance', 'warnings', 'file', 'result', 'finals', 'filterFinal', 'invoiceSummary');
     }
 
     public function confirmImport(OfxImportService $ofx): void
@@ -128,6 +225,12 @@ new #[Layout('layouts.app')] class extends Component {
         $chosen = array_values(array_filter($this->rows, fn ($r) => ! empty($r['selected']) && ! in_array($r['status'], ['exists', 'payment'], true)));
         if ($chosen === []) {
             $this->addError('rows', 'Nenhuma linha aprovada.');
+
+            return;
+        }
+        $pending = array_keys(array_filter($this->finals, fn ($f) => in_array($f['state'], ['other', 'unknown'], true)));
+        if ($this->target === 'card' && $pending) {
+            $this->addError('rows', 'Diga de quem é o cartão final '.implode(', ', $pending).' antes de gravar.');
 
             return;
         }
@@ -157,6 +260,7 @@ new #[Layout('layouts.app')] class extends Component {
                 'type' => $r['type'], 'description' => mb_substr(trim((string) $r['description']) ?: 'Sem descrição', 0, 255),
                 'notes' => 'Importado de extrato ('.$this->source.')', 'category_id' => $r['category_id'] ? (int) $r['category_id'] : null,
                 'card_kind' => $r['card_kind'],
+                'additional_card_id' => $r['additional_card_id'] ?? null,
             ];
         }
         try {
@@ -177,7 +281,7 @@ new #[Layout('layouts.app')] class extends Component {
 
             return;
         }
-        $this->reset('rows', 'source', 'skipped', 'ignoredBalance', 'warnings', 'file');
+        $this->reset('rows', 'source', 'skipped', 'ignoredBalance', 'warnings', 'file', 'finals', 'filterFinal', 'invoiceSummary');
         $this->result = $res['imported'].' lançamento(s) gravado(s). '
             .($tr['created'] ? $tr['created'].' transferência(s) criada(s) (saída e entrada). ' : '')
             .($tr['linked'] ? $tr['linked'].' transferência(s) vinculada(s) à contrapartida já lançada. ' : '')
@@ -195,6 +299,11 @@ new #[Layout('layouts.app')] class extends Component {
             'incomeCategories' => Category::active()->where('type', 'income')->orderBy('name')->get(['id', 'name']),
             'expenseCategories' => Category::active()->where('type', 'expense')->orderBy('name')->get(['id', 'name']),
             'counts' => $counts,
+            'finalCards' => $this->finals ? CreditCard::with(['parent', 'holder'])->whereIn('id', array_filter(array_column($this->finals, 'card_id')))->get()->keyBy('id') : collect(),
+            'principalCard' => $this->target === 'card' ? CreditCard::with('additionals')->find($this->cardId) : null,
+            'allCards' => CreditCard::orderBy('name')->get(['id', 'name', 'last_four', 'parent_card_id']),
+            'holders' => \App\Domains\Banking\Models\CardHolder::orderBy('name')->get(['id', 'name']),
+            'importSum' => round(collect($this->rows)->reject(fn ($r) => ($r['status'] ?? '') === 'payment')->sum(fn ($r) => ($r['card_kind'] ?? '') === 'refund' ? -abs((float) $r['signed']) : abs((float) $r['signed'])), 2),
             'selectedCount' => count(array_filter($this->rows, fn ($r) => ! empty($r['selected']) && ! in_array($r['status'], ['exists', 'payment'], true))),
         ];
     }
@@ -263,9 +372,52 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </x-jr.card>
 
+        @if ($target === 'card' && $principalCard)
+            <x-jr.card>
+                <div data-invoice-check>
+                    @php $prevBal = $invoiceSummary['previous_balance'] ?? 0; $bankTotal = $invoiceSummary['invoice_total'] ?? null; $calc = round($importSum + (float) $prevBal, 2); @endphp
+                    <p class="text-sm font-semibold">Fatura de {{ $principalCard->name }}</p>
+                    <p class="text-xs text-mono-600">Lançamentos (compras − créditos, sem o pagamento): R$ {{ number_format($importSum, 2, ',', '.') }}@if ($prevBal) · saldo da fatura anterior: R$ {{ number_format($prevBal, 2, ',', '.') }}@endif · soma: <strong>R$ {{ number_format($calc, 2, ',', '.') }}</strong></p>
+                    @if ($bankTotal !== null)
+                        <p class="text-xs {{ abs($calc - $bankTotal) < 0.01 ? 'text-up' : 'text-down' }}" data-invoice-match="{{ abs($calc - $bankTotal) < 0.01 ? '1' : '0' }}">Total da fatura no banco: R$ {{ number_format($bankTotal, 2, ',', '.') }} — {{ abs($calc - $bankTotal) < 0.01 ? 'bate' : 'diferença de R$ '.number_format($calc - $bankTotal, 2, ',', '.') }}</p>
+                    @endif
+                </div>
+                @if ($finals)
+                    <div class="mt-3 flex flex-col gap-2" data-finals>
+                        <p class="text-sm font-semibold">Cartões nesta fatura (por final)</p>
+                        @error('finals')<p class="text-xs text-error">{{ $message }}</p>@enderror
+                        @foreach ($finals as $f => $info)
+                            <div class="rounded-xl border border-mono-200 p-2 text-xs" data-final="{{ $f }}" data-final-state="{{ $info['state'] }}">
+                                <span class="font-semibold">Final {{ $f }}</span> · {{ $info['count'] }} lançamento(s) · R$ {{ number_format($info['total'], 2, ',', '.') }} ·
+                                @if ($info['state'] === 'principal') <span class="text-up">principal ({{ $principalCard->name }})</span>
+                                @elseif ($info['state'] === 'additional') @php $fc = $finalCards[$info['card_id']] ?? null; @endphp <span class="text-up">{{ $fc ? mb_strtolower($fc->typeLabel()) : 'vinculado' }}: {{ $fc?->name }} · titular {{ $fc?->holderLabel() }}</span>
+                                @else
+                                    <span class="text-down">{{ $info['state'] === 'other' ? 'é de '.($finalCards[$info['card_id']]->name ?? '').', que não está como adicional deste cartão' : 'final desconhecido' }}: de quem é?</span>
+                                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                                        <select wire:model.live="finals.{{ $f }}.choice" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" data-final-choice>
+                                            <option value="">Escolha…</option>
+                                            @foreach ($allCards->where('id', '!=', $principalCard->id) as $oc)<option value="card:{{ $oc->id }}">{{ $oc->name }}{{ $oc->parent_card_id === $principalCard->id ? '' : ' (tornar adicional deste)' }}</option>@endforeach
+                                            <option value="new">+ Criar adicional novo</option>
+                                        </select>
+                                        @if (($info['choice'] ?? '') === 'new')
+                                            <input type="text" wire:model="finals.{{ $f }}.new_name" placeholder="Nome (ex.: BTG Luciane {{ $f }})" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" data-final-new-name>
+                                            <select wire:model="finals.{{ $f }}.new_holder" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" data-final-new-holder><option value="">Titular…</option>@foreach ($holders as $h)<option value="{{ $h->id }}">{{ $h->name }}</option>@endforeach</select>
+                                        @endif
+                                        <button type="button" wire:click="assignFinal('{{ $f }}')" class="h-9 rounded-lg bg-primary-500 px-3 text-xs font-semibold text-white" data-final-save>Confirmar</button>
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                        <select wire:model.live="filterFinal" class="h-9 w-56 rounded-xl border border-mono-200 px-2 text-xs" aria-label="Filtrar por final"><option value="">Todos os finais</option>@foreach ($finals as $f => $info)<option value="{{ $f }}">Só final {{ $f }}</option>@endforeach</select>
+                    </div>
+                @endif
+            </x-jr.card>
+        @endif
+
         <div class="flex flex-col gap-2">
             @foreach ($rows as $k => $r)
                 @continue($filter !== 'all' && $r['status'] !== $filter)
+                @continue($filterFinal !== '' && ($r['card_final'] ?? '') !== $filterFinal)
                 @php [$sl, $col] = $statusLabels[$r['status']]; $locked = in_array($r['status'], ['exists', 'payment'], true); @endphp
                 <div class="rounded-xl border bg-mono-white p-3 text-sm {{ $locked ? 'opacity-60' : '' }}" style="border-color: {{ $col }};" wire:key="row-{{ $r['fitid'] }}" data-row-status="{{ $r['status'] }}">
                     <div class="flex flex-wrap items-center gap-2">
@@ -275,6 +427,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <span class="font-semibold {{ $neg ? 'text-down' : 'text-up' }}" data-row-amount>{{ $neg ? '−' : '+' }} R$ {{ number_format(\App\Support\Money::toFloat((string) $r['amount']), 2, ',', '.') }}</span>
                         @if (($r['type'] ?? '') === 'transfer')<span class="text-xs text-mono-600">{{ $r['signed'] < 0 ? 'para' : 'de' }} {{ $acctName ?? '(escolha a conta)' }}</span>@endif
                         <span class="text-mono-600">{{ \Illuminate\Support\Carbon::parse($r['date'])->format('d/m/Y') }}</span>
+                        @if (! empty($r['card_final']))<span class="rounded-pill border border-mono-200 px-2 py-0.5 text-xs" data-row-final>Final {{ $r['card_final'] }}{{ ! empty($r['additional_card_id']) ? ' · '.($finalCards[$r['additional_card_id']]->name ?? '') : '' }}</span>@endif
                     </div>
                     @if ($r['note'])<p class="mt-1 text-xs" style="color: {{ $col }};">{{ $r['note'] }}</p>@endif
                     @unless ($locked)

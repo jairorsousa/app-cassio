@@ -35,7 +35,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'type', 'date', 'amount', 'description', 'notes', 'status',
-        'category_id', 'bank_account_id', 'credit_card_id', 'credit_card_invoice_id',
+        'category_id', 'bank_account_id', 'credit_card_id', 'additional_card_id', 'credit_card_invoice_id',
         'related_transaction_id', 'source_type', 'source_id',
         'ofx_fitid',
         'installment_group_id', 'installment_number', 'installment_total',
@@ -170,6 +170,12 @@ class Transaction extends Model
     public function creditCard(): BelongsTo
     {
         return $this->belongsTo(CreditCard::class);
+    }
+
+    /** Cartão adicional que fez a compra (a fatura é a do principal em credit_card_id). */
+    public function additionalCard(): BelongsTo
+    {
+        return $this->belongsTo(CreditCard::class, 'additional_card_id');
     }
 
     /** @return BelongsTo<CreditCardInvoice, $this> */

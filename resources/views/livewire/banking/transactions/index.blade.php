@@ -339,7 +339,7 @@ new #[Layout('layouts.app')] class extends Component
 
         if ($type === 'card' || $isCardValue) {
             if ($cardId) {
-                $query->where('credit_card_id', $cardId);
+                $query->where(fn ($q) => $q->where('credit_card_id', $cardId)->orWhere('additional_card_id', $cardId));
             } elseif ($type === 'card') {
                 $query->whereNotNull('credit_card_id');
             }
@@ -359,7 +359,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         if ($cardId) {
-            $query->where('credit_card_id', $cardId);
+            $query->where(fn ($q) => $q->where('credit_card_id', $cardId)->orWhere('additional_card_id', $cardId));
         } elseif ($account !== '' && ctype_digit($account)) {
             $query->where('bank_account_id', (int) $account);
         }
@@ -467,7 +467,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->formStatus = $transaction->status;
         $this->formCategoryId = $transaction->category_id;
         $this->formBankAccountId = $transaction->bank_account_id;
-        $this->formCreditCardId = $transaction->credit_card_id;
+        $this->formCreditCardId = $transaction->additional_card_id ?? $transaction->credit_card_id;
         $this->formIsCard = $transaction->type === 'expense' && $transaction->credit_card_id !== null;
         $this->formIsCardRefund = $this->formIsCard && (float) $transaction->amount < 0;
         $this->formInvoiceMonth = $transaction->invoice?->reference_month ?? '';
@@ -766,10 +766,16 @@ new #[Layout('layouts.app')] class extends Component
                         'category_id' => $data['formCategoryId'],
                         'bank_account_id' => $data['formBankAccountId'],
                         'credit_card_id' => $data['formCreditCardId'],
+                        'additional_card_id' => null,
                     ];
                     if ($this->formIsCard) {
+                        $picked = CreditCard::findOrFail($data['formCreditCardId']);
+                        if ($picked->isAdditional() && $picked->parent) {
+                            $updates['credit_card_id'] = $picked->parent_card_id;
+                            $updates['additional_card_id'] = $picked->id;
+                        }
                         $updates['credit_card_invoice_id'] = app(InvoiceService::class)->findOrCreateForReference(
-                            CreditCard::findOrFail($data['formCreditCardId']),
+                            $picked->invoiceCard(),
                             Carbon::createFromFormat('!Y-m', $data['formInvoiceMonth']),
                         )->id;
                     }
@@ -1085,7 +1091,9 @@ new #[Layout('layouts.app')] class extends Component
             $q->where('type', $this->type);
         }
         if ($this->titular !== '') {
-            $q->whereIn('credit_card_id', CreditCard::idsForHolderKey($this->titular) ?: [0]);
+            $ids = CreditCard::idsForHolderKey($this->titular) ?: [0];
+            // Compra de adicional conta para o titular do adicional; as demais, para o titular do cartão.
+            $q->where(fn ($w) => $w->whereIn('additional_card_id', $ids)->orWhere(fn ($x) => $x->whereNull('additional_card_id')->whereIn('credit_card_id', $ids)));
         }
 
         $filterAccountOptions = $this->filterAccountOptions();

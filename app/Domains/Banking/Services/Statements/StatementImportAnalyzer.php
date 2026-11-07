@@ -135,6 +135,7 @@ class StatementImportAnalyzer
                 'signed' => $amount,
                 'type' => $type,
                 'card_kind' => $kind,
+                'card_final' => $r['final'] ?? null,
                 'category_id' => $type === 'transfer' ? null : ($history[$norm.'|'.$type] ?? null),
                 'transfer_account_id' => $transferAccount,
                 'transfer_link_id' => $linkId,

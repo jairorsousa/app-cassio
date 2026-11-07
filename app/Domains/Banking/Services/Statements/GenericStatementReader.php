@@ -58,7 +58,39 @@ class GenericStatementReader
         }
         $rows = [];
         $skipped = 0;
+        // Fatura com adicionais: coluna "Final Cartão" (pode mudar de posição a cada seção da planilha).
+        $finalCol = null;
+        $summary = ['invoice_total' => null, 'previous_balance' => null];
+        $scanHeader = function (array $r) use (&$finalCol, &$summary): bool {
+            $isHeader = false;
+            foreach ($r as $ci => $cell) {
+                $c = mb_strtolower(trim((string) $cell));
+                if (preg_match('/^final\s*(do\s*)?cart/u', $c)) {
+                    $finalCol = $ci;
+                    $isHeader = true;
+                }
+                foreach (['invoice_total' => '/^total\s+da\s+fatura/u', 'previous_balance' => '/^saldo\s+(da\s+)?fatura\s+anterior/u'] as $k => $re) {
+                    if (preg_match($re, $c)) {
+                        foreach (array_slice($r, $ci + 1, null, true) as $v) {
+                            $n = is_numeric($v) ? (float) $v : $this->parseMoney((string) $v);
+                            if ($n !== null && trim((string) $v) !== '') {
+                                $summary[$k] = round($n, 2);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return $isHeader;
+        };
+        foreach (array_slice($raw, 0, max(0, $headerIndex + 1)) as $r) {
+            $scanHeader($r);
+        }
         foreach (array_slice($raw, $headerIndex + 1) as $r) {
+            if ($scanHeader($r)) {
+                continue;
+            }
             $date = $this->parseDate($r[$map['date']] ?? '');
             $amount = null;
             if ($map['amount'] !== null) {
@@ -84,6 +116,7 @@ class GenericStatementReader
                 'description' => $desc !== '' ? preg_replace('/\s+/', ' ', $desc) : 'Sem descrição',
                 'amount' => round($amount, 2),
                 'balance' => $map['balance'] !== null ? $this->parseMoney($r[$map['balance']] ?? '') : null,
+                'final' => $finalCol !== null && preg_match('/^\D*(\d{4})\D*$/', trim((string) ($r[$finalCol] ?? '')), $fm) ? $fm[1] : null,
             ];
             if (count($rows) >= self::MAX_ROWS) {
                 break;
@@ -93,7 +126,7 @@ class GenericStatementReader
             throw new RuntimeException('Nenhum lançamento com data e valor foi encontrado no arquivo.');
         }
 
-        return ['rows' => $rows, 'source' => $source, 'mapping' => $map, 'skipped' => $skipped, 'warnings' => []];
+        return ['rows' => $rows, 'source' => $source, 'mapping' => $map, 'skipped' => $skipped, 'warnings' => [], 'summary' => $summary];
     }
 
     /** @return array{0: int, 1: array<string, int|null>|null} */
@@ -512,7 +545,8 @@ class GenericStatementReader
 
                 continue;
             }
-            $rows[] = ['date' => $date, 'description' => preg_replace('/\s{2,}/', ' ', trim($m[2])), 'amount' => round($amount, 2), 'balance' => isset($m[4]) && $m[4] !== '' ? $this->parseMoney($m[4]) : null];
+            $final = preg_match('/\bfinal\s*(?:do\s*)?(?:cart[aã]o)?\s*:?\s*(\d{4})\b/iu', $line, $fm) ? $fm[1] : null;
+            $rows[] = ['date' => $date, 'description' => preg_replace('/\s{2,}/', ' ', trim($m[2])), 'amount' => round($amount, 2), 'balance' => isset($m[4]) && $m[4] !== '' ? $this->parseMoney($m[4]) : null, 'final' => $final];
             if (count($rows) >= self::MAX_ROWS) {
                 break;
             }

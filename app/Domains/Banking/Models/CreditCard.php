@@ -12,7 +12,7 @@ class CreditCard extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'brand', 'bank', 'limit',
+        'name', 'last_four', 'card_type', 'parent_card_id', 'brand', 'bank', 'limit',
         'card_holder_id', 'holder_type', 'holder_name', 'holder_contact_id',
         'closing_day', 'due_day',
         'default_payment_account_id', 'status', 'notes',
@@ -33,6 +33,41 @@ class CreditCard extends Model
         'contato' => 'Contato',
     ];
 
+    public const TYPES = ['principal' => 'Principal', 'virtual' => 'Virtual', 'adicional' => 'Adicional'];
+
+    public function typeLabel(): string
+    {
+        return self::TYPES[$this->card_type ?: 'principal'] ?? 'Principal';
+    }
+
+    /** Virtual: mesmo titular do principal. */
+    public function isVirtual(): bool
+    {
+        return $this->card_type === 'virtual' && $this->parent_card_id !== null;
+    }
+
+    /** Cartão principal (quando este é virtual ou adicional). */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_card_id');
+    }
+
+    public function additionals(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_card_id');
+    }
+
+    public function isAdditional(): bool
+    {
+        return $this->parent_card_id !== null;
+    }
+
+    /** Cartão dono da fatura: o principal, se este for adicional. */
+    public function invoiceCard(): self
+    {
+        return $this->isAdditional() && $this->parent ? $this->parent : $this;
+    }
+
     public function holder(): BelongsTo
     {
         return $this->belongsTo(CardHolder::class, 'card_holder_id');
@@ -45,12 +80,19 @@ class CreditCard extends Model
 
     public function hasHolder(): bool
     {
+        if ($this->isVirtual() && $this->parent) {
+            return $this->parent->hasHolder();
+        }
+
         return $this->card_holder_id !== null || ($this->holder_type !== null && $this->holder_type !== '');
     }
 
     /** Chave estável para filtro por pessoa: cassio, luciane, filho:Nome, contato:ID ou none. */
     public function holderKey(): string
     {
+        if ($this->isVirtual() && $this->parent) {
+            return $this->parent->holderKey();
+        }
         if ($this->card_holder_id) {
             return 'titular:'.(int) $this->card_holder_id;
         }
@@ -65,6 +107,9 @@ class CreditCard extends Model
 
     public function holderLabel(): string
     {
+        if ($this->isVirtual() && $this->parent) {
+            return $this->parent->holderLabel();
+        }
         if ($this->card_holder_id) {
             return $this->holder?->name ?? 'Titular removido';
         }
