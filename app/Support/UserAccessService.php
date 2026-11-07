@@ -45,9 +45,9 @@ class UserAccessService
 
         return DB::transaction(function () use ($actor, $name, $email, $modules) {
             // Um convite válido por e-mail: os pendentes anteriores deixam de valer.
-            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now()]);
+            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now(), 'token_encrypted' => null]);
             $token = Str::random(64);
-            $inv = UserInvitation::create(['name' => $name, 'email' => $email, 'modules' => $modules, 'token_hash' => UserInvitation::hashToken($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'invited_by' => $actor->id]);
+            $inv = UserInvitation::create(['name' => $name, 'email' => $email, 'modules' => $modules, 'token_hash' => UserInvitation::hashToken($token), 'token_encrypted' => \Illuminate\Support\Facades\Crypt::encryptString($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'invited_by' => $actor->id]);
 
             return [$inv, $token];
         });
@@ -66,7 +66,7 @@ class UserAccessService
                 throw ValidationException::withMessages(['invite' => 'Já existe um usuário com este e-mail.']);
             }
             $token = Str::random(64);
-            $inv->update(['token_hash' => UserInvitation::hashToken($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'revoked_at' => null]);
+            $inv->update(['token_hash' => UserInvitation::hashToken($token), 'token_encrypted' => \Illuminate\Support\Facades\Crypt::encryptString($token), 'expires_at' => now()->addDays(UserInvitation::VALID_DAYS), 'revoked_at' => null]);
 
             return $token;
         });
@@ -75,7 +75,7 @@ class UserAccessService
     public static function revoke(?User $actor, int $invitationId): void
     {
         self::admin($actor);
-        UserInvitation::whereKey($invitationId)->whereNull('accepted_at')->update(['revoked_at' => now()]);
+        UserInvitation::whereKey($invitationId)->whereNull('accepted_at')->update(['revoked_at' => now(), 'token_encrypted' => null]);
     }
 
     public static function accept(string $token, string $password): User
@@ -93,7 +93,7 @@ class UserAccessService
                 'name' => $inv->name, 'email' => $inv->email, 'password' => Hash::make($password), 'email_verified_at' => now(),
                 'is_admin' => false, 'status' => 'active', 'modules' => Access::clean((array) $inv->modules),
             ])->save();
-            $inv->update(['accepted_at' => now(), 'accepted_user_id' => $user->id]);
+            $inv->update(['accepted_at' => now(), 'accepted_user_id' => $user->id, 'token_encrypted' => null]);
 
             return $user;
         });

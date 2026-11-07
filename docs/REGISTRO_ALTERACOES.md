@@ -696,3 +696,11 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Revogar acesso: revoga convites pendentes e tira o módulo Divisões; se a conta só tinha Divisões, ela é bloqueada. O histórico dos grupos continua.
 - Remover de um grupo só é permitido se a pessoa não tem despesa, parte ou acerto nele (não apaga histórico).
 - Testes: `tests/Feature/Divisions/DivisionsAccessTest.php`. Nenhum dado real foi alterado.
+
+## 07/11/2026 — Link atual do convite abaixo do nome
+
+- Configurações › Usuários (lista de convites e bloco Divisões) e Divisões › Participantes mostram, em letra pequena abaixo do nome, o link de convite válido no momento, com botão Copiar ("Link copiado de <nome>").
+- Sem link válido: "Sem link gerado" (ou "Gere um novo link" para convites antigos que só têm o hash) com o botão Gerar link. Revogado, expirado ou aceito nunca aparece como válido.
+- Nova coluna `user_invitations.token_encrypted` (Crypt do Laravel), gravada em convites novos e links regenerados; é apagada ao revogar ou aceitar. O link só aparece se o token decifrado confere com o hash.
+- Nenhum link foi gerado automaticamente e nenhum dado real foi alterado. Backup da tabela antes da migration: `/root/app-cassio-backups/user_invitations-antes-link-20261107.json`.
+- Testes: `tests/Feature/Divisions/InviteLinkDisplayTest.php`.

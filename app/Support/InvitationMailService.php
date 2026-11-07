@@ -229,6 +229,7 @@ class InvitationMailService
             } else {
                 $token = Str::random(64);
                 $inv->token_hash = UserInvitation::hashToken($token);
+                $inv->token_encrypted = \Illuminate\Support\Facades\Crypt::encryptString($token);
                 $inv->expires_at = now()->addDays(UserInvitation::VALID_DAYS);
                 $inv->revoked_at = null;
             }

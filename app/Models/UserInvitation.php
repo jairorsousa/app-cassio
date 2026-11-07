@@ -11,6 +11,7 @@ class UserInvitation extends Model
         'email',
         'modules',
         'token_hash',
+        'token_encrypted',
         'expires_at',
         'accepted_at',
         'revoked_at',
@@ -35,7 +36,7 @@ class UserInvitation extends Model
         'email_failed_at' => 'datetime',
     ];
 
-    protected $hidden = ['token_hash', 'email_dispatch_token'];
+    protected $hidden = ['token_hash', 'token_encrypted', 'email_dispatch_token'];
 
     public const VALID_DAYS = 7;
 
@@ -61,6 +62,21 @@ class UserInvitation extends Model
             $this->expires_at->isPast() => 'expired',
             default => 'pending',
         };
+    }
+
+    /** Link atual, só se o convite está válido (pendente) e o token criptografado confere com o hash. */
+    public function currentLink(): ?string
+    {
+        if ($this->status() !== 'pending' || ! $this->token_encrypted) {
+            return null;
+        }
+        try {
+            $token = \Illuminate\Support\Facades\Crypt::decryptString($this->token_encrypted);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return hash_equals((string) $this->token_hash, self::hashToken($token)) ? route('invite.accept', ['token' => $token]) : null;
     }
 
     public function deliveryLabel(): string

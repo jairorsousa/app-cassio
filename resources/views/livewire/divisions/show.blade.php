@@ -320,6 +320,7 @@ new #[Layout('layouts.app')] class extends Component
 
         return [
             'isAdmin' => $user->isAdmin(),
+            'invites' => $user->isAdmin() ? \App\Models\UserInvitation::whereIn('email', $members->pluck('email')->filter()->map(fn ($e) => mb_strtolower($e)))->whereNull('accepted_at')->orderBy('id')->get()->keyBy('email') : collect(),
             'me' => $me,
             'members' => $members,
             'net' => $net,
@@ -393,10 +394,11 @@ new #[Layout('layouts.app')] class extends Component
             <h3 class="mb-3 text-fs-16 font-semibold">Participantes</h3>
             @foreach ($members as $m)
                 <div class="flex flex-col gap-1 border-b border-mono-100 py-2 text-sm last:border-0 sm:flex-row sm:items-center sm:justify-between" wire:key="m-{{ $m->id }}">
-                    <span><strong>{{ $m->name }}</strong> <span class="text-mono-600">{{ $m->email }}</span>
-                        @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif</span>
+                    <span class="min-w-0"><strong>{{ $m->name }}</strong> <span class="text-mono-600">{{ $m->email }}</span>
+                        @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif
+                        @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
                     @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)
-                        <button type="button" class="text-xs text-primary-500" wire:click="invite({{ $m->id }})" data-invite-member>Gerar link de convite</button>
+                        <button type="button" class="text-xs text-primary-500" wire:click="invite({{ $m->id }})" wire:confirm="Gerar um novo link para {{ $m->name }}? O link anterior deixa de valer." data-invite-member>Gerar link de convite</button>
                     @endif
                 </div>
             @endforeach

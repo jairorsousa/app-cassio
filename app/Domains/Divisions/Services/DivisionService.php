@@ -196,7 +196,7 @@ class DivisionService
             if (! in_array(self::MODULE, (array) $inv->modules, true)) {
                 $inv->update(['modules' => \App\Support\Access::clean(array_merge((array) $inv->modules, [self::MODULE]))]);
             }
-            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->where('id', '!=', $inv->id)->update(['revoked_at' => now()]);
+            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->where('id', '!=', $inv->id)->update(['revoked_at' => now(), 'token_encrypted' => null]);
             $token = UserAccessService::regenerate($actor, $inv->id);
         } else {
             [, $token] = UserAccessService::invite($actor, $name, $email, [self::MODULE]);
@@ -210,7 +210,7 @@ class DivisionService
     {
         $actor = $this->assertAdmin($actor);
         $email = mb_strtolower(trim($email));
-        UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now()]);
+        UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now(), 'token_encrypted' => null]);
         $user = User::whereRaw('lower(email) = ?', [$email])->first();
         if (! $user || $user->isAdmin()) {
             return 'Convite revogado.';

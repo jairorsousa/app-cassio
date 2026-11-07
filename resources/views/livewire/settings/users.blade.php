@@ -456,7 +456,8 @@ new #[Layout('layouts.app')] class extends Component {
                 @php($status = $u ? ($u->status === 'blocked' ? 'Conta bloqueada' : (in_array('divisoes', (array) $u->modules, true) ? 'Convite aceito · com acesso' : 'Conta sem o módulo Divisões')) : ($inv ? 'Convite '.mb_strtolower(\App\Models\UserInvitation::STATUS_LABELS[$inv->status()]) : 'Sem convite'))
                 <li class="py-3" wire:key="div-{{ md5($p['email']) }}" data-div-person="{{ $p['email'] }}">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div><p class="font-semibold">{{ $p['name'] }}</p>
+                        <div class="min-w-0"><p class="font-semibold">{{ $p['name'] }}</p>
+                            @unless ($u)<x-invite-link :invitation="$inv" :name="$p['name']" :action="'divLink('.\Illuminate\Support\Js::from($p['email']).')'" />@endunless
                             <p class="text-xs text-mono-600">{{ $p['email'] }} · <span data-div-status>{{ $status }}</span>@if ($inv && ! $u) · convidado em {{ $inv->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · válido até {{ $inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }}@endif</p></div>
                         <div class="flex flex-wrap gap-2 text-xs">
                             @if (! $u || $u->status === 'blocked' || ! in_array('divisoes', (array) $u->modules, true))
@@ -494,7 +495,7 @@ new #[Layout('layouts.app')] class extends Component {
                 @php($st = $inv->status())
                 @php($mailReady = \App\Support\InvitationMailService::isReadyToSend())
                 <li class="flex flex-wrap items-center justify-between gap-2 py-2" wire:key="inv-{{ $inv->id }}" data-invitation="{{ $inv->id }}">
-                    <span>{{ $inv->name }} <span class="text-xs text-mono-600">{{ $inv->email }} · {{ \App\Models\UserInvitation::STATUS_LABELS[$st] }} · {{ $inv->deliveryLabel() }}@if ($inv->email_last_error) ({{ $inv->email_last_error }})@endif · válido até {{ $inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ implode(', ', array_map(fn ($m) => $moduleLabels[$m] ?? $m, (array) $inv->modules)) }}</span></span>
+                    <span class="min-w-0">{{ $inv->name }}<x-invite-link :invitation="$inv" :name="$inv->name" :action="$st === 'accepted' ? null : 'regenerate('.$inv->id.')'" /> <span class="text-xs text-mono-600">{{ $inv->email }} · {{ \App\Models\UserInvitation::STATUS_LABELS[$st] }} · {{ $inv->deliveryLabel() }}@if ($inv->email_last_error) ({{ $inv->email_last_error }})@endif · válido até {{ $inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ implode(', ', array_map(fn ($m) => $moduleLabels[$m] ?? $m, (array) $inv->modules)) }}</span></span>
                     @if ($st !== 'accepted')
                         <span class="flex flex-wrap gap-2 text-xs">
                             <button type="button" wire:click="regenerate({{ $inv->id }})" wire:confirm="Gerar novo link? O link anterior deixa de funcionar." class="h-9 rounded-xl border border-mono-200 px-3">Gerar novo link</button>
