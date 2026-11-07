@@ -126,4 +126,25 @@ class DivisionsPaymentTest extends TestCase
             ->set('showNewCategory', true)->set('newCategoryLabel', 'Propriedade rural / Terra')->call('createCategory')
             ->assertSet('expenseCategory', 'propriedade_rural_terra')->assertSee('Propriedade rural / Terra');
     }
+
+    public function test_participant_never_sees_cassio_financeiro(): void
+    {
+        [$admin, $g, $a, $b] = $this->setup2();
+        $acc = BankAccount::create(['name' => 'Itaú Secreto', 'type' => 'checking', 'initial_balance' => 0, 'status' => true]);
+        $e = $this->svc()->saveExpense($admin, $g, $this->data($a, $b, ['payment_method' => 'account', 'bank_account_id' => $acc->id]))->first();
+        $txId = $e->fresh()->transaction_id;
+        Volt::test('divisions.show', ['group' => $g])->assertSee('Financeiro #'.$txId);
+
+        $joao = User::factory()->create(['name' => 'João', 'email' => 'joao@example.com']);
+        $joao->forceFill(['is_admin' => false, 'status' => 'active', 'modules' => ['divisoes']])->save();
+        $this->actingAs($joao);
+        $c = Volt::test('divisions.show', ['group' => $g])
+            ->assertSee('Parcela da terra')->assertDontSee('Financeiro #')->assertDontSee('Vinculada ao Financeiro')
+            ->call('newExpense')->assertDontSee('Como foi pago')->assertDontSee('Itaú Secreto')->assertDontSee('Vincular a lançamento existente');
+        $this->assertSame([], $c->viewData('accounts')->all());
+        $this->assertSame([], $c->viewData('cards')->all());
+
+        $this->expectException(ValidationException::class);
+        $this->svc()->saveExpense($joao, $g, $this->data($a, $b, ['description' => 'X', 'paid_by_member_id' => $b->id, 'payment_method' => 'account', 'bank_account_id' => $acc->id]));
+    }
 }

@@ -653,7 +653,7 @@ new #[Layout('layouts.app')] class extends Component
                     <button type="button" class="min-w-0 text-left" x-on:click="open = !open">
                         <div class="font-semibold text-mono-900">{{ $e->description }}
                             @if ($e->status !== 'approved')<span class="ml-1 rounded-pill {{ $e->status === 'pending' ? 'bg-primary-100 text-primary-500' : 'bg-mono-100 text-mono-600' }} px-2 text-xs">{{ \App\Domains\Divisions\Models\DivisionExpense::STATUS[$e->status] }}</span>@endif
-                            @if ($e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</div>
+                            @if ($isAdmin && $e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</div>
                         <div class="text-xs text-mono-600">{{ $e->date->format('d/m/Y') }} · {{ $e->categoryLabel() }} · pago por {{ $e->payer?->name }} · {{ \App\Domains\Divisions\Models\DivisionExpense::MODES[$e->split_mode] ?? '' }}</div>
                     </button>
                     <div class="flex items-center gap-3">
@@ -674,7 +674,7 @@ new #[Layout('layouts.app')] class extends Component
                         @if ($e->receipt_path)<a class="mt-2 inline-block text-primary-500" href="{{ route('divisions.receipt', $e) }}">Ver comprovante</a>@endif
                         @if ($e->notes)<p class="mt-2 text-mono-600">{{ $e->notes }}</p>@endif</div>
                     <div data-history><p class="mb-1 font-semibold">Histórico</p>
-                        @foreach ($e->audits as $a)<div>{{ $a->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ $a->label() }} · {{ $a->user?->name ?? 'sistema' }}</div>@endforeach</div>
+                        @foreach ($e->audits as $a)@continue(! $isAdmin && $a->action === 'expense_linked')<div>{{ $a->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ $a->label() }} · {{ $a->user?->name ?? 'sistema' }}</div>@endforeach</div>
                 </div>
             </div>
         @empty
@@ -723,7 +723,7 @@ new #[Layout('layouts.app')] class extends Component
         @if ($settlements->isNotEmpty())
             <h4 class="mt-4 mb-2 text-sm font-semibold">Acertos</h4>
             @foreach ($settlements as $s)
-                <div class="flex justify-between border-b border-mono-100 py-1 text-xs last:border-0"><span>{{ $s->date->format('d/m/Y') }} · {{ $s->from?->name }} pagou {{ $s->to?->name }} · R$ {{ number_format((float) $s->amount, 2, ',', '.') }}@if ($s->transaction_id) · Financeiro #{{ $s->transaction_id }}@endif</span>
+                <div class="flex justify-between border-b border-mono-100 py-1 text-xs last:border-0"><span>{{ $s->date->format('d/m/Y') }} · {{ $s->from?->name }} pagou {{ $s->to?->name }} · R$ {{ number_format((float) $s->amount, 2, ',', '.') }}@if ($isAdmin && $s->transaction_id) · Financeiro #{{ $s->transaction_id }}@endif</span>
                     @if ($isAdmin)<button type="button" class="text-error" wire:click="deleteSettlement({{ $s->id }})" wire:confirm="Excluir este acerto? O lançamento vinculado no Financeiro também será excluído.">Excluir</button>@endif</div>
             @endforeach
         @endif
