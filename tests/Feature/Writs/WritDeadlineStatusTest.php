@@ -39,7 +39,7 @@ class WritDeadlineStatusTest extends TestCase
         $this->w(['assignor_name' => 'Maria Atrasada', 'paid_at' => '2025-01-07', 'estimated_months' => 9]);
         $this->w(['assignor_name' => 'João NoPrazo', 'paid_at' => '2026-11-01', 'estimated_months' => 9]);
         \Livewire\Livewire::withoutLazyLoading();
-        Volt::test('writs.kanban')->assertSee('Atrasado há 13 meses')->assertSee('João NoPrazo')
+        Volt::test('writs.kanban')->assertSee('Atrasado há 13 meses')->assertSee('22 meses desde a compra')->assertSee('6 dias desde a compra')->assertSee('João NoPrazo')
             ->set('situation', 'overdue')->assertSee('Maria Atrasada')->assertDontSee('João NoPrazo');
         $this->get(route('writs.reports'))->assertOk()->assertSee('Situação dos requisitórios comprados')->assertSee('Maria Atrasada')->assertSee('Atrasado há 13 meses');
     }

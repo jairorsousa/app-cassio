@@ -127,14 +127,14 @@
 @endphp
 
 <article
-    @if ($sc) style="border-color: {{ $sc[0] }};" data-deadline-status="{{ $deadlineStatus['key'] }}" @endif
+    @if ($sc) style="border: 2px solid {{ $sc[0] }};" data-deadline-status="{{ $deadlineStatus['key'] }}" @endif
     class="kanban-card flex cursor-grab overflow-hidden rounded-2xl border border-mono-100 bg-mono-white shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
     data-id="{{ $writ->id }}"
     wire:key="writ-{{ $writ->id }}"
     x-data="{ expanded: false, actions: false }"
     @click.outside="actions = false"
 >
-    <div class="w-1.5 shrink-0 {{ $meta['card_accent'] }}" aria-hidden="true"></div>
+    <div class="w-1.5 shrink-0 {{ $sc ? '' : $meta['card_accent'] }}" @if ($sc) style="background: {{ $sc[0] }};" @endif aria-hidden="true"></div>
 
     <div class="flex min-w-0 flex-1 flex-col p-4">
         <div class="flex items-center justify-between gap-3">
@@ -161,12 +161,20 @@
             </button>
         </div>
 
-        @if ($sc)
-            <div class="mt-2">
+        @php $elapsed = in_array($stage, ['paid', 'petitioning', 'awaiting_receipt', 'finalized'], true) ? $writ->elapsedSincePurchaseLabel() : null; @endphp
+        @if ($sc || $elapsed)
+            <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1" data-deadline-badge>
+                @if ($sc)
                 <span class="inline-flex items-center gap-1 rounded-pill px-2.5 py-1 text-xs font-bold" style="background: {{ $sc[1] }}; color: {{ $sc[2] }};">
                     <span class="inline-block h-2 w-2 rounded-full" style="background: {{ $sc[0] }};" aria-hidden="true"></span>
                     {{ $deadlineStatus['label'] }}
                 </span>
+                @endif
+                @if ($elapsed)
+                    <span class="inline-flex items-center gap-1 text-xs font-semibold" style="color: #4b5563;" data-elapsed>
+                        <span class="material-icons-outlined text-[14px]" aria-hidden="true">schedule</span>{{ $elapsed }}
+                    </span>
+                @endif
             </div>
         @endif
 

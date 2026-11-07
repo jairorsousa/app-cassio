@@ -324,7 +324,7 @@ class Writ extends Model
             ? Carbon::parse($this->finalized_at)
             : ($asOf ? $asOf->copy() : now());
 
-        return max(0, Carbon::parse($this->paid_at)->diffInDays($end));
+        return max(0, (int) Carbon::parse($this->paid_at)->diffInDays($end));
     }
 
     /** Atraso: prazo estimado estourado sem inventar dados quando faltam paid_at/estimated_months. */
@@ -374,6 +374,27 @@ class Writ extends Model
         return ['key' => 'on_time', 'label' => 'No prazo', 'days' => $days];
     }
 
+    /** "X meses desde a compra" (ou dias se < 1 mês); até o recebimento quando finalizado. */
+    public function elapsedSincePurchaseLabel(?Carbon $asOf = null): ?string
+    {
+        if (! $this->paid_at) {
+            return null;
+        }
+        $start = Carbon::parse($this->paid_at)->startOfDay();
+        $end = ($this->finalized_at ? Carbon::parse($this->finalized_at) : ($asOf ? $asOf->copy() : now()))->startOfDay();
+        if ($end->lt($start)) {
+            return null;
+        }
+        $months = (int) floor($start->diffInMonths($end));
+        $suffix = $this->finalized_at ? ' até o recebimento' : ' desde a compra';
+        if ($months >= 1) {
+            return $months.' '.($months === 1 ? 'mês' : 'meses').$suffix;
+        }
+        $days = (int) $start->diffInDays($end);
+
+        return $days.' dia'.($days === 1 ? '' : 's').$suffix;
+    }
+
     public function isOverdue(?Carbon $asOf = null): bool
     {
         $deadline = $this->estimatedReceiptDeadline();
@@ -406,7 +427,7 @@ class Writ extends Model
             return 0;
         }
 
-        return $deadline->diffInDays($end);
+        return (int) $deadline->diffInDays($end);
     }
 
     /**
