@@ -9,6 +9,7 @@
         ['route' => 'brokers.index', 'match' => 'brokers.*', 'label' => 'Corretores', 'icon' => 'groups'],
         ['route' => 'contacts.index', 'match' => 'contacts.*', 'label' => 'Contatos', 'icon' => 'person'],
         ['route' => 'partnership.index', 'match' => 'partnership.*', 'label' => 'Sociedade', 'icon' => 'business'],
+        ['route' => 'divisions.index', 'match' => 'divisions.*', 'label' => 'Divisões', 'icon' => 'call_split'],
         ['route' => 'broadcasts.index', 'match' => 'broadcasts.*', 'label' => 'Transmissão', 'icon' => 'campaign'],
     ];
 

@@ -674,3 +674,16 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Novo `App\Support\Money::normalize()` no backend.
 - Campos que passaram a usar a máscara: Bens (aquisição, atual, venda), Despesas de processos, Pagamento de fatura, Rateio por valor nos lançamentos, Valor fixo de corretor (lançamento, comissão e recebimento de processo). Saldo inicial e saldo do extrato aceitam negativo.
 - Testes: `tests/Unit/MoneyTest.php`, `tests/Feature/MoneyInputsTest.php`, `tests/js/money-mask.test.mjs`. Build anterior: `/root/app-cassio-backups/mascaras-public-build-antes-20261107`.
+
+## 07/11/2026 — Módulo Divisões (estilo Splitwise)
+
+- Novo módulo `divisoes` (menu "Divisões", logo depois de Sociedade). Rotas `/divisoes` e `/divisoes/{grupo}`.
+- Grupos (Sociedade, Família, Amigos) com participantes. O Cassio cria direto; participante só solicita, e o grupo fica "Aguardando aprovação".
+- Convite por link copiado (mesmo sistema da Transmissão, `UserAccessService::invite`) liberando só o módulo Divisões; nenhum e-mail é enviado. Participante vê só os grupos dele e não acessa o Financeiro (403).
+- Despesas: quem pagou, valor (máscara R$), data, categoria, comprovante opcional (recolhido), divisão igual / percentual / valor / cotas com conferência da soma, parcelamento (1/5…). Configuração por grupo: despesas de participantes precisam ou não de aprovação.
+- Saldos por grupo, dívidas simplificadas (menor número de pagamentos) e saldo geral por pessoa.
+- Acertos: quando o Cassio participa, escolhe a conta e é criado o lançamento no Financeiro (`source_type = division_settlement`). Despesa paga pelo Cassio pode ser vinculada a uma saída existente (conta ou cartão), sem lançar duas vezes; o mesmo lançamento não pode ser vinculado duas vezes.
+- Histórico (auditoria) por despesa e extrato do grupo com saldo acumulado por pessoa.
+- Tabelas novas: `division_groups`, `division_members`, `division_expenses`, `division_expense_shares`, `division_settlements`, `division_audits`. Nenhuma tabela existente foi alterada.
+- Backup do banco antes da migration: `/root/app-cassio-backups/divisoes-db-antes-20261107.json.gz`.
+- Testes: `tests/Feature/Divisions/DivisionsTest.php`.

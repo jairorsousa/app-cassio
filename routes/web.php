@@ -64,6 +64,12 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('partnership')->na
     Volt::route('/{partnership}/reports', 'partnership.reports')->name('reports');
 });
 
+Route::middleware(['auth', 'verified', 'inactivity'])->prefix('divisoes')->name('divisions.')->group(function () {
+    Volt::route('/', 'divisions.index')->name('index');
+    Volt::route('/{group}', 'divisions.show')->name('show')->whereNumber('group');
+    Route::get('/despesas/{expense}/comprovante', \App\Http\Controllers\DivisionReceiptController::class)->name('receipt')->whereNumber('expense');
+});
+
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->name('investments.')->group(function () {
     Volt::route('/', 'investments.dashboard')->name('dashboard');
     Volt::route('/assets', 'investments.assets.index')->name('assets.index');

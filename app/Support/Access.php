@@ -15,6 +15,7 @@ final class Access
         'corretores' => 'Corretores',
         'contatos' => 'Contatos',
         'sociedade' => 'Sociedade',
+        'divisoes' => 'Divisões',
         'transmissao' => 'Transmissão',
     ];
 
@@ -30,6 +31,7 @@ final class Access
         'brokers.' => 'corretores',
         'contacts.' => 'contatos',
         'partnership.' => 'sociedade',
+        'divisions.' => 'divisoes',
         'broadcasts.' => 'transmissao',
         'settings.users' => self::ADMIN,
     ];
@@ -44,6 +46,7 @@ final class Access
         'brokers.' => 'corretores',
         'contacts.' => 'contatos',
         'partnership.' => 'sociedade',
+        'divisions.' => 'divisoes',
         'broadcasts.' => 'transmissao',
         'settings.users' => self::ADMIN,
     ];
@@ -101,7 +104,7 @@ final class Access
     /** Primeira tela permitida (para "/" e depois do login). */
     public static function homeRoute(?User $user): string
     {
-        $map = ['dashboard' => 'dashboard', 'financeiro' => 'banking.dashboard', 'investimentos' => 'investments.dashboard', 'requisitorio' => 'writs.kanban', 'corretores' => 'brokers.index', 'contatos' => 'contacts.index', 'sociedade' => 'partnership.index', 'transmissao' => 'broadcasts.index'];
+        $map = ['dashboard' => 'dashboard', 'financeiro' => 'banking.dashboard', 'investimentos' => 'investments.dashboard', 'requisitorio' => 'writs.kanban', 'corretores' => 'brokers.index', 'contatos' => 'contacts.index', 'sociedade' => 'partnership.index', 'divisoes' => 'divisions.index', 'transmissao' => 'broadcasts.index'];
         foreach ($map as $m => $route) {
             if ($user?->canAccessModule($m)) {
                 return $route;
