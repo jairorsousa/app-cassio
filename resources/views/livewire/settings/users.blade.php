@@ -45,6 +45,7 @@ new #[Layout('layouts.app')] class extends Component {
     private function loadEdit(): void
     {
         $this->editModules = User::orderBy('id')->get()->mapWithKeys(fn ($u) => [$u->id => Access::clean((array) $u->modules)])->all();
+        $this->editRoles = User::orderBy('id')->get()->mapWithKeys(fn ($u) => [$u->id => \App\Support\RolePolicy::role($u) === 'viewer' ? 'viewer' : 'operator'])->all();
     }
 
     private function loadSmtpForm(): void
@@ -130,6 +131,19 @@ new #[Layout('layouts.app')] class extends Component {
         $this->generatedToken = null;
         $this->generatedInvitationId = null;
         $this->notice = 'Convite revogado.';
+    }
+
+    /** @var array<int, string> */
+    public array $editRoles = [];
+
+    public function saveRole(int $userId): void
+    {
+        $this->resetErrorBag();
+        $this->guarded(function () use ($userId) {
+            UserAccessService::setRole(auth()->user(), $userId, (string) ($this->editRoles[$userId] ?? 'operator'));
+            $this->notice = 'Perfil atualizado. Vale a partir da próxima ação do usuário.';
+        });
+        $this->loadEdit();
     }
 
     public function saveModules(int $userId): void
@@ -297,7 +311,7 @@ new #[Layout('layouts.app')] class extends Component {
         $smtp = (int) auth()->id() === 1 ? InvitationMailService::settingOrDefaults() : null;
 
         return [
-            'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'status', 'modules']),
+            'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'role', 'status', 'modules']),
             'invitations' => UserInvitation::visible()->orderByDesc('id')->limit(50)->get(),
             'moduleLabels' => Access::MODULES,
             'divGroups' => \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(),
@@ -458,6 +472,14 @@ new #[Layout('layouts.app')] class extends Component {
                             @endforeach
                         </div>
                         <div class="mt-2 flex justify-end"><button type="button" wire:click="saveModules({{ $u->id }})" class="h-9 rounded-xl border border-mono-200 px-3 text-xs">Salvar módulos</button></div>
+                        <div class="mt-2 flex flex-wrap items-center justify-end gap-2" data-role-editor>
+                            <label class="text-xs text-mono-600" for="role-{{ $u->id }}">Perfil</label>
+                            <select id="role-{{ $u->id }}" wire:model="editRoles.{{ $u->id }}" class="h-9 rounded-xl border border-mono-200 px-3 text-xs">
+                                @foreach (\App\Support\RolePolicy::ROLES as $rk => $rl)<option value="{{ $rk }}">{{ $rl }}</option>@endforeach
+                            </select>
+                            <button type="button" wire:click="saveRole({{ $u->id }})" class="h-9 rounded-xl border border-mono-200 px-3 text-xs">Salvar perfil</button>
+                        </div>
+                        <p class="mt-1 text-right text-xs text-mono-600">Operador: lança e edita, não exclui cadastros (contatos, corretores, requisitórios, contas, cartões). Somente leitura: só consulta.</p>
                     @endif
                 </li>
             @endforeach

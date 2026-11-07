@@ -61,6 +61,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Perfis Operador / Somente leitura: cada ação Livewire passa pela política antes de executar.
+        \Livewire\on('call', function ($component, $method) {
+            $reason = \App\Support\RolePolicy::blockReason(auth()->user(), (string) $component->getName(), (string) $method);
+            if ($reason !== null) {
+                abort(403, $reason);
+            }
+        });
+
         $appUrl = rtrim((string) config('app.url'), '/');
 
         if ($appUrl !== '') {

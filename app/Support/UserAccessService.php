@@ -146,6 +146,16 @@ class UserAccessService
         $u->forceFill(['modules' => self::modules($modules)])->save();
     }
 
+    public static function setRole(?User $actor, int $userId, string $role): void
+    {
+        $actor = self::admin($actor);
+        $u = self::target($actor, $userId);
+        if (! array_key_exists($role, \App\Support\RolePolicy::ROLES)) {
+            throw ValidationException::withMessages(['users' => 'Perfil inválido.']);
+        }
+        $u->forceFill(['role' => $role])->save();
+    }
+
     public static function block(?User $actor, int $userId): void
     {
         $actor = self::admin($actor);

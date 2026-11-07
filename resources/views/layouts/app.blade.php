@@ -26,8 +26,20 @@
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
+    @if (\App\Support\RolePolicy::isReadOnly(auth()->user()))
+        <style>
+            body.read-only button[type=submit], body.read-only input[type=submit],
+            body.read-only [wire\:click^="save"], body.read-only [wire\:click^="delete"], body.read-only [wire\:click^="remove"],
+            body.read-only [wire\:click^="destroy"], body.read-only [wire\:click^="store"], body.read-only [wire\:click^="create"],
+            body.read-only [wire\:click^="confirm"], body.read-only [wire\:click^="import"], body.read-only [wire\:click^="pay"],
+            body.read-only [wire\:click^="register"], body.read-only [wire\:click^="add"], body.read-only [wire\:click^="update"],
+            body.read-only [wire\:click^="duplicate"], body.read-only [wire\:click^="archive"], body.read-only [wire\:click^="block"],
+            body.read-only [wire\:click^="move"], body.read-only [wire\:click^="mark"], body.read-only [wire\:click^="settle"],
+            body.read-only a[href*="/create"], body.read-only a[href*="novo="], body.read-only a[href$="/edit"] { display: none !important; }
+        </style>
+    @endif
     <body
-        class="bg-mono-50 font-sans text-mono-900 antialiased"
+        class="bg-mono-50 font-sans text-mono-900 antialiased {{ \App\Support\RolePolicy::isReadOnly(auth()->user()) ? 'read-only' : '' }}"
         :class="{ 'overflow-hidden': sidebarOpen }"
         x-data="appShell({
             newIncome: '{{ route('banking.transactions.index', ['novo' => 'income']) }}',
@@ -38,6 +50,9 @@
         })"
         x-init="init()"
     >
+        @if (\App\Support\RolePolicy::isReadOnly(auth()->user()))
+            <div class="bg-mono-900 px-4 py-1.5 text-center text-xs font-semibold text-mono-white" data-read-only-banner>Perfil Somente leitura: você pode consultar, mas não alterar.</div>
+        @endif
         <x-jr.toast />
 
         <div class="min-h-screen">
