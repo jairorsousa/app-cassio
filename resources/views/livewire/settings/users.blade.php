@@ -15,6 +15,10 @@ new #[Layout('layouts.app')] class extends Component {
     public string $inviteName = '';
     public string $inviteEmail = '';
     public array $inviteModules = [];
+    /** Grupos de Divisões em que a pessoa convidada já entra. */
+    public array $inviteGroups = [];
+    /** Grupo escolhido para adicionar, por e-mail da pessoa. */
+    public array $divAddGroup = [];
     /** Link mostrado só logo após gerar/regenerar (não fica salvo). */
     public ?string $generatedLink = null;
     public ?string $generatedFor = null;
@@ -70,12 +74,20 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetErrorBag();
         $this->guarded(function () {
             [$inv, $token] = UserAccessService::invite(auth()->user(), $this->inviteName, $this->inviteEmail, $this->inviteModules);
+            if (in_array('divisoes', (array) $inv->modules, true)) {
+                $svc = app(\App\Domains\Divisions\Services\DivisionService::class);
+                foreach (\App\Domains\Divisions\Models\DivisionGroup::whereIn('id', array_map('intval', $this->inviteGroups))->get() as $g) {
+                    if (! $g->members()->whereRaw('lower(email) = ?', [$inv->email])->exists()) {
+                        $svc->addMember(auth()->user(), $g, $inv->name, $inv->email);
+                    }
+                }
+            }
             $this->generatedLink = route('invite.accept', ['token' => $token]);
             $this->generatedFor = $inv->name;
             $this->generatedInvitationId = $inv->id;
             $this->generatedToken = $token;
             $this->notice = 'Convite criado. Copie o link ou use "Enviar por e-mail" (envio não é automático). O link vale por 7 dias e só pode ser usado uma vez.';
-            $this->reset('inviteName', 'inviteEmail', 'inviteModules');
+            $this->reset('inviteName', 'inviteEmail', 'inviteModules', 'inviteGroups');
         });
     }
 
@@ -198,6 +210,72 @@ new #[Layout('layouts.app')] class extends Component {
         $this->notice = 'Conexão Gmail de convites removida (tokens locais apagados).';
     }
 
+    private function div(): \App\Domains\Divisions\Services\DivisionService
+    {
+        return app(\App\Domains\Divisions\Services\DivisionService::class);
+    }
+
+    public function divLink(string $email): void
+    {
+        $this->resetErrorBag();
+        $this->guarded(function () use ($email) {
+            $name = \App\Models\UserInvitation::where('email', $email)->orderByDesc('id')->value('name')
+                ?? \App\Domains\Divisions\Models\DivisionMember::whereRaw('lower(email) = ?', [$email])->value('name') ?? $email;
+            $link = $this->div()->divisionLinkFor(auth()->user(), $name, $email);
+            if ($link) {
+                $inv = \App\Models\UserInvitation::where('email', $email)->orderByDesc('id')->first();
+                $this->generatedLink = $link;
+                $this->generatedFor = $inv?->name;
+                $this->generatedInvitationId = $inv?->id;
+                $this->generatedToken = basename(parse_url($link, PHP_URL_PATH));
+                $this->notice = 'Link de convite gerado (o anterior deixou de valer). Copie e envie; nenhum e-mail é enviado.';
+            } else {
+                $this->notice = 'Essa pessoa já tem conta: o módulo Divisões está liberado para ela.';
+            }
+            $this->loadEdit();
+        });
+    }
+
+    public function divRevoke(string $email): void
+    {
+        $this->resetErrorBag();
+        $this->guarded(function () use ($email) {
+            $this->notice = $this->div()->revokeDivisionAccess(auth()->user(), $email);
+            $this->generatedLink = null;
+            $this->generatedToken = null;
+            $this->generatedInvitationId = null;
+            $this->loadEdit();
+        });
+    }
+
+    public function divAddToGroup(string $email): void
+    {
+        $this->resetErrorBag();
+        $this->guarded(function () use ($email) {
+            $key = md5($email);
+            $group = \App\Domains\Divisions\Models\DivisionGroup::findOrFail((int) ($this->divAddGroup[$key] ?? 0));
+            if ($group->members()->whereRaw('lower(email) = ?', [$email])->exists()) {
+                throw ValidationException::withMessages(['divisions' => 'Essa pessoa já está nesse grupo.']);
+            }
+            $name = \App\Models\User::whereRaw('lower(email) = ?', [$email])->value('name')
+                ?? \App\Models\UserInvitation::where('email', $email)->orderByDesc('id')->value('name')
+                ?? \App\Domains\Divisions\Models\DivisionMember::whereRaw('lower(email) = ?', [$email])->value('name') ?? $email;
+            $this->div()->addMember(auth()->user(), $group, $name, $email);
+            unset($this->divAddGroup[$key]);
+            $this->notice = "{$name} adicionado(a) ao grupo {$group->name}.";
+        });
+    }
+
+    public function divRemoveFromGroup(int $memberId): void
+    {
+        $this->resetErrorBag();
+        $this->guarded(function () use ($memberId) {
+            $m = \App\Domains\Divisions\Models\DivisionMember::findOrFail($memberId);
+            $this->div()->removeMember(auth()->user(), $m);
+            $this->notice = "{$m->name} saiu do grupo {$m->group?->name}.";
+        });
+    }
+
     public function with(): array
     {
         $smtp = (int) auth()->id() === 1 ? InvitationMailService::settingOrDefaults() : null;
@@ -206,6 +284,8 @@ new #[Layout('layouts.app')] class extends Component {
             'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'status', 'modules']),
             'invitations' => UserInvitation::orderByDesc('id')->limit(50)->get(),
             'moduleLabels' => Access::MODULES,
+            'divGroups' => \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(),
+            'divPeople' => $this->div()->people(),
             'canConfigureSmtp' => (int) auth()->id() === 1,
             'smtp' => $smtp,
             // Nunca expor senha / comprimento / valor mascarado
@@ -313,11 +393,19 @@ new #[Layout('layouts.app')] class extends Component {
                 <legend class="text-sm font-medium text-mono-700">Módulos liberados</legend>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                     @foreach ($moduleLabels as $key => $label)
-                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" value="{{ $key }}" wire:model="inviteModules"> {{ $label }}</label>
+                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" value="{{ $key }}" wire:model.live="inviteModules"> {{ $label }}</label>
                     @endforeach
                 </div>
                 @error('modules')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
             </fieldset>
+            @if (in_array('divisoes', $inviteModules, true) && $divGroups->isNotEmpty())
+                <fieldset data-invite-groups>
+                    <legend class="text-sm font-medium text-mono-700">Grupos de Divisões em que a pessoa já entra</legend>
+                    <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                        @foreach ($divGroups as $g)<label class="flex items-center gap-2 text-sm"><input type="checkbox" value="{{ $g->id }}" wire:model="inviteGroups"> {{ $g->name }}</label>@endforeach
+                    </div>
+                </fieldset>
+            @endif
             <div class="flex justify-end"><button type="submit" class="h-10 rounded-xl bg-primary-500 px-4 text-sm font-semibold text-white">Gerar convite</button></div>
         </form>
     </x-jr.card>
@@ -354,6 +442,48 @@ new #[Layout('layouts.app')] class extends Component {
                     @endif
                 </li>
             @endforeach
+        </ul>
+    </x-jr.card>
+
+    <x-jr.card data-divisions-access>
+        <h3 class="font-bold">Divisões · pessoas, convites e grupos</h3>
+        <p class="mt-1 text-xs text-mono-600">Os convites gerados aqui e pelo botão do módulo Divisões são os mesmos registros. Gerar novo link invalida o anterior. Nenhum e-mail é enviado.</p>
+        @error('divisions')<x-jr.alert variant="error">{{ $message }}</x-jr.alert>@enderror
+        <ul class="mt-3 divide-y divide-mono-100 text-sm">
+            @forelse ($divPeople as $p)
+                @php($inv = $p['invitation'])
+                @php($u = $p['user'])
+                @php($status = $u ? ($u->status === 'blocked' ? 'Conta bloqueada' : (in_array('divisoes', (array) $u->modules, true) ? 'Convite aceito · com acesso' : 'Conta sem o módulo Divisões')) : ($inv ? 'Convite '.mb_strtolower(\App\Models\UserInvitation::STATUS_LABELS[$inv->status()]) : 'Sem convite'))
+                <li class="py-3" wire:key="div-{{ md5($p['email']) }}" data-div-person="{{ $p['email'] }}">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div><p class="font-semibold">{{ $p['name'] }}</p>
+                            <p class="text-xs text-mono-600">{{ $p['email'] }} · <span data-div-status>{{ $status }}</span>@if ($inv && ! $u) · convidado em {{ $inv->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · válido até {{ $inv->expires_at->timezone('America/Fortaleza')->format('d/m/Y H:i') }}@endif</p></div>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            @if (! $u || $u->status === 'blocked' || ! in_array('divisoes', (array) $u->modules, true))
+                                <button type="button" wire:click="divLink(@js($p['email']))" class="h-9 rounded-xl border border-mono-200 px-3" data-div-link>{{ $u ? 'Liberar acesso' : ($inv ? 'Gerar novo link' : 'Gerar link de convite') }}</button>
+                            @endif
+                            @if (($u && $u->status !== 'blocked' && in_array('divisoes', (array) $u->modules, true)) || ($inv && ! $u && $inv->status() === 'pending'))
+                                <button type="button" wire:click="divRevoke(@js($p['email']))" wire:confirm="Revogar o acesso de {{ $p['name'] }} a Divisões? O histórico dos grupos fica guardado." class="h-9 rounded-xl border border-error px-3 text-error" data-div-revoke>Revogar acesso</button>
+                            @endif
+                        </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        @forelse ($p['members'] as $m)
+                            <span class="inline-flex items-center gap-1 rounded-full bg-mono-100 px-2 py-0.5 text-xs" data-div-group>{{ $m->group->name }}@if ($m->group->status !== 'approved') ({{ mb_strtolower($m->group->statusLabel()) }})@endif
+                                <button type="button" wire:click="divRemoveFromGroup({{ $m->id }})" wire:confirm="Tirar {{ $m->name }} do grupo {{ $m->group->name }}?" class="text-error" title="Remover do grupo">×</button></span>
+                        @empty
+                            <span class="text-xs text-mono-500">Em nenhum grupo.</span>
+                        @endforelse
+                        @php($available = $divGroups->reject(fn ($g) => $p['members']->pluck('group_id')->contains($g->id)))
+                        @if ($available->isNotEmpty())
+                            <select wire:model="divAddGroup.{{ md5($p['email']) }}" class="h-9 rounded-xl border border-mono-200 px-2 text-xs"><option value="">Adicionar a um grupo…</option>@foreach ($available as $g)<option value="{{ $g->id }}">{{ $g->name }}</option>@endforeach</select>
+                            <button type="button" wire:click="divAddToGroup(@js($p['email']))" class="h-9 rounded-xl border border-mono-200 px-3 text-xs" data-div-add>Adicionar</button>
+                        @endif
+                    </div>
+                </li>
+            @empty
+                <li class="py-2 text-mono-500">Ninguém com acesso a Divisões ainda. Use "Convidar pessoa" acima marcando Divisões.</li>
+            @endforelse
         </ul>
     </x-jr.card>
 

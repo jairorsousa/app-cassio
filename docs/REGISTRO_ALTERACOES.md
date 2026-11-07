@@ -687,3 +687,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Tabelas novas: `division_groups`, `division_members`, `division_expenses`, `division_expense_shares`, `division_settlements`, `division_audits`. Nenhuma tabela existente foi alterada.
 - Backup do banco antes da migration: `/root/app-cassio-backups/divisoes-db-antes-20261107.json.gz`.
 - Testes: `tests/Feature/Divisions/DivisionsTest.php`.
+
+## 07/11/2026 — Divisões em Configurações › Usuários
+
+- Novo bloco "Divisões · pessoas, convites e grupos" em Configurações › Usuários: lista quem foi convidado (inclusive pelos convites feitos dentro do módulo), o status (convite pendente, aceito, revogado ou expirado; conta bloqueada), os grupos de cada pessoa, adicionar/remover de grupos, gerar novo link e revogar acesso.
+- "Convidar pessoa": ao marcar Divisões, dá para escolher já os grupos em que a pessoa entra.
+- Um único registro de convite por pessoa: o botão do módulo e Configurações usam `DivisionService::divisionLinkFor()`, que gera novo link no MESMO convite (o link anterior deixa de valer). Nenhum e-mail é enviado.
+- Revogar acesso: revoga convites pendentes e tira o módulo Divisões; se a conta só tinha Divisões, ela é bloqueada. O histórico dos grupos continua.
+- Remover de um grupo só é permitido se a pessoa não tem despesa, parte ou acerto nele (não apaga histórico).
+- Testes: `tests/Feature/Divisions/DivisionsAccessTest.php`. Nenhum dado real foi alterado.

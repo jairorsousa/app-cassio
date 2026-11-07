@@ -10,6 +10,7 @@ use App\Domains\Divisions\Models\DivisionGroup;
 use App\Domains\Divisions\Models\DivisionMember;
 use App\Domains\Divisions\Models\DivisionSettlement;
 use App\Models\User;
+use App\Models\UserInvitation;
 use App\Support\UserAccessService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -156,19 +157,130 @@ class DivisionService
         if (! $member->email) {
             throw ValidationException::withMessages(['memberEmail' => 'Cadastre o e-mail do participante para gerar o convite.']);
         }
-        $user = User::whereRaw('lower(email) = ?', [mb_strtolower($member->email)])->first();
+        $link = $this->divisionLinkFor($actor, $member->name, $member->email);
+        $member->refresh();
+        if ($link) {
+            $this->audit($member->group, $actor, 'member_invited', ['nome' => $member->name]);
+        }
+
+        return $link;
+    }
+
+    // ---------- Gestão de acesso (Configurações › Usuários e botão do módulo usam o mesmo registro) ----------
+
+    /**
+     * Link de convite para Divisões. Reaproveita o convite existente da pessoa (gera novo link no MESMO registro);
+     * só cria um convite novo quando não há nenhum. Quem já tem conta só ganha o módulo (retorna null).
+     */
+    public function divisionLinkFor(?User $actor, string $name, string $email): ?string
+    {
+        $actor = $this->assertAdmin($actor);
+        $email = mb_strtolower(trim($email));
+        $user = User::whereRaw('lower(email) = ?', [$email])->first();
         if ($user) {
-            $member->update(['user_id' => $user->id]);
-            if (! $user->isAdmin() && ! in_array(self::MODULE, (array) $user->modules, true)) {
+            if ($user->isAdmin()) {
+                return null;
+            }
+            if (! in_array(self::MODULE, (array) $user->modules, true)) {
                 UserAccessService::setModules($actor, $user->id, array_merge((array) $user->modules, [self::MODULE]));
             }
+            if (! $user->isActive()) {
+                UserAccessService::reactivate($actor, $user->id);
+            }
+            DivisionMember::whereNull('user_id')->whereRaw('lower(email) = ?', [$email])->update(['user_id' => $user->id]);
 
             return null;
         }
-        [, $token] = UserAccessService::invite($actor, $member->name, $member->email, [self::MODULE]);
-        $this->audit($member->group, $actor, 'member_invited', ['nome' => $member->name]);
+        $inv = UserInvitation::where('email', $email)->whereNull('accepted_at')->orderByDesc('id')->first();
+        if ($inv) {
+            if (! in_array(self::MODULE, (array) $inv->modules, true)) {
+                $inv->update(['modules' => \App\Support\Access::clean(array_merge((array) $inv->modules, [self::MODULE]))]);
+            }
+            UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->where('id', '!=', $inv->id)->update(['revoked_at' => now()]);
+            $token = UserAccessService::regenerate($actor, $inv->id);
+        } else {
+            [, $token] = UserAccessService::invite($actor, $name, $email, [self::MODULE]);
+        }
 
         return route('invite.accept', ['token' => $token]);
+    }
+
+    /** Tira o acesso a Divisões: revoga convites pendentes e remove o módulo (sem outro módulo, a conta é bloqueada). Histórico fica. */
+    public function revokeDivisionAccess(?User $actor, string $email): string
+    {
+        $actor = $this->assertAdmin($actor);
+        $email = mb_strtolower(trim($email));
+        UserInvitation::where('email', $email)->whereNull('accepted_at')->whereNull('revoked_at')->update(['revoked_at' => now()]);
+        $user = User::whereRaw('lower(email) = ?', [$email])->first();
+        if (! $user || $user->isAdmin()) {
+            return 'Convite revogado.';
+        }
+        $rest = array_values(array_diff((array) $user->modules, [self::MODULE]));
+        if ($rest === []) {
+            UserAccessService::block($actor, $user->id);
+
+            return 'Acesso revogado: a conta só tinha Divisões e foi bloqueada.';
+        }
+        UserAccessService::setModules($actor, $user->id, $rest);
+
+        return 'Módulo Divisões retirado; os outros módulos continuam.';
+    }
+
+    /** Remove a pessoa do grupo só se ela não tem despesa, parte ou acerto lá (não apaga histórico). */
+    public function removeMember(?User $actor, DivisionMember $member): void
+    {
+        $actor = $this->assertAdmin($actor);
+        if ($member->is_owner) {
+            throw ValidationException::withMessages(['divisions' => 'O administrador não sai do grupo.']);
+        }
+        $used = DivisionExpense::withTrashed()->where('paid_by_member_id', $member->id)->exists()
+            || \App\Domains\Divisions\Models\DivisionExpenseShare::where('member_id', $member->id)->exists()
+            || DivisionSettlement::withTrashed()->where(fn ($q) => $q->where('from_member_id', $member->id)->orWhere('to_member_id', $member->id))->exists();
+        if ($used) {
+            throw ValidationException::withMessages(['divisions' => $member->name.' já tem despesas ou acertos neste grupo; para não apagar o histórico, não dá para remover.']);
+        }
+        $group = $member->group;
+        $this->audit($group, $actor, 'member_removed', ['nome' => $member->name]);
+        $member->delete();
+    }
+
+    /**
+     * Pessoas ligadas a Divisões (usuários com o módulo, convites com o módulo e participantes dos grupos), por e-mail.
+     *
+     * @return list<array{email:string,name:string,user:?User,invitation:?UserInvitation,members:Collection}>
+     */
+    public function people(): array
+    {
+        $people = [];
+        $put = function (string $email, string $name) use (&$people) {
+            $k = mb_strtolower($email);
+            $people[$k] ??= ['email' => $k, 'name' => $name, 'user' => null, 'invitation' => null, 'members' => collect()];
+        };
+        foreach (User::where('is_admin', false)->get() as $u) {
+            if (in_array(self::MODULE, (array) $u->modules, true)) {
+                $put($u->email, $u->name);
+            }
+        }
+        foreach (UserInvitation::orderBy('id')->get() as $inv) {
+            if (in_array(self::MODULE, (array) $inv->modules, true)) {
+                $put($inv->email, $inv->name);
+            }
+        }
+        foreach (DivisionMember::where('is_owner', false)->whereNotNull('email')->with('group')->get() as $m) {
+            if ($m->group) {
+                $put($m->email, $m->name);
+            }
+        }
+        foreach ($people as $k => &$p) {
+            $p['user'] = User::whereRaw('lower(email) = ?', [$k])->first();
+            $p['invitation'] = UserInvitation::where('email', $k)->orderByDesc('id')->first();
+            $p['members'] = DivisionMember::whereRaw('lower(email) = ?', [$k])->where('is_owner', false)->with('group')->get()->filter(fn ($m) => $m->group);
+            if ($p['user']) {
+                $p['name'] = $p['user']->name;
+            }
+        }
+
+        return array_values($people);
     }
 
     // ---------- Divisão ----------
