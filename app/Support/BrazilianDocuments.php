@@ -102,6 +102,23 @@ class BrazilianDocuments
         return (string) $value;
     }
 
+    /**
+     * CPF mascarado para listagens (LGPD): 123.xxx.xxx-00. CNPJ (empresa) sai completo e formatado.
+     * O CPF completo fica só nas telas de detalhe.
+     */
+    public static function maskForList(?string $value): string
+    {
+        $d = self::digits($value);
+        if ($d === '') {
+            return '';
+        }
+        if (strlen($d) === 11) {
+            return substr($d, 0, 3).'.xxx.xxx-'.substr($d, 9, 2);
+        }
+
+        return self::formatCpfCnpj($value);
+    }
+
     public static function formatPhone(?string $value): string
     {
         $digits = self::digits($value);

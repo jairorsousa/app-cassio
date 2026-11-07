@@ -1523,7 +1523,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                                                 <select wire:model="assignors.{{ $i }}.contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
                                                     <option value="">Selecionar contato</option>
                                                     @foreach ($contacts as $contact)
-                                                        <option value="{{ $contact->id }}">{{ $contact->name }}{{ $contact->document ? ' · '.$contact->document : '' }}</option>
+                                                        <option value="{{ $contact->id }}">{{ $contact->name }}{{ $contact->document ? ' · '.\App\Support\BrazilianDocuments::maskForList($contact->document) : '' }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>

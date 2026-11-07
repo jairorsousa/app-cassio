@@ -470,9 +470,9 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
                             @endif
                         </td>
-                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->document ?: '—' }}</td>
+                        <td class="px-4 py-4 text-sm text-mono-600">{{ $contact->document ? \App\Support\BrazilianDocuments::maskForList($contact->document) : '—' }}</td>
                         <td class="px-4 py-4 text-sm text-mono-600">
-                            {{ $contact->phone ?: '—' }}
+                            {{ $contact->phone ? \App\Support\BrazilianDocuments::formatPhone($contact->phone) : '—' }}
                             @if (count($contact->phones ?? []) > 1)
                                 <span class="ml-1 rounded-pill bg-mono-100 px-2 py-0.5 text-xs font-semibold text-mono-600">+{{ count($contact->phones) - 1 }}</span>
                             @endif

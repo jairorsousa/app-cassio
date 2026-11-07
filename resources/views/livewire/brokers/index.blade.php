@@ -420,7 +420,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td>
                                 <a href="{{ route('brokers.show', $broker) }}" class="font-medium hover:text-primary-500">{{ $broker->name }}</a>
                             </td>
-                            <td>{{ $broker->document ?: '—' }}</td>
+                            <td>{{ $broker->document ? \App\Support\BrazilianDocuments::maskForList($broker->document) : '—' }}</td>
                             <td>{{ $broker->phone ?: '—' }}</td>
                             <td class="text-right tabular-nums font-semibold">
                                 <span class="{{ $advancePending > 0 ? 'text-down' : 'text-mono-900' }}">
@@ -508,7 +508,7 @@ new #[Layout('layouts.app')] class extends Component {
                                         <select wire:model.live="launch_contact_id" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-0">
                                             <option value="">Selecione</option>
                                             @foreach ($brokerOptions as $option)
-                                                <option value="{{ $option->id }}">{{ $option->name }}{{ $option->document ? ' · '.$option->document : '' }}</option>
+                                                <option value="{{ $option->id }}">{{ $option->name }}{{ $option->document ? ' · '.\App\Support\BrazilianDocuments::maskForList($option->document) : '' }}</option>
                                             @endforeach
                                         </select>
                                         @error('launch_contact_id') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror

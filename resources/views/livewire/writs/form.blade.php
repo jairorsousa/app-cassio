@@ -677,7 +677,7 @@ new #[Layout('layouts.app')] class extends Component
                             <select wire:model="assignors.{{ $i }}.contact_id" class="fx-form-field">
                                 <option value="">— selecionar contato —</option>
                                 @foreach ($contacts as $c)
-                                    <option value="{{ $c->id }}">{{ $c->name }}{{ $c->document ? ' · '.$c->document : '' }}</option>
+                                    <option value="{{ $c->id }}">{{ $c->name }}{{ $c->document ? ' · '.\App\Support\BrazilianDocuments::maskForList($c->document) : '' }}</option>
                                 @endforeach
                             </select>
                         </div>
