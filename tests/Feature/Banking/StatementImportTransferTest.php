@@ -75,7 +75,7 @@ class StatementImportTransferTest extends TestCase
         [$cef, $itau] = $this->accounts();
         $c = Volt::test('banking.transactions.statement-import')->set('accountId', $cef->id)
             ->set('file', UploadedFile::fake()->createWithContent('cef.csv', $this->csv()))->call('analyzeFile');
-        $c->set('rows.2.type', 'transfer')->set('rows.2.transfer_account_id', $itau->id)->assertSee('de Itaú');
+        $c->set('rows.2.selected', true)->set('rows.2.type', 'transfer')->set('rows.2.transfer_account_id', $itau->id)->assertSee('de Itaú');
         foreach ([0, 1, 3] as $k) {
             $c->set("rows.$k.selected", false);
         }
