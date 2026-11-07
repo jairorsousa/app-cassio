@@ -25,7 +25,7 @@ class DivisionExpense extends Model
 
     protected $fillable = ['group_id', 'description', 'category', 'date', 'amount', 'paid_by_member_id', 'split_mode', 'status',
         'installment_group_id', 'installment_number', 'installment_total', 'transaction_id', 'receipt_path', 'receipt_original_name',
-        'receipt_mime', 'notes', 'created_by'];
+        'receipt_mime', 'notes', 'created_by', 'payment_method'];
 
     protected $casts = ['date' => 'date', 'amount' => 'decimal:2', 'installment_number' => 'integer', 'installment_total' => 'integer'];
 
@@ -59,8 +59,19 @@ class DivisionExpense extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** Categorias fixas + as criadas pelo botão "+ Nova categoria". */
+    public static function categories(): array
+    {
+        $fixed = self::CATEGORIES;
+        $outros = ['outros' => $fixed['outros']];
+        unset($fixed['outros']);
+        $custom = DivisionCategory::orderBy('label')->pluck('label', 'key')->all();
+
+        return $fixed + $custom + $outros;
+    }
+
     public function categoryLabel(): string
     {
-        return self::CATEGORIES[$this->category] ?? $this->category;
+        return self::categories()[$this->category] ?? $this->category;
     }
 }

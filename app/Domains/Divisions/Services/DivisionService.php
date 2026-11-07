@@ -3,6 +3,10 @@
 namespace App\Domains\Divisions\Services;
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Domains\Banking\Models\Category;
+use App\Domains\Banking\Models\CreditCard;
+use App\Domains\Banking\Services\InvoiceService;
+use App\Domains\Divisions\Models\DivisionCategory;
 use App\Domains\Banking\Models\Transaction;
 use App\Domains\Divisions\Models\DivisionAudit;
 use App\Domains\Divisions\Models\DivisionExpense;
@@ -656,7 +660,7 @@ class DivisionService
             throw ValidationException::withMessages(['expenseDescription' => 'Informe a descrição.']);
         }
         $category = (string) ($data['category'] ?? 'outros');
-        if (! array_key_exists($category, DivisionExpense::CATEGORIES)) {
+        if (! array_key_exists($category, DivisionExpense::categories())) {
             $category = 'outros';
         }
         try {
@@ -674,6 +678,24 @@ class DivisionService
         $n = $editing ? 1 : max(1, min(60, (int) ($data['installments'] ?? 1)));
 
         $transactionId = ! empty($data['transaction_id']) ? (int) $data['transaction_id'] : null;
+        // Como foi pago: account/card gera a saída no Financeiro; vazio = não lança (ou vincula a um lançamento existente).
+        $method = in_array($data['payment_method'] ?? null, ['account', 'card'], true) ? $data['payment_method'] : null;
+        $payAccountId = $method === 'account' ? (int) ($data['bank_account_id'] ?? 0) : null;
+        $payCardId = $method === 'card' ? (int) ($data['credit_card_id'] ?? 0) : null;
+        if ($method) {
+            $owner = $group->ownerMember();
+            if (! $actor->isAdmin() || ! $owner || $owner->id !== $payer) {
+                throw ValidationException::withMessages(['paymentMethod' => 'Só dá para lançar no Financeiro uma despesa paga por você.']);
+            }
+            if ($method === 'account' && ! BankAccount::whereKey($payAccountId)->exists()) {
+                throw ValidationException::withMessages(['paymentMethod' => 'Escolha a conta.']);
+            }
+            if ($method === 'card' && ! CreditCard::whereKey($payCardId)->exists()) {
+                throw ValidationException::withMessages(['paymentMethod' => 'Escolha o cartão.']);
+            }
+            $transactionId = null;
+        }
+        $oldTxId = $editing?->transaction_id;
         if ($transactionId !== null) {
             $this->validateTransactionLink($actor, $group, $payer, $transactionId, $editing?->id);
         }
@@ -684,7 +706,7 @@ class DivisionService
         }
         $status = ($isMember && $group->requires_approval) ? 'pending' : 'approved';
 
-        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing) {
+        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing, $method, $payAccountId, $payCardId, $oldTxId) {
             $parts = $this->allocate($total, array_fill(1, $n, 1));
             $weights = array_map(fn ($s) => $s['cents'], $shares);
             $groupUuid = $n > 1 ? (string) Str::uuid() : null;
@@ -705,6 +727,7 @@ class DivisionService
                     'amount' => $partCents / 100, 'paid_by_member_id' => $payer, 'split_mode' => (string) $data['split_mode'],
                     'status' => $editing ? ($actor->isAdmin() ? $editing->status : $status) : $status,
                     'transaction_id' => $i === 1 ? $transactionId : null,
+                    'payment_method' => $method ?? ($i === 1 && $transactionId ? 'link' : null),
                     'notes' => trim((string) ($data['notes'] ?? '')) ?: null,
                 ];
                 if ($n > 1) {
@@ -730,6 +753,12 @@ class DivisionService
                 } else {
                     $this->audit($group, $actor, 'expense_created', $this->snapshot($expense), $expense->id);
                 }
+                if ($method) {
+                    $tx = $this->syncFinanceiro($expense, $method, $payAccountId, $payCardId);
+                    $this->audit($group, $actor, 'expense_linked', ['lançamento' => $tx->id, 'gerado' => $method === 'card' ? 'cartão' : 'conta'], $expense->id);
+                } elseif ($editing && $oldTxId && $oldTxId !== $transactionId) {
+                    $this->dropGenerated($expense->id);
+                }
                 if ($transactionId && $i === 1) {
                     $this->audit($group, $actor, 'expense_linked', ['lançamento' => $transactionId], $expense->id);
                 }
@@ -738,6 +767,88 @@ class DivisionService
 
             return $created;
         });
+    }
+
+    /** Cria/atualiza a saída "Divisões: ..." no Financeiro (conta ou fatura do cartão) vinculada à despesa. */
+    public function syncFinanceiro(DivisionExpense $expense, string $method, ?int $accountId, ?int $cardId): Transaction
+    {
+        $tx = Transaction::where('source_type', 'division_expense')->where('source_id', $expense->id)->first();
+        $oldInvoiceId = $tx?->credit_card_invoice_id;
+        $attrs = [
+            'type' => 'expense', 'date' => $expense->date->toDateString(), 'amount' => $expense->amount,
+            'description' => mb_substr('Divisões: '.$expense->description, 0, 255), 'status' => 'settled',
+            'category_id' => $this->financeCategoryId($expense->category), 'bank_account_id' => null,
+            'credit_card_id' => null, 'credit_card_invoice_id' => null, 'source_type' => 'division_expense', 'source_id' => $expense->id,
+        ];
+        $invoice = null;
+        if ($method === 'card') {
+            $card = CreditCard::findOrFail($cardId);
+            $invoice = app(InvoiceService::class)->findOrCreateForPurchase($card, $expense->date->copy());
+            $attrs['credit_card_id'] = $card->id;
+            $attrs['credit_card_invoice_id'] = $invoice->id;
+        } else {
+            $attrs['bank_account_id'] = $accountId;
+        }
+        if ($tx) {
+            $tx->update($attrs);
+        } else {
+            $tx = Transaction::create($attrs);
+        }
+        $expense->forceFill(['transaction_id' => $tx->id, 'payment_method' => $method])->save();
+        if ($invoice) {
+            app(InvoiceService::class)->recalculateTotal($invoice);
+        }
+        if ($oldInvoiceId && $oldInvoiceId !== $invoice?->id && ($old = \App\Domains\Banking\Models\CreditCardInvoice::find($oldInvoiceId))) {
+            app(InvoiceService::class)->recalculateTotal($old);
+        }
+
+        return $tx;
+    }
+
+    /** Apaga a saída gerada por esta despesa (só a gerada; lançamento vinculado manualmente fica). */
+    private function dropGenerated(int $expenseId): void
+    {
+        $tx = Transaction::where('source_type', 'division_expense')->where('source_id', $expenseId)->first();
+        if (! $tx) {
+            return;
+        }
+        $invoice = $tx->credit_card_invoice_id ? \App\Domains\Banking\Models\CreditCardInvoice::find($tx->credit_card_invoice_id) : null;
+        $tx->delete();
+        if ($invoice) {
+            app(InvoiceService::class)->recalculateTotal($invoice);
+        }
+    }
+
+    private function financeCategoryId(string $key): ?int
+    {
+        $label = DivisionExpense::categories()[$key] ?? null;
+
+        return $label ? Category::where('name', $label)->where('type', 'expense')->value('id') : null;
+    }
+
+    /** "+ Nova categoria": cria na hora (e a mesma categoria de saída no Financeiro, se for o Cassio). */
+    public function createCategory(User $actor, string $label): string
+    {
+        $label = trim(preg_replace('/\s+/', ' ', $label));
+        if ($label === '' || mb_strlen($label) > 80) {
+            throw ValidationException::withMessages(['newCategoryLabel' => 'Informe o nome da categoria (até 80 caracteres).']);
+        }
+        $existing = array_search(mb_strtolower($label), array_map('mb_strtolower', DivisionExpense::categories()), true);
+        $key = $existing !== false ? (string) $existing : null;
+        if ($key === null) {
+            $base = mb_substr(Str::slug($label, '_'), 0, 50) ?: 'categoria';
+            $key = $base;
+            for ($i = 2; array_key_exists($key, DivisionExpense::categories()); $i++) {
+                $key = $base.'_'.$i;
+            }
+            DivisionCategory::create(['key' => $key, 'label' => $label, 'created_by' => $actor->id]);
+        }
+        if ($actor->isAdmin()) {
+            $name = DivisionExpense::categories()[$key];
+            Category::firstOrCreate(['name' => $name, 'type' => 'expense'], ['status' => true]);
+        }
+
+        return $key;
     }
 
     private function snapshot(DivisionExpense $e): array
@@ -792,7 +903,10 @@ class DivisionService
         $this->assertView($actor, $expense->group);
         abort_unless($actor->isAdmin() || ($expense->created_by === $actor->id && $expense->status === 'pending'), 403);
         $this->audit($expense->group, $actor, 'expense_deleted', $this->snapshot($expense), $expense->id);
-        $expense->delete();
+        DB::transaction(function () use ($expense) {
+            $this->dropGenerated($expense->id);
+            $expense->delete();
+        });
     }
 
     // ---------- Acertos ----------

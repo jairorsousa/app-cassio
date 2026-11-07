@@ -52,6 +52,16 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $transactionId = '';
 
+    public string $paymentMethod = '';
+
+    public string $payAccount = '';
+
+    public string $payCard = '';
+
+    public bool $showNewCategory = false;
+
+    public string $newCategoryLabel = '';
+
     public string $expenseNotes = '';
 
     public $receipt = null;
@@ -129,7 +139,7 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetExpense(): void
     {
-        $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId');
+        $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId', 'paymentMethod', 'payAccount', 'payCard', 'showNewCategory', 'newCategoryLabel');
         $this->expenseDate = now()->toDateString();
         $this->expenseCategory = 'outros';
         $this->splitMode = 'equal';
@@ -161,6 +171,13 @@ new #[Layout('layouts.app')] class extends Component
         $this->paidBy = (string) $e->paid_by_member_id;
         $this->splitMode = $e->split_mode;
         $this->transactionId = (string) ($e->transaction_id ?? '');
+        $tx = $e->transaction_id ? Transaction::find($e->transaction_id) : null;
+        if ($tx && $tx->source_type === 'division_expense') {
+            $this->paymentMethod = $tx->credit_card_id ? 'card' : 'account';
+            $this->payAccount = (string) ($tx->bank_account_id ?? '');
+            $this->payCard = (string) ($tx->credit_card_id ?? '');
+            $this->transactionId = '';
+        }
         $this->expenseNotes = (string) $e->notes;
         foreach ($this->splitRows as $id => $row) {
             $share = $e->shares->firstWhere('member_id', $id);
@@ -193,10 +210,13 @@ new #[Layout('layouts.app')] class extends Component
         }
         try {
             $editing = $this->editingExpenseId ? DivisionExpense::where('group_id', $this->group->id)->findOrFail($this->editingExpenseId) : null;
+            $ownerPaid = auth()->user()->isAdmin() && (int) $this->paidBy === (int) $this->group->ownerMember()?->id;
+            $method = $ownerPaid && in_array($this->paymentMethod, ['account', 'card'], true) ? $this->paymentMethod : null;
             $created = $this->service()->saveExpense(auth()->user(), $this->group, [
                 'description' => $this->expenseDescription, 'category' => $this->expenseCategory, 'date' => $this->expenseDate,
                 'amount' => $this->expenseAmount, 'paid_by_member_id' => (int) $this->paidBy, 'split_mode' => $this->splitMode,
-                'inputs' => $inputs, 'installments' => $this->installments, 'transaction_id' => $this->transactionId ?: null, 'notes' => $this->expenseNotes,
+                'inputs' => $inputs, 'installments' => $this->installments, 'transaction_id' => $method ? null : ($this->transactionId ?: null), 'notes' => $this->expenseNotes,
+                'payment_method' => $method, 'bank_account_id' => $method === 'account' ? (int) $this->payAccount : null, 'credit_card_id' => $method === 'card' ? (int) $this->payCard : null,
             ], $this->receipt, $editing);
         } catch (ValidationException $e) {
             $this->fail($e);
@@ -215,6 +235,19 @@ new #[Layout('layouts.app')] class extends Component
         } else {
             $this->showExpenseModal = false;
         }
+    }
+
+    public function createCategory(): void
+    {
+        try {
+            $this->expenseCategory = $this->service()->createCategory(auth()->user(), $this->newCategoryLabel);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->newCategoryLabel = '';
+        $this->showNewCategory = false;
     }
 
     public function deleteExpense(int $id): void
@@ -436,7 +469,10 @@ new #[Layout('layouts.app')] class extends Component
         if ($user->isAdmin() && $this->showExpenseModal && $owner && (int) $this->paidBy === $owner->id) {
             $base = \Illuminate\Support\Carbon::parse($this->expenseDate ?: now());
             $used = DivisionExpense::whereNotNull('transaction_id')->when($this->editingExpenseId, fn ($q) => $q->where('id', '!=', $this->editingExpenseId))->pluck('transaction_id');
-            $linkable = Transaction::where('type', 'expense')->whereBetween('date', [$base->copy()->subDays(45)->toDateString(), $base->copy()->addDays(45)->toDateString()])
+            $amt = \App\Support\Money::toFloat($this->expenseAmount);
+            $linkable = Transaction::where('type', 'expense')->whereBetween('date', [$base->copy()->subDays(10)->toDateString(), $base->copy()->addDays(10)->toDateString()])
+                ->when($amt > 0, fn ($q) => $q->whereBetween('amount', [round($amt * 0.9, 2), round($amt * 1.1, 2)]))
+                ->where(fn ($q) => $q->whereNull('source_type')->orWhere('source_type', '!=', 'division_expense'))
                 ->whereNotIn('id', $used)->with('bankAccount', 'creditCard')->orderByDesc('date')->limit(100)->get();
         }
 
@@ -467,6 +503,8 @@ new #[Layout('layouts.app')] class extends Component
             'accounts' => $user->isAdmin() ? BankAccount::active()->orderBy('name')->get() : collect(),
             'ownerInvolved' => $owner && in_array((int) $owner->id, [(int) $this->settleFrom, (int) $this->settleTo], true),
             'linkable' => $linkable,
+            'cards' => $user->isAdmin() ? \App\Domains\Banking\Models\CreditCard::active()->orderBy('name')->get() : collect(),
+            'categories' => DivisionExpense::categories(),
             'canLink' => $user->isAdmin() && $owner && (int) $this->paidBy === $owner->id,
             'totals' => $this->splitTotals(),
             'service' => $service,
@@ -702,8 +740,14 @@ new #[Layout('layouts.app')] class extends Component
                             <div class="md:col-span-2"><x-jr.input label="Descrição *" icon="description" name="expenseDescription" wire:model="expenseDescription" /></div>
                             <x-jr.input label="Valor *" icon="payments" name="expenseAmount" type="text" x-money wire:model.live.debounce.400ms="expenseAmount" />
                             <x-jr.input label="Data *" icon="event" type="date" name="expenseDate" wire:model.live="expenseDate" />
-                            <div><label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
-                                <select wire:model="expenseCategory" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach (\App\Domains\Divisions\Models\DivisionExpense::CATEGORIES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></div>
+                            <div data-category-field><div class="mb-2 flex items-center justify-between"><label class="text-sm font-medium text-mono-600">Categoria</label>
+                                    <button type="button" class="text-xs font-semibold text-primary-500" wire:click="$toggle('showNewCategory')" data-new-category>+ Nova categoria</button></div>
+                                <select wire:model="expenseCategory" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach ($categories as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
+                                @if ($showNewCategory)
+                                    <div class="mt-2 flex gap-2" data-new-category-form><input type="text" wire:model="newCategoryLabel" wire:keydown.enter.prevent="createCategory" placeholder="Nome da nova categoria" class="h-10 min-w-0 flex-1 rounded-xl border-mono-200 text-sm">
+                                        <button type="button" class="fx-btn fx-btn--primary" wire:click="createCategory">Criar</button></div>
+                                    @error('newCategoryLabel')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
+                                @endif</div>
                             <div><label class="mb-2 block text-sm font-medium text-mono-600">Quem pagou *</label>
                                 <select wire:model.live="paidBy" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach ($formMembers as $m)<option value="{{ $m->id }}">{{ $m->name }}</option>@endforeach</select>
                                 @error('paidBy')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror</div>
@@ -737,11 +781,32 @@ new #[Layout('layouts.app')] class extends Component
                                 @error('splitMode')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
                             </div>
                             @if ($canLink)
-                                <div class="md:col-span-2"><label class="mb-2 block text-sm font-medium text-mono-600">Já está no Financeiro? Vincular a um lançamento (opcional)</label>
-                                    <select wire:model="transactionId" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm" data-link-transaction>
-                                        <option value="">Não vincular</option>
-                                        @foreach ($linkable as $tx)<option value="{{ $tx->id }}">{{ $tx->date->format('d/m/Y') }} · {{ $tx->description }} · R$ {{ number_format((float) $tx->amount, 2, ',', '.') }} · {{ $tx->creditCard?->name ?? $tx->bankAccount?->name }}</option>@endforeach
-                                    </select>
+                                <div class="md:col-span-2 rounded-xl border border-mono-100 p-3" data-payment>
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Como foi pago</label>
+                                    <div class="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                                        <label class="flex items-center gap-2"><input type="radio" value="account" wire:model.live="paymentMethod" data-pay-method="account"> Conta</label>
+                                        <label class="flex items-center gap-2"><input type="radio" value="card" wire:model.live="paymentMethod" data-pay-method="card"> Cartão</label>
+                                        <label class="flex items-center gap-2"><input type="radio" value="" wire:model.live="paymentMethod" data-pay-method="none"> Não lançar no Financeiro</label>
+                                    </div>
+                                    @if ($paymentMethod === 'account')
+                                        <select wire:model="payAccount" class="mt-3 h-12 w-full rounded-pill border border-mono-200 px-4 text-sm" data-pay-account><option value="">Escolha a conta</option>@foreach ($accounts as $a)<option value="{{ $a->id }}">{{ $a->name }}</option>@endforeach</select>
+                                    @elseif ($paymentMethod === 'card')
+                                        <select wire:model="payCard" class="mt-3 h-12 w-full rounded-pill border border-mono-200 px-4 text-sm" data-pay-card><option value="">Escolha o cartão</option>@foreach ($cards as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select>
+                                        <p class="mt-1 text-xs text-mono-600">Entra na fatura do cartão pela data da compra.</p>
+                                    @endif
+                                    @if ($paymentMethod !== '')
+                                        <p class="mt-2 text-xs text-mono-600">Cria a saída "Divisões: descrição" no Financeiro, vinculada a esta despesa. Editar ou excluir a despesa atualiza o lançamento.</p>
+                                    @else
+                                        <details class="mt-3 text-sm" data-link-existing @if ($transactionId) open @endif>
+                                            <summary class="cursor-pointer text-xs text-mono-600">Vincular a lançamento existente (valor e data parecidos)</summary>
+                                            <select wire:model="transactionId" class="mt-2 h-12 w-full rounded-pill border border-mono-200 px-4 text-sm" data-link-transaction>
+                                                <option value="">Não vincular</option>
+                                                @foreach ($linkable as $tx)<option value="{{ $tx->id }}">{{ $tx->date->format('d/m/Y') }} · {{ $tx->description }} · R$ {{ number_format((float) $tx->amount, 2, ',', '.') }} · {{ $tx->creditCard?->name ?? $tx->bankAccount?->name }}</option>@endforeach
+                                            </select>
+                                            @if ($linkable->isEmpty())<p class="mt-1 text-xs text-mono-600">Nenhum lançamento com valor (±10%) e data (±10 dias) parecidos.</p>@endif
+                                        </details>
+                                    @endif
+                                    @error('paymentMethod')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror
                                     @error('transactionId')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror</div>
                             @endif
                             <details class="md:col-span-2 rounded-xl border border-mono-100 p-3 text-sm" data-receipt>
