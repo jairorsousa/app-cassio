@@ -76,6 +76,18 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $memberEmail = '';
 
+    public string $memberPhone = '';
+
+    public ?int $phoneEditId = null;
+
+    public string $phoneDraft = '';
+
+    public ?int $chargeMemberId = null;
+
+    public int $chargeCents = 0;
+
+    public string $chargeText = '';
+
     public ?string $inviteLink = null;
 
     public bool $showSettings = false;
@@ -269,13 +281,13 @@ new #[Layout('layouts.app')] class extends Component
     public function addMember(): void
     {
         try {
-            $this->service()->addMember(auth()->user(), $this->group, $this->memberName, $this->memberEmail ?: null);
+            $this->service()->addMember(auth()->user(), $this->group, $this->memberName, $this->memberEmail ?: null, $this->memberPhone ?: null);
         } catch (ValidationException $e) {
             $this->fail($e);
 
             return;
         }
-        $this->reset('memberName', 'memberEmail');
+        $this->reset('memberName', 'memberEmail', 'memberPhone');
         $this->notice = 'Participante adicionado.';
     }
 
@@ -311,6 +323,50 @@ new #[Layout('layouts.app')] class extends Component
         }
         $this->reset('blockedMemberId', 'blockedReason');
         $this->notice = $active ? $member->name.' foi reativado.' : $member->name.' foi desativado: não aparece em novas despesas, e o histórico continua.';
+    }
+
+    public function editPhone(int $memberId): void
+    {
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId);
+        abort_unless(auth()->user()->isAdmin() || (int) $m->user_id === (int) auth()->id(), 403);
+        $this->phoneEditId = $m->id;
+        $this->phoneDraft = $m->phoneDisplay();
+        $this->resetValidation('phone');
+    }
+
+    public function savePhone(): void
+    {
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail((int) $this->phoneEditId);
+        try {
+            $this->service()->setMemberPhone(auth()->user(), $m, $this->phoneDraft);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->reset('phoneEditId', 'phoneDraft');
+        $this->notice = 'Celular salvo.';
+    }
+
+    public function openCharge(int $memberId, int $cents): void
+    {
+        abort_unless(auth()->user()->isAdmin(), 403);
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId);
+        if (! $m->phone || $cents <= 0) {
+            return;
+        }
+        $this->chargeMemberId = $m->id;
+        $this->chargeCents = $cents;
+        $this->chargeText = $this->service()->chargeMessage(auth()->user(), $m->name, $cents, [$this->group->name], route('divisions.show', $this->group));
+    }
+
+    /** Chamado no clique de "Abrir WhatsApp" (o link abre no navegador; o sistema não envia nada). */
+    public function logCharge(): void
+    {
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail((int) $this->chargeMemberId);
+        $this->service()->logCharge(auth()->user(), $m, $this->chargeCents);
+        $this->reset('chargeMemberId', 'chargeCents', 'chargeText');
+        $this->notice = 'Cobrança aberta no WhatsApp e registrada no histórico.';
     }
 
     public function invite(int $memberId): void
@@ -367,6 +423,7 @@ new #[Layout('layouts.app')] class extends Component
             'isAdmin' => $user->isAdmin(),
             'invites' => $user->isAdmin() ? \App\Models\UserInvitation::whereIn('email', $members->pluck('email')->filter()->map(fn ($e) => mb_strtolower($e)))->whereNull('accepted_at')->orderBy('id')->get()->keyBy('email') : collect(),
             'me' => $me,
+            'owner' => $owner,
             'members' => $members,
             'formMembers' => $members->filter(function ($m) {
                 if ($m->active) {
@@ -377,6 +434,8 @@ new #[Layout('layouts.app')] class extends Component
                 return $e && ($e->paid_by_member_id === $m->id || $e->shares->contains('member_id', $m->id));
             }),
             'net' => $net,
+            'groupAudits' => $this->group->audits()->whereNull('expense_id')->with('user')->latest('id')->limit(30)->get(),
+            'chargeMember' => $this->chargeMemberId ? $members[$this->chargeMemberId] ?? null : null,
             'transfers' => $service->simplify($net),
             'expenses' => $this->group->expenses()->with('payer', 'shares.member', 'audits.user', 'creator', 'transaction')
                 ->when(! $user->isAdmin(), fn ($q) => $q->where(fn ($q) => $q->where('status', '!=', 'rejected')->orWhere('created_by', $user->id)))
@@ -436,6 +495,13 @@ new #[Layout('layouts.app')] class extends Component
                     <span><strong>{{ $members[$t['from']]->name }}</strong> paga <strong>{{ $members[$t['to']]->name }}</strong>: R$ {{ $service->money($t['cents']) }}</span>
                     @if ($isAdmin || in_array($me?->id, [$t['from'], $t['to']], true))
                         <button type="button" class="text-xs text-primary-500" wire:click="openSettle({{ $t['from'] }}, {{ $t['to'] }}, {{ $t['cents'] }})">Acertar</button>
+                        @if ($isAdmin && $owner && $t['to'] === $owner->id)
+                            @if ($members[$t['from']]->phone)
+                                <button type="button" class="text-xs text-system-up" wire:click="openCharge({{ $t['from'] }}, {{ $t['cents'] }})" data-charge>Cobrar</button>
+                            @else
+                                <button type="button" class="cursor-not-allowed text-xs text-mono-400" disabled title="Cadastre o celular" data-charge-disabled>Cobrar</button>
+                            @endif
+                        @endif
                     @endif
                 </div>
             @empty
@@ -449,6 +515,8 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="flex flex-col gap-1 border-b border-mono-100 py-2 text-sm last:border-0 sm:flex-row sm:items-center sm:justify-between" wire:key="m-{{ $m->id }}">
                     <span class="min-w-0"><strong>{{ $m->name }}</strong> <span class="text-mono-600">{{ $m->email }}</span>
                         @unless ($m->active)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs text-mono-600" data-member-inactive>Desativado</span>@endunless
+                        @if ($m->phone)<span class="ml-1 text-xs text-mono-600" data-member-phone>{{ $m->phoneDisplay() }}</span>@endif
+                        @if (($isAdmin || (int) $m->user_id === (int) auth()->id()) && $phoneEditId !== $m->id)<button type="button" class="ml-1 text-xs text-primary-500" wire:click="editPhone({{ $m->id }})" data-edit-phone>{{ $m->phone ? 'Editar celular' : 'Adicionar celular' }}</button>@endif
                         @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif
                         @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
                     @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)
@@ -464,6 +532,14 @@ new #[Layout('layouts.app')] class extends Component
                         </span>
                     @endif
                 </div>
+                @if ($phoneEditId === $m->id)
+                    <form wire:submit="savePhone" class="my-2 flex flex-wrap items-center gap-2 text-xs" data-phone-form>
+                        <input type="tel" x-phone wire:model="phoneDraft" placeholder="(99) 99999-9999" maxlength="15" class="h-9 w-44 rounded-xl border-mono-200 text-xs">
+                        <button type="submit" class="fx-btn fx-btn--standard">Salvar</button>
+                        <button type="button" class="text-mono-600" wire:click="$set('phoneEditId', null)">Cancelar</button>
+                        @error('phone')<span class="w-full text-error">{{ $message }}</span>@enderror
+                    </form>
+                @endif
                 @if ($blockedMemberId === $m->id)
                     <div class="my-2 rounded-xl border border-mono-200 bg-mono-100 p-3 text-xs" data-remove-blocked>
                         <p class="mb-2">{{ $blockedReason }}</p>
@@ -483,6 +559,7 @@ new #[Layout('layouts.app')] class extends Component
                 <form wire:submit="addMember" class="mt-3 grid grid-cols-1 items-end gap-3 md:grid-cols-3">
                     <x-jr.input label="Nome" name="memberName" wire:model="memberName" />
                     <x-jr.input label="E-mail (para o convite)" name="memberEmail" type="email" wire:model="memberEmail" />
+                    <x-jr.input label="Celular (opcional)" name="memberPhone" type="tel" x-phone placeholder="(99) 99999-9999" wire:model="memberPhone" />
                     <button type="submit" class="fx-btn fx-btn--standard h-12">Adicionar participante</button>
                 </form>
             @endif
@@ -523,6 +600,19 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         @empty
             <p class="text-sm text-mono-600">Nenhuma despesa lançada.</p>
+        @endforelse
+    </x-fx.card>
+
+    @if ($isAdmin && $chargeMember)
+        @include('divisions.charge-modal', ['phone' => $chargeMember->phone, 'name' => $chargeMember->name, 'cents' => $chargeCents, 'service' => $service])
+    @endif
+
+    <x-fx.card data-group-history>
+        <h3 class="mb-3 text-fs-16 font-semibold">Histórico do grupo</h3>
+        @forelse ($groupAudits as $a)
+            <div class="border-b border-mono-100 py-1 text-xs last:border-0">{{ $a->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · <strong>{{ $a->label() }}</strong>@if (! empty($a->details['nome'])) · {{ $a->details['nome'] }}@endif @if (! empty($a->details['valor'])) · {{ $a->details['valor'] }}@endif · {{ $a->user?->name ?? 'sistema' }}</div>
+        @empty
+            <p class="text-sm text-mono-600">Sem registros.</p>
         @endforelse
     </x-fx.card>
 

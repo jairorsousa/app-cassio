@@ -8,11 +8,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DivisionMember extends Model
 {
-    protected $fillable = ['group_id', 'name', 'email', 'user_id', 'is_owner', 'active'];
+    protected $fillable = ['group_id', 'name', 'email', 'phone', 'user_id', 'is_owner', 'active'];
 
     protected $casts = ['is_owner' => 'boolean', 'active' => 'boolean'];
 
     protected $attributes = ['active' => true];
+
+    /** "+5585999998888" → "(85) 99999-8888". */
+    public function phoneDisplay(): string
+    {
+        return $this->phone ? \App\Support\BrazilianDocuments::formatPhone(substr((string) $this->phone, 3)) : '';
+    }
 
     public function group(): BelongsTo
     {

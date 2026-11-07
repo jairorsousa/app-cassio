@@ -126,7 +126,7 @@ class DivisionService
         $this->audit($group, $actor, 'group_updated', ['nome' => $name, 'aprovação' => $group->requires_approval ? 'sim' : 'não']);
     }
 
-    public function addMember(?User $actor, DivisionGroup $group, string $name, ?string $email): DivisionMember
+    public function addMember(?User $actor, DivisionGroup $group, string $name, ?string $email, ?string $phone = null): DivisionMember
     {
         $actor = $this->assertAdmin($actor);
         $name = trim($name);
@@ -140,8 +140,13 @@ class DivisionService
         if ($email !== null && $group->members()->whereRaw('lower(email) = ?', [$email])->exists()) {
             throw ValidationException::withMessages(['memberEmail' => 'Este e-mail já participa do grupo.']);
         }
+        try {
+            $phone = $this->normalizePhone($phone);
+        } catch (ValidationException) {
+            throw ValidationException::withMessages(['memberPhone' => 'Celular inválido. Use (99) 99999-9999.']);
+        }
         $user = $email ? User::whereRaw('lower(email) = ?', [$email])->first() : null;
-        $member = $group->members()->create(['name' => $name, 'email' => $email, 'user_id' => $user?->id]);
+        $member = $group->members()->create(['name' => $name, 'email' => $email, 'phone' => $phone, 'user_id' => $user?->id]);
         $this->audit($group, $actor, 'member_added', ['nome' => $name]);
 
         return $member;
@@ -250,6 +255,70 @@ class DivisionService
         }
         $member->update(['active' => $active]);
         $this->audit($member->group, $actor, $active ? 'member_reactivated' : 'member_deactivated', ['nome' => $member->name]);
+    }
+
+    // ---------- Celular e cobrança (wa.me) ----------
+
+    /** "(85) 99999-8888" → "+5585999998888". Vazio → null. Usa a mesma validação de telefone de Contatos. */
+    public function normalizePhone(?string $raw): ?string
+    {
+        $digits = \App\Support\BrazilianDocuments::digits($raw);
+        if ($digits === '') {
+            return null;
+        }
+        if (strlen($digits) >= 12 && str_starts_with($digits, '55')) {
+            $digits = substr($digits, 2);
+        }
+        if (! \App\Support\BrazilianDocuments::isValidPhone($digits)) {
+            throw ValidationException::withMessages(['phone' => 'Celular inválido. Use (99) 99999-9999.']);
+        }
+
+        return '+55'.$digits;
+    }
+
+    /** Admin altera de qualquer participante; o participante só o próprio. */
+    public function setMemberPhone(User $actor, DivisionMember $member, ?string $raw): void
+    {
+        $own = $member->user_id !== null && (int) $member->user_id === (int) $actor->id;
+        if (! $actor->isAdmin() && ! $own) {
+            abort(403);
+        }
+        $phone = $this->normalizePhone($raw);
+        // A mesma pessoa (mesmo e-mail) fica com o mesmo número em todos os grupos.
+        $q = DivisionMember::query();
+        $member->email ? $q->whereRaw('lower(email) = ?', [mb_strtolower($member->email)]) : $q->whereKey($member->id);
+        $q->update(['phone' => $phone]);
+    }
+
+    /** Pelo bloco de Configurações › Usuários (por e-mail). */
+    public function setPersonPhone(?User $actor, string $email, ?string $raw): void
+    {
+        $this->assertAdmin($actor);
+        $phone = $this->normalizePhone($raw);
+        DivisionMember::whereRaw('lower(email) = ?', [mb_strtolower(trim($email))])->where('is_owner', false)->update(['phone' => $phone]);
+    }
+
+    /** Mensagem educada e editável da cobrança. */
+    public function chargeMessage(User $creditor, string $debtorName, int $cents, array $groupNames, string $link): string
+    {
+        $first = trim(strtok(trim($debtorName), ' ') ?: $debtorName);
+        $groups = count($groupNames) === 1 ? 'do grupo "'.$groupNames[0].'"' : 'dos grupos "'.implode('", "', $groupNames).'"';
+
+        return "Olá, {$first}! Tudo bem? Passando para lembrar do acerto {$groups} nas Divisões: "
+            ."o saldo em aberto comigo está em R$ {$this->money($cents)}. "
+            ."Os detalhes estão aqui: {$link} . Quando puder, me avise do pagamento. Obrigado! ".trim(strtok((string) $creditor->name, ' ') ?: '');
+    }
+
+    public function whatsappUrl(string $e164, string $text): string
+    {
+        return 'https://wa.me/'.ltrim($e164, '+').'?text='.rawurlencode($text);
+    }
+
+    /** Registra "cobrança aberta" no histórico (nada é enviado pelo sistema). */
+    public function logCharge(?User $actor, DivisionMember $member, int $cents): void
+    {
+        $actor = $this->assertAdmin($actor);
+        $this->audit($member->group, $actor, 'charge_opened', ['nome' => $member->name, 'valor' => 'R$ '.$this->money($cents), 'data' => now('America/Fortaleza')->format('d/m/Y H:i')]);
     }
 
     /** Pode remover? null = sim; senão, o motivo. */
@@ -725,8 +794,10 @@ class DivisionService
                     continue;
                 }
                 $key = $other->personKey();
-                $people[$key] ??= ['name' => $other->name, 'cents' => 0];
+                $people[$key] ??= ['key' => $key, 'name' => $other->name, 'cents' => 0, 'phone' => null, 'groups' => []];
                 $people[$key]['cents'] += $sign * $t['cents'];
+                $people[$key]['phone'] ??= $other->phone;
+                $people[$key]['groups'][$group->id] = ['name' => $group->name, 'member_id' => $other->id, 'cents' => ($people[$key]['groups'][$group->id]['cents'] ?? 0) + $sign * $t['cents']];
             }
         }
 

@@ -68,6 +68,53 @@ new #[Layout('layouts.app')] class extends Component
         $this->notice = $approve ? 'Despesa aprovada.' : 'Despesa recusada.';
     }
 
+    public ?string $chargeKey = null;
+
+    public string $chargeText = '';
+
+    private function chargeTarget(): ?array
+    {
+        if (! auth()->user()->isAdmin() || ! $this->chargeKey) {
+            return null;
+        }
+        foreach (app(DivisionService::class)->overall(auth()->user()) as $p) {
+            if ($p['key'] === $this->chargeKey && $p['cents'] > 0 && $p['phone']) {
+                return $p;
+            }
+        }
+
+        return null;
+    }
+
+    public function openCharge(string $key): void
+    {
+        abort_unless(auth()->user()->isAdmin(), 403);
+        $this->chargeKey = $key;
+        $p = $this->chargeTarget();
+        if (! $p) {
+            $this->chargeKey = null;
+
+            return;
+        }
+        $groups = collect($p['groups'])->filter(fn ($g) => $g['cents'] > 0);
+        $link = $groups->count() === 1 ? route('divisions.show', $groups->keys()->first()) : route('divisions.index');
+        $this->chargeText = app(DivisionService::class)->chargeMessage(auth()->user(), $p['name'], $p['cents'], $groups->pluck('name')->values()->all(), $link);
+    }
+
+    public function logCharge(): void
+    {
+        $p = $this->chargeTarget();
+        if ($p) {
+            foreach ($p['groups'] as $g) {
+                if ($g['cents'] > 0) {
+                    app(DivisionService::class)->logCharge(auth()->user(), \App\Domains\Divisions\Models\DivisionMember::findOrFail($g['member_id']), $g['cents']);
+                }
+            }
+        }
+        $this->reset('chargeKey', 'chargeText');
+        $this->notice = 'Cobrança aberta no WhatsApp e registrada no histórico.';
+    }
+
     public function with(): array
     {
         $service = app(DivisionService::class);
@@ -83,6 +130,7 @@ new #[Layout('layouts.app')] class extends Component
                 return ['group' => $g, 'mine' => $me ? ($net[$me->id] ?? 0) : 0];
             }),
             'overall' => $service->overall($user),
+            'chargeTarget' => $this->chargeTarget(),
             'pendingGroups' => $user->isAdmin() ? DivisionGroup::where('status', 'pending')->with('members')->get() : collect(),
             'pendingExpenses' => $user->isAdmin() ? DivisionExpense::where('status', 'pending')->with('group', 'payer', 'creator')->orderBy('date')->get() : collect(),
             'service' => $service,
@@ -163,13 +211,24 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="flex justify-between border-b border-mono-100 py-2 text-sm last:border-0">
                     <span>{{ $p['name'] }}</span>
                     <span class="font-semibold {{ $p['cents'] > 0 ? 'text-system-up' : 'text-system-down' }}">
-                        {{ $p['cents'] > 0 ? 'te deve' : 'você deve' }} R$ {{ $service->money(abs($p['cents'])) }}</span>
+                        {{ $p['cents'] > 0 ? 'te deve' : 'você deve' }} R$ {{ $service->money(abs($p['cents'])) }}
+                        @if ($isAdmin && $p['cents'] > 0)
+                            @if ($p['phone'])
+                                <button type="button" class="ml-2 text-xs font-normal text-system-up" wire:click="openCharge(@js($p['key']))" data-charge>Cobrar</button>
+                            @else
+                                <button type="button" class="ml-2 cursor-not-allowed text-xs font-normal text-mono-400" disabled title="Cadastre o celular" data-charge-disabled>Cobrar</button>
+                            @endif
+                        @endif</span>
                 </div>
             @empty
                 <p class="text-sm text-mono-600">Tudo acertado.</p>
             @endforelse
         </x-fx.card>
     </div>
+
+    @if ($chargeTarget)
+        @include('divisions.charge-modal', ['phone' => $chargeTarget['phone'], 'name' => $chargeTarget['name'], 'cents' => $chargeTarget['cents'], 'service' => $service])
+    @endif
 
     @if ($showGroupModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6">

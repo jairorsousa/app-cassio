@@ -266,6 +266,21 @@ new #[Layout('layouts.app')] class extends Component {
         });
     }
 
+    public array $divPhone = [];
+
+    public function divSavePhone(string $email): void
+    {
+        try {
+            $this->div()->setPersonPhone(auth()->user(), $email, $this->divPhone[md5(mb_strtolower($email))] ?? '');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->addError('divisions', $e->validator->errors()->first());
+
+            return;
+        }
+        $this->resetErrorBag('divisions');
+        session()->flash('status', 'Celular salvo.');
+    }
+
     public function divRemoveFromGroup(int $memberId): void
     {
         $this->resetErrorBag();
@@ -467,6 +482,13 @@ new #[Layout('layouts.app')] class extends Component {
                                 <button type="button" wire:click="divRevoke(@js($p['email']))" wire:confirm="Revogar o acesso de {{ $p['name'] }} a Divisões? O histórico dos grupos fica guardado." class="h-9 rounded-xl border border-error px-3 text-error" data-div-revoke>Revogar acesso</button>
                             @endif
                         </div>
+                    </div>
+                    @php($phoneKey = md5(mb_strtolower($p['email'])))
+                    @php($curPhone = $p['members']->firstWhere('phone', '!=', null)?->phoneDisplay() ?? '')
+                    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs" data-div-phone x-data x-init="if (! $wire.get('divPhone.{{ $phoneKey }}')) $wire.set('divPhone.{{ $phoneKey }}', @js($curPhone), false)">
+                        <span class="text-mono-600">Celular:</span>
+                        <input type="tel" x-phone wire:model="divPhone.{{ $phoneKey }}" placeholder="(99) 99999-9999" maxlength="15" class="h-9 w-40 rounded-xl border border-mono-200 px-2 text-xs">
+                        <button type="button" wire:click="divSavePhone(@js($p['email']))" class="h-9 rounded-xl border border-mono-200 px-3" data-div-save-phone>Salvar celular</button>
                     </div>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                         @forelse ($p['members'] as $m)
