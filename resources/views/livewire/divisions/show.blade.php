@@ -540,8 +540,6 @@ new #[Layout('layouts.app')] class extends Component
             </div>
             <div class="flex flex-wrap gap-2">
                 @if ($isAdmin)<button type="button" class="fx-btn fx-btn--standard" wire:click="openSettings">Configurar</button>@endif
-                <button type="button" class="fx-btn fx-btn--standard" wire:click="openSettle">Registrar acerto</button>
-                <button type="button" class="fx-btn fx-btn--primary" wire:click="newExpense"><span class="material-icons-outlined text-[18px]">add</span> Nova despesa</button>
             </div>
         </div>
         @if ($showSettings && $isAdmin)
@@ -554,13 +552,52 @@ new #[Layout('layouts.app')] class extends Component
         @endif
     </x-fx.card>
 
-    <div class="grid grid-cols-1 gap-md lg:grid-cols-3">
+    @if ($me)
+        @php($myNet = (int) ($net[$me->id] ?? 0))
+        @php($myTransfers = collect($transfers)->filter(fn ($t) => in_array($me->id, [$t['from'], $t['to']], true))->values())
+        <x-fx.card data-my-summary x-data="{ open: false }">
+            <button type="button" class="flex w-full items-center justify-between gap-3 text-left" x-on:click="open = !open" data-summary-toggle>
+                @if ($myNet > 0)
+                    <span class="text-fs-18 font-semibold text-green-600" data-summary-total data-sign="pos">Devem a você R$ {{ $service->money($myNet) }} no total</span>
+                @elseif ($myNet < 0)
+                    <span class="text-fs-18 font-semibold text-red-600" data-summary-total data-sign="neg">Você deve R$ {{ $service->money(abs($myNet)) }} no total</span>
+                @else
+                    <span class="text-fs-18 font-semibold text-mono-600" data-summary-total data-sign="zero">Você está quitado neste grupo</span>
+                @endif
+                @if ($myTransfers->isNotEmpty())<span class="material-icons-outlined text-mono-600" x-text="open ? 'expand_less' : 'expand_more'">expand_more</span>@endif
+            </button>
+            <ul x-show="open" x-cloak class="mt-3 space-y-1 border-t border-mono-100 pt-3 text-sm" data-summary-list>
+                @foreach ($myTransfers as $t)
+                    @if ($t['to'] === $me->id)
+                        <li class="text-green-600" data-summary-row data-sign="pos"><strong>{{ $members[$t['from']]->name }}</strong> deve R$ {{ $service->money($t['cents']) }} a você</li>
+                    @else
+                        <li class="text-red-600" data-summary-row data-sign="neg">Você deve R$ {{ $service->money($t['cents']) }} a <strong>{{ $members[$t['to']]->name }}</strong></li>
+                    @endif
+                @endforeach
+            </ul>
+            <div class="mt-4 flex flex-wrap gap-2">
+                @php($firstDebt = $myTransfers->firstWhere('from', $me->id))
+                @if ($firstDebt)
+                    <button type="button" class="fx-btn fx-btn--primary" wire:click="openSettle({{ $firstDebt['from'] }}, {{ $firstDebt['to'] }}, {{ $firstDebt['cents'] }})" data-btn-settle>Quitar contas</button>
+                @else
+                    <button type="button" class="fx-btn fx-btn--primary" wire:click="openSettle" data-btn-settle>Acertar</button>
+                @endif
+                <a href="#saldos" class="fx-btn fx-btn--standard" data-btn-balances>Saldos</a>
+            </div>
+        </x-fx.card>
+    @else
+        <div class="flex gap-2"><button type="button" class="fx-btn fx-btn--standard" wire:click="openSettle">Registrar acerto</button></div>
+    @endif
+
+    @include('divisions.expense-list')
+
+    <div id="saldos" class="grid grid-cols-1 gap-md lg:grid-cols-3 scroll-mt-24">
         <x-fx.card data-balances>
             <h3 class="mb-3 text-fs-16 font-semibold">Saldos</h3>
             @foreach ($members as $m)
                 @php($c = $net[$m->id] ?? 0)
                 <div class="flex justify-between py-1 text-sm"><span>{{ $m->name }}@if ($m->is_owner) (você)@endif</span>
-                    <span class="font-semibold {{ $c > 0 ? 'text-system-up' : ($c < 0 ? 'text-system-down' : 'text-mono-600') }}">{{ $c > 0 ? 'recebe' : ($c < 0 ? 'deve' : 'quitado') }}@if ($c) R$ {{ $service->money(abs($c)) }}@endif</span></div>
+                    <span class="font-semibold {{ $c > 0 ? 'text-green-600' : ($c < 0 ? 'text-red-600' : 'text-mono-600') }}">{{ $c > 0 ? 'recebe' : ($c < 0 ? 'deve' : 'quitado') }}@if ($c) R$ {{ $service->money(abs($c)) }}@endif</span></div>
             @endforeach
             <h4 class="mt-4 mb-2 text-sm font-semibold text-mono-600">Quem paga quem (simplificado)</h4>
             @forelse ($transfers as $t)
@@ -570,7 +607,7 @@ new #[Layout('layouts.app')] class extends Component
                         <button type="button" class="text-xs text-primary-500" wire:click="openSettle({{ $t['from'] }}, {{ $t['to'] }}, {{ $t['cents'] }})">Acertar</button>
                         @if ($isAdmin && $owner && $t['to'] === $owner->id)
                             @if ($members[$t['from']]->phone)
-                                <button type="button" class="text-xs text-system-up" wire:click="openCharge({{ $t['from'] }}, {{ $t['cents'] }})" data-charge>Cobrar</button>
+                                <button type="button" class="text-xs text-green-600" wire:click="openCharge({{ $t['from'] }}, {{ $t['cents'] }})" data-charge>Cobrar</button>
                             @else
                                 <button type="button" class="cursor-not-allowed text-xs text-mono-400" disabled title="Cadastre o celular" data-charge-disabled>Cobrar</button>
                             @endif
@@ -596,7 +633,7 @@ new #[Layout('layouts.app')] class extends Component
                     @if ($isAdmin && $m->isPending())
                         <span class="flex gap-3 text-xs" data-member-decide>
                             <button type="button" class="text-error" wire:click="decideMember({{ $m->id }}, false)" wire:confirm="Recusar e remover {{ $m->name }}?">Recusar</button>
-                            <button type="button" class="font-semibold text-system-up" wire:click="decideMember({{ $m->id }}, true)">Aprovar</button>
+                            <button type="button" class="font-semibold text-green-600" wire:click="decideMember({{ $m->id }}, true)">Aprovar</button>
                         </span>
                     @endif
                     @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email && ! $m->isPending())
@@ -666,42 +703,6 @@ new #[Layout('layouts.app')] class extends Component
         </x-fx.card>
     </div>
 
-    <x-fx.card data-expenses>
-        <h3 class="mb-3 text-fs-16 font-semibold">Despesas</h3>
-        @forelse ($expenses as $e)
-            <div class="border-b border-mono-100 py-3 last:border-0" x-data="{ open: false }" wire:key="e-{{ $e->id }}">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <button type="button" class="min-w-0 text-left" x-on:click="open = !open">
-                        <div class="font-semibold text-mono-900">{{ $e->description }}
-                            @if ($e->status !== 'approved')<span class="ml-1 rounded-pill {{ $e->status === 'pending' ? 'bg-primary-100 text-primary-500' : 'bg-mono-100 text-mono-600' }} px-2 text-xs">{{ \App\Domains\Divisions\Models\DivisionExpense::STATUS[$e->status] }}</span>@endif
-                            @if ($isAdmin && $e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</div>
-                        <div class="text-xs text-mono-600">{{ $e->date->format('d/m/Y') }} · {{ $e->categoryLabel() }} · pago por {{ $e->payer?->name }} · {{ \App\Domains\Divisions\Models\DivisionExpense::MODES[$e->split_mode] ?? '' }}</div>
-                    </button>
-                    <div class="flex items-center gap-3">
-                        <strong>R$ {{ number_format((float) $e->amount, 2, ',', '.') }}</strong>
-                        @if ($isAdmin && $e->status === 'pending')
-                            <button type="button" class="text-xs text-error" wire:click="decideExpense({{ $e->id }}, false)">Recusar</button>
-                            <button type="button" class="text-xs text-system-up" wire:click="decideExpense({{ $e->id }}, true)">Aprovar</button>
-                        @endif
-                        @if ($isAdmin || ($e->created_by === auth()->id() && $e->status === 'pending'))
-                            <button type="button" class="text-xs text-primary-500" wire:click="editExpense({{ $e->id }})">Editar</button>
-                            <button type="button" class="text-xs text-error" wire:click="deleteExpense({{ $e->id }})" wire:confirm="Excluir esta despesa?">Excluir</button>
-                        @endif
-                    </div>
-                </div>
-                <div x-show="open" x-cloak class="mt-2 grid grid-cols-1 gap-3 rounded-xl bg-mono-50 p-3 text-xs md:grid-cols-2">
-                    <div><p class="mb-1 font-semibold">Divisão</p>
-                        @foreach ($e->shares as $s)<div class="flex justify-between"><span>{{ $s->member?->name }}</span><span>R$ {{ number_format((float) $s->amount, 2, ',', '.') }}</span></div>@endforeach
-                        @if ($e->receipt_path)<a class="mt-2 inline-block text-primary-500" href="{{ route('divisions.receipt', $e) }}">Ver comprovante</a>@endif
-                        @if ($e->notes)<p class="mt-2 text-mono-600">{{ $e->notes }}</p>@endif</div>
-                    <div data-history><p class="mb-1 font-semibold">Histórico</p>
-                        @foreach ($e->audits as $a)@continue(! $isAdmin && $a->action === 'expense_linked')<div>{{ $a->created_at?->timezone('America/Fortaleza')->format('d/m/Y H:i') }} · {{ $a->label() }} · {{ $a->user?->name ?? 'sistema' }}</div>@endforeach</div>
-                </div>
-            </div>
-        @empty
-            <p class="text-sm text-mono-600">Nenhuma despesa lançada.</p>
-        @endforelse
-    </x-fx.card>
 
     @if ($isAdmin && $chargeMember)
         @include('divisions.charge-modal', ['phone' => $chargeMember->phone, 'name' => $chargeMember->name, 'cents' => $chargeCents, 'service' => $service])
@@ -732,7 +733,7 @@ new #[Layout('layouts.app')] class extends Component
                     @forelse ($statement as $r)
                         <tr class="border-b border-mono-100">
                             <td class="py-2">{{ $r['date']->format('d/m/Y') }}</td><td>{{ $r['kind'] }}</td><td>{{ $r['description'] }}</td><td class="text-right">R$ {{ $service->money($r['cents']) }}</td>
-                            @foreach ($members as $m)@php($v = $r['running'][$m->id] ?? 0)<td class="text-right {{ $v > 0 ? 'text-system-up' : ($v < 0 ? 'text-system-down' : '') }}">{{ $service->money($v) }}</td>@endforeach
+                            @foreach ($members as $m)@php($v = $r['running'][$m->id] ?? 0)<td class="text-right {{ $v > 0 ? 'text-green-600' : ($v < 0 ? 'text-red-600' : '') }}">{{ $service->money($v) }}</td>@endforeach
                         </tr>
                     @empty
                         <tr><td colspan="{{ 4 + $members->count() }}" class="py-3 text-mono-600">Sem movimentos.</td></tr>
@@ -883,4 +884,6 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     @endif
+
+    <div x-data><template x-teleport="body"><button type="button" wire:click="newExpense" style="position:fixed;right:1.25rem;bottom:calc(1.25rem + env(safe-area-inset-bottom));z-index:60" class="flex items-center gap-2 rounded-pill bg-primary-500 px-5 py-3 text-sm font-semibold text-white shadow-elevated hover:bg-primary-600" data-fab-add><span class="material-icons-outlined text-[20px]">receipt_long</span> Adicionar despesa</button></template></div>
 </div>
