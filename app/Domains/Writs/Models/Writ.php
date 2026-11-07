@@ -39,6 +39,14 @@ class Writ extends Model
             ->useLogName('writs');
     }
 
+    /** Prazo estimado padrão (meses) entre a compra e o recebimento. */
+    public const DEFAULT_TERM_MONTHS = ['rpv' => 9, 'precatorio' => 24];
+
+    public static function defaultTermMonths(?string $type): ?int
+    {
+        return self::DEFAULT_TERM_MONTHS[$type] ?? null;
+    }
+
     public const STAGES = ['monitoring', 'negotiation', 'pending', 'signature', 'paid', 'petitioning', 'awaiting_receipt', 'finalized', 'lost'];
 
     /** Etapas com capital ja desembolsado (em aberto). Monitorar/negociacao/cessao/assinatura/perdido ficam de fora. */

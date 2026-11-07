@@ -145,6 +145,9 @@ new #[Layout('layouts.app')] class extends Component
             $this->negotiation_at = now()->format('Y-m-d\TH:i');
             $this->default_brokers = [];
         }
+        if (! ($writ && $writ->exists) && $this->estimated_months === null) {
+            $this->estimated_months = Writ::defaultTermMonths($this->type);
+        }
     }
 
     public function addAssignor(): void
@@ -263,6 +266,13 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return round($this->estimatedProfitPreview() / $months, 2);
+    }
+
+    public function updatedType(): void
+    {
+        if ($this->estimated_months === null || in_array((int) $this->estimated_months, Writ::DEFAULT_TERM_MONTHS, true)) {
+            $this->estimated_months = Writ::defaultTermMonths($this->type);
+        }
     }
 
     public function save()
@@ -624,7 +634,7 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-sm">
                     <div>
                         <label class="block text-xxs text-mono-600 mb-xxxs">Tipo</label>
-                        <select wire:model="type" class="fx-form-field">
+                        <select wire:model.live="type" class="fx-form-field">
                             <option value="rpv">RPV</option>
                             <option value="precatorio">Precatório</option>
                         </select>
@@ -741,7 +751,7 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 </div>
                 
-                <x-fx.input label="Prazo estimado (meses)" type="number" min="0" wire:model.live="estimated_months" />
+                <x-writ-term-input model="estimated_months" />
                 <x-fx.input label="Recebimento estimado" type="text" x-money wire:model.live="estimated_receipt_amount" />
                 <div>
                     <label class="block text-xxs text-mono-600 mb-xxxs">Lucro estimado (R$)</label>

@@ -248,6 +248,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
     public function create(?string $stage = null): void
     {
         $this->resetForm();
+        $this->estimated_months = Writ::defaultTermMonths($this->formType);
         if ($stage !== null && in_array($stage, Writ::STAGES, true)) {
             $this->stage = $stage;
         }
@@ -575,6 +576,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         }
 
         app(WritGoogleCalendarSyncDispatcher::class)->sync($writ);
+    }
+
+    /** Troca de tipo no cadastro: aplica o prazo padrão se o campo estava vazio ou com o padrão do outro tipo. */
+    public function updatedFormType(): void
+    {
+        if ($this->estimated_months === null || in_array((int) $this->estimated_months, Writ::DEFAULT_TERM_MONTHS, true)) {
+            $this->estimated_months = Writ::defaultTermMonths($this->formType);
+        }
     }
 
     private function resetForm(): void
@@ -1541,7 +1550,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
                                         </div>
                                     </div>
                                     
-                                    <x-jr.input label="Prazo estimado (meses)" icon="calendar_month" type="number" min="0" wire:model.live="estimated_months" />
+                                    <x-writ-term-input model="estimated_months" />
                                     <x-jr.input label="Recebimento estimado" icon="savings" type="text" x-money wire:model.live="estimated_receipt_amount" />
                                     <div>
                                         <label class="mb-2 block text-sm font-medium text-mono-600">Lucro estimado (R$)</label>
