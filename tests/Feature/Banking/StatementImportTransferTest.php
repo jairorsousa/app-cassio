@@ -99,4 +99,19 @@ class StatementImportTransferTest extends TestCase
         $this->assertSame(['expense', 'transfer'], array_column($c->get('rows'), 'type'));
         $this->assertSame('A1', $c->get('rows')[0]['fitid']);
     }
+
+    public function test_round_pix_without_payee_is_suggested_as_transfer(): void
+    {
+        $this->login();
+        [$cef, $itau] = $this->accounts();
+        app(\App\Domains\Banking\Services\TransferService::class)->execute($cef, $itau, 1000, '2026-08-01');
+        $csv = "Data;Descrição;Valor\n16/10/2026;DEB PIX CHAVE;-50.000,00\n19/10/2026;DEB PIX CHAVE;-5.167,18\n";
+        $c = Volt::test('banking.transactions.statement-import')->set('accountId', $cef->id)
+            ->set('file', UploadedFile::fake()->createWithContent('cef.csv', $csv))->call('analyzeFile');
+        $rows = $c->get('rows');
+        $this->assertSame(['transfer', 'expense'], array_column($rows, 'type'));
+        $this->assertSame('transfer_hint', $rows[0]['status']);
+        $this->assertSame($itau->id, $rows[0]['transfer_account_id']);
+        $this->assertFalse($rows[0]['selected']);
+    }
 }

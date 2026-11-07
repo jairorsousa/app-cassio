@@ -112,6 +112,12 @@ class StatementImportAnalyzer
                 $note = ($own ? 'Contraparte é o próprio titular: transferência entre contas suas. ' : 'Provável transferência entre contas. ')
                     .($counter ? 'Já existe a '.($amount < 0 ? 'entrada' : 'saída').' de mesmo valor em '.($accountNames[$counter->bank_account_id] ?? 'outra conta').' em '.$counter->date->format('d/m').': será vinculada, sem duplicar.'
                         : 'Confira a conta de '.($amount < 0 ? 'destino' : 'origem').'.');
+            } elseif ($target === 'bank' && $abs >= 1000 && fmod($abs, 1000) == 0.0 && preg_match('/\b(pix|ted|doc|transf)/iu', $r['description'])) {
+                // Extratos sem favorecido (ex.: OFX da Caixa só diz "DEB PIX CHAVE"): PIX/TED de valor redondo costuma ser entre contas suas.
+                $status = 'transfer_hint';
+                $type = 'transfer';
+                $transferAccount = $this->guessAccount($r['description'], $targetId);
+                $note = 'PIX/TED de valor redondo sem favorecido no arquivo: provável transferência entre suas contas. Confira a conta e marque para gravar.';
             } elseif (preg_match(self::TRANSFER_WORDS, $r['description'])) {
                 $status = 'transfer_hint';
                 $note = 'Descrição parece transferência entre contas próprias: confira antes de aprovar como receita/despesa.';
