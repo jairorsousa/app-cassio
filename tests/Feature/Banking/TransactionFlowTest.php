@@ -56,7 +56,9 @@ class TransactionFlowTest extends TestCase
         @$document->loadHTML($response->getContent());
         $xpath = new \DOMXPath($document);
 
-        foreach (['Importar OFX', 'Novo lançamento'] as $label) {
+        $this->assertSame(1, $xpath->query('//a[@data-statement-import-link][contains(normalize-space(.), "Importar extrato")]')->length, 'Botão único Importar extrato');
+        $this->assertStringNotContainsString('Importar OFX', $response->getContent());
+        foreach (['Novo lançamento'] as $label) {
             $button = $xpath->query('//button[contains(normalize-space(.), "'.$label.'")]')->item(0);
             $this->assertNotNull($button, "Botão {$label} não encontrado.");
 

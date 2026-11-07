@@ -12,7 +12,17 @@ use Illuminate\Support\Carbon;
  */
 class StatementImportAnalyzer
 {
-    private const TRANSFER_WORDS = '/\b(transf|ted|doc|pix (enviado|recebido) (para|de) (o )?pr[oó]prio|resgate|aplica[cç][aã]o|retirada em c\/c|conta investimento|conta digital)/iu';
+    /** Contraparte = o próprio titular (Cassio): nome ou CPF mascarado ***.394.813***. */
+    public const OWNER_PATTERN = '/cass[ií]o\s+mota|\*{0,3}\s*\.?\s*394\.?813\b/iu';
+
+    /** Linhas que não são lançamento: saldo do dia, saldo anterior etc. */
+    private const BALANCE_LINE = '/\bsaldo\s+(dia|do\s+dia|anterior|final|atual|bloqueado|dispon[ií]vel)\b|^\W*saldo\W*$/iu';
+
+    private const BANK_HINTS = ['ita[uú]' => 'ita', 'bradesco' => 'bradesco', 'nubank|nu pagamentos' => 'nubank', 'btg' => 'btg', '\bxp\b' => 'xp', 'banco do brasil|\bbb\b' => 'banco do brasil', 'caixa|\bcef\b' => 'cef', 'santander' => 'santander', 'inter\b' => 'inter'];
+
+    public int $ignored = 0;
+
+    private const TRANSFER_WORDS = '/\b(transf|ted|doc|pix (enviado|recebido) (para|de) (o )?pr[oó]prio|resg(ate)?\b|aplica[cç][aã]o|retirada em c\/c|conta investimento|conta digital)/iu';
 
     public static function normalize(string $d): string
     {
@@ -30,6 +40,13 @@ class StatementImportAnalyzer
      */
     public function analyze(array $rows, string $target, int $targetId): array
     {
+        $this->ignored = 0;
+        $rows = array_values(array_filter($rows, function ($r) {
+            $skip = round(abs((float) $r['amount']), 2) == 0.0 || preg_match(self::BALANCE_LINE, (string) $r['description']);
+            $this->ignored += $skip ? 1 : 0;
+
+            return ! $skip;
+        }));
         if ($rows === []) {
             return [];
         }
@@ -40,7 +57,7 @@ class StatementImportAnalyzer
         $same = Transaction::query()->where($col, $targetId)->whereBetween('date', [$from, $to])
             ->get(['id', 'date', 'amount', 'type', 'description', 'ofx_fitid']);
         $others = $target === 'bank'
-            ? Transaction::query()->whereNotNull('bank_account_id')->where('bank_account_id', '!=', $targetId)->whereBetween('date', [$from, $to])->get(['id', 'date', 'amount', 'type', 'description', 'bank_account_id'])
+            ? Transaction::query()->whereNotNull('bank_account_id')->where('bank_account_id', '!=', $targetId)->whereBetween('date', [$from, $to])->get(['id', 'date', 'amount', 'type', 'description', 'bank_account_id', 'related_transaction_id'])
             : collect();
         $accountNames = BankAccount::query()->pluck('name', 'id');
         $history = [];
@@ -63,7 +80,7 @@ class StatementImportAnalyzer
             $abs = round(abs($amount), 2);
             $norm = self::normalize($r['description']);
             $occ = $seen[$r['date'].'|'.$amount.'|'.$norm] = ($seen[$r['date'].'|'.$amount.'|'.$norm] ?? 0) + 1;
-            $fitid = 'stmt:'.substr(sha1($target.'|'.$targetId.'|'.$r['date'].'|'.number_format($amount, 2, '.', '').'|'.$norm.'|'.$occ), 0, 32);
+            $fitid = ! empty($r['fitid']) ? (string) $r['fitid'] : 'stmt:'.substr(sha1($target.'|'.$targetId.'|'.$r['date'].'|'.number_format($amount, 2, '.', '').'|'.$norm.'|'.$occ), 0, 32);
             if ($target === 'card') {
                 $kind = preg_match('/pagamento|pagto|pgto/iu', $r['description']) && ($amount * $cardSign) < 0 ? 'payment' : (($amount * $cardSign) < 0 ? 'refund' : 'purchase');
                 $type = 'expense';
@@ -73,6 +90,10 @@ class StatementImportAnalyzer
             }
             $status = 'new';
             $note = '';
+            $transferAccount = null;
+            $linkId = null;
+            $own = $target === 'bank' && preg_match(self::OWNER_PATTERN, $r['description']);
+            $counter = $target === 'bank' ? self::counterpart($others, $amount, $r['date']) : null;
             $exists = isset($fitids[$fitid]) || $same->contains(fn ($t) => $t->date->toDateString() === $r['date'] && round(abs((float) $t->amount), 2) === $abs && self::normalize((string) $t->description) === $norm);
             if ($exists) {
                 $status = 'exists';
@@ -83,9 +104,14 @@ class StatementImportAnalyzer
             } elseif ($kind === 'payment') {
                 $status = 'payment';
                 $note = 'Pagamento da fatura: registre pelo botão Pagar da fatura, não como compra.';
-            } elseif ($target === 'bank' && ($tr = $others->first(fn ($t) => round(abs((float) $t->amount), 2) === $abs && abs($t->date->diffInDays(Carbon::parse($r['date']))) <= 2 && (($amount < 0 && $t->type !== 'expense') || ($amount > 0 && $t->type !== 'income'))))) {
+            } elseif ($own || $counter) {
                 $status = 'transfer';
-                $note = 'Provável transferência entre contas: '.($amount < 0 ? 'entrada' : 'saída').' de mesmo valor em '.($accountNames[$tr->bank_account_id] ?? 'outra conta').' em '.$tr->date->format('d/m').'. Se já foi lançada lá como transferência, não aprove.';
+                $type = 'transfer';
+                $transferAccount = $counter?->bank_account_id ?? $this->guessAccount($r['description'], $targetId);
+                $linkId = $counter?->id;
+                $note = ($own ? 'Contraparte é o próprio titular: transferência entre contas suas. ' : 'Provável transferência entre contas. ')
+                    .($counter ? 'Já existe a '.($amount < 0 ? 'entrada' : 'saída').' de mesmo valor em '.($accountNames[$counter->bank_account_id] ?? 'outra conta').' em '.$counter->date->format('d/m').': será vinculada, sem duplicar.'
+                        : 'Confira a conta de '.($amount < 0 ? 'destino' : 'origem').'.');
             } elseif (preg_match(self::TRANSFER_WORDS, $r['description'])) {
                 $status = 'transfer_hint';
                 $note = 'Descrição parece transferência entre contas próprias: confira antes de aprovar como receita/despesa.';
@@ -93,19 +119,84 @@ class StatementImportAnalyzer
             $out[] = [
                 'i' => $i,
                 'date' => $r['date'],
-                'description' => mb_substr($r['description'], 0, 255),
-                'amount' => number_format($abs, 2, '.', ''),
+                'description' => mb_substr(self::clean($r['description']), 0, 255),
+                'amount' => number_format($abs, 2, ',', '.'),
                 'signed' => $amount,
                 'type' => $type,
                 'card_kind' => $kind,
-                'category_id' => $history[$norm.'|'.$type] ?? null,
+                'category_id' => $type === 'transfer' ? null : ($history[$norm.'|'.$type] ?? null),
+                'transfer_account_id' => $transferAccount,
+                'transfer_link_id' => $linkId,
                 'fitid' => $fitid,
                 'status' => $status,
                 'note' => $note,
-                'selected' => $status === 'new',
+                'selected' => $status === 'new' || ($status === 'transfer' && $own),
             ];
         }
 
         return $out;
+    }
+
+    /** Tira o "- 06:04:00 230604" (hora e nº do documento) do começo da descrição de extratos em PDF. */
+    public static function clean(string $d): string
+    {
+        $c = preg_replace('/^[-\s]*\d{2}:\s?\d{2}(:\s?\d{2})?\s+\d{3,}\s+/u', '', trim($d));
+
+        return trim($c) !== '' ? trim($c) : trim($d);
+    }
+
+    /**
+     * Contrapartida já lançada em outra conta: mesmo valor, ±2 dias, sentido oposto e ainda sem par.
+     * Saída aqui (valor < 0) casa com receita ou entrada de transferência lá; entrada aqui casa com despesa ou saída lá.
+     */
+    public static function counterpart(iterable $others, float $signed, string $date, ?int $onlyAccount = null): ?Transaction
+    {
+        $abs = round(abs($signed), 2);
+        $d = Carbon::parse($date);
+        foreach ($others as $t) {
+            if ($onlyAccount && (int) $t->bank_account_id !== $onlyAccount) {
+                continue;
+            }
+            if (round(abs((float) $t->amount), 2) !== $abs || abs($t->date->diffInDays($d)) > 2) {
+                continue;
+            }
+            $ok = $signed < 0
+                ? ($t->type === 'income' || ($t->type === 'transfer' && (float) $t->amount > 0 && ! $t->related_transaction_id))
+                : ($t->type === 'expense' || ($t->type === 'transfer' && (float) $t->amount < 0 && ! $t->related_transaction_id));
+            if ($ok) {
+                return $t;
+            }
+        }
+
+        return null;
+    }
+
+    public static function findCounterpart(int $targetId, int $otherId, float $signed, string $date): ?Transaction
+    {
+        $d = Carbon::parse($date);
+        $others = Transaction::query()->where('bank_account_id', $otherId)->where('bank_account_id', '!=', $targetId)
+            ->whereBetween('date', [$d->copy()->subDays(2)->toDateString(), $d->copy()->addDays(2)->toDateString()])
+            ->get(['id', 'date', 'amount', 'type', 'description', 'bank_account_id', 'related_transaction_id'])
+            ->sortBy(fn ($t) => abs($t->date->diffInDays($d)));
+
+        return self::counterpart($others, $signed, $date, $otherId);
+    }
+
+    /** Conta provável: banco citado na descrição; senão, a conta com que esta mais transfere. */
+    private function guessAccount(string $description, int $targetId): ?int
+    {
+        // Só contas próprias de movimento (não repasse/cliente/fundo automático).
+        $accounts = BankAccount::query()->where('id', '!=', $targetId)->where('status', true)->where('type', 'checking')
+            ->where('name', 'not like', '%repasse%')->where('name', 'not like', '%cliente%')->where('name', 'not like', '%advogados%')->get(['id', 'name']);
+        foreach (self::BANK_HINTS as $re => $needle) {
+            if (preg_match('/'.$re.'/iu', $description) && ($a = $accounts->first(fn ($a) => str_contains(mb_strtolower($a->name), $needle)))) {
+                return $a->id;
+            }
+        }
+        $ids = Transaction::query()->where('bank_account_id', $targetId)->where('type', 'transfer')->whereNotNull('related_transaction_id')->pluck('related_transaction_id');
+        $top = Transaction::query()->whereIn('id', $ids)->whereIn('bank_account_id', $accounts->pluck('id'))
+            ->selectRaw('bank_account_id, COUNT(*) c')->groupBy('bank_account_id')->orderByDesc('c')->first();
+
+        return $top?->bank_account_id; // sem histórico: fica em branco para não sugerir errado
     }
 }

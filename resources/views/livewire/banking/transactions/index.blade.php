@@ -1126,14 +1126,10 @@ new #[Layout('layouts.app')] class extends Component
         <div class="flex justify-between items-center mb-space-4">
             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Filtros</h3>
             <div class="flex items-center gap-2">
-                <x-jr.button type="button" size="sm" wire:click="openImport">
-                    <span class="material-icons-outlined text-[18px]">upload_file</span>
-                    Importar OFX
+                <x-jr.button size="sm" :href="route('banking.transactions.statement-import')" data-statement-import-link title="OFX, CSV, XLSX, PDF ou foto: o formato é detectado sozinho">
+                    <span class="material-icons-outlined text-[18px]" aria-hidden="true">upload_file</span>
+                    Importar extrato
                 </x-jr.button>
-                <a href="{{ route('banking.transactions.statement-import') }}" class="inline-flex h-9 items-center gap-1 rounded-pill border border-mono-200 px-3 text-sm font-semibold text-mono-900 hover:bg-mono-100" data-statement-import-link>
-                    <span class="material-icons-outlined text-[18px]">document_scanner</span>
-                    Extrato/fatura (CSV, XLSX, PDF, foto)
-                </a>
                 <x-banking.new-transaction size="sm" />
             </div>
         </div>

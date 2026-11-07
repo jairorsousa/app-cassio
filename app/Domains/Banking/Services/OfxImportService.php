@@ -187,6 +187,55 @@ class OfxImportService
         });
     }
 
+    /**
+     * Linhas marcadas como Transferência na revisão: cria o par saída/entrada (mesmo formato do TransferService)
+     * ou, se a contrapartida já está na outra conta (mesmo valor, ±2 dias, sentido oposto), vincula sem duplicar.
+     *
+     * @param  array<int, array{fitid: string, date: string, amount: string, signed: float, transfer_account_id: int, notes: ?string}>  $rows
+     * @return array{created: int, linked: int, skipped: int}
+     */
+    public function importTransfers(BankAccount $account, array $rows): array
+    {
+        return DB::transaction(function () use ($account, $rows) {
+            $existing = $this->existingFitids($account, $rows);
+            $created = $linked = $skipped = 0;
+            foreach ($rows as $row) {
+                if (isset($existing[$row['fitid']])) {
+                    $skipped++;
+
+                    continue;
+                }
+                $other = BankAccount::find((int) ($row['transfer_account_id'] ?? 0));
+                if (! $other || $other->id === $account->id) {
+                    throw new InvalidArgumentException('Escolha a outra conta da transferência: '.$row['description']);
+                }
+                $amount = round((float) $row['amount'], 2);
+                $out = (float) $row['signed'] < 0;
+                [$from, $to] = $out ? [$account, $other] : [$other, $account];
+                $counter = \App\Domains\Banking\Services\Statements\StatementImportAnalyzer::findCounterpart($account->id, $other->id, $out ? -$amount : $amount, $row['date']);
+                if ($counter) {
+                    $counter = Transaction::query()->lockForUpdate()->findOrFail($counter->id);
+                    $mine = Transaction::create([
+                        'type' => 'transfer', 'date' => $row['date'], 'amount' => $out ? -$amount : $amount,
+                        'description' => ($out ? 'Transferência Saída ' : 'Transferência Entrada ')."{$from->name} → {$to->name}",
+                        'notes' => $row['notes'] ?? null, 'status' => 'settled', 'bank_account_id' => $account->id,
+                        'ofx_fitid' => $row['fitid'], 'related_transaction_id' => $counter->id,
+                    ]);
+                    $counter->update(['type' => 'transfer', 'amount' => $out ? abs((float) $counter->amount) : -abs((float) $counter->amount),
+                        'related_transaction_id' => $mine->id, 'category_id' => null]);
+                    $linked++;
+                } else {
+                    $first = app(TransferService::class)->execute($from, $to, $amount, $row['date'], null, $row['notes'] ?? null);
+                    $mine = $out ? $first : $first->related;
+                    $mine->update(['ofx_fitid' => $row['fitid']]);
+                    $created++;
+                }
+            }
+
+            return ['created' => $created, 'linked' => $linked, 'skipped' => $skipped];
+        });
+    }
+
     public function importCard(CreditCard $card, string $referenceMonth, array $transactions): array
     {
         return DB::transaction(function () use ($card, $referenceMonth, $transactions) {
