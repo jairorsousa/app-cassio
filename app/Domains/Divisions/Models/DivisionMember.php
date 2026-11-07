@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DivisionMember extends Model
 {
-    protected $fillable = ['group_id', 'name', 'email', 'phone', 'user_id', 'is_owner', 'active'];
+    protected $fillable = ['group_id', 'name', 'email', 'phone', 'user_id', 'is_owner', 'active', 'approval_status', 'requested_by'];
 
     protected $casts = ['is_owner' => 'boolean', 'active' => 'boolean'];
 
@@ -18,6 +18,17 @@ class DivisionMember extends Model
     public function phoneDisplay(): string
     {
         return $this->phone ? \App\Support\BrazilianDocuments::formatPhone(substr((string) $this->phone, 3)) : '';
+    }
+
+    /** Pessoa externa pedida por participante: fica fora das divisões e sem convite até o Cassio aprovar. */
+    public function isPending(): bool
+    {
+        return $this->approval_status === 'pending';
+    }
+
+    public function requester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by');
     }
 
     public function group(): BelongsTo

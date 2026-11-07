@@ -322,14 +322,27 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
         try {
-            $this->service()->addMember(auth()->user(), $this->group, $this->memberName, $this->memberEmail ?: null, $this->memberPhone ?: null);
+            $m = $this->service()->addMember(auth()->user(), $this->group, $this->memberName, $this->memberEmail ?: null, $this->memberPhone ?: null);
         } catch (ValidationException $e) {
             $this->fail($e);
 
             return;
         }
         $this->reset('memberName', 'memberEmail', 'memberPhone');
-        $this->notice = 'Participante adicionado.';
+        $this->notice = $m->isPending() ? $m->name.' foi incluído e está aguardando aprovação do gestor. Fale com o gestor para aprovar.' : 'Participante adicionado.';
+    }
+
+    public function decideMember(int $memberId, bool $approve): void
+    {
+        try {
+            $link = $this->service()->decideMember(auth()->user(), DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId), $approve);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->inviteLink = $link;
+        $this->notice = $approve ? ($link ? 'Participante aprovado. Link de convite gerado: copie e envie para a pessoa.' : 'Participante aprovado.') : 'Pedido recusado: a pessoa foi removida do grupo.';
     }
 
     public function removeMember(int $memberId): void
@@ -491,7 +504,7 @@ new #[Layout('layouts.app')] class extends Component
                 return $e && ($e->paid_by_member_id === $m->id || $e->shares->contains('member_id', $m->id));
             }),
             'net' => $net,
-            'peopleFound' => $user->isAdmin() ? $service->searchExistingPeople($this->group, $this->personSearch) : [],
+            'peopleFound' => ($user->isAdmin() || $me) ? $service->searchExistingPeople($this->group, $this->personSearch, 8, $user->isAdmin()) : [],
             'groupAudits' => $this->group->audits()->whereNull('expense_id')->with('user')->latest('id')->limit(30)->get(),
             'chargeMember' => $this->chargeMemberId ? $members[$this->chargeMemberId] ?? null : null,
             'transfers' => $service->simplify($net),
@@ -574,15 +587,22 @@ new #[Layout('layouts.app')] class extends Component
             @foreach ($members as $m)
                 <div class="flex flex-col gap-1 border-b border-mono-100 py-2 text-sm last:border-0 sm:flex-row sm:items-center sm:justify-between" wire:key="m-{{ $m->id }}">
                     <span class="min-w-0"><strong>{{ $m->name }}</strong> <span class="text-mono-600">{{ $m->email }}</span>
-                        @unless ($m->active)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs text-mono-600" data-member-inactive>Desativado</span>@endunless
+                        @if ($m->isPending())<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500" data-member-pending>Aguardando aprovação do gestor</span><span class="ml-1 text-xs text-mono-600">Fale com o gestor para aprovar.</span>
+                        @elseif (! $m->active)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs text-mono-600" data-member-inactive>Desativado</span>@endif
                         @if ($m->phone)<span class="ml-1 text-xs text-mono-600" data-member-phone>{{ $m->phoneDisplay() }}</span>@endif
                         @if (($isAdmin || (int) $m->user_id === (int) auth()->id()) && $phoneEditId !== $m->id)<button type="button" class="ml-1 text-xs text-primary-500" wire:click="editPhone({{ $m->id }})" data-edit-phone>{{ $m->phone ? 'Editar celular' : 'Adicionar celular' }}</button>@endif
                         @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif
-                        @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
-                    @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)
+                        @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email && ! $m->isPending())<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
+                    @if ($isAdmin && $m->isPending())
+                        <span class="flex gap-3 text-xs" data-member-decide>
+                            <button type="button" class="text-error" wire:click="decideMember({{ $m->id }}, false)" wire:confirm="Recusar e remover {{ $m->name }}?">Recusar</button>
+                            <button type="button" class="font-semibold text-system-up" wire:click="decideMember({{ $m->id }}, true)">Aprovar</button>
+                        </span>
+                    @endif
+                    @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email && ! $m->isPending())
                         <button type="button" class="text-xs text-primary-500" wire:click="invite({{ $m->id }})" wire:confirm="Gerar um novo link para {{ $m->name }}? O link anterior deixa de valer." data-invite-member>Gerar link de convite</button>
                     @endif
-                    @if ($isAdmin && ! $m->is_owner)
+                    @if ($isAdmin && ! $m->is_owner && ! $m->isPending())
                         <span class="flex gap-3 text-xs">
                             @if ($m->active)
                                 <button type="button" class="text-error" wire:click="removeMember({{ $m->id }})" wire:confirm="Remover {{ $m->name }} deste grupo?" data-remove-member>Remover</button>
@@ -615,7 +635,7 @@ new #[Layout('layouts.app')] class extends Component
                         <button type="button" class="fx-btn fx-btn--standard" x-on:click="navigator.clipboard.writeText($refs.l.value)">Copiar</button></div>
                 </div>
             @endif
-            @if ($isAdmin)
+            @if ($isAdmin || $me)
                 <div class="mt-4 rounded-xl border border-mono-100 p-3" data-add-existing>
                     <p class="mb-2 text-sm font-semibold">Adicionar pessoa já cadastrada</p>
                     <input type="search" wire:model.live.debounce.300ms="personSearch" placeholder="Buscar por nome, e-mail ou celular" class="h-11 w-full rounded-pill border border-mono-200 px-4 text-sm" data-person-search>
@@ -641,6 +661,7 @@ new #[Layout('layouts.app')] class extends Component
                     <x-jr.input label="Celular (opcional)" name="memberPhone" type="tel" x-phone placeholder="(99) 99999-9999" wire:model="memberPhone" />
                     <button type="submit" class="fx-btn fx-btn--standard h-12">Adicionar participante</button>
                 </form>
+                @unless ($isAdmin)<p class="mt-2 text-xs text-mono-600" data-external-note>Pessoa nova (sem cadastro no sistema) fica aguardando aprovação do gestor antes de entrar nas divisões.</p>@endunless
             @endif
         </x-fx.card>
     </div>

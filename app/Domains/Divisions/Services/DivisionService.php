@@ -55,7 +55,7 @@ class DivisionService
     /** Liga ao usuário as participações que tinham só o e-mail dele (depois do convite aceito). */
     public function claimMemberships(User $user): void
     {
-        DivisionMember::whereNull('user_id')->whereNotNull('email')
+        DivisionMember::whereNull('user_id')->whereNotNull('email')->whereNull('approval_status')
             ->whereRaw('lower(email) = ?', [mb_strtolower($user->email)])
             ->update(['user_id' => $user->id]);
         $this->fillPhonesFromContacts($user);
@@ -162,9 +162,26 @@ class DivisionService
         $this->audit($group, $actor, 'group_updated', ['nome' => $name, 'aprovação' => $group->requires_approval ? 'sim' : 'não']);
     }
 
+    /** Cassio ou participante do grupo (aprovado) pode incluir pessoas. */
+    private function assertCanAddPeople(?User $actor, DivisionGroup $group): User
+    {
+        abort_unless($actor && $actor->isActive(), 403);
+        if ($actor->isAdmin()) {
+            return $actor;
+        }
+        $this->assertView($actor, $group);
+        abort_unless($group->status === 'approved' && $group->loadMissing('members')->memberFor($actor), 403);
+
+        return $actor;
+    }
+
+    /**
+     * Cassio adiciona direto. Participante: quem já tem conta entra direto; pessoa externa (sem conta) fica
+     * "Aguardando aprovação do gestor": fora das divisões e sem convite até o Cassio aprovar.
+     */
     public function addMember(?User $actor, DivisionGroup $group, string $name, ?string $email, ?string $phone = null): DivisionMember
     {
-        $actor = $this->assertAdmin($actor);
+        $actor = $this->assertCanAddPeople($actor, $group);
         $name = trim($name);
         $email = $email !== null && trim($email) !== '' ? mb_strtolower(trim($email)) : null;
         if ($name === '' && $email !== null && filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -185,14 +202,40 @@ class DivisionService
             throw ValidationException::withMessages(['memberPhone' => 'Celular inválido. Use (99) 99999-9999.']);
         }
         $user = $email ? User::whereRaw('lower(email) = ?', [$email])->first() : null;
-        $member = $group->members()->create(['name' => $name, 'email' => $email, 'phone' => $phone, 'user_id' => $user?->id]);
+        $pending = ! $actor->isAdmin() && ! $user;
+        $member = $group->members()->create(['name' => $name, 'email' => $email, 'phone' => $phone, 'user_id' => $user?->id]
+            + ($pending ? ['approval_status' => 'pending', 'active' => false, 'requested_by' => $actor->id] : []));
         if ($user && ! $phone) {
             $this->fillPhonesFromContacts($user, $member->id);
             $member->refresh();
         }
-        $this->audit($group, $actor, 'member_added', ['nome' => $name]);
+        if ($user && ! $actor->isAdmin() && ! $user->isAdmin() && ! in_array(self::MODULE, (array) $user->modules, true) && ($owner = $this->ownerUser())) {
+            // Pessoa já cadastrada adicionada por participante: libera só Divisões (sem convite novo).
+            $this->divisionLinkFor($owner, $member->name, $user->email);
+        }
+        $this->audit($group, $actor, $pending ? 'member_requested' : 'member_added', ['nome' => $name]);
 
         return $member;
+    }
+
+    /** Cassio aprova (gera o convite normalmente e devolve o link) ou recusa (remove) a pessoa externa pedida. */
+    public function decideMember(?User $actor, DivisionMember $member, bool $approve): ?string
+    {
+        $actor = $this->assertAdmin($actor);
+        if (! $member->isPending()) {
+            throw ValidationException::withMessages(['divisions' => 'Este participante não está aguardando aprovação.']);
+        }
+        $group = $member->group;
+        if (! $approve) {
+            $this->audit($group, $actor, 'member_rejected', ['nome' => $member->name]);
+            $member->delete();
+
+            return null;
+        }
+        $member->update(['approval_status' => null, 'active' => true]);
+        $this->audit($group, $actor, 'member_approved', ['nome' => $member->name]);
+
+        return $member->email ? $this->inviteMember($actor, $member->fresh()) : null;
     }
 
     /**
@@ -201,7 +244,7 @@ class DivisionService
      *
      * @return list<array{key:string,name:string,email:?string,phone:?string,source:string,has_account:bool}>
      */
-    public function searchExistingPeople(DivisionGroup $group, string $term, int $limit = 8): array
+    public function searchExistingPeople(DivisionGroup $group, string $term, int $limit = 8, bool $full = true): array
     {
         $term = trim($term);
         if (mb_strlen($term) < 2) {
@@ -231,7 +274,11 @@ class DivisionService
         foreach (User::where('is_admin', false)->whereNotIn('id', $inGroupUsers)->where(fn ($q) => $q->whereRaw('lower(name) like ?', [$like])->orWhereRaw('lower(email) like ?', [$like]))->limit(20)->get() as $u) {
             $put('u:'.$u->id, $u->name, $u->email, null, 'Usuário com conta');
         }
-        $members = DivisionMember::where('group_id', '!=', $group->id)->where('is_owner', false)->with('group')->get()
+        if (! $full) {
+            // Participante só encontra quem já tem conta no sistema (não vê Contatos nem pessoas de outros grupos).
+            return array_slice(array_values($out), 0, $limit);
+        }
+        $members = DivisionMember::where('group_id', '!=', $group->id)->whereNull('approval_status')->where('is_owner', false)->with('group')->get()
             ->filter(fn ($m) => str_contains(mb_strtolower($m->name), mb_strtolower($term)) || str_contains(mb_strtolower((string) $m->email), mb_strtolower($term)) || $phoneMatch($m->phone));
         foreach ($members as $m) {
             if ($m->user_id && in_array($m->user_id, $inGroupUsers, true)) {
@@ -265,9 +312,12 @@ class DivisionService
      */
     public function addExistingPerson(?User $actor, DivisionGroup $group, string $key): DivisionMember
     {
-        $actor = $this->assertAdmin($actor);
+        $actor = $this->assertCanAddPeople($actor, $group);
         [$type, $id] = array_pad(explode(':', $key, 2), 2, null);
         $id = (int) $id;
+        if (! $actor->isAdmin() && $type !== 'u') {
+            throw ValidationException::withMessages(['personSearch' => 'Escolha uma pessoa da lista.']);
+        }
         [$name, $email, $phone] = match ($type) {
             'u' => (function () use ($id) {
                 $u = User::where('is_admin', false)->findOrFail($id);
@@ -296,8 +346,8 @@ class DivisionService
             throw ValidationException::withMessages(['personSearch' => 'Já existe um participante com este nome no grupo.']);
         }
         $member = $this->addMember($actor, $group, $name, $email, $phone ? '+'.ltrim($phone, '+') : null);
-        if ($user && ! $user->isAdmin() && ! in_array(self::MODULE, (array) $user->modules, true)) {
-            // Conta existente: só libera o módulo Divisões (nenhum convite é criado).
+        if ($actor->isAdmin() && $user && ! $user->isAdmin() && ! in_array(self::MODULE, (array) $user->modules, true)) {
+            // Conta existente: só libera o módulo Divisões (nenhum convite é criado). Por participante, o addMember já liberou.
             $this->inviteMember($actor, $member->fresh());
         }
 
@@ -313,6 +363,9 @@ class DivisionService
         $actor = $this->assertAdmin($actor);
         if (! $member->email) {
             throw ValidationException::withMessages(['memberEmail' => 'Cadastre o e-mail do participante para gerar o convite.']);
+        }
+        if ($member->isPending()) {
+            throw ValidationException::withMessages(['divisions' => 'Aprove o participante antes de gerar o convite.']);
         }
         $link = $this->divisionLinkFor($actor, $member->name, $member->email);
         $member->refresh();
@@ -917,7 +970,7 @@ class DivisionService
         $group->loadMissing('members');
         $from = $group->members->firstWhere('id', (int) ($data['from_member_id'] ?? 0));
         $to = $group->members->firstWhere('id', (int) ($data['to_member_id'] ?? 0));
-        if (! $from || ! $to || $from->id === $to->id) {
+        if (! $from || ! $to || $from->id === $to->id || $from->isPending() || $to->isPending()) {
             throw ValidationException::withMessages(['settleFrom' => 'Escolha quem pagou e quem recebeu (pessoas diferentes).']);
         }
         if (! $actor->isAdmin()) {

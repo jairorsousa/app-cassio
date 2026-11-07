@@ -47,14 +47,16 @@ class DivisionGroup extends Model
             return $q;
         }
 
-        return $q->whereHas('members', fn ($m) => $m->where('user_id', $user->id)
-            ->orWhere(fn ($m) => $m->whereNull('user_id')->whereRaw('lower(email) = ?', [mb_strtolower($user->email)])));
+        return $q->whereHas('members', fn ($m) => $m->whereNull('approval_status')->where(fn ($m) => $m->where('user_id', $user->id)
+            ->orWhere(fn ($m) => $m->whereNull('user_id')->whereRaw('lower(email) = ?', [mb_strtolower($user->email)]))));
     }
 
     public function memberFor(User $user): ?DivisionMember
     {
-        return $this->members->first(fn ($m) => $m->user_id === $user->id)
-            ?? $this->members->first(fn ($m) => $m->user_id === null && $m->email && mb_strtolower($m->email) === mb_strtolower($user->email));
+        $ok = $this->members->filter(fn ($m) => ! $m->isPending());
+
+        return $ok->first(fn ($m) => $m->user_id === $user->id)
+            ?? $ok->first(fn ($m) => $m->user_id === null && $m->email && mb_strtolower($m->email) === mb_strtolower($user->email));
     }
 
     public function ownerMember(): ?DivisionMember

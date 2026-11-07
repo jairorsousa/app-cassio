@@ -16,6 +16,7 @@ class DivisionAudit extends Model
         'member_invited' => 'Convite gerado', 'member_removed' => 'Participante removido', 'member_deactivated' => 'Participante desativado', 'member_reactivated' => 'Participante reativado', 'expense_created' => 'Despesa lançada', 'expense_updated' => 'Despesa alterada',
         'expense_approved' => 'Despesa aprovada', 'expense_rejected' => 'Despesa recusada', 'expense_deleted' => 'Despesa excluída',
         'expense_linked' => 'Vinculada ao Financeiro', 'settlement_created' => 'Acerto registrado', 'settlement_deleted' => 'Acerto excluído', 'charge_opened' => 'Cobrança aberta',
+        'member_requested' => 'Participante externo solicitado', 'member_approved' => 'Participante aprovado', 'member_rejected' => 'Participante recusado',
     ];
 
     protected $fillable = ['group_id', 'expense_id', 'settlement_id', 'user_id', 'action', 'details'];

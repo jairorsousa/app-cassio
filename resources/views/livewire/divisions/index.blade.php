@@ -62,6 +62,15 @@ new #[Layout('layouts.app')] class extends Component
         $this->notice = $approve ? 'Grupo aprovado.' : 'Grupo recusado.';
     }
 
+    public ?string $approvedLink = null;
+
+    public function decideMember(int $id, bool $approve, DivisionService $service): void
+    {
+        $link = $service->decideMember(auth()->user(), \App\Domains\Divisions\Models\DivisionMember::findOrFail($id), $approve);
+        $this->approvedLink = $link;
+        $this->notice = $approve ? 'Participante aprovado.'.($link ? ' Link de convite gerado abaixo.' : '') : 'Pedido recusado: a pessoa foi removida do grupo.';
+    }
+
     public function decideExpense(int $id, bool $approve, DivisionService $service): void
     {
         $service->decideExpense(auth()->user(), DivisionExpense::findOrFail($id), $approve);
@@ -132,6 +141,7 @@ new #[Layout('layouts.app')] class extends Component
             'overall' => $service->overall($user),
             'chargeTarget' => $this->chargeTarget(),
             'pendingGroups' => $user->isAdmin() ? DivisionGroup::where('status', 'pending')->with('members')->get() : collect(),
+            'pendingMembers' => $user->isAdmin() ? \App\Domains\Divisions\Models\DivisionMember::where('approval_status', 'pending')->with('group', 'requester')->orderBy('id')->get() : collect(),
             'pendingExpenses' => $user->isAdmin() ? DivisionExpense::where('status', 'pending')->with('group', 'payer', 'creator')->orderBy('date')->get() : collect(),
             'service' => $service,
         ];
@@ -156,7 +166,14 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     </x-fx.card>
 
-    @if ($isAdmin && ($pendingGroups->isNotEmpty() || $pendingExpenses->isNotEmpty()))
+    @if ($approvedLink)
+        <div class="rounded-xl border border-primary-100 bg-primary-100 p-3 text-sm" x-data data-approved-link>
+            <p class="mb-1 font-semibold">Link de convite (só Divisões):</p>
+            <div class="flex gap-2"><input type="text" readonly value="{{ $approvedLink }}" class="h-10 flex-1 rounded-xl border-mono-200 text-xs" x-ref="l">
+                <button type="button" class="fx-btn fx-btn--standard" x-on:click="navigator.clipboard.writeText($refs.l.value)">Copiar</button></div>
+        </div>
+    @endif
+    @if ($isAdmin && ($pendingGroups->isNotEmpty() || $pendingExpenses->isNotEmpty() || $pendingMembers->isNotEmpty()))
         <x-fx.card data-approvals>
             <h3 class="mb-3 text-fs-16 font-semibold">Aguardando sua aprovação</h3>
             @foreach ($pendingGroups as $g)
@@ -165,6 +182,16 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="flex gap-2">
                         <button type="button" class="fx-btn fx-btn--standard" wire:click="decideGroup({{ $g->id }}, false)" wire:confirm="Recusar este grupo?">Recusar</button>
                         <button type="button" class="fx-btn fx-btn--primary" wire:click="decideGroup({{ $g->id }}, true)">Aprovar</button>
+                    </div>
+                </div>
+            @endforeach
+            @foreach ($pendingMembers as $m)
+                <div class="flex flex-col gap-2 border-b border-mono-100 py-3 sm:flex-row sm:items-center sm:justify-between" wire:key="pm-{{ $m->id }}" data-pending-member>
+                    <div class="text-sm"><strong>Participante externo: {{ $m->name }}</strong> · {{ $m->email }}@if ($m->phone) · {{ $m->phoneDisplay() }}@endif
+                        <div class="text-mono-600">Grupo {{ $m->group?->name }} · pedido por {{ $m->requester?->name }}</div></div>
+                    <div class="flex gap-2">
+                        <button type="button" class="fx-btn fx-btn--standard" wire:click="decideMember({{ $m->id }}, false)" wire:confirm="Recusar e remover {{ $m->name }}?">Recusar</button>
+                        <button type="button" class="fx-btn fx-btn--primary" wire:click="decideMember({{ $m->id }}, true)">Aprovar</button>
                     </div>
                 </div>
             @endforeach
