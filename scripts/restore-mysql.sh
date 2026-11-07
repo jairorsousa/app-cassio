@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Restaura backup do Cassio Finance.
+# Restaura backup do Vértice CM.
 #
 # Uso:
 #   ./scripts/restore-mysql.sh /var/backups/cassio/cassio_2026-04-29_020000.sql.gz

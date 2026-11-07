@@ -1,4 +1,4 @@
-# Cassio Finance
+# Vértice CM
 
 Sistema de gestão financeira pessoal do Dr. Cássio Mota.
 

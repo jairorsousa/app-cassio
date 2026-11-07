@@ -704,3 +704,12 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Nova coluna `user_invitations.token_encrypted` (Crypt do Laravel), gravada em convites novos e links regenerados; é apagada ao revogar ou aceitar. O link só aparece se o token decifrado confere com o hash.
 - Nenhum link foi gerado automaticamente e nenhum dado real foi alterado. Backup da tabela antes da migration: `/root/app-cassio-backups/user_invitations-antes-link-20261107.json`.
 - Testes: `tests/Feature/Divisions/InviteLinkDisplayTest.php`.
+
+## 07/11/2026 — Novo nome e marca: Vértice CM
+
+- Sistema renomeado de "Cassio Finance" para **Vértice CM** (APP_NAME no .env e .env.example, título das páginas, topo, menu lateral, login, dashboard, PDFs, README, docs e scripts).
+- Marca nova (SVG original): vértice/pico com "CM" dentro, estrela de energia e gradiente âmbar → laranja (#FF6F00, cor principal do tema) → vermelho. Versões: ícone (`public/brand/vertice-cm-icone.svg`) e horizontal com texto (`public/brand/vertice-cm-horizontal.svg`), mais as animadas (`*-animado.svg`).
+- Animação em CSS dentro do SVG: o pico se desenha (~1,3 s), o "CM" aparece, a estrela pulsa e um brilho passa a cada 6 s. Com "reduzir movimento" ligado, fica parada. Usada no login e no topo/menu (`<x-vertice-logo>`).
+- Favicon estático: `favicon.svg`, `favicon.ico`, PNG 16/32, apple-touch 180, 192/512 no `site.webmanifest` (PWA "Vértice CM", cor #FF6F00).
+- Logo personalizado (Configurações) continua tendo prioridade no topo; não havia logo padrão gravado para trocar. Backup do favicon anterior: `/root/app-cassio-backups/logo-antes-20261107/`.
+- Teste: `tests/Feature/BrandVerticeTest.php`.

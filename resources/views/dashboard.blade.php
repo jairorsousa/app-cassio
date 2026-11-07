@@ -30,7 +30,7 @@
 
     <div class="mt-lg">
         <x-fx.alert variant="info" dismissible>
-            Bem-vindo ao Cassio Finance. Comece cadastrando sua primeira conta bancária no módulo Financeiro.
+            Bem-vindo ao Vértice CM. Comece cadastrando sua primeira conta bancária no módulo Financeiro.
         </x-fx.alert>
     </div>
 </x-app-layout>

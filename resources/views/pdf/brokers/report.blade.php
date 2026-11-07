@@ -196,14 +196,14 @@
 @endphp
 
 <div class="footer">
-    Cassio Finance | Gerado em {{ $generatedAt->format('d/m/Y H:i') }} | Página <span class="page-number"></span>
+    Vértice CM | Gerado em {{ $generatedAt->format('d/m/Y H:i') }} | Página <span class="page-number"></span>
 </div>
 
 <header class="header">
     <table class="brand-table">
         <tr>
             <td class="brand-mark">CM</td>
-            <td class="brand-name">Cassio Finance</td>
+            <td class="brand-name">Vértice CM</td>
             <td>
                 <div class="document-type">Relatório</div>
                 <div class="document-title">Corretores</div>

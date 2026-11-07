@@ -1,4 +1,4 @@
-# Backup & Restore — Cassio Finance
+# Backup & Restore — Vértice CM
 
 MySQL fica fora do Docker (no host), então o backup também roda no host. O script
 usa `mysqldump --single-transaction` (sem lock para tabelas InnoDB) + `gzip -9` e

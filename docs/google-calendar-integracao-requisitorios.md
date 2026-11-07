@@ -1,6 +1,6 @@
 # Integração com Google Agenda para cessão de requisitórios
 
-Este documento descreve o processo para integrar o sistema Cassio Finance com o Google Agenda, criando um evento quando um requisitório entra na etapa `Cessão Pendente` e o usuário informa a data e hora da cessão.
+Este documento descreve o processo para integrar o sistema Vértice CM com o Google Agenda, criando um evento quando um requisitório entra na etapa `Cessão Pendente` e o usuário informa a data e hora da cessão.
 
 ## Objetivo
 
@@ -28,7 +28,7 @@ Vantagens:
 - O evento fica em uma agenda única, controlada pelo escritório.
 - O sistema precisa ser autorizado uma vez por um administrador.
 - Não depende de cada usuário conectar a própria conta Google.
-- É mais simples para o fluxo atual do Cassio Finance.
+- É mais simples para o fluxo atual do Vértice CM.
 
 ### Opção alternativa: agenda pessoal de cada usuário
 
@@ -104,7 +104,7 @@ Defina estes campos de negócio:
 
 1. Acesse o Google Cloud Console.
 2. Crie um projeto ou use um projeto existente.
-3. Dê um nome claro, por exemplo `Cassio Finance`.
+3. Dê um nome claro, por exemplo `Vértice CM`.
 
 ### 2. Ativar a Google Calendar API
 

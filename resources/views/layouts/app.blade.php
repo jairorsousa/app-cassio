@@ -6,7 +6,8 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'Cassio Finance') }}</title>
+        <title>{{ config('app.name', 'Vértice CM') }}</title>
+        @include('layouts.brand-head')
 
         <style id="accent-vars">{!! \App\Support\UserPreferences::accentCss($prefs['accent']) !!}</style>
         <script>

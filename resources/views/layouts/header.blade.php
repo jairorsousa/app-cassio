@@ -15,9 +15,9 @@
             @if ($brandLogo = \App\Support\BrandLogo::url(auth()->user()))
                 <img src="{{ $brandLogo }}" alt="Logo" class="h-9 w-9 shrink-0 rounded-lg object-cover">
             @else
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
+                <x-vertice-logo class="h-9 w-9" />
             @endif
-            <span class="hidden text-sm font-bold text-mono-900 sm:block">Cassio Finance</span>
+            <span class="hidden text-sm font-extrabold tracking-tight text-mono-900 sm:block">Vértice <span class="text-primary-500">CM</span></span>
         </a>
 
         @include('layouts.sidebar')
@@ -104,8 +104,8 @@
         >
             <div class="flex h-16 shrink-0 items-center justify-between border-b border-mono-100 px-4">
                 <span class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-500 text-sm font-bold text-white">CM</span>
-                    <span class="text-sm font-bold text-mono-900">Cassio Finance</span>
+                    <x-vertice-logo class="h-9 w-9" />
+                    <span class="text-sm font-extrabold tracking-tight text-mono-900">Vértice <span class="text-primary-500">CM</span></span>
                 </span>
                 <button
                     type="button"

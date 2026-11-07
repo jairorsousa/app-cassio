@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Backup diário do MySQL do Cassio Finance.
+# Backup diário do MySQL do Vértice CM.
 # Roda no host (não em container). Política: gzip + retenção 30 dias.
 #
 # Uso (manual):
