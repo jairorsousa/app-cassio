@@ -100,9 +100,11 @@ document.addEventListener('alpine:init', () => {
         cleanup(() => el.removeEventListener('input', onInput, true));
     });
 
-    // x-money: o que aparece é 1.234,56. O Livewire recebe 1234.56.
+    // x-money: o que aparece é 1.234,56. O Livewire recebe 1234.56 (vazio = '').
+    // x-money.signed aceita valor negativo (ex.: saldo inicial).
     // O valor digitado não volta cru para o campo enquanto a pessoa digita.
-    Alpine.directive('money', (el, {}, { cleanup }) => {
+    Alpine.directive('money', (el, { modifiers }, { cleanup }) => {
+        const allowNegative = modifiers.includes('signed');
         let commitTimer = null;
         let mask;
 
@@ -117,7 +119,7 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
 
-            const modelValue = centsToModel(mask.getCents());
+            const modelValue = mask.isEmpty() ? '' : centsToModel(mask.getCents());
 
             const current = wire.get(binding.expression);
             if (String(current ?? '') !== modelValue) {
@@ -130,12 +132,13 @@ document.addEventListener('alpine:init', () => {
             }
         };
 
-        mask = bindMoneyInput(el, { onChange: syncWire });
+        mask = bindMoneyInput(el, { onChange: syncWire, allowNegative });
         el._moneyMask = mask;
         let disposed = false;
 
         const applyExternal = (value) => {
-            const incoming = Math.abs(parseToCents(value));
+            const parsed = parseToCents(value);
+            const incoming = allowNegative ? parsed : Math.abs(parsed);
             if (mask.isTouched() && document.activeElement === el && incoming !== mask.getCents()) {
                 queueMicrotask(syncWire);
                 return;
@@ -175,7 +178,7 @@ document.addEventListener('alpine:init', () => {
         const onSubmit = () => {
             syncWire();
             if (!wireModelBinding(el)) {
-                el.value = mask.getCents() === 0 ? '' : centsToModel(mask.getCents());
+                el.value = mask.isEmpty() ? '' : centsToModel(mask.getCents());
             }
         };
 

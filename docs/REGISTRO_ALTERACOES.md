@@ -667,3 +667,10 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
   2. Token legado: `CHATWOOT_WEBHOOK_TOKEN` (header/query) — preservado; não removido.
 - Sem token **e** sem secret → 503 `webhook_auth_unset`. Secret vazio = assinatura desligada (token continua válido).
 - Inbox fail-closed 15 e demais regras de SAIR inalteradas. **Não** gravamos `CHATWOOT_WEBHOOK_SECRET` nesta etapa (colar depois via clipboard no `.env` + `config:cache`). Token tmp e `CHATWOOT_WEBHOOK_TOKEN` mantidos. Sem ação no Chatwoot/nginx_msa.
+
+## 07/11/2026 — Máscara de valores em reais (padrão brasileiro)
+
+- `x-money` reescrito (`resources/js/money-mask.js`): digitação livre com vírgula (o ponto do teclado vira vírgula), milhar com ponto, até 2 casas; colar `1234,56`, `1.234,56`, `R$ 1.234,56`, `1234.56` funciona. Ao sair do campo mostra `1.234,56`; o Livewire recebe `1234.56` (vazio = vazio). `x-money.signed` aceita negativo.
+- Novo `App\Support\Money::normalize()` no backend.
+- Campos que passaram a usar a máscara: Bens (aquisição, atual, venda), Despesas de processos, Pagamento de fatura, Rateio por valor nos lançamentos, Valor fixo de corretor (lançamento, comissão e recebimento de processo). Saldo inicial e saldo do extrato aceitam negativo.
+- Testes: `tests/Unit/MoneyTest.php`, `tests/Feature/MoneyInputsTest.php`, `tests/js/money-mask.test.mjs`. Build anterior: `/root/app-cassio-backups/mascaras-public-build-antes-20261107`.

@@ -57,6 +57,7 @@ new class extends Component {
 
     public function save(BrokerProcessExpenseService $service): void
     {
+        $this->amount = \App\Support\Money::normalize($this->amount);
         $createAnother = $this->createAnotherAfterSave;
         $this->createAnotherAfterSave = false;
         $this->formSuccessMessage = null;
@@ -118,7 +119,7 @@ new class extends Component {
         <form wire:submit="save" class="space-y-4 rounded-xl border border-primary-100 bg-primary-50 p-4">
             <h4 class="font-semibold text-mono-900">{{ $editingId ? 'Editar despesa de processos' : 'Nova despesa de processos' }}</h4>
             <div class="grid gap-4 sm:grid-cols-2">
-                <x-jr.input label="Valor (R$) *" name="amount" type="number" min="0.01" step="0.01" wire:model="amount" required />
+                <x-jr.input label="Valor (R$) *" name="amount" type="text" x-money wire:model="amount" required />
                 <x-jr.input label="Data *" name="date" type="date" wire:model="date" required />
                 <x-jr.input label="Descrição *" name="description" wire:model="description" maxlength="200" required />
                 <x-jr.input label="Processo (número)" name="process_ref" wire:model="process_ref" x-process-number maxlength="120" />

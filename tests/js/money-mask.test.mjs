@@ -1,0 +1,15 @@
+import { parseToCents as p, sanitizeTyped as s, formatCents as f, centsToModel as m } from '../../resources/js/money-mask.js';
+import assert from 'node:assert';
+const cases = {'1234,56':123456,'1.234,56':123456,'R$ 1.234,56':123456,'R$\u00a01.234,56':123456,'1234.56':123456,'1,234.56':123456,'1234':123400,'1.234':123400,'1.234.567':123456700,'0.5':50,'12,3':1230,'-1.234,56':-123456,'1234.567':123457,'0,01':1,'':0,'abc':0,'100.000,00':10000000};
+for (const [k,v] of Object.entries(cases)) assert.strictEqual(p(k), v, k);
+assert.strictEqual(s('1234,5').display, '1.234,5');
+assert.strictEqual(s('1.2345').display, '12.345');
+assert.strictEqual(s('12,345').display, '12,34');
+assert.strictEqual(s('12,3,4').display, '12,34');
+assert.strictEqual(s(',5').display, '0,5');
+assert.strictEqual(s('007').display, '7');
+assert.strictEqual(s('-50', {allowNegative:true}).cents, -5000);
+assert.strictEqual(s('-50').cents, 5000);
+assert.strictEqual(f(123456), '1.234,56'); assert.strictEqual(f(-5), '-0,05');
+assert.strictEqual(m(123456), '1234.56'); assert.strictEqual(m(-5), '-0.05');
+console.log('JS money-mask OK');

@@ -1179,7 +1179,11 @@ new #[Layout('layouts.app')] class extends Component
                                             </select>
                                             @error('launch_mode') <p class="mt-1 text-xs text-error">{{ $message }}</p> @enderror
                                         </div>
-                                        <x-jr.input label="{{ $launch_mode === 'percent' ? 'Percentual *' : 'Valor fixo *' }}" icon="{{ $launch_mode === 'percent' ? 'percent' : 'attach_money' }}" type="text" name="launch_amount" wire:model="launch_amount" />
+                                        @if ($launch_mode === 'percent')
+                                            <x-jr.input label="Percentual *" icon="percent" type="text" inputmode="decimal" name="launch_amount" wire:model="launch_amount" wire:key="launch-amount-percent" />
+                                        @else
+                                            <x-jr.input label="Valor fixo *" icon="attach_money" type="text" name="launch_amount" x-money wire:model="launch_amount" wire:key="launch-amount-fixed" />
+                                        @endif
                                         @if ($launch_mode === 'percent')
                                             <x-jr.input label="Base de cálculo *" icon="attach_money" type="text" name="launch_base_amount" x-money wire:model="launch_base_amount" />
                                         @endif

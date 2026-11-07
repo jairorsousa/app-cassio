@@ -55,9 +55,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function pay(InvoicePaymentService $service): void
     {
-        $this->payment_amount = str_contains($this->payment_amount, ',')
-            ? str_replace(['.', ','], ['', '.'], $this->payment_amount)
-            : $this->payment_amount;
+        $this->payment_amount = \App\Support\Money::normalize($this->payment_amount);
         $data = $this->validate([
             'payment_account_id' => 'required|exists:bank_accounts,id',
             'payment_amount' => 'required|numeric|min:0.01',
@@ -232,7 +230,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @error('payment_account_id') <p class="text-xs font-medium text-error">{{ $message }}</p> @enderror
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
-                            <x-fx.input label="Valor * (total ou parcial)" type="text" wire:model="payment_amount" />
+                            <x-fx.input label="Valor * (total ou parcial)" type="text" x-money wire:model="payment_amount" />
                             @error('payment_amount') <p class="mt-1 text-xs font-medium text-error">{{ $message }}</p> @enderror
                         </div>
                         <div>

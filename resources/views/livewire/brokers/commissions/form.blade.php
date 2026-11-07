@@ -53,6 +53,8 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(BrokerCommissionService $service)
     {
+        $this->rate_or_amount = \App\Support\Money::normalize($this->rate_or_amount);
+        $this->base_amount = \App\Support\Money::normalize($this->base_amount);
         $createAnother = $this->createAnotherAfterSave;
         $this->createAnotherAfterSave = false;
         $this->formSuccessMessage = null;
@@ -129,7 +131,11 @@ new #[Layout('layouts.app')] class extends Component {
                         <option value="fixed">Valor fixo</option>
                     </select>
                 </div>
-                <x-fx.input label="{{ $mode === 'percent' ? 'Percentual *' : 'Valor fixo *' }}" type="text" wire:model="rate_or_amount" />
+                @if ($mode === 'percent')
+                    <x-fx.input label="Percentual *" type="text" inputmode="decimal" wire:model="rate_or_amount" wire:key="rate-percent" />
+                @else
+                    <x-fx.input label="Valor fixo *" type="text" x-money wire:model="rate_or_amount" wire:key="rate-fixed" />
+                @endif
                 @if ($mode === 'percent')
                     <x-fx.input label="Base de cálculo *" type="text" x-money wire:model="base_amount" />
                 @endif

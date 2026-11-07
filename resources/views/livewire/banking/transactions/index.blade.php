@@ -1447,7 +1447,7 @@ new #[Layout('layouts.app')] class extends Component
                                             <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" max="100" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.percentage" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
                                             <p class="mt-1 text-xs text-mono-600">R$ {{ number_format((float) ($allocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.') }}</p>
                                         @else
-                                            <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
+                                            <input id="allocation-amount-{{ $row['key'] }}" type="text" x-money wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
                                         @endif
                                     </div>
                                     <button type="button" wire:click="removeAllocationRow({{ $index }})" @disabled(count($allocationRows) <= 2) aria-label="Remover linha {{ $index + 1 }}" class="flex h-10 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined">close</span></button>
@@ -1595,7 +1595,7 @@ new #[Layout('layouts.app')] class extends Component
                                                         @if ($formAllocationMode === 'percentage')
                                                             <x-jr.input label="Percentual (%)" :name="'formAllocationRows.'.$index.'.percentage'" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.percentage" :helper="'R$ '.number_format((float) ($formAllocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.')" required />
                                                         @else
-                                                            <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="number" min="0.01" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
+                                                            <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="text" x-money wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
                                                         @endif
                                                         <button type="button" wire:click="removeFormAllocationRow({{ $index }})" @disabled(count($formAllocationRows) <= 2) aria-label="Remover categoria {{ $index + 1 }}" class="flex h-12 w-10 items-center justify-center rounded-xl text-mono-500 hover:bg-mono-100 disabled:opacity-30"><span class="material-icons-outlined" aria-hidden="true">close</span></button>
                                                     </div>

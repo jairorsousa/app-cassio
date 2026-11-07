@@ -1,60 +1,69 @@
-// Máscara de reais no estilo centavos: cada dígito entra pela direita.
-// 1 → 0,01, 12 → 0,12, 123 → 1,23, 1234 → 12,34.
+// Máscara de reais no padrão brasileiro: 1.234,56.
+// Digitação livre: números entram normalmente e a vírgula (ou o ponto do teclado)
+// marca os centavos. Colar "1234,56", "1.234,56", "R$ 1.234,56" ou "1234.56" funciona.
 
-const MAX_DIGITS = 15;
+const MAX_INTEGER_DIGITS = 13;
+
+function groupThousands(integers) {
+    return integers.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
 
 export function formatCents(cents) {
-    const amount = Math.abs(Number.isFinite(cents) ? cents : 0);
+    const amount = Math.abs(Number.isFinite(cents) ? Math.round(cents) : 0);
     const decimals = String(amount % 100).padStart(2, '0');
     const integers = String(Math.floor(amount / 100));
-    const grouped = integers.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const sign = cents < 0 ? '-' : '';
 
-    return `${grouped},${decimals}`;
+    return `${sign}${groupThousands(integers)},${decimals}`;
 }
 
 export function centsToModel(cents) {
-    const amount = Math.abs(Number.isFinite(cents) ? cents : 0);
+    const amount = Math.abs(Number.isFinite(cents) ? Math.round(cents) : 0);
     const decimals = String(amount % 100).padStart(2, '0');
     const integers = String(Math.floor(amount / 100));
+    const sign = cents < 0 ? '-' : '';
 
-    return `${integers}.${decimals}`;
+    return `${sign}${integers}.${decimals}`;
 }
 
+// Entende os formatos comuns: 1234,56 · 1.234,56 · R$ 1.234,56 · 1234.56 · 1,234.56 · 1234
 export function parseToCents(value) {
     if (value === null || value === undefined) {
         return 0;
     }
 
-    let text = String(value).trim().replace(/\s/g, '').replace(/R\$/gi, '');
-    if (text === '') {
+    let text = String(value).trim().replace(/\s|\u00a0/g, '').replace(/R\$/gi, '');
+    const negative = /^-|^\(.*\)$|-$/.test(text);
+    text = text.replace(/[^\d.,]/g, '');
+    if (!/\d/.test(text)) {
         return 0;
     }
 
-    const negative = text.startsWith('-');
-    text = text.replace(/-/g, '').replace(/[^\d.,]/g, '');
-    if (text === '' || !/\d/.test(text)) {
-        return 0;
-    }
+    const lastComma = text.lastIndexOf(',');
+    const lastDot = text.lastIndexOf('.');
+    let integers = text;
+    let fraction = '';
 
-    let integers;
-    let fraction;
-
-    if (text.includes(',')) {
-        const [whole, frac = ''] = text.replace(/\./g, '').split(',');
-        integers = whole;
-        fraction = frac;
-    } else if (text.includes('.')) {
-        const parts = text.split('.');
+    if (lastComma !== -1 && lastDot !== -1) {
+        // O separador que aparece por último é o decimal.
+        const decimalAt = Math.max(lastComma, lastDot);
+        integers = text.slice(0, decimalAt);
+        fraction = text.slice(decimalAt + 1);
+    } else if (lastComma !== -1) {
+        const parts = text.split(',');
         if (parts.length > 2) {
             integers = parts.join('');
-            fraction = '';
         } else {
-            integers = parts[0];
-            fraction = parts[1];
+            [integers, fraction] = parts;
         }
-    } else {
-        integers = text;
-        fraction = '';
+    } else if (lastDot !== -1) {
+        const parts = text.split('.');
+        // "1.234.567" ou "1.234" (exatamente 3 casas) = milhar; "1234.56" = decimal.
+        if (parts.length > 2 || (parts[1].length === 3 && parts[0].length <= 3 && /^[1-9]/.test(parts[0]))) {
+            integers = parts.join('');
+        } else {
+            [integers, fraction] = parts;
+        }
     }
 
     const cents = digitsToCents(integers, fraction);
@@ -62,233 +71,178 @@ export function parseToCents(value) {
     return negative ? -cents : cents;
 }
 
-export function appendDigit(cents, digit) {
-    if (!/^\d$/.test(digit)) {
-        return normalizeCents(cents);
-    }
-
-    const current = String(normalizeCents(cents));
-    if (current.length >= MAX_DIGITS) {
-        return normalizeCents(cents);
-    }
-
-    const next = Number.parseInt(current + digit, 10);
-
-    return String(next).length > MAX_DIGITS ? normalizeCents(cents) : next;
-}
-
-export function backspaceCents(cents) {
-    return Math.floor(normalizeCents(cents) / 10);
-}
-
-export function centsFromDigits(text) {
-    const digits = String(text ?? '').replace(/\D/g, '').slice(0, MAX_DIGITS);
-
-    return digits ? Number.parseInt(digits, 10) : 0;
-}
-
 function digitsToCents(integers, fraction) {
-    let whole = String(integers ?? '').replace(/\D/g, '');
+    let whole = String(integers ?? '').replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(-MAX_INTEGER_DIGITS) || '0';
     let frac = String(fraction ?? '').replace(/\D/g, '');
-
-    if (whole === '') {
-        whole = '0';
-    }
+    let roundUp = false;
 
     if (frac.length > 2) {
-        const roundUp = frac[2] >= '5';
+        roundUp = frac[2] >= '5';
         frac = frac.slice(0, 2);
-        if (roundUp) {
-            const rounded = BigInt(whole) * 100n + BigInt(frac || '0') + 1n;
-            return clampCents(rounded);
+    }
+    frac = frac.padEnd(2, '0');
+
+    return Number(BigInt(whole) * 100n + BigInt(frac) + (roundUp ? 1n : 0n));
+}
+
+// Limpa o texto digitado: só números e uma vírgula, no máximo 2 casas, milhar com ponto.
+// Devolve o texto formatado e quantos caracteres "úteis" (dígitos/vírgula) ficam antes do cursor.
+export function sanitizeTyped(raw, { allowNegative = false } = {}) {
+    const text = String(raw ?? '');
+    const negative = allowNegative && text.trim().startsWith('-');
+    let integers = '';
+    let fraction = '';
+    let hasComma = false;
+
+    for (const ch of text) {
+        if (/\d/.test(ch)) {
+            if (hasComma) {
+                if (fraction.length < 2) fraction += ch;
+            } else if (integers.length < MAX_INTEGER_DIGITS) {
+                integers += ch;
+            }
+        } else if (ch === ',' && !hasComma) {
+            hasComma = true;
         }
     }
 
-    if (frac.length === 0) {
-        frac = '00';
-    } else if (frac.length === 1) {
-        frac = `${frac}0`;
+    integers = integers.replace(/^0+(?=\d)/, '');
+    if (hasComma && integers === '') {
+        integers = '0';
     }
 
-    return clampCents(BigInt(whole) * 100n + BigInt(frac));
+    const display = (negative ? '-' : '') + groupThousands(integers) + (hasComma ? `,${fraction}` : '');
+    const empty = integers === '' && !hasComma;
+
+    return { display, empty, cents: empty ? 0 : (negative ? -1 : 1) * digitsToCents(integers, fraction) };
 }
 
-function clampCents(value) {
-    const max = 10n ** BigInt(MAX_DIGITS) - 1n;
-    const clamped = value > max ? max : value;
-
-    return Number(clamped);
+function significantBefore(text, position) {
+    return (text.slice(0, position).match(/[\d,-]/g) || []).length;
 }
 
-function normalizeCents(cents) {
-    const amount = Math.abs(Number.isFinite(cents) ? cents : 0);
+function positionAfterSignificant(text, count) {
+    if (count <= 0) return 0;
+    let seen = 0;
+    for (let i = 0; i < text.length; i += 1) {
+        if (/[\d,-]/.test(text[i])) {
+            seen += 1;
+            if (seen === count) return i + 1;
+        }
+    }
 
-    return amount > Number(10n ** BigInt(MAX_DIGITS) - 1n)
-        ? Number(10n ** BigInt(MAX_DIGITS) - 1n)
-        : amount;
+    return text.length;
 }
 
-export function bindMoneyInput(el, { onChange = () => {} } = {}) {
-    const state = {
-        cents: 0,
-        touched: false,
-    };
-    let ignoreNextInput = false;
+export function bindMoneyInput(el, { onChange = () => {}, allowNegative = false } = {}) {
+    const state = { cents: 0, empty: true, touched: false };
 
     el.type = 'text';
-    el.inputMode = 'numeric';
+    el.inputMode = 'decimal';
     el.autocomplete = 'off';
     el.spellcheck = false;
-    el.placeholder = '0,00';
-    el.setAttribute('inputmode', 'numeric');
+    if (!el.getAttribute('placeholder') || /^0[.,]00$/.test(el.getAttribute('placeholder'))) {
+        el.placeholder = '0,00';
+    }
+    el.setAttribute('inputmode', 'decimal');
     el.setAttribute('autocomplete', 'off');
 
-    const placeCursor = () => {
-        if (document.activeElement !== el) {
-            return;
-        }
-
-        const end = el.value.length;
-        try {
-            el.setSelectionRange(end, end);
-        } catch {
-            // Alguns tipos de input não aceitam seleção.
-        }
+    const setCaret = (position) => {
+        if (document.activeElement !== el) return;
+        try { el.setSelectionRange(position, position); } catch { /* sem seleção */ }
     };
 
-    const render = () => {
-        const formatted = formatCents(state.cents);
-        if (el.value !== formatted) {
-            el.value = formatted;
-        }
-        placeCursor();
+    const showFull = () => {
+        el.value = state.empty ? '' : formatCents(state.cents);
     };
 
-    const commit = (cents, { touch = false } = {}) => {
-        state.cents = normalizeCents(cents);
-        if (touch) {
-            state.touched = true;
+    const applyTyped = () => {
+        const caret = el.selectionStart ?? el.value.length;
+        const keep = significantBefore(el.value, caret);
+        const result = sanitizeTyped(el.value, { allowNegative });
+        if (el.value !== result.display) {
+            el.value = result.display;
+            setCaret(positionAfterSignificant(result.display, keep));
         }
-        render();
-        if (touch) {
-            onChange(state.cents);
-        }
+        state.cents = result.cents;
+        state.empty = result.empty;
+        state.touched = true;
+        onChange(state.cents);
     };
 
-    const allSelected = () => {
-        return el.selectionStart === 0 && el.selectionEnd === el.value.length && el.value.length > 0;
-    };
-
-    const insertText = (data, replacing) => {
-        const digits = String(data ?? '').replace(/\D/g, '');
-        if (digits === '') {
-            render();
-            return;
-        }
-
-        if (digits.length > 1) {
-            commit(centsFromDigits(digits), { touch: true });
-            return;
-        }
-
-        const base = replacing ? 0 : state.cents;
-        commit(appendDigit(base, digits), { touch: true });
-    };
-
-    const removeDigit = (replacing) => {
-        commit(replacing ? 0 : backspaceCents(state.cents), { touch: true });
+    const replaceSelection = (text) => {
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        el.value = el.value.slice(0, start) + text + el.value.slice(end);
+        setCaret(start + text.length);
     };
 
     const onBeforeInput = (event) => {
-        if (ignoreNextInput && event.inputType === 'insertFromPaste') {
+        if (event.inputType !== 'insertText' || event.data == null) return;
+        const data = event.data;
+        if (data === '.' || data === ',') {
             event.preventDefault();
-            return;
-        }
-
-        if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
+            if (!el.value.includes(',')) {
+                replaceSelection(',');
+            }
+            applyTyped();
+        } else if (data === '-' && allowNegative) {
             event.preventDefault();
-            render();
-            return;
-        }
-
-        const replacing = allSelected();
-
-        if (event.inputType === 'insertText' && (event.data === null || event.data === undefined)) {
-            return;
-        }
-
-        if (event.inputType === 'insertText' || event.inputType === 'insertReplacementText' || event.inputType === 'insertFromDrop') {
+            const start = el.selectionStart ?? 0;
+            const negative = el.value.startsWith('-');
+            el.value = negative ? el.value.slice(1) : `-${el.value}`;
+            setCaret(Math.max(0, start + (negative ? -1 : 1)));
+            applyTyped();
+        } else if (!/^\d+$/.test(data)) {
             event.preventDefault();
-            swallowFollowingInput();
-            insertText(event.data, replacing);
-            return;
         }
-
-        if (event.inputType === 'deleteContentBackward' || event.inputType === 'deleteContentForward' || event.inputType === 'deleteByCut') {
-            event.preventDefault();
-            swallowFollowingInput();
-            removeDigit(replacing);
-        }
-    };
-
-    const swallowFollowingInput = () => {
-        ignoreNextInput = true;
-        requestAnimationFrame(() => {
-            ignoreNextInput = false;
-        });
     };
 
     const onInput = (event) => {
+        // Capturado antes do wire:model para o Livewire nunca ler o texto cru.
         event.stopImmediatePropagation();
-
-        if (ignoreNextInput) {
-            ignoreNextInput = false;
-            render();
-            return;
-        }
-
-        const replacing = false;
-        if (event.inputType === 'insertText' || event.inputType === 'insertReplacementText') {
-            insertText(event.data, replacing);
-            return;
-        }
-
-        if (event.inputType === 'deleteContentBackward' || event.inputType === 'deleteContentForward') {
-            removeDigit(false);
-            return;
-        }
-
-        if (event.inputType === 'insertFromPaste' || event.inputType === 'insertFromDrop') {
-            insertText(event.data, true);
-            return;
-        }
-
-        render();
+        applyTyped();
     };
 
     const onPaste = (event) => {
         event.preventDefault();
-        swallowFollowingInput();
-        insertText(event.clipboardData?.getData('text') ?? '', true);
+        const pasted = event.clipboardData?.getData('text') ?? '';
+        if (!/\d/.test(pasted)) return;
+        const cents = parseToCents(pasted);
+        state.cents = allowNegative ? cents : Math.abs(cents);
+        state.empty = false;
+        state.touched = true;
+        showFull();
+        setCaret(el.value.length);
+        onChange(state.cents);
     };
 
     const onFocus = () => {
-        requestAnimationFrame(placeCursor);
+        if (!state.empty && state.cents === 0) {
+            el.value = '';
+            state.empty = true;
+        }
     };
 
-    const onKeyUp = (event) => {
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
-            placeCursor();
-        }
+    const onBlur = () => {
+        showFull();
     };
 
     el.addEventListener('beforeinput', onBeforeInput);
     el.addEventListener('input', onInput, true);
     el.addEventListener('paste', onPaste);
     el.addEventListener('focus', onFocus);
-    el.addEventListener('keyup', onKeyUp);
+    el.addEventListener('blur', onBlur);
 
-    commit(parseToCents(el.value));
+    const setFromExternal = (value) => {
+        const blank = value === null || value === undefined || String(value).trim() === '';
+        const cents = blank ? 0 : parseToCents(value);
+        state.cents = allowNegative ? cents : Math.abs(cents);
+        state.empty = blank;
+        showFull();
+    };
+
+    setFromExternal(el.value);
 
     return {
         cleanup() {
@@ -296,17 +250,11 @@ export function bindMoneyInput(el, { onChange = () => {} } = {}) {
             el.removeEventListener('input', onInput, true);
             el.removeEventListener('paste', onPaste);
             el.removeEventListener('focus', onFocus);
-            el.removeEventListener('keyup', onKeyUp);
+            el.removeEventListener('blur', onBlur);
         },
-        getCents() {
-            return state.cents;
-        },
-        isTouched() {
-            return state.touched;
-        },
-        setFromExternal(value) {
-            state.cents = Math.abs(parseToCents(value));
-            render();
-        },
+        getCents: () => state.cents,
+        isEmpty: () => state.empty,
+        isTouched: () => state.touched,
+        setFromExternal,
     };
 }

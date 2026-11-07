@@ -292,7 +292,7 @@ new #[Layout('layouts.app')] class extends Component
                                         </select>
                                         @error('type') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                                     </div>
-                                    <x-jr.input label="Saldo inicial *" icon="payments" name="initial_balance" wire:model="initial_balance" x-money required />
+                                    <x-jr.input label="Saldo inicial *" icon="payments" name="initial_balance" wire:model="initial_balance" x-money.signed required />
                                     <div>
                                         <x-jr.input label="Data do saldo inicial" icon="calendar_month" name="initial_balance_date" type="date" wire:model="initial_balance_date" />
                                         <p class="mt-1 text-xs text-mono-600">Use o saldo do extrato nessa data. Lançamentos anteriores viram histórico: ficam nos módulos, mas não alteram o saldo nem o resultado.</p>
@@ -361,7 +361,7 @@ new #[Layout('layouts.app')] class extends Component
                         @error('checkAccountId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
                     </div>
                     <x-jr.input label="Data do extrato *" icon="calendar_month" name="checkDate" type="date" wire:model="checkDate" required />
-                    <x-jr.input label="Saldo no extrato *" icon="payments" name="checkStatement" wire:model="checkStatement" x-money required />
+                    <x-jr.input label="Saldo no extrato *" icon="payments" name="checkStatement" wire:model="checkStatement" x-money.signed required />
                     @if ($checkResult)
                         <div class="rounded-xl border border-mono-100 bg-mono-50 p-4 text-sm" data-test="check-result">
                             <p><strong>{{ $checkResult['account'] }}</strong> em {{ $checkResult['date'] }}</p>

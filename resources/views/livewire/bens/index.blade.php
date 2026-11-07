@@ -76,6 +76,9 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(): void
     {
+        foreach (['acquisition_value', 'current_value', 'sale_value'] as $f) {
+            $this->{$f} = \App\Support\Money::normalize($this->{$f});
+        }
         $data = $this->validate([
             'kind' => ['required', Rule::in(array_keys(Property::KINDS))],
             'description' => ['required', 'string', 'max:255'],
@@ -207,14 +210,14 @@ new #[Layout('layouts.app')] class extends Component {
                 <label class="flex flex-col gap-1">Titular<select wire:model="owner" class="{{ $in }}"><option value="">Não informado</option>@foreach (\App\Domains\Assets\Models\Property::OWNERS as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></label>
                 <label class="flex flex-col gap-1">Conta vinculada (opcional)<select wire:model="bank_account_id" class="{{ $in }}"><option value="">Nenhuma</option>@foreach ($accounts as $a)<option value="{{ $a->id }}">{{ $a->name }}</option>@endforeach</select></label>
                 <label class="flex flex-col gap-1">Data de aquisição<input type="date" wire:model="acquired_at" class="{{ $in }}" /></label>
-                <label class="flex flex-col gap-1">Valor de aquisição<input inputmode="decimal" wire:model="acquisition_value" class="{{ $in }}" placeholder="0.00" />@error('acquisition_value')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
+                <label class="flex flex-col gap-1">Valor de aquisição<input type="text" x-money wire:model="acquisition_value" class="{{ $in }}" placeholder="0,00" />@error('acquisition_value')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
                 <span></span>
-                <label class="flex flex-col gap-1">Valor atual<input inputmode="decimal" wire:model="current_value" class="{{ $in }}" placeholder="0.00" />@error('current_value')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
+                <label class="flex flex-col gap-1">Valor atual<input type="text" x-money wire:model="current_value" class="{{ $in }}" placeholder="0,00" />@error('current_value')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
                 <label class="flex flex-col gap-1">Data do valor atual<input type="date" wire:model="current_value_date" class="{{ $in }}" /></label>
                 <label class="flex flex-col gap-1">Situação<select wire:model.live="status" class="{{ $in }}"><option value="active">Ativo</option><option value="sold">Vendido</option></select></label>
                 @if ($status === 'sold')
                     <label class="flex flex-col gap-1">Data da venda<input type="date" wire:model="sold_at" class="{{ $in }}" />@error('sold_at')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
-                    <label class="flex flex-col gap-1">Valor da venda<input inputmode="decimal" wire:model="sale_value" class="{{ $in }}" /></label>
+                    <label class="flex flex-col gap-1">Valor da venda<input type="text" x-money wire:model="sale_value" class="{{ $in }}" placeholder="0,00" /></label>
                     <span></span>
                 @endif
                 <label class="flex flex-col gap-1 md:col-span-2">Observações<textarea wire:model="notes" rows="2" class="rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2 py-1"></textarea></label>
