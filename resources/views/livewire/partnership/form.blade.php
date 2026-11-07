@@ -42,6 +42,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save()
     {
+        $this->participation_percentage = \App\Support\Money::decimal($this->participation_percentage, 3);
         $data = $this->validate();
         $payload = [
             'name' => $data['name'],
@@ -76,7 +77,7 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.input label="Nome" wire:model="name" required />
             <div class="grid grid-cols-2 gap-sm">
                 <x-fx.input label="CNPJ" wire:model="cnpj" />
-                <x-fx.input label="Participação (%)" type="number" step="0.001" min="0" max="100" wire:model="participation_percentage" />
+                <x-fx.input label="Participação (%)" type="text" x-decimal="3" wire:model="participation_percentage" />
             </div>
             <x-fx.input label="Data de entrada" type="date" wire:model="joined_at" />
             <label class="flex items-center gap-xs text-sm">

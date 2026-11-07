@@ -308,6 +308,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(): void
     {
+        $this->quantity = \App\Support\Money::decimal($this->quantity, 6);
         $createAnother = $this->createAnotherAfterSave;
         $this->createAnotherAfterSave = false;
         $this->formSuccessMessage = null;
@@ -1045,7 +1046,7 @@ new #[Layout('layouts.app')] class extends Component {
                 </div>
             @else
                 <div class="grid grid-cols-2 gap-4 md:col-span-2">
-                    <x-jr.input label="Quantidade" type="number" step="0.000001" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
+                    <x-jr.input label="Quantidade" type="text" x-decimal="6" name="quantity" icon="numbers" wire:model.live.debounce.300ms="quantity" />
                     <x-jr.input
                         label="Preço unitário"
                         type="text"

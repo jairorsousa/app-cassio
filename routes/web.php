@@ -68,6 +68,7 @@ Route::middleware(['auth', 'verified', 'inactivity'])->prefix('divisoes')->name(
     Volt::route('/', 'divisions.index')->name('index');
     Volt::route('/{group}', 'divisions.show')->name('show')->whereNumber('group');
     Route::get('/despesas/{expense}/comprovante', \App\Http\Controllers\DivisionReceiptController::class)->name('receipt')->whereNumber('expense');
+    Route::get('/{group}/extrato.pdf', \App\Http\Controllers\DivisionStatementPdfController::class)->name('pdf')->whereNumber('group');
 });
 
 Route::middleware(['auth', 'verified', 'inactivity'])->prefix('investments')->name('investments.')->group(function () {

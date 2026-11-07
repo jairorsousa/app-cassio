@@ -40,6 +40,14 @@ new #[Layout('layouts.app')] class extends Component
     /** @var array<int, array{on: bool, value: string}> */
     public array $splitRows = [];
 
+    public ?int $blockedMemberId = null;
+
+    public string $blockedReason = '';
+
+    public string $pdfFrom = '';
+
+    public string $pdfTo = '';
+
     public int $installments = 1;
 
     public string $transactionId = '';
@@ -113,7 +121,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->splitMode = 'equal';
         $this->installments = 1;
         $this->paidBy = (string) ($this->me()?->id ?? '');
-        $this->splitRows = $this->group->members->mapWithKeys(fn ($m) => [$m->id => ['on' => true, 'value' => '']])->all();
+        $this->splitRows = $this->group->members->filter(fn ($m) => $m->active)->mapWithKeys(fn ($m) => [$m->id => ['on' => true, 'value' => '']])->all();
         $this->resetValidation();
     }
 
@@ -129,6 +137,9 @@ new #[Layout('layouts.app')] class extends Component
         abort_unless(auth()->user()->isAdmin() || ($e->created_by === auth()->id() && $e->status === 'pending'), 403);
         $this->resetExpense();
         $this->editingExpenseId = $e->id;
+        foreach ($e->shares as $s) {
+            $this->splitRows[$s->member_id] ??= ['on' => false, 'value' => ''];
+        }
         $this->expenseDescription = $e->description;
         $this->expenseAmount = number_format((float) $e->amount, 2, '.', '');
         $this->expenseDate = $e->date->toDateString();
@@ -268,6 +279,40 @@ new #[Layout('layouts.app')] class extends Component
         $this->notice = 'Participante adicionado.';
     }
 
+    public function removeMember(int $memberId): void
+    {
+        $member = DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId);
+        $this->reset('blockedMemberId', 'blockedReason');
+        if ($reason = $this->service()->removalBlocker($member)) {
+            $this->blockedMemberId = $member->id;
+            $this->blockedReason = $reason;
+
+            return;
+        }
+        try {
+            $this->service()->removeMember(auth()->user(), $member);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->notice = $member->name.' foi removido do grupo.';
+    }
+
+    public function setMemberActive(int $memberId, bool $active): void
+    {
+        try {
+            $member = DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId);
+            $this->service()->setMemberActive(auth()->user(), $member, $active);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->reset('blockedMemberId', 'blockedReason');
+        $this->notice = $active ? $member->name.' foi reativado.' : $member->name.' foi desativado: não aparece em novas despesas, e o histórico continua.';
+    }
+
     public function invite(int $memberId): void
     {
         try {
@@ -323,6 +368,14 @@ new #[Layout('layouts.app')] class extends Component
             'invites' => $user->isAdmin() ? \App\Models\UserInvitation::whereIn('email', $members->pluck('email')->filter()->map(fn ($e) => mb_strtolower($e)))->whereNull('accepted_at')->orderBy('id')->get()->keyBy('email') : collect(),
             'me' => $me,
             'members' => $members,
+            'formMembers' => $members->filter(function ($m) {
+                if ($m->active) {
+                    return true;
+                }
+                $e = $this->editingExpenseId ? DivisionExpense::with('shares')->find($this->editingExpenseId) : null;
+
+                return $e && ($e->paid_by_member_id === $m->id || $e->shares->contains('member_id', $m->id));
+            }),
             'net' => $net,
             'transfers' => $service->simplify($net),
             'expenses' => $this->group->expenses()->with('payer', 'shares.member', 'audits.user', 'creator', 'transaction')
@@ -395,12 +448,29 @@ new #[Layout('layouts.app')] class extends Component
             @foreach ($members as $m)
                 <div class="flex flex-col gap-1 border-b border-mono-100 py-2 text-sm last:border-0 sm:flex-row sm:items-center sm:justify-between" wire:key="m-{{ $m->id }}">
                     <span class="min-w-0"><strong>{{ $m->name }}</strong> <span class="text-mono-600">{{ $m->email }}</span>
+                        @unless ($m->active)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs text-mono-600" data-member-inactive>Desativado</span>@endunless
                         @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif
                         @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
                     @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email)
                         <button type="button" class="text-xs text-primary-500" wire:click="invite({{ $m->id }})" wire:confirm="Gerar um novo link para {{ $m->name }}? O link anterior deixa de valer." data-invite-member>Gerar link de convite</button>
                     @endif
+                    @if ($isAdmin && ! $m->is_owner)
+                        <span class="flex gap-3 text-xs">
+                            @if ($m->active)
+                                <button type="button" class="text-error" wire:click="removeMember({{ $m->id }})" wire:confirm="Remover {{ $m->name }} deste grupo?" data-remove-member>Remover</button>
+                            @else
+                                <button type="button" class="text-primary-500" wire:click="setMemberActive({{ $m->id }}, true)" data-reactivate-member>Reativar</button>
+                            @endif
+                        </span>
+                    @endif
                 </div>
+                @if ($blockedMemberId === $m->id)
+                    <div class="my-2 rounded-xl border border-mono-200 bg-mono-100 p-3 text-xs" data-remove-blocked>
+                        <p class="mb-2">{{ $blockedReason }}</p>
+                        <button type="button" class="fx-btn fx-btn--standard" wire:click="setMemberActive({{ $m->id }}, false)" data-deactivate-member>Desativar participante</button>
+                        <button type="button" class="ml-2 text-mono-600" wire:click="$set('blockedMemberId', null)">Cancelar</button>
+                    </div>
+                @endif
             @endforeach
             @if ($inviteLink)
                 <div class="mt-3 rounded-xl border border-primary-100 bg-primary-100 p-3 text-sm" x-data>
@@ -457,7 +527,14 @@ new #[Layout('layouts.app')] class extends Component
     </x-fx.card>
 
     <x-fx.card data-statement>
-        <h3 class="mb-3 text-fs-16 font-semibold">Extrato do grupo</h3>
+        <div class="mb-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <h3 class="text-fs-16 font-semibold">Extrato do grupo</h3>
+            <div class="flex flex-wrap items-end gap-2 text-xs" data-pdf-filter>
+                <label>De<input type="date" wire:model.live="pdfFrom" class="ml-1 h-9 rounded-xl border-mono-200 text-xs"></label>
+                <label>Até<input type="date" wire:model.live="pdfTo" class="ml-1 h-9 rounded-xl border-mono-200 text-xs"></label>
+                <a href="{{ route('divisions.pdf', array_filter(['group' => $group->id, 'de' => $pdfFrom, 'ate' => $pdfTo])) }}" class="fx-btn fx-btn--standard" data-pdf-link><span class="material-icons-outlined text-[18px]">picture_as_pdf</span> Baixar PDF</a>
+            </div>
+        </div>
         <div class="overflow-x-auto">
             <table class="w-full text-left text-xs">
                 <thead><tr class="border-b border-mono-100 text-mono-600"><th class="py-2">Data</th><th>Tipo</th><th>Descrição</th><th class="text-right">Valor</th>@foreach ($members as $m)<th class="text-right">{{ $m->name }}</th>@endforeach</tr></thead>
@@ -497,7 +574,7 @@ new #[Layout('layouts.app')] class extends Component
                             <div><label class="mb-2 block text-sm font-medium text-mono-600">Categoria</label>
                                 <select wire:model="expenseCategory" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach (\App\Domains\Divisions\Models\DivisionExpense::CATEGORIES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></div>
                             <div><label class="mb-2 block text-sm font-medium text-mono-600">Quem pagou *</label>
-                                <select wire:model.live="paidBy" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach ($members as $m)<option value="{{ $m->id }}">{{ $m->name }}</option>@endforeach</select>
+                                <select wire:model.live="paidBy" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach ($formMembers as $m)<option value="{{ $m->id }}">{{ $m->name }}</option>@endforeach</select>
                                 @error('paidBy')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror</div>
                             <div><label class="mb-2 block text-sm font-medium text-mono-600">Como dividir</label>
                                 <select wire:model.live="splitMode" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach (\App\Domains\Divisions\Models\DivisionExpense::MODES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></div>
@@ -505,7 +582,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <x-jr.input label="Parcelas" icon="view_week" type="number" min="1" max="60" name="installments" wire:model="installments" helper="1 = sem parcelamento. Cada parcela cai um mês depois." />
                             @endunless
                             <div class="md:col-span-2 rounded-xl border border-mono-100 p-3" data-split-rows>
-                                @foreach ($members as $m)
+                                @foreach ($formMembers as $m)
                                     <div class="flex items-center justify-between gap-3 py-1 text-sm" wire:key="sr-{{ $m->id }}-{{ $splitMode }}">
                                         @if ($splitMode === 'equal')
                                             <label class="flex items-center gap-2"><input type="checkbox" wire:model.live="splitRows.{{ $m->id }}.on"> {{ $m->name }}</label>
@@ -514,7 +591,7 @@ new #[Layout('layouts.app')] class extends Component
                                             @if ($splitMode === 'amount')
                                                 <input type="text" x-money wire:model.live.debounce.400ms="splitRows.{{ $m->id }}.value" class="h-10 w-40 rounded-xl border-mono-200 text-right text-sm">
                                             @else
-                                                <input type="text" inputmode="decimal" wire:model.live.debounce.400ms="splitRows.{{ $m->id }}.value" placeholder="{{ $splitMode === 'percent' ? '%' : 'cotas' }}" class="h-10 w-40 rounded-xl border-mono-200 text-right text-sm">
+                                                <input type="text" x-decimal="{{ $splitMode === 'percent' ? 3 : 4 }}" wire:model.live.debounce.400ms="splitRows.{{ $m->id }}.value" placeholder="{{ $splitMode === 'percent' ? '%' : 'cotas' }}" class="h-10 w-40 rounded-xl border-mono-200 text-right text-sm">
                                             @endif
                                         @endif
                                     </div>

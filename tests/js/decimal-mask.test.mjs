@@ -1,0 +1,18 @@
+import assert from 'node:assert';
+import { parseDecimal as p, formatDecimal as f, sanitizeDecimalTyped as s } from '../../resources/js/decimal-mask.js';
+assert.strictEqual(p('12,5'), '12.5');
+assert.strictEqual(p('12.5'), '12.5');
+assert.strictEqual(p('1.234,567890', 6), '1234.56789');
+assert.strictEqual(p('0,0000015', 6), '0.000002');
+assert.strictEqual(p('33,333', 2), '33.33');
+assert.strictEqual(p('2,5%'), '2.5');
+assert.strictEqual(p(''), '');
+assert.strictEqual(p('100'), '100');
+assert.strictEqual(f('12.5', 2, 2), '12,50');
+assert.strictEqual(f('1234.5', 6, 0), '1.234,5');
+assert.strictEqual(f('', 2, 2), '');
+assert.strictEqual(s('1,23456789', 6).display, '1,234567');
+assert.strictEqual(s('1,23456789', 6).model, '1.234567');
+assert.strictEqual(s('12345', 2).display, '12.345');
+assert.strictEqual(s(',5', 2).model, '0.5');
+console.log('JS decimal-mask OK');

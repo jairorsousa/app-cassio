@@ -96,6 +96,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function save(): void
     {
+        $this->applied_percentage = \App\Support\Money::decimal($this->applied_percentage, 3);
         $data = $this->validate();
         $proportional = round((float) $data['total_amount'] * (float) $data['applied_percentage'] / 100, 2);
 
@@ -284,7 +285,7 @@ new #[Layout('layouts.app')] class extends Component
                             <x-jr.input label="Data" icon="event" type="date" name="expenseDate" wire:model="expenseDate" />
                             <x-jr.input label="Descrição" icon="description" name="description" wire:model="description" required />
                             <x-jr.input label="Valor total" icon="attach_money" type="text" name="total_amount" x-money wire:model.live="total_amount" />
-                            <x-jr.input label="Participação aplicada (%)" icon="percent" type="number" name="applied_percentage" step="0.001" min="0" max="100" wire:model.live="applied_percentage" />
+                            <x-jr.input label="Participação aplicada (%)" icon="percent" type="text" name="applied_percentage" x-decimal="3" wire:model.live="applied_percentage" />
 
                             <div class="md:col-span-2 rounded-xl border border-primary-100 bg-primary-100 px-4 py-3">
                                 <p class="text-xs font-medium text-mono-600">Valor proporcional para Dr. Cássio</p>

@@ -132,7 +132,7 @@ new #[Layout('layouts.app')] class extends Component {
                     </select>
                 </div>
                 @if ($mode === 'percent')
-                    <x-fx.input label="Percentual *" type="text" inputmode="decimal" wire:model="rate_or_amount" wire:key="rate-percent" />
+                    <x-fx.input label="Percentual *" type="text" x-decimal="2" wire:model="rate_or_amount" wire:key="rate-percent" />
                 @else
                     <x-fx.input label="Valor fixo *" type="text" x-money wire:model="rate_or_amount" wire:key="rate-fixed" />
                 @endif

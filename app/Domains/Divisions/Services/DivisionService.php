@@ -233,15 +233,74 @@ class DivisionService
         if ($member->is_owner) {
             throw ValidationException::withMessages(['divisions' => 'O administrador não sai do grupo.']);
         }
-        $used = DivisionExpense::withTrashed()->where('paid_by_member_id', $member->id)->exists()
-            || \App\Domains\Divisions\Models\DivisionExpenseShare::where('member_id', $member->id)->exists()
-            || DivisionSettlement::withTrashed()->where(fn ($q) => $q->where('from_member_id', $member->id)->orWhere('to_member_id', $member->id))->exists();
-        if ($used) {
-            throw ValidationException::withMessages(['divisions' => $member->name.' já tem despesas ou acertos neste grupo; para não apagar o histórico, não dá para remover.']);
+        if ($reason = $this->removalBlocker($member)) {
+            throw ValidationException::withMessages(['divisions' => $reason]);
         }
         $group = $member->group;
         $this->audit($group, $actor, 'member_removed', ['nome' => $member->name]);
         $member->delete();
+    }
+
+    /** Desativa (ou reativa) o participante: sai das novas despesas, histórico e saldos continuam. */
+    public function setMemberActive(?User $actor, DivisionMember $member, bool $active): void
+    {
+        $actor = $this->assertAdmin($actor);
+        if ($member->is_owner) {
+            throw ValidationException::withMessages(['divisions' => 'O administrador não pode ser desativado.']);
+        }
+        $member->update(['active' => $active]);
+        $this->audit($member->group, $actor, $active ? 'member_reactivated' : 'member_deactivated', ['nome' => $member->name]);
+    }
+
+    /** Pode remover? null = sim; senão, o motivo. */
+    public function removalBlocker(DivisionMember $member): ?string
+    {
+        if ($member->is_owner) {
+            return 'O administrador não sai do grupo.';
+        }
+        $parts = [];
+        if (DivisionExpense::withTrashed()->where('paid_by_member_id', $member->id)->exists()) {
+            $parts[] = 'pagou despesas';
+        }
+        if (\App\Domains\Divisions\Models\DivisionExpenseShare::where('member_id', $member->id)->exists()) {
+            $parts[] = 'tem parte em despesas';
+        }
+        if (DivisionSettlement::withTrashed()->where(fn ($q) => $q->where('from_member_id', $member->id)->orWhere('to_member_id', $member->id))->exists()) {
+            $parts[] = 'tem acertos';
+        }
+
+        return $parts ? $member->name.' '.implode(', ', $parts).' neste grupo. Para não apagar o histórico, não dá para remover; você pode desativar o participante.' : null;
+    }
+
+    /**
+     * Extrato para o PDF: saldo anterior ao período, movimentos do período e saldo final com "quem paga quem".
+     *
+     * @return array{opening: array<int,int>, rows: list<array>, closing: array<int,int>, transfers: list<array>, totals: array}
+     */
+    public function statementReport(DivisionGroup $group, ?string $from, ?string $to): array
+    {
+        $all = $this->statement($group);
+        $opening = [];
+        $closing = [];
+        $rows = [];
+        $totals = ['expenses' => 0, 'settlements' => 0];
+        foreach ($all as $r) {
+            $d = \Illuminate\Support\Carbon::parse($r['date'])->toDateString();
+            if ($to && $d > $to) {
+                break;
+            }
+            $closing = $r['running'];
+            if ($from && $d < $from) {
+                $opening = $r['running'];
+
+                continue;
+            }
+            $rows[] = $r;
+            $totals[$r['kind'] === 'Despesa' ? 'expenses' : 'settlements'] += $r['cents'];
+        }
+        $net = $group->members()->pluck('id')->mapWithKeys(fn ($id) => [$id => (int) ($closing[$id] ?? 0)])->all();
+
+        return ['opening' => $opening, 'rows' => $rows, 'closing' => $net, 'transfers' => $this->simplify($net), 'totals' => $totals];
     }
 
     /**
@@ -367,7 +426,11 @@ class DivisionService
             throw ValidationException::withMessages(['expense' => 'O grupo ainda não foi aprovado.']);
         }
         $group->loadMissing('members');
-        $memberIds = $group->members->pluck('id')->all();
+        // Desativados não entram em despesa nova; na edição, quem já estava na despesa continua aceito.
+        $memberIds = $group->members->filter(fn ($m) => $m->active)->pluck('id')->all();
+        if ($editing) {
+            $memberIds = array_values(array_unique(array_merge($memberIds, [(int) $editing->paid_by_member_id], $editing->shares()->pluck('member_id')->map(fn ($v) => (int) $v)->all())));
+        }
         $description = trim((string) ($data['description'] ?? ''));
         if ($description === '' || mb_strlen($description) > 180) {
             throw ValidationException::withMessages(['expenseDescription' => 'Informe a descrição.']);

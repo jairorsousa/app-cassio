@@ -1444,7 +1444,7 @@ new #[Layout('layouts.app')] class extends Component
                                     <div>
                                         <label class="mb-1 block text-xs font-medium text-mono-600" for="allocation-amount-{{ $row['key'] }}">{{ $allocationMode === 'percentage' ? 'Percentual (%)' : 'Valor (R$)' }}</label>
                                         @if ($allocationMode === 'percentage')
-                                            <input id="allocation-amount-{{ $row['key'] }}" type="number" inputmode="decimal" min="0.01" max="100" step="0.01" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.percentage" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
+                                            <input id="allocation-amount-{{ $row['key'] }}" type="text" x-decimal="2" wire:model.live.debounce.300ms="allocationRows.{{ $index }}.percentage" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
                                             <p class="mt-1 text-xs text-mono-600">R$ {{ number_format((float) ($allocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.') }}</p>
                                         @else
                                             <input id="allocation-amount-{{ $row['key'] }}" type="text" x-money wire:model.live.debounce.300ms="allocationRows.{{ $index }}.amount" class="h-10 w-full rounded-xl border border-mono-200 bg-white px-3 text-sm text-mono-900" placeholder="0,00" required>
@@ -1593,7 +1593,7 @@ new #[Layout('layouts.app')] class extends Component
                                                         <x-banking.category-picker :categories="$activeCategories->where('type', $formType)"
                                                             :selected-id="$row['category_id'] ?? null" :model="'formAllocationRows.'.$index.'.category_id'" :id="'form-allocation-'.$row['key']" :label="'Categoria '.($index + 1)" />
                                                         @if ($formAllocationMode === 'percentage')
-                                                            <x-jr.input label="Percentual (%)" :name="'formAllocationRows.'.$index.'.percentage'" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.percentage" :helper="'R$ '.number_format((float) ($formAllocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.')" required />
+                                                            <x-jr.input label="Percentual (%)" :name="'formAllocationRows.'.$index.'.percentage'" type="text" x-decimal="2" wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.percentage" :helper="'R$ '.number_format((float) ($formAllocationPreviewRows[$index]['amount'] ?? 0), 2, ',', '.')" required />
                                                         @else
                                                             <x-jr.input label="Valor (R$)" :name="'formAllocationRows.'.$index.'.amount'" type="text" x-money wire:model.live.debounce.300ms="formAllocationRows.{{ $index }}.amount" required />
                                                         @endif

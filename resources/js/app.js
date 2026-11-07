@@ -1,5 +1,6 @@
 import './bootstrap';
 import { bindMoneyInput, centsToModel, parseToCents } from './money-mask';
+import { bindDecimalInput } from './decimal-mask';
 import { registerSessionExpiredHandler } from './session-expired';
 
 // --- Diretiva Alpine x-cpf-cnpj ---
@@ -198,6 +199,71 @@ document.addEventListener('alpine:init', () => {
             }
             el._moneyWrapped = false;
             delete el._moneyMask;
+        });
+    });
+
+    // x-decimal="N": percentuais e quantidades com vírgula (N casas). O Livewire recebe "12.5".
+    Alpine.directive('decimal', (el, { expression }, { cleanup }) => {
+        const decimals = Math.max(0, Math.min(8, Number.parseInt(expression, 10) || 2));
+        const pad = decimals <= 3 ? Math.min(decimals, 2) : 0;
+        let commitTimer = null;
+        let mask;
+        let disposed = false;
+
+        const syncWire = () => {
+            const binding = wireModelBinding(el);
+            const wire = binding ? componentWire(el) : null;
+            if (!binding || !wire || binding.expression === '' || !mask || !mask.isTouched()) {
+                return;
+            }
+            const modelValue = mask.getModel();
+            if (String(wire.get(binding.expression) ?? '') !== modelValue) {
+                wire.set(binding.expression, modelValue, false);
+            }
+            if (binding.live) {
+                clearTimeout(commitTimer);
+                commitTimer = setTimeout(() => wire.$commit(), binding.debounce);
+            }
+        };
+
+        mask = bindDecimalInput(el, { decimals, pad, onChange: syncWire });
+        el._decimalMask = mask;
+
+        const wrapModel = () => {
+            if (disposed || !el._x_forceModelUpdate || el._decimalWrapped) return;
+            el._decimalOriginalForce = el._x_forceModelUpdate;
+            el._decimalWrapped = true;
+            el._x_forceModelUpdate = (value) => {
+                if (mask.isTouched() && document.activeElement === el && !mask.matches(value)) {
+                    queueMicrotask(syncWire);
+                    return;
+                }
+                mask.setFromExternal(value);
+            };
+        };
+        wrapModel();
+        queueMicrotask(() => {
+            if (disposed) return;
+            wrapModel();
+            if (mask.isTouched() && document.activeElement === el) return;
+            mask.setFromExternal((el._x_model ? el._x_model.get() : el.value) ?? '');
+        });
+
+        const form = el.closest('form');
+        const onSubmit = () => {
+            syncWire();
+            if (!wireModelBinding(el)) el.value = mask.getModel();
+        };
+        if (form) form.addEventListener('submit', onSubmit, { capture: true });
+
+        cleanup(() => {
+            disposed = true;
+            clearTimeout(commitTimer);
+            mask.cleanup();
+            if (form) form.removeEventListener('submit', onSubmit, { capture: true });
+            if (el._decimalOriginalForce) el._x_forceModelUpdate = el._decimalOriginalForce;
+            el._decimalWrapped = false;
+            delete el._decimalMask;
         });
     });
 });

@@ -169,6 +169,11 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(ReceivableService $service): void
     {
+        foreach (['interest_rate_am' => 4, 'penalty_pct' => 2, 'late_interest_rate_am' => 4] as $k => $d) {
+            if (isset($this->form[$k]) && is_string($this->form[$k]) && str_contains($this->form[$k], ',')) {
+                $this->form[$k] = \App\Support\Money::decimal($this->form[$k], $d);
+            }
+        }
         try { $rows = $service->create($this->form + ['request_key' => $this->createKey]); }
         catch (\DomainException|\InvalidArgumentException $e) { $this->addError('receivable', $e->getMessage()); return; }
         $this->creating = false;
@@ -426,10 +431,10 @@ new #[Layout('layouts.app')] class extends Component {
                                 <h4 class="font-semibold text-mono-900">Encargos opcionais (padrão: nenhum)</h4>
                                 <p class="mt-1 text-xs text-mono-600">Juros simples = principal × (taxa a.m./100) × (dias/30). Multa uma vez + mora após o vencimento. Baixas abatem multa → juros → principal.</p>
                                 <div class="mt-3 grid gap-4 md:grid-cols-2">
-                                    <x-jr.input label="Juros combinados (% a.m.)" name="form.interest_rate_am" wire:model="form.interest_rate_am" />
+                                    <x-jr.input label="Juros combinados (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model="form.interest_rate_am" />
                                     <x-jr.input label="Início da contagem dos juros" name="form.interest_start_date" type="date" wire:model="form.interest_start_date" helper="Vazio = data do pagamento" />
-                                    <x-jr.input label="Multa após vencimento (%)" name="form.penalty_pct" wire:model="form.penalty_pct" />
-                                    <x-jr.input label="Mora após vencimento (% a.m.)" name="form.late_interest_rate_am" wire:model="form.late_interest_rate_am" />
+                                    <x-jr.input label="Multa após vencimento (%)" name="form.penalty_pct" x-decimal="2" wire:model="form.penalty_pct" />
+                                    <x-jr.input label="Mora após vencimento (% a.m.)" name="form.late_interest_rate_am" x-decimal="4" wire:model="form.late_interest_rate_am" />
                                 </div>
                             </div>
 

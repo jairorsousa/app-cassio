@@ -713,3 +713,10 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Favicon estático: `favicon.svg`, `favicon.ico`, PNG 16/32, apple-touch 180, 192/512 no `site.webmanifest` (PWA "Vértice CM", cor #FF6F00).
 - Logo personalizado (Configurações) continua tendo prioridade no topo; não havia logo padrão gravado para trocar. Backup do favicon anterior: `/root/app-cassio-backups/logo-antes-20261107/`.
 - Teste: `tests/Feature/BrandVerticeTest.php`.
+
+## 2026-11-07 — Divisões: remover/desativar participante, extrato em PDF e decimais BR
+
+- **Participantes (Divisões):** o admin pode remover alguém do grupo pela tela do grupo, mas só quando a pessoa não tem despesas, partes ou acertos ali. Se tiver, a tela mostra o motivo e oferece **"Desativar participante"**. O desativado some de "quem pagou" e da divisão das novas despesas, mas saldos, extrato e histórico continuam. Dá para reativar. Tudo fica na auditoria. Nova coluna `division_members.active`, com backup antes em `/root/app-cassio-backups/divisoes-db-antes-membros-20261107.json.gz`.
+- **Extrato em PDF:** a rota `divisoes/{grupo}/extrato.pdf?de=&ate=` gera o PDF no mesmo estilo dos PDFs de requisitório e corretores, com a logo Vértice CM. Ele traz o período, o saldo anterior, os movimentos com saldo acumulado por pessoa, o saldo final e "quem paga quem". O participante só baixa o PDF dos próprios grupos.
+- **Decimais BR:** a nova diretiva `x-decimal="N"` (resources/js/decimal-mask.js) aceita vírgula ao digitar e ao colar, e mostra as casas decimais. Ela vale para participação %, percentual aplicado, honorários/escritório %, rateio %, juros/multa % a.m., quantidades e valor unitário (6 casas), percentuais de corretores e divisão por %/cotas. No backend, `Money::decimal()` normaliza os valores antes de salvar.
+- Testes: tests/Feature/Divisions/MembersPdfDecimalTest.php e tests/js/decimal-mask.test.mjs. Suíte completa: 700 testes passando.

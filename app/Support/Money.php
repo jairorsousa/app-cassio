@@ -58,6 +58,37 @@ final class Money
         return number_format($negative ? -$amount : $amount, 2, '.', '');
     }
 
+    /**
+     * Percentual/quantidade: "12,5" · "1.234,567890" · "12.5" → "12.5" (até $decimals casas).
+     * Sem vírgula, um ponto único é decimal (valor que vem do navegador já normalizado).
+     */
+    public static function decimal(string|int|float|null $value, int $decimals = 2): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_int($value) || is_float($value)) {
+            $value = (string) $value;
+        }
+        $text = preg_replace('/[\s\x{00a0}%]+/u', '', trim($value)) ?? '';
+        if ($text === '' || ! preg_match('/\d/', $text)) {
+            return '';
+        }
+        $negative = str_starts_with($text, '-');
+        $text = preg_replace('/[^\d.,]/', '', $text) ?? '';
+        if (str_contains($text, ',')) {
+            $text = str_replace(',', '.', str_replace('.', '', $text));
+        } elseif (substr_count($text, '.') > 1) {
+            $text = str_replace('.', '', $text);
+        }
+        if (! is_numeric($text)) {
+            return '';
+        }
+        $out = rtrim(rtrim(number_format(round((float) $text, $decimals), $decimals, '.', ''), '0'), '.');
+
+        return $negative && $out !== '0' ? '-'.$out : $out;
+    }
+
     public static function toFloat(string|int|float|null $value): float
     {
         $normalized = self::normalize($value);

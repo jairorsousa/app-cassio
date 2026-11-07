@@ -8,9 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DivisionMember extends Model
 {
-    protected $fillable = ['group_id', 'name', 'email', 'user_id', 'is_owner'];
+    protected $fillable = ['group_id', 'name', 'email', 'user_id', 'is_owner', 'active'];
 
-    protected $casts = ['is_owner' => 'boolean'];
+    protected $casts = ['is_owner' => 'boolean', 'active' => 'boolean'];
+
+    protected $attributes = ['active' => true];
 
     public function group(): BelongsTo
     {

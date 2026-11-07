@@ -13,7 +13,7 @@ class DivisionAudit extends Model
     public const LABELS = [
         'group_created' => 'Grupo criado', 'group_requested' => 'Grupo solicitado', 'group_approved' => 'Grupo aprovado',
         'group_rejected' => 'Grupo recusado', 'group_updated' => 'Grupo alterado', 'member_added' => 'Participante adicionado',
-        'member_invited' => 'Convite gerado', 'member_removed' => 'Participante removido', 'expense_created' => 'Despesa lançada', 'expense_updated' => 'Despesa alterada',
+        'member_invited' => 'Convite gerado', 'member_removed' => 'Participante removido', 'member_deactivated' => 'Participante desativado', 'member_reactivated' => 'Participante reativado', 'expense_created' => 'Despesa lançada', 'expense_updated' => 'Despesa alterada',
         'expense_approved' => 'Despesa aprovada', 'expense_rejected' => 'Despesa recusada', 'expense_deleted' => 'Despesa excluída',
         'expense_linked' => 'Vinculada ao Financeiro', 'settlement_created' => 'Acerto registrado', 'settlement_deleted' => 'Acerto excluído',
     ];

@@ -65,6 +65,9 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function save(LoanService $service): void
     {
+        if (isset($this->form['interest_rate_am']) && is_string($this->form['interest_rate_am']) && str_contains($this->form['interest_rate_am'], ',')) {
+            $this->form['interest_rate_am'] = \App\Support\Money::decimal($this->form['interest_rate_am'], 4);
+        }
         try {
             $loan = $service->create($this->form + ['request_key' => $this->createKey], $this->attachment);
         } catch (\DomainException|\InvalidArgumentException|\Illuminate\Validation\ValidationException $e) {
@@ -382,7 +385,7 @@ new #[Layout('layouts.app')] class extends Component {
                             @else
                                 <x-jr.input label="Vencimento (opcional)" name="form.first_due_date" type="date" wire:model="form.first_due_date" />
                             @endif
-                            <x-jr.input label="Taxa de juros simples (% a.m.)" name="form.interest_rate_am" wire:model="form.interest_rate_am" helper="Padrão 0. Juros só viram receita quando recebidos." />
+                            <x-jr.input label="Taxa de juros simples (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model="form.interest_rate_am" helper="Padrão 0. Juros só viram receita quando recebidos." />
                             <x-jr.input label="Observações" name="form.notes" wire:model="form.notes" />
                             <div class="md:col-span-2">
                                 <label class="mb-2 block text-sm text-mono-600">Comprovante (PDF, JPG ou PNG, opcional)</label>
