@@ -31,6 +31,57 @@ class DashboardPreferences
         'upcoming_invoices' => ['Faturas próximas (30 dias)', [], false],
     ];
 
+    /** Grupos do painel (ordem fixa) e seus títulos. Personalizar reordena e oculta só dentro do grupo. */
+    public const GROUPS = [
+        'caixa' => 'Caixa',
+        'graficos' => 'Gráficos',
+        'requisitorios' => 'Requisitórios',
+        'investimentos' => 'Investimentos e patrimônio',
+        'contas' => 'Contas',
+    ];
+
+    /** chave => [grupo, tamanho] — s = 1 coluna, m = 2 colunas, l = largura toda (grade de 4 no computador). */
+    public const LAYOUT = [
+        'cash_position' => ['caixa', 'l'],
+        'own_result' => ['caixa', 's'],
+        'invoices' => ['caixa', 's'],
+        'receivables' => ['caixa', 's'],
+        'loans' => ['caixa', 's'],
+        'upcoming_invoices' => ['caixa', 's'],
+        'income_expense' => ['graficos', 'm'],
+        'moving_averages' => ['graficos', 'm'],
+        'expenses_by_category' => ['graficos', 'm'],
+        'distribution' => ['graficos', 'm'],
+        'writs_upcoming' => ['requisitorios', 'm'],
+        'writs' => ['requisitorios', 'm'],
+        'patrimony' => ['investimentos', 'l'],
+        'investments' => ['investimentos', 'm'],
+        'partnerships' => ['investimentos', 's'],
+        'brokers' => ['investimentos', 's'],
+        'accounts' => ['contas', 'l'],
+    ];
+
+    public const WRITS_MONTHS = [6, 12, 18, 24];
+
+    public static function group(string $widget): string
+    {
+        return self::LAYOUT[$widget][0] ?? 'caixa';
+    }
+
+    public const SIZES = ['s' => 'P', 'm' => 'M', 'l' => 'G'];
+
+    /** Tamanho do card: escolha do usuário (prefs['sizes']) ou o padrão do LAYOUT. */
+    public static function size(string $widget, ?array $prefs = null): string
+    {
+        return $prefs['sizes'][$widget] ?? self::LAYOUT[$widget][1] ?? 's';
+    }
+
+    /** Widgets do grupo na ordem salva do usuário. */
+    public static function inGroup(array $prefs, string $group): array
+    {
+        return array_values(array_filter($prefs['order'], fn ($k) => self::group($k) === $group));
+    }
+
     public const CHART_LABELS = ['bar' => 'Barras', 'line' => 'Linha', 'area' => 'Área', 'pie' => 'Pizza'];
 
     public static function defaults(): array
@@ -40,6 +91,8 @@ class DashboardPreferences
             'hidden' => array_keys(array_filter(self::WIDGETS, fn ($w) => ! $w[2])),
             'charts' => [],
             'period' => ['preset' => 'this_month', 'start' => null, 'end' => null],
+            'writs_months' => 6,
+            'sizes' => [],
         ];
     }
 
@@ -66,6 +119,13 @@ class DashboardPreferences
             }
         }
 
+        $sizes = [];
+        foreach ((array) ($raw['sizes'] ?? []) as $key => $size) {
+            if (isset(self::WIDGETS[$key]) && isset(self::SIZES[$size])) {
+                $sizes[$key] = $size;
+            }
+        }
+
         $period = (array) ($raw['period'] ?? []);
         $preset = array_key_exists((string) ($period['preset'] ?? ''), ReportPeriod::PRESETS) ? $period['preset'] : 'this_month';
 
@@ -74,6 +134,8 @@ class DashboardPreferences
             'hidden' => $hidden,
             'charts' => $charts,
             'period' => ['preset' => $preset, 'start' => $period['start'] ?? null, 'end' => $period['end'] ?? null],
+            'writs_months' => in_array($months = (int) ($raw['writs_months'] ?? 6), self::WRITS_MONTHS, true) ? $months : 6,
+            'sizes' => $sizes,
         ];
     }
 
@@ -123,6 +185,10 @@ class DashboardPreferences
         $order = $prefs['order'];
         $i = array_search($widget, $order, true);
         $j = $i === false ? false : $i + $delta;
+        // pula cards ocultos: ↑ ↓ troca com o vizinho visível
+        while ($j !== false && $j >= 0 && $j < count($order) && in_array($order[$j], $prefs['hidden'] ?? [], true)) {
+            $j += $delta;
+        }
         if ($i === false || $j < 0 || $j >= count($order)) {
             return $prefs;
         }

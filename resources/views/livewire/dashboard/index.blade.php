@@ -120,6 +120,23 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         $this->persist();
     }
 
+    public function setWritsMonths(int $months): void
+    {
+        $this->current();
+        $this->prefs['writs_months'] = in_array($months, DashboardPreferences::WRITS_MONTHS, true) ? $months : 6;
+        $this->persist();
+    }
+
+    public function setWidgetSize(string $key, string $size): void
+    {
+        if (! isset(DashboardPreferences::WIDGETS[$key], DashboardPreferences::SIZES[$size])) {
+            return;
+        }
+        $this->current();
+        $this->prefs['sizes'][$key] = $size;
+        $this->persist();
+    }
+
     public function setChartType(string $key, string $type): void
     {
         $this->current();
@@ -150,7 +167,15 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         return [
             'snapshot' => $snapshot,
             'generatedAt' => $snapshot['generated_at'] ?? null,
-            'w' => $widgets->build($period),
+            'w' => (function () use ($widgets, $period) {
+                $w = $widgets->build($period);
+                $months = (int) ($this->prefs['writs_months'] ?? 6);
+                if ($months !== 6) {
+                    $w['writs_upcoming'] = $widgets->writsUpcoming(\Illuminate\Support\Carbon::parse($w['period']['position_date']), $months);
+                }
+
+                return $w;
+            })(),
         ];
     }
 }; ?>
@@ -163,7 +188,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     $posLabel = 'Posição em '.\Illuminate\Support\Carbon::parse($w['period']['position_date'])->format('d/m/Y');
     $label = 'text-fs-12 text-cryptex-text-tertiary uppercase tracking-[0.05em] font-medium';
     $num = 'font-mono [font-variant-numeric:tabular-nums]';
-    $wide = ['cash_position', 'patrimony', 'income_expense', 'accounts', 'own_result'];
+    $P = \App\Domains\Dashboard\Support\DashboardPreferences::class;
+    $sizeClass = fn ($k) => ['s' => '', 'm' => 'md:col-span-2 lg:col-span-2', 'l' => 'md:col-span-2'][$P::size($k, $prefs)] ?? '';
+    $writsMonths = (int) ($prefs['writs_months'] ?? 6);
     $order = $prefs['order'];
     $hidden = $prefs['hidden'];
     $chart = fn ($k) => \App\Domains\Dashboard\Support\DashboardPreferences::chartType($prefs, $k);
@@ -204,8 +231,17 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             @endif
             <livewire:banking.regime-switch />
             <div class="lg:ml-auto flex flex-wrap items-center gap-space-3">
+                <div class="relative" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false" data-new-menu>
+                    <button type="button" x-on:click="open = !open" :aria-expanded="open" class="min-h-[40px] px-3 rounded-sm bg-cryptex-brand-400 text-white text-fs-12 font-semibold">+ Novo</button>
+                    <div x-show="open" x-cloak x-transition class="absolute right-0 z-dropdown mt-1 w-48 overflow-hidden rounded-md border border-cryptex-border-default bg-cryptex-bg-secondary shadow-dropdown text-fs-14" style="display:none">
+                        <a href="{{ route('banking.transactions.index', ['novo' => 'expense']) }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Lançamento</a>
+                        <a href="{{ route('banking.transactions.index', ['novo' => 'transfer']) }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Transferência</a>
+                        <a href="{{ route('investments.operations.index') }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Operação</a>
+                        <a href="{{ route('writs.create') }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Requisitório</a>
+                    </div>
+                </div>
                 <button type="button" wire:click="toggleCustomize" aria-pressed="{{ $customizing ? 'true' : 'false' }}" class="min-h-[40px] px-3 rounded-sm border border-cryptex-border-default text-fs-12 font-semibold {{ $customizing ? 'bg-cryptex-brand-400 text-white' : 'text-cryptex-text-primary' }}">
-                    {{ $customizing ? 'Concluir personalização' : 'Personalizar' }}
+                    {{ $customizing ? 'Concluir edição' : 'Editar painel' }}
                 </button>
                 <button type="button" class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-semibold text-fs-12" wire:click="refresh">↻ Atualizar agora</button>
             </div>
@@ -217,59 +253,73 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         </div>
     </x-fx.card>
 
-    @if ($customizing)
-        <x-fx.card>
-            <div class="flex flex-col md:flex-row md:items-center gap-space-3 text-fs-12 text-cryptex-text-secondary">
-                <p class="flex-1">Arraste os blocos pelo ⠿ (computador) ou use ↑ ↓ (celular e teclado). Marque “Mostrar” para exibir ou ocultar. Tudo é salvo automaticamente para o seu usuário.</p>
-                <button type="button" wire:click="resetDefaults" wire:confirm="Restaurar a ordem, a visibilidade e os tipos de gráfico padrão? Nenhum dado financeiro será alterado." class="min-h-[40px] px-3 rounded-sm border border-cryptex-border-default text-cryptex-text-primary font-semibold">Restaurar padrão</button>
-            </div>
-        </x-fx.card>
-    @endif
 
     {{-- Arrastar (HTML5): o handle inicia o arraste; o bloco inteiro é alvo de soltura. A ordem é calculada e salva no servidor (moveWidgetTo). --}}
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-space-5"
-         x-data="{ dragging: null, over: null }"
-         x-on:dragend.window="dragging = null; over = null">
-        @foreach ($order as $index => $key)
-            @php $isHidden = in_array($key, $hidden, true); @endphp
-            @continue($isHidden && ! $customizing)
-            <section data-widget="{{ $key }}" wire:key="widget-{{ $key }}" aria-label="{{ $title($key) }}"
-                class="min-w-0 {{ in_array($key, $wide, true) ? 'lg:col-span-2' : '' }} {{ $isHidden ? 'opacity-50' : '' }} {{ $customizing ? 'outline outline-1 outline-dashed outline-cryptex-border-default rounded-md' : '' }}"
+    @php $hiddenKeys = array_values(array_filter($order, fn ($k) => in_array($k, $hidden, true))); @endphp
+    @if ($customizing)
+        <div class="flex flex-wrap items-center gap-space-3" data-add-card>
+            <div class="relative" x-data="{ open: false }" x-on:click.outside="open = false">
+                <button type="button" x-on:click="open = !open" class="min-h-[40px] px-3 rounded-sm border border-dashed border-cryptex-brand-400 text-cryptex-brand-400 text-fs-12 font-semibold">+ Adicionar card ({{ count($hiddenKeys) }})</button>
+                <div x-show="open" x-cloak class="absolute left-0 z-dropdown mt-1 w-72 overflow-hidden rounded-md border border-cryptex-border-default bg-cryptex-bg-secondary shadow-dropdown text-fs-14" style="display:none">
+                    @forelse ($hiddenKeys as $hk)
+                        <button type="button" wire:click="toggleWidget('{{ $hk }}')" x-on:click="open = false" class="block w-full text-left px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">{{ $title($hk) }}</button>
+                    @empty
+                        <div class="px-3 py-2 text-cryptex-text-tertiary">Todos os cards já estão no painel.</div>
+                    @endforelse
+                </div>
+            </div>
+            <span class="text-fs-12 text-cryptex-text-secondary">Arraste pelo ⠿ ou use ↑ ↓ · P/M/G = 1/2/4 colunas · ✕ oculta. Salvo automaticamente.</span>
+            <button type="button" wire:click="resetDefaults" wire:confirm="Restaurar ordem, tamanhos, cards e gráficos padrão? Nenhum dado financeiro será alterado." class="min-h-[40px] px-3 rounded-sm border border-cryptex-border-default text-fs-12">Restaurar padrão</button>
+            <button type="button" wire:click="toggleCustomize" class="min-h-[40px] px-3 rounded-sm bg-cryptex-brand-400 text-white text-fs-12 font-semibold">Concluir</button>
+        </div>
+    @endif
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-space-4" style="grid-auto-flow: dense"
+         x-data="{ dragging: null, over: null }" x-on:dragend.window="dragging = null; over = null">
+        @foreach (array_values(array_filter($order, fn ($k) => ! in_array($k, $hidden, true))) as $gi => $key)
+            @php $visibleCount = count($order) - count($hidden); $isHidden = false; $size = $P::size($key, $prefs); @endphp
+            <section data-widget="{{ $key }}" data-size="{{ $size }}" wire:key="widget-{{ $key }}" aria-label="{{ $title($key) }}"
+                @if ($size === 'l') style="grid-column: 1 / -1" @endif
+                class="min-w-0 flex flex-col {{ $sizeClass($key) }} {{ $isHidden ? 'opacity-50' : '' }} {{ $customizing ? 'outline outline-1 outline-dashed outline-cryptex-border-default rounded-md' : '' }}"
                 @if ($customizing)
-                    x-on:dragover.prevent="if (dragging) { $event.dataTransfer.dropEffect = 'move'; over = '{{ $key }}' }"
+                    x-on:dragover.prevent="if (dragging && dragging) { $event.dataTransfer.dropEffect = 'move'; over = '{{ $key }}' }"
                     x-on:dragleave="if (over === '{{ $key }}') over = null"
-                    x-on:drop.prevent="const from = dragging || $event.dataTransfer.getData('text/plain'); dragging = null; over = null; if (from && from !== '{{ $key }}') $wire.moveWidgetTo(from, '{{ $key }}')"
-                    x-bind:class="over === '{{ $key }}' && dragging !== '{{ $key }}' ? 'ring-2 ring-cryptex-brand-400' : ''"
+                    x-on:drop.prevent="const from = (dragging || $event.dataTransfer.getData('text/plain')).split('|')[0]; dragging = null; over = null; if (from && from !== '{{ $key }}') $wire.moveWidgetTo(from, '{{ $key }}')"
+                    x-bind:class="over === '{{ $key }}' && dragging && dragging.split('|')[0] !== '{{ $key }}' ? 'ring-2 ring-cryptex-brand-400' : ''"
                 @endif>
                 @if ($customizing)
-                    <div class="flex flex-wrap items-center gap-space-2 px-space-3 py-space-2 text-fs-12">
+                    <div class="flex items-center gap-1 px-space-2 py-space-2 text-fs-12">
                         <span draggable="true" data-drag-handle="{{ $key }}" title="Arraste para reordenar"
                             x-on:dragstart="dragging = '{{ $key }}'; $event.dataTransfer.effectAllowed = 'move'; $event.dataTransfer.setData('text/plain', '{{ $key }}'); $event.dataTransfer.setDragImage($el.closest('section'), 20, 20)"
                             class="cursor-grab active:cursor-grabbing select-none text-fs-18 leading-none px-2 py-1 rounded-sm border border-cryptex-border-default text-cryptex-text-tertiary hidden md:inline-block" aria-hidden="true">⠿</span>
-                        <span class="font-semibold text-cryptex-text-primary">{{ $title($key) }}</span>
-                        <label class="flex items-center gap-1 ml-auto text-cryptex-text-secondary">
-                            <input type="checkbox" {{ $isHidden ? '' : 'checked' }} wire:click="toggleWidget('{{ $key }}')" aria-label="Mostrar {{ $title($key) }}" /> Mostrar
-                        </label>
-                        <button type="button" wire:click="moveWidget('{{ $key }}', -1)" @disabled($index === 0) class="min-w-[36px] min-h-[36px] rounded-sm border border-cryptex-border-default disabled:opacity-30" aria-label="Mover {{ $title($key) }} para cima">↑</button>
-                        <button type="button" wire:click="moveWidget('{{ $key }}', 1)" @disabled($index === count($order) - 1) class="min-w-[36px] min-h-[36px] rounded-sm border border-cryptex-border-default disabled:opacity-30" aria-label="Mover {{ $title($key) }} para baixo">↓</button>
+                        <span class="flex-1 min-w-0 truncate font-semibold text-cryptex-text-primary" title="{{ $title($key) }}">{{ $title($key) }}</span>
+                        <div class="flex gap-1 shrink-0" role="group" aria-label="Tamanho de {{ $title($key) }}">
+                            @foreach ($P::SIZES as $sk => $sl)
+                                <button type="button" wire:click="setWidgetSize('{{ $key }}', '{{ $sk }}')" aria-pressed="{{ $size === $sk ? 'true' : 'false' }}" class="min-w-[28px] min-h-[32px] rounded-sm border font-semibold {{ $size === $sk ? 'bg-cryptex-brand-400 text-white border-cryptex-brand-400' : 'border-cryptex-border-default text-cryptex-text-secondary' }}">{{ $sl }}</button>
+                            @endforeach
+                        </div>
+                        <button type="button" wire:click="moveWidget('{{ $key }}', -1)" @disabled($gi === 0) class="shrink-0 min-w-[32px] min-h-[32px] rounded-sm border border-cryptex-border-default disabled:opacity-30" aria-label="Mover {{ $title($key) }} para cima">↑</button>
+                        <button type="button" wire:click="moveWidget('{{ $key }}', 1)" @disabled($gi === $visibleCount - 1) class="shrink-0 min-w-[32px] min-h-[32px] rounded-sm border border-cryptex-border-default disabled:opacity-30" aria-label="Mover {{ $title($key) }} para baixo">↓</button>
+                        <button type="button" wire:click="toggleWidget('{{ $key }}')" class="shrink-0 min-w-[32px] min-h-[32px] rounded-sm border border-cryptex-border-default text-cryptex-red-500" aria-label="Ocultar {{ $title($key) }}" title="Ocultar card">✕</button>
                     </div>
                 @endif
                 @if (! $isHidden)
                 @switch($key)
                     @case('cash_position')
-                        <div class="flex flex-col gap-space-2">
-                            <div class="{{ $label }}">Saldo bruto, terceiros e caixa próprio · {{ $posLabel }}</div>
-                            <x-banking.cash-position :accounts-balance="$w['cash']['accounts_balance']" :third-party-balance="$w['cash']['third_party_balance']" :own-balance="$w['cash']['own_balance']" />
-                        </div>
+                        <x-fx.card class="h-full">
+                            <div class="flex flex-col gap-space-2">
+                                <div class="{{ $label }}">Saldo bruto, terceiros e caixa próprio · {{ $posLabel }}</div>
+                                <x-banking.cash-position :accounts-balance="$w['cash']['accounts_balance']" :third-party-balance="$w['cash']['third_party_balance']" :own-balance="$w['cash']['own_balance']" />
+                            </div>
+                        </x-fx.card>
                         @break
 
                     @case('own_result')
                         @php $cmp = $w['flows']['comparison']; @endphp
-                        <x-fx.card>
-                            <div class="grid grid-cols-1 sm:grid-cols-4 gap-space-4">
+                        <x-fx.card class="h-full">
+                            <div class="grid grid-cols-2 gap-space-3">
                                 <div><div class="{{ $label }}">Receitas próprias</div><div class="text-fs-20 font-bold {{ $num }} text-cryptex-green-500">{{ $money($w['flows']['income']) }}</div></div>
                                 <div><div class="{{ $label }}">Despesas próprias</div><div class="text-fs-20 font-bold {{ $num }} text-cryptex-red-500">{{ $money($w['flows']['expense']) }}</div></div>
-                                <div><div class="{{ $label }}">Resultado próprio</div><div class="text-fs-12 text-cryptex-text-tertiary">= "Resultado próprio do mês" no Financeiro</div><div class="text-fs-24 font-bold {{ $num }} {{ $tone($w['flows']['result']) }}">{{ $money($w['flows']['result']) }}</div></div>
+                                <div><div class="{{ $label }}">Resultado próprio</div><div class="text-fs-12 text-cryptex-text-tertiary">= "Resultado próprio do mês" no Financeiro</div><div class="text-fs-20 font-bold {{ $num }} {{ $tone($w['flows']['result']) }}">{{ $money($w['flows']['result']) }}</div></div>
                                 <div>
                                     <div class="{{ $label }}">x período anterior</div>
                                     <div class="text-fs-14 {{ $num }} {{ $tone($cmp['diff']) }}">{{ $cmp['diff'] >= 0 ? '+' : '' }}{{ $money($cmp['diff']) }} · {{ $cmp['pct'] === null ? 'sem base' : ($cmp['pct'] >= 0 ? '+' : '').number_format($cmp['pct'], 1, ',', '.').'%' }}</div>
@@ -281,18 +331,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('income_expense')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-3">
                                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Entradas e saídas próprias</h3>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="income_expense" :current="$chart('income_expense')" :allowed="$allowed('income_expense')" /></div>
                             </div>
-                            <x-dashboard.chart :type="$chart('income_expense')" title="Entradas e saídas próprias por mês" :labels="array_column($w['flows']['months'], 'label')"
+                            <x-dashboard.chart :type="$chart('income_expense')" title="Entradas e saídas próprias por mês" :height="240" :labels="array_column($w['flows']['months'], 'label')"
                                 :datasets="[['name' => 'Entradas', 'values' => array_column($w['flows']['months'], 'income'), 'color' => '#22c55e'], ['name' => 'Saídas', 'values' => array_column($w['flows']['months'], 'expense'), 'color' => '#ef4444'], ['name' => 'Resultado', 'values' => array_column($w['flows']['months'], 'result'), 'color' => '#60a5fa']]" />
                         </x-fx.card>
                         @break
 
                     @case('moving_averages')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-3">
                                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Médias móveis (resultado)</h3>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="moving_averages" :current="$chart('moving_averages')" :allowed="$allowed('moving_averages')" /></div>
@@ -302,13 +352,13 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                     <div><div class="text-fs-12 text-cryptex-text-tertiary {{ $num }}">{{ $l }}</div><div class="font-medium {{ $num }} {{ $tone($w['averages'][$k]) }}">{{ $money($w['averages'][$k], 0) }}</div></div>
                                 @endforeach
                             </div>
-                            <x-dashboard.chart :type="$chart('moving_averages')" title="Resultado mensal e média móvel de 3 meses" :labels="array_column($w['averages']['series'], 'label')"
+                            <x-dashboard.chart :type="$chart('moving_averages')" title="Resultado mensal e média móvel de 3 meses" :height="240" :labels="array_column($w['averages']['series'], 'label')"
                                 :datasets="[['name' => 'Resultado do mês', 'values' => array_column($w['averages']['series'], 'result'), 'color' => '#94a3b8'], ['name' => 'Média 3m', 'values' => array_column($w['averages']['series'], 'avg3'), 'color' => '#f59e0b']]" />
                         </x-fx.card>
                         @break
 
                     @case('invoices')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">💳 Faturas · {{ $posLabel }}</h3>
                             <div class="grid grid-cols-2 gap-space-3 my-space-3">
                                 <div><div class="{{ $label }}">A vencer ({{ $w['invoices']['upcoming_count'] }})</div><div class="text-fs-18 font-bold {{ $num }} text-cryptex-text-primary">{{ $money($w['invoices']['upcoming_total']) }}</div></div>
@@ -327,7 +377,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('receivables')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Valores a receber · {{ $posLabel }}</h3>
                             <p class="text-fs-12 text-cryptex-text-tertiary">Mesmo número de "Total a receber" no Financeiro (com encargos, sem testes).</p>
                             <div class="grid grid-cols-3 gap-space-3 mt-space-3">
@@ -340,7 +390,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('loans')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Empréstimos em aberto · {{ $posLabel }}</h3>
                             <div class="grid grid-cols-3 gap-space-3 mt-space-3">
                                 <div><div class="{{ $label }}">Contratos</div><div class="text-fs-18 font-bold {{ $num }}">{{ $w['loans']['count'] }}@if ($w['loans']['overdue']) <span class="text-fs-12 text-cryptex-red-500">({{ $w['loans']['overdue'] }} vencido{{ $w['loans']['overdue'] > 1 ? 's' : '' }})</span>@endif</div></div>
@@ -352,7 +402,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('brokers')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Saldo com corretores · posição atual</h3>
                             <div class="grid grid-cols-2 gap-space-3 mt-space-3">
                                 <div><div class="{{ $label }}">Adiantamentos a compensar</div><div class="text-fs-16 font-bold {{ $num }}">{{ $money($w['brokers']['advances']) }}</div></div>
@@ -364,9 +414,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('writs_upcoming')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-2">
-                                <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">⚖️ Requisitórios a receber (6 meses)</h3>
+                                <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">⚖️ Requisitórios a receber ({{ $writsMonths }} meses)</h3>
+                                <div class="flex gap-1" role="group" aria-label="Horizonte em meses" data-writs-months>
+                                    @foreach ($P::WRITS_MONTHS as $m)
+                                        <button type="button" wire:click="setWritsMonths({{ $m }})" aria-pressed="{{ $writsMonths === $m ? 'true' : 'false' }}" class="min-w-[36px] min-h-[32px] px-2 rounded-sm border text-fs-12 font-semibold {{ $writsMonths === $m ? 'bg-cryptex-brand-400 text-white border-cryptex-brand-400' : 'border-cryptex-border-default text-cryptex-text-secondary' }}">{{ $m }}</button>
+                                    @endforeach
+                                </div>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="writs_upcoming" :current="$chart('writs_upcoming')" :allowed="$allowed('writs_upcoming')" /></div>
                             </div>
                             <div class="text-fs-12 text-cryptex-text-tertiary mb-space-2">Somente Pago, Peticionamento e Aguardando recebimento, pela previsão (pagamento + meses estimados). Monitorar nunca entra.</div>
@@ -374,14 +429,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 @if ($w['writs_upcoming']['overdue']['count']) · <span class="text-cryptex-red-500">{{ $w['writs_upcoming']['overdue']['count'] }} com previsão vencida: {{ $money($w['writs_upcoming']['overdue']['amount']) }} (fora do total)</span>@endif
                                 @if ($w['writs_upcoming']['without_date']) · <span class="text-cryptex-text-tertiary">{{ $w['writs_upcoming']['without_date'] }} sem previsão</span>@endif
                             </div>
-                            <x-dashboard.chart :type="$chart('writs_upcoming')" title="Recebimento previsto de requisitórios por mês" :labels="array_column($w['writs_upcoming']['months'], 'label')"
+                            <x-dashboard.chart :type="$chart('writs_upcoming')" title="Recebimento previsto de requisitórios por mês" :height="240" :labels="array_column($w['writs_upcoming']['months'], 'label')"
                                 :datasets="[['name' => 'Recebimento previsto', 'values' => array_column($w['writs_upcoming']['months'], 'amount'), 'color' => '#60a5fa'], ['name' => 'Lucro previsto', 'values' => array_column($w['writs_upcoming']['months'], 'profit'), 'color' => '#22c55e']]" />
                         </x-fx.card>
                         @break
 
                     @case('expenses_by_category')
                         @php $cats = array_slice($w['expenses_by_category'], 0, 9); $rest = array_sum(array_column(array_slice($w['expenses_by_category'], 9), 'value')); if ($rest > 0) { $cats[] = ['label' => 'Outras', 'value' => round($rest, 2)]; } @endphp
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-3">
                                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Despesas próprias por categoria</h3>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="expenses_by_category" :current="$chart('expenses_by_category')" :allowed="$allowed('expenses_by_category')" /></div>
@@ -405,7 +460,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('accounts')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold mb-space-3 text-cryptex-text-primary">Saldos por conta · {{ $posLabel }}</h3>
                             <div class="{{ $label }} mb-space-2">Contas próprias</div>
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-space-4">
@@ -427,7 +482,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('patrimony')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-space-5">
                                 <div>
                                     <div class="{{ $label }}">Patrimônio total consolidado · posição atual</div>
@@ -444,18 +499,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('distribution')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-3">
                                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Distribuição do patrimônio</h3>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="distribution" :current="$chart('distribution')" :allowed="$allowed('distribution')" /></div>
                             </div>
                             @php $dist = collect($snapshot['distribution'])->values()->all(); @endphp
-                            <x-dashboard.chart :type="$chart('distribution')" title="Distribuição do patrimônio" :labels="array_column($dist, 'label')" :datasets="[['name' => 'Valor', 'values' => array_column($dist, 'value'), 'color' => '#60a5fa']]" />
+                            <x-dashboard.chart :type="$chart('distribution')" title="Distribuição do patrimônio" :height="240" :labels="array_column($dist, 'label')" :datasets="[['name' => 'Valor', 'values' => array_column($dist, 'value'), 'color' => '#60a5fa']]" />
                         </x-fx.card>
                         @break
 
                     @case('investments')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold mb-space-4 text-cryptex-text-primary">📈 Investimentos</h3>
                             <div class="grid grid-cols-3 gap-space-2 text-fs-14 mb-space-4">
                                 <div><div class="text-fs-12 text-cryptex-text-secondary">Investido</div><div class="font-medium {{ $num }}">{{ $money($snapshot['investments']['invested']) }}</div></div>
@@ -471,7 +526,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('writs')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <div class="flex flex-wrap items-center gap-space-3 mb-space-3">
                                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">⚖️ Requisitórios por etapa</h3>
                                 <div class="ml-auto"><x-dashboard.chart-switch widget="writs" :current="$chart('writs')" :allowed="$allowed('writs')" /></div>
@@ -481,7 +536,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 <div><div class="text-fs-12 text-cryptex-text-secondary">Lucro líquido exp.</div><div class="font-medium {{ $num }} text-cryptex-green-500">{{ $money($snapshot['writs']['expected_net_profit']) }}</div></div>
                             </div>
                             @php $stages = collect($snapshot['writs']['by_stage'])->filter(fn ($r) => $r['count'] > 0)->values()->all(); @endphp
-                            <x-dashboard.chart :type="$chart('writs')" title="Valor de face por etapa" :labels="array_column($stages, 'label')" :datasets="[['name' => 'Valor de face', 'values' => array_column($stages, 'face_total'), 'color' => '#a78bfa']]" />
+                            <x-dashboard.chart :type="$chart('writs')" title="Valor de face por etapa" :height="240" :labels="array_column($stages, 'label')" :datasets="[['name' => 'Valor de face', 'values' => array_column($stages, 'face_total'), 'color' => '#a78bfa']]" />
                             <ul class="flex flex-col gap-space-1 text-fs-12 mt-space-2">
                                 @foreach ($stages as $row)
                                     <li class="flex justify-between py-1 border-b border-cryptex-border-subtle last:border-0"><span class="text-cryptex-text-secondary">{{ $row['label'] }}</span><span class="{{ $num }}"><span class="text-cryptex-brand-400 mr-2">{{ $row['count'] }}x</span>{{ $money($row['face_total'], 0) }}</span></li>
@@ -491,7 +546,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('partnerships')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold mb-space-4 text-cryptex-text-primary">🏢 Sociedade</h3>
                             @forelse ($snapshot['partnerships']['list'] as $row)
                                 <div class="flex justify-between py-space-1 border-b border-cryptex-border-subtle last:border-0 text-fs-14">
@@ -511,7 +566,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                         @break
 
                     @case('upcoming_invoices')
-                        <x-fx.card>
+                        <x-fx.card class="h-full">
                             <h3 class="text-fs-16 font-semibold mb-space-4 text-cryptex-text-primary">💳 Faturas próximas (30 dias)</h3>
                             @forelse ($snapshot['upcoming_invoices'] as $row)
                                 <div class="flex justify-between items-center py-space-1 border-b border-cryptex-border-subtle last:border-0 text-fs-14">
@@ -529,11 +584,4 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         @endforeach
     </div>
 
-    {{-- Atalhos rápidos: "Lançamento" abre o modal único (inclui "Paguei por alguém"). --}}
-    <div class="flex flex-wrap gap-space-3 mt-space-2">
-        <x-fx.button href="{{ route('banking.transactions.index', ['novo' => 'expense']) }}" variant="primary">Lançamento</x-fx.button>
-        <x-fx.button href="{{ route('banking.transactions.index', ['novo' => 'transfer']) }}" variant="secondary">Transferência</x-fx.button>
-        <x-fx.button href="{{ route('investments.operations.index') }}" variant="secondary">Operação</x-fx.button>
-        <x-fx.button href="{{ route('writs.create') }}" variant="secondary">Requisitório</x-fx.button>
-    </div>
 </div>
