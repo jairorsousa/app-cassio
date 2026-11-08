@@ -42,7 +42,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             $thirdPartyBalance = $cash['third_party_balance'];
             $ownBalance = $cash['own_balance'];
 
-            $upcomingInvoices = CreditCardInvoice::with('creditCard')
+            $upcomingInvoices = CreditCardInvoice::with('creditCard')->whereHas('creditCard')
                 ->whereIn('status', ['open', 'closed', 'partially_paid'])
                 ->where('due_date', '>=', now())
                 ->orderBy('due_date')
@@ -144,7 +144,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     @foreach ($upcomingInvoices as $inv)
                         <li class="flex justify-between items-center py-space-2 border-b border-cryptex-border-subtle last:border-0">
                             <div>
-                                <div class="text-fs-14 font-medium text-cryptex-text-primary">{{ $inv->creditCard->name }}</div>
+                                <div class="text-fs-14 font-medium text-cryptex-text-primary">{{ $inv->creditCard?->name ?? "Cartão excluído" }}</div>
                                 <div class="text-fs-12 text-cryptex-text-secondary">Venc. <span class="font-mono">{{ $inv->due_date->format('d/m/Y') }}</span> <span class="mx-1 opacity-50">·</span> <span class="font-mono">{{ $inv->reference_month }}</span></div>
                             </div>
                             <div class="text-fs-14 font-medium font-mono text-cryptex-red-500 [font-variant-numeric:tabular-nums]">R$ {{ number_format($inv->total, 2, ',', '.') }}</div>
