@@ -497,6 +497,26 @@ class DivisionService
         app(\App\Support\ProfileCompletionService::class)->syncContactPhone($member->email, $phone);
     }
 
+    /** Só o administrador. A mesma pessoa (mesmo e-mail) fica com o mesmo nome em todos os grupos, no usuário e no contato. */
+    public function setMemberName(User $actor, DivisionMember $member, string $name): void
+    {
+        $this->assertAdmin($actor);
+        $name = trim(preg_replace('/\s+/u', ' ', $name));
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 120) {
+            throw ValidationException::withMessages(['memberNameDraft' => 'Informe um nome entre 2 e 120 caracteres.']);
+        }
+        $q = DivisionMember::query();
+        $member->email ? $q->whereRaw('lower(email) = ?', [mb_strtolower($member->email)]) : $q->whereKey($member->id);
+        $q->update(['name' => $name]);
+        $user = $member->user_id ? User::find($member->user_id) : ($member->email ? User::whereRaw('lower(email) = ?', [mb_strtolower($member->email)])->first() : null);
+        if ($user && ! $user->isAdmin()) {
+            $user->forceFill(['name' => $name])->save();
+            if ($user->contact_id) {
+                \App\Domains\Contacts\Models\Contact::whereKey($user->contact_id)->update(['name' => $name]);
+            }
+        }
+    }
+
     /** Pelo bloco de Configurações › Usuários (por e-mail). */
     public function setPersonPhone(?User $actor, string $email, ?string $raw): void
     {

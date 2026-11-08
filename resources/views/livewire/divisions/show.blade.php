@@ -94,6 +94,10 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $phoneDraft = '';
 
+    public ?int $nameEditId = null;
+
+    public string $memberNameDraft = '';
+
     public ?int $chargeMemberId = null;
 
     public int $chargeCents = 0;
@@ -402,6 +406,29 @@ new #[Layout('layouts.app')] class extends Component
         $this->notice = 'Celular salvo.';
     }
 
+    public function editName(int $memberId): void
+    {
+        abort_unless(auth()->user()->isAdmin(), 403);
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail($memberId);
+        $this->nameEditId = $m->id;
+        $this->memberNameDraft = $m->name;
+        $this->resetValidation('memberNameDraft');
+    }
+
+    public function saveName(): void
+    {
+        $m = DivisionMember::where('group_id', $this->group->id)->findOrFail((int) $this->nameEditId);
+        try {
+            $this->service()->setMemberName(auth()->user(), $m, $this->memberNameDraft);
+        } catch (ValidationException $e) {
+            $this->fail($e);
+
+            return;
+        }
+        $this->reset('nameEditId', 'memberNameDraft');
+        $this->notice = 'Nome salvo.';
+    }
+
     public function openCharge(int $memberId, int $cents): void
     {
         abort_unless(auth()->user()->isAdmin(), 403);
@@ -628,6 +655,7 @@ new #[Layout('layouts.app')] class extends Component
                         @elseif (! $m->active)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs text-mono-600" data-member-inactive>Desativado</span>@endif
                         @if ($m->phone)<span class="ml-1 text-xs text-mono-600" data-member-phone>{{ $m->phoneDisplay() }}</span>@endif
                         @if (($isAdmin || (int) $m->user_id === (int) auth()->id()) && $phoneEditId !== $m->id)<button type="button" class="ml-1 text-xs text-primary-500" wire:click="editPhone({{ $m->id }})" data-edit-phone>{{ $m->phone ? 'Editar celular' : 'Adicionar celular' }}</button>@endif
+                        @if ($isAdmin && ! $m->is_owner && $nameEditId !== $m->id)<button type="button" class="ml-1 text-xs text-primary-500" wire:click="editName({{ $m->id }})" data-edit-name>Editar nome</button>@endif
                         @if ($m->is_owner)<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500">Administrador</span>@elseif ($m->user_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs">Com acesso</span>@endif
                         @if ($isAdmin && ! $m->is_owner && ! $m->user_id && $m->email && ! $m->isPending())<x-invite-link :invitation="$invites[mb_strtolower($m->email)] ?? null" :name="$m->name" :action="'invite('.$m->id.')'" />@endif</span>
                     @if ($isAdmin && $m->isPending())
@@ -649,6 +677,14 @@ new #[Layout('layouts.app')] class extends Component
                         </span>
                     @endif
                 </div>
+                @if ($isAdmin && $nameEditId === $m->id)
+                    <form wire:submit="saveName" class="my-2 flex flex-wrap items-center gap-2 text-xs" data-name-form>
+                        <input type="text" wire:model="memberNameDraft" maxlength="120" class="h-9 w-56 rounded-xl border-mono-200 text-xs">
+                        <button type="submit" class="fx-btn fx-btn--standard">Salvar</button>
+                        <button type="button" class="text-mono-600" wire:click="$set('nameEditId', null)">Cancelar</button>
+                        @error('memberNameDraft')<span class="w-full text-error">{{ $message }}</span>@enderror
+                    </form>
+                @endif
                 @if ($phoneEditId === $m->id)
                     <form wire:submit="savePhone" class="my-2 flex flex-wrap items-center gap-2 text-xs" data-phone-form>
                         <input type="tel" x-phone wire:model="phoneDraft" placeholder="(99) 99999-9999" maxlength="15" class="h-9 w-44 rounded-xl border-mono-200 text-xs">
