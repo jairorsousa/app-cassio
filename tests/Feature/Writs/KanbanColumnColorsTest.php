@@ -16,6 +16,7 @@ class KanbanColumnColorsTest extends TestCase
         $u = User::factory()->create();
         $u->forceFill(['is_admin' => true, 'status' => 'active', 'modules' => array_keys(\App\Support\Access::MODULES)])->save();
         $this->actingAs($u);
+        \Livewire\Livewire::withoutLazyLoading();
         $html = Volt::test('writs.kanban')->html();
         $this->assertStringContainsString('data-flow-color="#7dd3fc"', $html);
         $this->assertStringContainsString('data-flow-color="#14b8a6"', $html);
