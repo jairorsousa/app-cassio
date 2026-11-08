@@ -153,16 +153,47 @@ new #[Layout('layouts.app')] class extends Component
 <div class="flex flex-col gap-md" data-divisions-index>
     @if ($notice)<x-jr.alert variant="success">{{ $notice }}</x-jr.alert>@endif
 
-    <x-fx.card>
-        <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-                <h2 class="text-fs-16 font-semibold text-cryptex-text-primary">Divisão de despesas</h2>
-                <p class="mt-1 text-sm text-mono-600">Grupos com sócio, família ou amigos: quem pagou, quanto cada um deve e os acertos.</p>
+    @php($totalCents = collect($overall)->sum('cents'))
+    <x-fx.card data-overall-summary>
+        <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+                <p class="text-xs text-mono-600">Divisão de despesas</p>
+                @if ($totalCents > 0)
+                    <h2 class="text-fs-18 font-semibold text-green-600" data-overall-total data-sign="pos">No total, te devem R$ {{ $service->money($totalCents) }}</h2>
+                @elseif ($totalCents < 0)
+                    <h2 class="text-fs-18 font-semibold text-red-600" data-overall-total data-sign="neg">No total, você deve R$ {{ $service->money(-$totalCents) }}</h2>
+                @else
+                    <h2 class="text-fs-18 font-semibold text-mono-600" data-overall-total data-sign="zero">Tudo acertado</h2>
+                @endif
             </div>
-            <button type="button" class="fx-btn fx-btn--primary self-start sm:self-auto" wire:click="openGroup">
-                <span class="material-icons-outlined text-[18px]">add</span>
-                {{ $isAdmin ? 'Novo grupo' : 'Solicitar grupo' }}
+            <button type="button" class="fx-btn fx-btn--standard shrink-0 !px-3 text-xs" wire:click="openGroup" data-new-group>
+                <span class="material-icons-outlined text-[18px]">add</span> {{ $isAdmin ? 'Novo grupo' : 'Solicitar grupo' }}
             </button>
+        </div>
+        <div class="mt-3 border-t border-mono-100 pt-2" data-overall>
+            <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-mono-600">Saldo geral por pessoa</h3>
+            @forelse ($overall as $p)
+                @php($oweGroup = collect($p['groups'])->filter(fn ($g) => $g['cents'] < 0)->keys()->first())
+                <div class="flex items-center justify-between gap-2 border-b border-mono-100 py-2 text-sm last:border-0" data-person-row data-sign="{{ $p['cents'] > 0 ? 'pos' : 'neg' }}">
+                    <span class="min-w-0 {{ $p['cents'] > 0 ? 'text-green-600' : 'text-red-600' }}">
+                        @if ($p['cents'] > 0)<strong>{{ $p['name'] }}</strong> te deve <strong>R$ {{ $service->money($p['cents']) }}</strong>
+                        @else Você deve <strong>R$ {{ $service->money(abs($p['cents'])) }}</strong> a <strong>{{ $p['name'] }}</strong>@endif
+                    </span>
+                    <span class="shrink-0">
+                        @if ($p['cents'] > 0 && $isAdmin)
+                            @if ($p['phone'])
+                                <button type="button" class="rounded-pill border border-green-600 px-3 py-1 text-xs font-semibold text-green-600" wire:click="openCharge(@js($p['key']))" data-charge>Cobrar</button>
+                            @else
+                                <button type="button" class="cursor-not-allowed rounded-pill border border-mono-200 px-3 py-1 text-xs text-mono-400" disabled title="Cadastre o celular" data-charge-disabled>Cobrar</button>
+                            @endif
+                        @elseif ($p['cents'] < 0 && $oweGroup)
+                            <a href="{{ route('divisions.show', $oweGroup) }}" class="rounded-pill border border-red-600 px-3 py-1 text-xs font-semibold text-red-600" data-settle-link>Acertar</a>
+                        @endif
+                    </span>
+                </div>
+            @empty
+                <p class="py-2 text-sm text-mono-600">Ninguém deve nada.</p>
+            @endforelse
         </div>
     </x-fx.card>
 
@@ -209,49 +240,26 @@ new #[Layout('layouts.app')] class extends Component
         </x-fx.card>
     @endif
 
-    <div class="grid grid-cols-1 gap-md lg:grid-cols-3">
-        <div class="lg:col-span-2">
-            <x-fx.card>
-                <h3 class="mb-3 text-fs-16 font-semibold">Grupos</h3>
-                @forelse ($groups as $row)
-                    @php($g = $row['group'])
-                    <a href="{{ $g->status === 'approved' ? route('divisions.show', $g) : '#' }}" class="flex items-center justify-between gap-3 border-b border-mono-100 py-3 last:border-0 hover:bg-mono-50" wire:key="g-{{ $g->id }}" data-group-row>
-                        <div class="min-w-0">
-                            <div class="truncate font-semibold text-mono-900">{{ $g->name }}</div>
-                            <div class="text-xs text-mono-600">{{ $g->typeLabel() }} · {{ $g->members->count() }} participante(s)
-                                @if ($g->status !== 'approved')<span class="ml-1 rounded-pill bg-mono-100 px-2 py-0.5">{{ $g->statusLabel() }}</span>@endif</div>
-                        </div>
-                        @if ($g->status === 'approved')
-                            <div class="text-right text-sm font-semibold {{ $row['mine'] > 0 ? 'text-system-up' : ($row['mine'] < 0 ? 'text-system-down' : 'text-mono-600') }}">
-                                @if ($row['mine'] > 0) a receber R$ {{ $service->money($row['mine']) }} @elseif ($row['mine'] < 0) a pagar R$ {{ $service->money(-$row['mine']) }} @else quitado @endif
-                            </div>
-                        @endif
-                    </a>
-                @empty
-                    <x-jr.empty-state title="Nenhum grupo ainda" description="{{ $isAdmin ? 'Crie o primeiro grupo para dividir despesas.' : 'Peça um grupo novo ou aguarde um convite.' }}" />
-                @endforelse
-            </x-fx.card>
-        </div>
-        <x-fx.card data-overall>
-            <h3 class="mb-3 text-fs-16 font-semibold">Saldo geral por pessoa</h3>
-            @forelse ($overall as $p)
-                <div class="flex justify-between border-b border-mono-100 py-2 text-sm last:border-0">
-                    <span>{{ $p['name'] }}</span>
-                    <span class="font-semibold {{ $p['cents'] > 0 ? 'text-system-up' : 'text-system-down' }}">
-                        {{ $p['cents'] > 0 ? 'te deve' : 'você deve' }} R$ {{ $service->money(abs($p['cents'])) }}
-                        @if ($isAdmin && $p['cents'] > 0)
-                            @if ($p['phone'])
-                                <button type="button" class="ml-2 text-xs font-normal text-system-up" wire:click="openCharge(@js($p['key']))" data-charge>Cobrar</button>
-                            @else
-                                <button type="button" class="ml-2 cursor-not-allowed text-xs font-normal text-mono-400" disabled title="Cadastre o celular" data-charge-disabled>Cobrar</button>
-                            @endif
-                        @endif</span>
+    <x-fx.card>
+        <h3 class="mb-3 text-fs-16 font-semibold">Grupos</h3>
+        @forelse ($groups as $row)
+            @php($g = $row['group'])
+            <a href="{{ $g->status === 'approved' ? route('divisions.show', $g) : '#' }}" class="flex items-center justify-between gap-3 border-b border-mono-100 py-3 last:border-0 hover:bg-mono-50" wire:key="g-{{ $g->id }}" data-group-row>
+                <div class="min-w-0">
+                    <div class="truncate font-semibold text-mono-900">{{ $g->name }}</div>
+                    <div class="text-xs text-mono-600">{{ $g->typeLabel() }} · {{ $g->members->count() }} participante(s)
+                        @if ($g->status !== 'approved')<span class="ml-1 rounded-pill bg-mono-100 px-2 py-0.5">{{ $g->statusLabel() }}</span>@endif</div>
                 </div>
-            @empty
-                <p class="text-sm text-mono-600">Tudo acertado.</p>
-            @endforelse
-        </x-fx.card>
-    </div>
+                @if ($g->status === 'approved')
+                    <div class="text-right text-sm font-semibold {{ $row['mine'] > 0 ? 'text-green-600' : ($row['mine'] < 0 ? 'text-red-600' : 'text-mono-400') }}" data-group-balance>
+                        @if ($row['mine'] > 0) a receber R$ {{ $service->money($row['mine']) }} @elseif ($row['mine'] < 0) a pagar R$ {{ $service->money(-$row['mine']) }} @else quitado @endif
+                    </div>
+                @endif
+            </a>
+        @empty
+            <x-jr.empty-state title="Nenhum grupo ainda" description="{{ $isAdmin ? 'Crie o primeiro grupo para dividir despesas.' : 'Peça um grupo novo ou aguarde um convite.' }}" />
+        @endforelse
+    </x-fx.card>
 
     @if ($chargeTarget)
         @include('divisions.charge-modal', ['phone' => $chargeTarget['phone'], 'name' => $chargeTarget['name'], 'cents' => $chargeTarget['cents'], 'service' => $service])
