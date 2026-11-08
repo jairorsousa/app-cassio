@@ -1404,17 +1404,18 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             @foreach ($stages as $stage)
                 @continue(! in_array($stage['key'], $visibleStages, true))
                 @php $meta = $stageMeta[$stage['key']] ?? $stageMeta['negotiation']; @endphp
-                <section class="flex min-h-[520px] flex-col rounded-2xl border {{ $meta['column'] }}" data-stage="{{ $stage['key'] }}">
-                    <div class="h-1 w-full shrink-0 rounded-t-2xl {{ $meta['bar'] }}"></div>
+                @php $flow = ['monitoring' => '#7dd3fc', 'negotiation' => '#60a5fa', 'pending' => '#3b82f6', 'signature' => '#6366f1', 'paid' => '#8b5cf6', 'petitioning' => '#a78bfa', 'awaiting_receipt' => '#38bdf8', 'finalized' => '#14b8a6', 'lost' => '#94a3b8'][$stage['key']] ?? '#94a3b8'; @endphp
+                <section class="flex min-h-[520px] flex-col overflow-hidden rounded-2xl border border-mono-100 bg-mono-50" data-stage="{{ $stage['key'] }}" data-flow-color="{{ $flow }}">
+                    <div class="w-full shrink-0" style="height:4px;background:{{ $flow }}" data-stage-bar></div>
                     <div class="px-3 py-4">
                         <div class="writ-stage-header mb-4">
                             <div class="writ-stage-title">
-                                <span class="material-icons-outlined text-[18px] {{ $meta['icon_text'] }}">{{ $meta['icon'] }}</span>
+                                <span class="material-icons-outlined text-[18px]" style="color: {{ $flow }}">{{ $meta['icon'] }}</span>
                                 <h3 class="text-sm font-bold text-mono-900" title="{{ $stage['label'] }}">{{ $stage['label'] }}</h3>
                             </div>
 
                             <div class="writ-stage-actions">
-                                <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold {{ $meta['count'] }}">{{ $stage['count'] }}</span>
+                                <span class="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold bg-mono-100 text-mono-700">{{ $stage['count'] }}</span>
                                 <button type="button" wire:click="create('{{ $stage['key'] }}')" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-mono-300 transition-colors hover:bg-mono-100 hover:text-primary-500" title="Novo requisitório">
                                     <span class="material-icons-outlined text-[20px]">add</span>
                                 </button>
