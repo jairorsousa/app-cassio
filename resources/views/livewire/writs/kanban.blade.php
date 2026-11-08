@@ -1014,7 +1014,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
         $stages = [];
         foreach (Writ::STAGES as $stage) {
-            $cards = $writs->get($stage, collect());
+            $cards = Writ::boardSort($writs->get($stage, collect()));
             $stages[] = [
                 'key' => $stage,
                 'label' => Writ::STAGE_LABELS[$stage],

@@ -374,6 +374,31 @@ class Writ extends Model
         return ['key' => 'on_time', 'label' => 'No prazo', 'days' => $days];
     }
 
+    /**
+     * Ordem padrão do kanban: concluídos pelo recebimento mais recente; nas demais colunas
+     * vencidos (mais atrasado primeiro), depois amarelos e verdes (vencimento mais próximo primeiro),
+     * e cards sem previsão no fim. Sempre calculado ao carregar (não há posição manual gravada).
+     */
+    public static function boardSort(\Illuminate\Support\Collection $cards, ?Carbon $asOf = null): \Illuminate\Support\Collection
+    {
+        $rank = ['overdue' => 0, 'due_soon' => 1, 'on_time' => 2];
+
+        return $cards->sort(function (self $a, self $b) use ($rank, $asOf) {
+            if ($a->stage === 'finalized' || $b->stage === 'finalized') {
+                $ta = $a->finalized_at ? Carbon::parse($a->finalized_at)->timestamp : PHP_INT_MIN;
+                $tb = $b->finalized_at ? Carbon::parse($b->finalized_at)->timestamp : PHP_INT_MIN;
+
+                return [$tb, $b->id] <=> [$ta, $a->id];
+            }
+            $ka = $rank[$a->deadlineStatus($asOf)['key'] ?? ''] ?? 3;
+            $kb = $rank[$b->deadlineStatus($asOf)['key'] ?? ''] ?? 3;
+            $da = $a->estimatedReceiptDeadline()?->timestamp ?? PHP_INT_MAX;
+            $db = $b->estimatedReceiptDeadline()?->timestamp ?? PHP_INT_MAX;
+
+            return [$ka, $da, $b->id] <=> [$kb, $db, $a->id];
+        })->values();
+    }
+
     /** "X meses desde a compra" (ou dias se < 1 mês); até o recebimento quando finalizado. */
     public function elapsedSincePurchaseLabel(?Carbon $asOf = null): ?string
     {
