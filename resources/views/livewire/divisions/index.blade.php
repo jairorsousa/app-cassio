@@ -158,15 +158,17 @@ new #[Layout('layouts.app')] class extends Component
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
                 <p class="text-xs text-mono-600">Divisão de despesas</p>
+                <p class="hidden text-sm text-mono-600 lg:block" data-desktop-intro>Grupos com sócio, família ou amigos: quem pagou, quanto cada um deve e os acertos.</p>
                 @if ($totalCents > 0)
-                    <h2 class="text-fs-18 font-semibold text-green-600" data-overall-total data-sign="pos">No total, te devem R$ {{ $service->money($totalCents) }}</h2>
+                    <h2 class="text-fs-18 font-semibold text-mono-900" data-overall-total data-sign="pos">No total, <span class="text-green-600" data-amount>te devem R$ {{ $service->money($totalCents) }}</span></h2>
                 @elseif ($totalCents < 0)
-                    <h2 class="text-fs-18 font-semibold text-red-600" data-overall-total data-sign="neg">No total, você deve R$ {{ $service->money(-$totalCents) }}</h2>
+                    <h2 class="text-fs-18 font-semibold text-mono-900" data-overall-total data-sign="neg">No total, <span class="text-red-600" data-amount>você deve R$ {{ $service->money(-$totalCents) }}</span></h2>
                 @else
                     <h2 class="text-fs-18 font-semibold text-mono-600" data-overall-total data-sign="zero">Tudo acertado</h2>
                 @endif
             </div>
-            <button type="button" class="fx-btn fx-btn--standard shrink-0 !px-3 text-xs" wire:click="openGroup" data-new-group>
+            <button type="button" class="fx-btn fx-btn--primary hidden shrink-0 lg:block" wire:click="openGroup" data-new-group-desktop><span style="display:inline-flex;align-items:center;gap:.25rem"><span class="material-icons-outlined text-[18px]">add</span> {{ $isAdmin ? 'Novo grupo' : 'Solicitar grupo' }}</span></button>
+            <button type="button" class="fx-btn fx-btn--standard shrink-0 lg:hidden !px-3 text-xs" wire:click="openGroup" data-new-group>
                 <span class="material-icons-outlined text-[18px]">add</span> {{ $isAdmin ? 'Novo grupo' : 'Solicitar grupo' }}
             </button>
         </div>
@@ -175,9 +177,9 @@ new #[Layout('layouts.app')] class extends Component
             @forelse ($overall as $p)
                 @php($oweGroup = collect($p['groups'])->filter(fn ($g) => $g['cents'] < 0)->keys()->first())
                 <div class="flex items-center justify-between gap-2 border-b border-mono-100 py-2 text-sm last:border-0" data-person-row data-sign="{{ $p['cents'] > 0 ? 'pos' : 'neg' }}">
-                    <span class="min-w-0 {{ $p['cents'] > 0 ? 'text-green-600' : 'text-red-600' }}">
-                        @if ($p['cents'] > 0)<strong>{{ $p['name'] }}</strong> te deve <strong>R$ {{ $service->money($p['cents']) }}</strong>
-                        @else Você deve <strong>R$ {{ $service->money(abs($p['cents'])) }}</strong> a <strong>{{ $p['name'] }}</strong>@endif
+                    <span class="min-w-0 text-mono-900">
+                        @if ($p['cents'] > 0)<strong>{{ $p['name'] }}</strong> <span class="text-green-600" data-amount>te deve <strong>R$ {{ $service->money($p['cents']) }}</strong></span>
+                        @else <span class="text-red-600" data-amount>Você deve <strong>R$ {{ $service->money(abs($p['cents'])) }}</strong></span> a <strong>{{ $p['name'] }}</strong>@endif
                     </span>
                     <span class="shrink-0">
                         @if ($p['cents'] > 0 && $isAdmin)

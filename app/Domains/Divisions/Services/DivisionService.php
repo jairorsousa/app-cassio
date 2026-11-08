@@ -1070,7 +1070,10 @@ class DivisionService
     }
 
     /**
-     * Dívidas simplificadas: o menor número de pagamentos para zerar todo mundo.
+     * Quem deve a quem, proporcional: cada devedor deve a cada credor na proporção do saldo credor
+     * de cada um (dívida_ij = devido_i × crédito_j / total_créditos). Acertos já entram no saldo,
+     * então um pagamento a um credor reequilibra a divisão entre todos. Centavos fecham exatos
+     * por linha (devedor) e por coluna (credor).
      *
      * @return list<array{from:int,to:int,cents:int}>
      */
@@ -1085,21 +1088,72 @@ class DivisionService
                 $creditors[$id] = $c;
             }
         }
-        $out = [];
-        while ($debtors && $creditors) {
-            arsort($debtors);
-            arsort($creditors);
-            $d = array_key_first($debtors);
-            $c = array_key_first($creditors);
-            $amount = min($debtors[$d], $creditors[$c]);
-            $out[] = ['from' => $d, 'to' => $c, 'cents' => $amount];
-            $debtors[$d] -= $amount;
-            $creditors[$c] -= $amount;
-            if ($debtors[$d] === 0) {
-                unset($debtors[$d]);
+        $totalCredit = array_sum($creditors);
+        $totalDebt = array_sum($debtors);
+        if (! $debtors || ! $creditors) {
+            return [];
+        }
+        // Se créditos e débitos não batem (não deveria), a base é o menor dos dois.
+        $base = min($totalCredit, $totalDebt);
+        $m = [];
+        foreach ($debtors as $d => $due) {
+            $rowTotal = intdiv($due * $base, $totalDebt);
+            $alloc = [];
+            $rem = [];
+            foreach ($creditors as $c => $cr) {
+                $exact = $rowTotal * $cr / $totalCredit;
+                $alloc[$c] = (int) floor($exact);
+                $rem[$c] = $exact - $alloc[$c];
             }
-            if ($creditors[$c] === 0) {
-                unset($creditors[$c]);
+            $left = $rowTotal - array_sum($alloc);
+            arsort($rem);
+            foreach (array_keys($rem) as $c) {
+                if ($left <= 0) {
+                    break;
+                }
+                $alloc[$c]++;
+                $left--;
+            }
+            $m[$d] = $alloc;
+        }
+        // Ajuste de centavos por coluna: cada credor recebe exatamente seu crédito (dentro da base).
+        $target = [];
+        $acc = 0;
+        $i = 0;
+        foreach ($creditors as $c => $cr) {
+            $i++;
+            $target[$c] = $i === count($creditors) ? $base - $acc : intdiv($cr * $base, $totalCredit);
+            $acc += $target[$c];
+        }
+        for ($guard = 0; $guard < 10000; $guard++) {
+            $col = [];
+            foreach ($creditors as $c => $cr) {
+                $col[$c] = array_sum(array_column($m, $c)) - $target[$c];
+            }
+            $over = array_keys(array_filter($col, fn ($v) => $v > 0));
+            $under = array_keys(array_filter($col, fn ($v) => $v < 0));
+            if (! $over || ! $under) {
+                break;
+            }
+            $moved = false;
+            foreach ($m as $d => $row) {
+                if ($row[$over[0]] > 0) {
+                    $m[$d][$over[0]]--;
+                    $m[$d][$under[0]]++;
+                    $moved = true;
+                    break;
+                }
+            }
+            if (! $moved) {
+                break;
+            }
+        }
+        $out = [];
+        foreach ($m as $d => $row) {
+            foreach ($row as $c => $cents) {
+                if ($cents > 0) {
+                    $out[] = ['from' => $d, 'to' => $c, 'cents' => $cents];
+                }
             }
         }
 

@@ -28,9 +28,9 @@ class GroupSummaryViewTest extends TestCase
         $mk('Pizza', '40.00', $ana->id, [$me->id, $ana->id]);              // peguei 20
         $mk('Uber', '10.00', $ana->id, [$ana->id, $bia->id]);              // não envolvido
         Volt::test('divisions.show', ['group' => $g->fresh()])
-            ->assertSeeHtml('data-sign="pos">Devem a você R$ 40,00 no total')
+            ->assertSeeHtml('data-sign="pos"><span class="text-green-600" data-amount>Devem a você R$ 40,00</span> no total')
             ->assertSee('Você pagou R$ 90,00')->assertSee('Ana pagou R$ 40,00')
             ->assertSeeHtml('data-lent="6000"')->assertSeeHtml('data-lent="-2000"')->assertSeeHtml('data-lent="none"')
-            ->assertSee('não envolvido')->assertSeeHtml('data-fab-add')->assertSee('Bia</strong> deve R$ 35,00 a você', false);
+            ->assertSee('não envolvido')->assertSeeHtml('data-fab-add')->assertSeeHtml('Bia</strong> <span class="text-green-600" data-amount>deve R$ 35,00</span> a você');
     }
 }

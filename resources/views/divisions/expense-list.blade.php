@@ -9,7 +9,7 @@
             @php($iPaid = $meId && (int) $e->paid_by_member_id === (int) $meId)
             @php($involved = $meId && ($iPaid || $e->shares->contains('member_id', $meId)))
             @php($lent = $iPaid ? $cents - $myShare : -$myShare)
-            <div class="border-b border-mono-100 py-3 last:border-0" x-data="{ open: false }" wire:key="e-{{ $e->id }}" data-expense-row data-lent="{{ $involved ? $lent : 'none' }}">
+            <div class="border-b border-mono-100 py-3 last:border-0" x-data="{ open: false }" wire:key="e-{{ $variant ?? 'x' }}-{{ $e->id }}" data-expense-row data-lent="{{ $involved ? $lent : 'none' }}">
                 <div class="flex items-start gap-3">
                     <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" x-on:click="open = !open">
                         <span class="w-10 shrink-0 text-center leading-tight text-mono-600"><span class="block text-[11px] uppercase">{{ \Illuminate\Support\Carbon::parse($e->date)->locale('pt_BR')->translatedFormat('M') }}</span><span class="block text-fs-18 font-semibold">{{ $e->date->format('d') }}</span></span>
@@ -18,8 +18,10 @@
                                 @if ($e->status !== 'approved')<span class="ml-1 rounded-pill {{ $e->status === 'pending' ? 'bg-primary-100 text-primary-500' : 'bg-mono-100 text-mono-600' }} px-2 text-xs">{{ \App\Domains\Divisions\Models\DivisionExpense::STATUS[$e->status] }}</span>@endif
                                 @if ($isAdmin && $e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</span>
                             <span class="block text-xs text-mono-600" data-payer-line>{{ $iPaid ? 'Você' : $e->payer?->name }} pagou R$ {{ $service->money($cents) }} · {{ $e->categoryLabel() }}</span>
+                            @if (($variant ?? '') === 'd')<span class="block text-xs text-mono-400" data-desktop-details>{{ $e->date->format('d/m/Y') }} · {{ $e->categoryLabel() }} · pago por {{ $e->payer?->name }} · {{ \App\Domains\Divisions\Models\DivisionExpense::MODES[$e->split_mode] ?? '' }}</span>@endif
                         </span>
                     </button>
+                    @if (($variant ?? '') === 'd')<div class="shrink-0 text-right" style="width:8rem" data-desktop-amount><span class="block text-xs text-mono-600">total</span><strong>R$ {{ number_format((float) $e->amount, 2, ',', '.') }}</strong></div>@endif
                     <div class="shrink-0 text-right text-xs leading-tight" data-my-part>
                         @if (! $involved)
                             <span class="text-mono-400" data-sign="none">não envolvido</span>

@@ -567,6 +567,10 @@ new #[Layout('layouts.app')] class extends Component
             </div>
             <div class="flex flex-wrap gap-2">
                 @if ($isAdmin)<button type="button" class="fx-btn fx-btn--standard" wire:click="openSettings">Configurar</button>@endif
+                <div class="hidden lg:block" data-desktop-actions><span style="display:inline-flex;gap:.5rem">
+                    <button type="button" class="fx-btn fx-btn--standard" wire:click="openSettle">Registrar acerto</button>
+                    <button type="button" class="fx-btn fx-btn--primary" wire:click="newExpense"><span class="material-icons-outlined text-[18px]">add</span> Nova despesa</button>
+                </span></div>
             </div>
         </div>
         @if ($showSettings && $isAdmin)
@@ -585,9 +589,9 @@ new #[Layout('layouts.app')] class extends Component
         <x-fx.card data-my-summary x-data="{ open: false }">
             <button type="button" class="flex w-full items-center justify-between gap-3 text-left" x-on:click="open = !open" data-summary-toggle>
                 @if ($myNet > 0)
-                    <span class="text-fs-18 font-semibold text-green-600" data-summary-total data-sign="pos">Devem a você R$ {{ $service->money($myNet) }} no total</span>
+                    <span class="text-fs-18 font-semibold text-mono-900" data-summary-total data-sign="pos"><span class="text-green-600" data-amount>Devem a você R$ {{ $service->money($myNet) }}</span> no total</span>
                 @elseif ($myNet < 0)
-                    <span class="text-fs-18 font-semibold text-red-600" data-summary-total data-sign="neg">Você deve R$ {{ $service->money(abs($myNet)) }} no total</span>
+                    <span class="text-fs-18 font-semibold text-mono-900" data-summary-total data-sign="neg"><span class="text-red-600" data-amount>Você deve R$ {{ $service->money(abs($myNet)) }}</span> no total</span>
                 @else
                     <span class="text-fs-18 font-semibold text-mono-600" data-summary-total data-sign="zero">Você está quitado neste grupo</span>
                 @endif
@@ -596,9 +600,9 @@ new #[Layout('layouts.app')] class extends Component
             <ul x-show="open" x-cloak class="mt-3 space-y-1 border-t border-mono-100 pt-3 text-sm" data-summary-list>
                 @foreach ($myTransfers as $t)
                     @if ($t['to'] === $me->id)
-                        <li class="text-green-600" data-summary-row data-sign="pos"><strong>{{ $members[$t['from']]->name }}</strong> deve R$ {{ $service->money($t['cents']) }} a você</li>
+                        <li class="text-mono-900" data-summary-row data-sign="pos"><strong>{{ $members[$t['from']]->name }}</strong> <span class="text-green-600" data-amount>deve R$ {{ $service->money($t['cents']) }}</span> a você</li>
                     @else
-                        <li class="text-red-600" data-summary-row data-sign="neg">Você deve R$ {{ $service->money($t['cents']) }} a <strong>{{ $members[$t['to']]->name }}</strong></li>
+                        <li class="text-mono-900" data-summary-row data-sign="neg"><span class="text-red-600" data-amount>Você deve R$ {{ $service->money($t['cents']) }}</span> a <strong>{{ $members[$t['to']]->name }}</strong></li>
                     @endif
                 @endforeach
             </ul>
@@ -616,7 +620,7 @@ new #[Layout('layouts.app')] class extends Component
         <div class="flex gap-2"><button type="button" class="fx-btn fx-btn--standard" wire:click="openSettle">Registrar acerto</button></div>
     @endif
 
-    @include('divisions.expense-list')
+    <div class="lg:hidden">@include('divisions.expense-list', ['variant' => 'm'])</div>
 
     <div id="saldos" class="grid grid-cols-1 gap-md lg:grid-cols-3 scroll-mt-24">
         <x-fx.card data-balances>
@@ -626,7 +630,7 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="flex justify-between py-1 text-sm"><span>{{ $m->name }}@if ($m->is_owner) (você)@endif</span>
                     <span class="font-semibold {{ $c > 0 ? 'text-green-600' : ($c < 0 ? 'text-red-600' : 'text-mono-600') }}">{{ $c > 0 ? 'recebe' : ($c < 0 ? 'deve' : 'quitado') }}@if ($c) R$ {{ $service->money(abs($c)) }}@endif</span></div>
             @endforeach
-            <h4 class="mt-4 mb-2 text-sm font-semibold text-mono-600">Quem paga quem (simplificado)</h4>
+            <h4 class="mt-4 mb-2 text-sm font-semibold text-mono-600">Quem paga quem (proporcional aos créditos)</h4>
             @forelse ($transfers as $t)
                 <div class="flex items-center justify-between gap-2 border-b border-mono-100 py-2 text-sm last:border-0" data-transfer>
                     <span><strong>{{ $members[$t['from']]->name }}</strong> paga <strong>{{ $members[$t['to']]->name }}</strong>: R$ {{ $service->money($t['cents']) }}</span>
@@ -738,6 +742,8 @@ new #[Layout('layouts.app')] class extends Component
             @endif
         </x-fx.card>
     </div>
+
+    <div class="hidden lg:block">@include('divisions.expense-list', ['variant' => 'd'])</div>
 
 
     @if ($isAdmin && $chargeMember)
@@ -921,5 +927,5 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     @endif
 
-    <div x-data><template x-teleport="body"><button type="button" wire:click="newExpense" style="position:fixed;right:1.25rem;bottom:calc(1.25rem + env(safe-area-inset-bottom));z-index:60" class="flex items-center gap-2 rounded-pill bg-primary-500 px-5 py-3 text-sm font-semibold text-white shadow-elevated hover:bg-primary-600" data-fab-add><span class="material-icons-outlined text-[20px]">receipt_long</span> Adicionar despesa</button></template></div>
+    <div x-data><template x-teleport="body"><button type="button" wire:click="newExpense" style="position:fixed;right:1.25rem;bottom:calc(1.25rem + env(safe-area-inset-bottom));z-index:60" class="lg:hidden flex items-center gap-2 rounded-pill bg-primary-500 px-5 py-3 text-sm font-semibold text-white shadow-elevated hover:bg-primary-600" data-fab-add><span class="material-icons-outlined text-[20px]">receipt_long</span> Adicionar despesa</button></template></div>
 </div>

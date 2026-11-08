@@ -32,7 +32,7 @@ class MemberNameEditTest extends TestCase
 
         Volt::test('divisions.show', ['group' => $g1->fresh()])->assertSeeHtml('data-edit-name')
             ->call('editName', $m1->id)->set('memberNameDraft', ' Marina   Mota ')->call('saveName')->assertHasNoErrors()
-            ->assertSee('Marina Mota pagou R$ 10,00')->assertSee('Você deve R$ 5,00 a');
+            ->assertSee('Marina Mota pagou R$ 10,00')->assertSeeHtml('<span class="text-red-600" data-amount>Você deve R$ 5,00</span> a');
         $this->assertSame(2, \App\Domains\Divisions\Models\DivisionMember::where('name', 'Marina Mota')->count());
         $this->assertSame('Marina Mota', $u->fresh()->name);
         $this->assertSame('Marina Mota', $c->fresh()->name);
