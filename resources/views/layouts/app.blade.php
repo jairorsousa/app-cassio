@@ -24,6 +24,12 @@
             })();
         </script>
 
+        {{-- Cores de valores de lançamentos (App\Support\AmountTone / <x-fx.amount>): verde-700/vermelho-700 no claro, 400 no escuro. --}}
+        <style id="amount-tones">
+            :root,[data-theme=light]{--amount-in:#15803d;--amount-out:#b91c1c}
+            [data-theme=dark]{--amount-in:#4ade80;--amount-out:#f87171}
+            .fx-amount-in{color:var(--amount-in)!important}.fx-amount-out{color:var(--amount-out)!important}.fx-amount-neutral{color:var(--text-primary,inherit)!important}
+        </style>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     @if (\App\Support\RolePolicy::isReadOnly(auth()->user()))

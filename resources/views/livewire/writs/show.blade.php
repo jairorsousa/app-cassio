@@ -687,8 +687,8 @@ new #[Layout('layouts.app')] class extends Component
                                 <td class="px-4 py-4 text-mono-900">{{ $t->description }}
                                     @if ($t->writLinks->isNotEmpty())<p class="mt-1 text-xs text-mono-500">R$ {{ number_format((float) $t->writLinks->sum('writ_amount'), 2, ',', '.') }} vinculados a recebimentos de processo. O valor desta linha é a entrada restante.</p>@endif
                                 </td>
-                                <td class="px-4 py-4 text-right font-bold {{ $t->type === 'income' ? 'text-mono-900' : 'text-mono-900' }}">
-                                    R$ {{ number_format($t->amount, 2, ',', '.') }}
+                                <td class="px-4 py-4 text-right font-bold">
+                                    <x-fx.amount :type="$t->type" :amount="$t->amount">R$ {{ number_format($t->amount, 2, ',', '.') }}</x-fx.amount>
                                 </td>
                             </tr>
                         @endforeach

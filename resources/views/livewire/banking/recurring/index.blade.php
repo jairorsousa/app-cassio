@@ -183,8 +183,8 @@ new #[Layout('layouts.app')] class extends Component
                         <tr>
                             <td>{{ $r->description }}</td>
                             <td class="text-xxs">{{ ['daily'=>'Diária','weekly'=>'Semanal','monthly'=>'Mensal','yearly'=>'Anual'][$r->frequency] }}</td>
-                            <td class="text-right {{ $r->type === 'income' ? 'text-system-up' : 'text-system-down' }}">
-                                R$ {{ number_format($r->amount, 2, ',', '.') }}
+                            <td class="text-right">
+                                <x-fx.amount :type="$r->type" :amount="$r->amount" />
                             </td>
                             <td><span class="fx-badge">{{ ['active'=>'Ativa','paused'=>'Pausada','finished'=>'Encerrada'][$r->status] }}</span></td>
                             <td class="text-right whitespace-nowrap">

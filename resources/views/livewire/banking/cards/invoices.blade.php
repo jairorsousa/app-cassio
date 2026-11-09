@@ -229,7 +229,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     @forelse ($purchases as $t)
                                         <div class="flex justify-between gap-2 py-0.5">
                                             <span>{{ $t->date->format('d/m') }} · {{ $t->description }}@if ($t->additional_card_id && isset($cardsById[$t->additional_card_id])) <span class="text-mono-500">· final {{ $cardsById[$t->additional_card_id]->last_four ?? $cardsById[$t->additional_card_id]->name }}</span>@endif@if ($t->installment_total) <span class="text-mono-500">({{ $t->installment_number }}/{{ $t->installment_total }})</span>@endif @if ($t->category)<span class="text-mono-500">· {{ $t->category->name }}</span>@endif</span>
-                                            <span class="whitespace-nowrap">{{ $brl($t->amount) }}</span>
+                                            <x-fx.amount :type="$t->type" :amount="$t->amount">{{ $brl($t->amount) }}</x-fx.amount>
                                         </div>
                                     @empty
                                         <div class="text-mono-500">Sem compras nesta fatura.</div>
@@ -240,7 +240,7 @@ new #[Layout('layouts.app')] class extends Component {
                                     @forelse ($payments as $p)
                                         <div class="flex justify-between gap-2 py-0.5">
                                             <span>{{ $p->date->format('d/m/Y') }} · {{ $p->bankAccount?->name ?? 'Conta' }}@if ($p->notes) <span class="text-mono-500">· {{ $p->notes }}</span>@endif</span>
-                                            <span class="whitespace-nowrap text-green-700">{{ $brl($p->amount) }}</span>
+                                            <x-fx.amount :type="$p->type" :amount="$p->amount">{{ $brl($p->amount) }}</x-fx.amount>
                                         </div>
                                     @empty
                                         <div class="text-mono-500">Nenhum pagamento registrado.</div>

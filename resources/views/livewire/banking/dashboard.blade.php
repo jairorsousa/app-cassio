@@ -166,8 +166,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                                 <div class="text-fs-14 text-cryptex-text-primary">{{ $t->description }}</div>
                                 <div class="text-fs-12 text-cryptex-text-secondary font-mono">{{ $t->date->format('d/m/Y') }}</div>
                             </div>
-                            <div class="text-fs-14 font-medium font-mono [font-variant-numeric:tabular-nums] {{ $t->type === 'income' ? 'text-cryptex-green-500' : 'text-cryptex-red-500' }}">
-                                R$ {{ number_format($t->amount, 2, ',', '.') }}
+                            <div class="text-fs-14 font-medium font-mono [font-variant-numeric:tabular-nums]">
+                                <x-fx.amount :type="$t->type" :amount="$t->amount" />
                             </div>
                         </li>
                     @endforeach

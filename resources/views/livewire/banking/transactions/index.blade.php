@@ -468,6 +468,17 @@ new #[Layout('layouts.app')] class extends Component
         $this->formCategoryId = $transaction->category_id;
         $this->formBankAccountId = $transaction->bank_account_id;
         $this->formCreditCardId = $transaction->additional_card_id ?? $transaction->credit_card_id;
+        if ($transaction->type === 'transfer') {
+            // Transferência: carrega os DOIS lados (origem = saída, destino = entrada), seja qual for a linha clicada.
+            $pair = $transaction->related_transaction_id ? Transaction::find($transaction->related_transaction_id) : Transaction::where('related_transaction_id', $transaction->id)->where('type', 'transfer')->first();
+            if ((float) $transaction->amount < 0) {
+                $this->formBankAccountId = $transaction->bank_account_id;
+                $this->formTransferToId = $pair?->bank_account_id;
+            } else {
+                $this->formTransferToId = $transaction->bank_account_id;
+                $this->formBankAccountId = $pair?->bank_account_id;
+            }
+        }
         $this->formIsCard = $transaction->type === 'expense' && $transaction->credit_card_id !== null;
         $this->formIsCardRefund = $this->formIsCard && (float) $transaction->amount < 0;
         $this->formInvoiceMonth = $transaction->invoice?->reference_month ?? '';
@@ -753,6 +764,25 @@ new #[Layout('layouts.app')] class extends Component
                         throw new \DomainException('Remova o rateio antes de alterar o tipo do lançamento.');
                     }
 
+                    if ($data['formType'] === 'transfer') {
+                        // Edição/conversão em transferência: atualiza os dois lados (contas antigas e novas) num passo só.
+                        $saved = [$transfer->update(
+                            $transaction,
+                            $data['formBankAccountId'] ? BankAccount::findOrFail($data['formBankAccountId']) : null,
+                            $data['formTransferToId'] ? BankAccount::findOrFail($data['formTransferToId']) : null,
+                            (float) $data['formAmount'],
+                            $data['formDate'],
+                            $data['formNotes'] ?: null,
+                            $data['formStatus'],
+                        )];
+
+                        $message = 'Transferência atualizada.';
+                    } else {
+                    if ($transaction->type === 'transfer') {
+                        // Transferência virou receita/despesa: o outro lado sai, sem órfão.
+                        $transfer->detach($transaction);
+                        $transaction->refresh()->loadCount('allocations');
+                    }
                     if ($transaction->allocations_count > 0) {
                         $allocations->clear($transaction);
                     }
@@ -781,6 +811,7 @@ new #[Layout('layouts.app')] class extends Component
                     }
                     $saved = [$service->update($transaction, $updates)];
                     $message = 'Lançamento atualizado.';
+                    }
                 } elseif ($data['formType'] === 'transfer') {
                     if (! $data['formBankAccountId'] || ! $data['formTransferToId']) {
                         $this->addError('formTransferToId', 'Selecione as contas de origem e destino.');
@@ -1236,6 +1267,8 @@ new #[Layout('layouts.app')] class extends Component
                         <td class="px-space-4 py-space-3 text-fs-14 font-mono text-cryptex-text-secondary whitespace-nowrap">{{ $t->date->format('d/m/Y') }}</td>
                         <td class="px-space-4 py-space-3 text-fs-14">
                             <span class="text-cryptex-text-primary">{{ $t->description }}</span>
+                            {{-- Celular: a coluna Valor fica fora da tela (tabela rola), então o valor colorido aparece também aqui. --}}
+                            <span class="sm:hidden block mt-1 font-mono font-semibold [font-variant-numeric:tabular-nums]" data-mobile-amount><x-fx.amount :type="$t->type" :amount="$t->amount" /></span>
                             @if ($t->isInstallment())
                                 <span class="text-fs-12 text-cryptex-text-tertiary ml-1 font-mono">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
                             @endif
@@ -1302,8 +1335,8 @@ new #[Layout('layouts.app')] class extends Component
                             @endif
                         </td>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-secondary">{{ $t->bankAccount?->name ?? $t->creditCard?->name }}</td>
-                        <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums] {{ $t->type === 'income' ? 'text-cryptex-green-500' : ($t->type === 'transfer' ? 'text-cryptex-text-primary' : 'text-cryptex-red-500') }}">
-                            R$ {{ number_format(abs((float) $t->amount), 2, ',', '.') }}
+                        <td class="px-space-4 py-space-3 text-right font-medium font-mono whitespace-nowrap [font-variant-numeric:tabular-nums]">
+                            <x-fx.amount :type="$t->type" :amount="$t->amount" />
                         </td>
                         <td class="px-space-4 py-space-3 text-right whitespace-nowrap">
                             @if ($t->source_type === \App\Domains\Banking\Models\ReceiptDestination::class)
@@ -1547,6 +1580,17 @@ new #[Layout('layouts.app')] class extends Component
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    @if ($editingId && ! $formIsCard && ! $editingHasAllocations && ! $editingProcessReceipt)
+                                        {{-- Corrigir o tipo: despesa/receita lançada por engano vira transferência (e vice-versa) sem deixar lado órfão. --}}
+                                        <div class="md:col-span-2" role="group" aria-label="Tipo do lançamento" data-test="edit-type-switch">
+                                            <span class="mb-2 block text-sm font-medium text-mono-600">Tipo</span>
+                                            <div class="flex flex-wrap gap-2">
+                                                @foreach (['expense' => 'Despesa', 'income' => 'Receita', 'transfer' => 'Transferência'] as $typeKey => $typeLabel)
+                                                    <button type="button" wire:click="$set('formType', '{{ $typeKey }}')" aria-pressed="{{ $formType === $typeKey ? 'true' : 'false' }}" class="min-h-[40px] rounded-pill border px-4 text-sm font-semibold {{ $formType === $typeKey ? 'border-primary-500 bg-primary-500 text-white' : 'border-mono-200 text-mono-700' }}">{{ $typeLabel }}</button>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
                                     <x-jr.input label="Valor *" icon="payments" name="formAmount" wire:model.live.debounce.300ms="formAmount" x-money required />
                                     <x-jr.input label="Data *" icon="calendar_month" name="formDate" type="date" wire:model.live="formDate" required />
                                     @if ($formIsHistorical)
