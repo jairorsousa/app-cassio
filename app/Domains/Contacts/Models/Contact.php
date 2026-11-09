@@ -63,6 +63,13 @@ class Contact extends Model
                 $contact->type = $roles[0];
             }
         });
+
+        // Renomear em Contatos atualiza o usuário e os participantes do Divisões vinculados (PersonNameSync).
+        static::updated(function (Contact $contact) {
+            if ($contact->wasChanged('name')) {
+                \App\Support\PersonNameSync::fromContact($contact);
+            }
+        });
     }
 
     public function receivables(): HasMany
