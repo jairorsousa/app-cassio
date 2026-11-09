@@ -23,6 +23,7 @@
         @include('layouts.sidebar')
 
     <div class="ml-auto flex shrink-0 items-center gap-2">
+        <x-quick-entry.launcher variant="header" />
         <button
             type="button"
             class="flex h-10 w-10 items-center justify-center rounded-full text-mono-600 transition-colors hover:bg-mono-50"

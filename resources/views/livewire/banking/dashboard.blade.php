@@ -30,6 +30,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         HTML;
     }
 
+    /** Lançamento rápido salvo: re-renderiza a visão geral (sem cache). */
+    #[\Livewire\Attributes\On('transaction-saved')]
+    public function onTransactionSaved(): void
+    {
+    }
+
     public function with(): array
     {
         // Sem cache: os números precisam ser os mesmos do painel inicial a qualquer momento.
@@ -92,6 +98,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
+    <x-quick-entry.shortcuts />
     <div class="flex justify-end"><livewire:banking.regime-switch /></div>
     <x-banking.cash-position
         :accounts-balance="$accountsBalance"

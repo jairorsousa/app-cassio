@@ -153,6 +153,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
         session()->flash('status', 'Layout padrão restaurado. Nenhum dado financeiro foi alterado.');
     }
 
+    /** Lançamento rápido salvo em qualquer lugar da tela: re-renderiza o painel (o snapshot é invalidado pelo observer). */
+    #[\Livewire\Attributes\On('transaction-saved')]
+    public function onTransactionSaved(): void
+    {
+    }
+
     public function refresh(DashboardSnapshotService $service): void
     {
         $service->refresh();
@@ -207,6 +213,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     {{-- Filtro de período --}}
+    <x-quick-entry.shortcuts />
+
     <x-fx.card>
         <div class="flex flex-col lg:flex-row lg:items-end gap-space-4">
             <div class="flex flex-col gap-1">
@@ -232,10 +240,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
             <livewire:banking.regime-switch />
             <div class="lg:ml-auto flex flex-wrap items-center gap-space-3">
                 <div class="relative" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false" data-new-menu>
-                    <button type="button" x-on:click="open = !open" :aria-expanded="open" class="min-h-[40px] px-3 rounded-sm bg-cryptex-brand-400 text-white text-fs-12 font-semibold">+ Novo</button>
+                    {{-- Despesa/Receita/Transferência ficaram nos atalhos grandes do topo; aqui só o que não é lançamento. --}}
+                    <button type="button" x-on:click="open = !open" :aria-expanded="open" class="min-h-[40px] px-3 rounded-sm border border-cryptex-border-default text-cryptex-text-primary text-fs-12 font-semibold">+ Outros</button>
                     <div x-show="open" x-cloak x-transition class="absolute right-0 z-dropdown mt-1 w-48 overflow-hidden rounded-md border border-cryptex-border-default bg-cryptex-bg-secondary shadow-dropdown text-fs-14" style="display:none">
-                        <a href="{{ route('banking.transactions.index', ['novo' => 'expense']) }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Lançamento</a>
-                        <a href="{{ route('banking.transactions.index', ['novo' => 'transfer']) }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Transferência</a>
                         <a href="{{ route('investments.operations.index') }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Operação</a>
                         <a href="{{ route('writs.create') }}" class="block px-3 py-2 hover:bg-cryptex-bg-tertiary text-cryptex-text-primary">Requisitório</a>
                     </div>

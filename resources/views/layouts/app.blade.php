@@ -30,6 +30,38 @@
             [data-theme=dark]{--amount-in:#4ade80;--amount-out:#f87171}
             .fx-amount-in{color:var(--amount-in)!important}.fx-amount-out{color:var(--amount-out)!important}.fx-amount-neutral{color:var(--text-primary,inherit)!important}
         </style>
+        {{-- Lançamento rápido: "+ Lançar" (desktop), botão "+" (celular), abas do modal e atalhos do painel. --}}
+        <style id="quick-entry">
+            :root,[data-theme=light]{--qe-out-bg:#fef2f2;--qe-out-bd:#fecaca;--qe-in-bg:#f0fdf4;--qe-in-bd:#bbf7d0}
+            [data-theme=dark]{--qe-out-bg:rgba(248,113,113,.12);--qe-out-bd:rgba(248,113,113,.4);--qe-in-bg:rgba(74,222,128,.12);--qe-in-bd:rgba(74,222,128,.4)}
+            .qe-desktop{display:none}
+            @media (min-width:1024px){.qe-desktop{display:inline-flex}}
+            .qe-launch-btn{display:inline-flex;align-items:center;gap:4px;height:40px;padding:0 16px;border-radius:9999px;background:var(--colors-primary-g500);color:#fff;font-size:14px;font-weight:600;white-space:nowrap}
+            .qe-launch-btn:hover{background:var(--colors-primary-g600)}
+            .qe-launch-split{border-top-right-radius:0;border-bottom-right-radius:0;padding-right:12px}
+            .qe-launch-caret{border-top-left-radius:0;border-bottom-left-radius:0;padding:0 10px;margin-left:1px}
+            .qe-launch-menu{position:absolute;right:0;top:46px;z-index:40;width:230px;overflow:hidden;border-radius:12px;border:1px solid var(--colors-mono-g200);background:var(--colors-mono-white);box-shadow:var(--shadow-elevated)}
+            .qe-menu-item{display:flex;width:100%;align-items:center;gap:10px;padding:12px 14px;font-size:14px;font-weight:600;color:var(--colors-mono-g900);text-align:left}
+            .qe-menu-item:hover{background:var(--colors-mono-g50)}
+            .qe-fab{position:fixed;z-index:50;right:max(16px, calc(env(safe-area-inset-right) + 12px));bottom:max(16px, calc(env(safe-area-inset-bottom) + 12px));display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+            @media (min-width:1024px){.qe-fab{display:none}}
+            .qe-fab-btn{display:flex;height:56px;width:56px;align-items:center;justify-content:center;border-radius:9999px;background:var(--colors-primary-g500);color:#fff;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+            .qe-fab-menu{width:230px;overflow:hidden;border-radius:14px;border:1px solid var(--colors-mono-g200);background:var(--colors-mono-white);box-shadow:var(--shadow-elevated)}
+            /* Espaço no fim da página (celular) para o "+" não cobrir o último conteúdo. */
+            @media (max-width:1023px){body.has-quick-fab main{padding-bottom:calc(96px + env(safe-area-inset-bottom))}}
+            .qe-tab{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:9999px;border:1px solid var(--colors-mono-g200);font-size:14px;font-weight:600;color:var(--colors-mono-g600)}
+            .qe-tab[aria-selected=true][data-quick-tab=expense]{background:var(--qe-out-bg);border-color:var(--qe-out-bd);color:var(--amount-out)}
+            .qe-tab[aria-selected=true][data-quick-tab=income]{background:var(--qe-in-bg);border-color:var(--qe-in-bd);color:var(--amount-in)}
+            .qe-tab[aria-selected=true][data-quick-tab=transfer]{background:var(--colors-mono-g100);border-color:var(--colors-mono-g600);color:var(--colors-mono-g900)}
+            .qe-card-toggle{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:0 10px;border-radius:9999px;border:1px dashed var(--colors-mono-g200);font-size:12px;font-weight:600;color:var(--colors-mono-g600)}
+            .qe-card-toggle[aria-pressed=true]{border-style:solid;border-color:#0d9488;color:#0d9488}
+            .qe-shortcut{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:76px;padding:10px 6px;border-radius:14px;border:1px solid var(--colors-mono-g200);background:var(--colors-mono-white);font-size:15px;font-weight:700;color:var(--colors-mono-g900)}
+            .qe-shortcut .material-icons-outlined{font-size:26px}
+            @media (min-width:640px){.qe-shortcut{flex-direction:row;gap:10px;min-height:64px;font-size:16px}}
+            .qe-shortcut-expense{background:var(--qe-out-bg);border-color:var(--qe-out-bd);color:var(--amount-out)}
+            .qe-shortcut-income{background:var(--qe-in-bg);border-color:var(--qe-in-bd);color:var(--amount-in)}
+            .qe-shortcut:hover{filter:brightness(.97)}
+        </style>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     @if (\App\Support\RolePolicy::isReadOnly(auth()->user()))
@@ -44,8 +76,9 @@
             body.read-only a[href*="/create"], body.read-only a[href*="novo="], body.read-only a[href$="/edit"] { display: none !important; }
         </style>
     @endif
+    @php($quickEntry = \App\Support\QuickEntry::enabled(auth()->user()))
     <body
-        class="bg-mono-50 font-sans text-mono-900 antialiased {{ \App\Support\RolePolicy::isReadOnly(auth()->user()) ? 'read-only' : '' }}"
+        class="bg-mono-50 font-sans text-mono-900 antialiased {{ \App\Support\RolePolicy::isReadOnly(auth()->user()) ? 'read-only' : '' }} {{ $quickEntry ? 'has-quick-fab' : '' }}"
         :class="{ 'overflow-hidden': sidebarOpen }"
         x-data="appShell({
             newIncome: '{{ route('banking.transactions.index', ['novo' => 'income']) }}',
@@ -53,6 +86,7 @@
             newTransfer: '{{ route('banking.transactions.index', ['novo' => 'transfer']) }}',
             newWrit: '{{ route('writs.create') }}',
             dashboard: '{{ route('dashboard') }}',
+            quickEntry: @js($quickEntry),
         })"
         x-init="init()"
     >
@@ -70,6 +104,14 @@
                 </main>
             </div>
         </div>
+
+        @if ($quickEntry)
+            <x-quick-entry.launcher variant="fab" />
+            {{-- Lançamento rápido global: o MESMO componente/validação de Lançamentos, em modo só-modal. Em Lançamentos o próprio componente da página atende. --}}
+            @unless (request()->routeIs('banking.transactions.index'))
+                <livewire:banking.transactions.index :quick="true" key="quick-entry" />
+            @endunless
+        @endif
 
         <script>
             window.appShell = (config) => ({
@@ -111,7 +153,13 @@
 
                     const target = this.bindings[this.buffer];
                     if (target) {
+                        // nr/nd/nt abrem o lançamento rápido na própria tela.
+                        const quickType = { nr: 'income', nd: 'expense', nt: 'transfer' }[this.buffer];
                         this.buffer = '';
+                        if (config.quickEntry && quickType && window.Livewire) {
+                            window.Livewire.dispatch('quick-entry', { type: quickType });
+                            return;
+                        }
                         window.location.href = target;
                     }
                 },

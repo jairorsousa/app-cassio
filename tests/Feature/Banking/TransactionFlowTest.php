@@ -264,7 +264,7 @@ class TransactionFlowTest extends TestCase
         $component = Volt::test('banking.transactions.index')
             ->call('create', 'card_expense')
             ->assertSee('Salvar')
-            ->assertSee('Salvar e novo')
+            ->assertSee('Salvar e lançar outro')
             ->assertDontSee('Criar Lançamento')
             ->assertSeeHtml('data-test="save-and-create-another"')
             ->set('formDate', '2026-10-26')
@@ -357,7 +357,7 @@ class TransactionFlowTest extends TestCase
             ->call('edit', $transaction->id)
             ->assertSee('Editar despesa no cartão')
             ->assertDontSeeHtml('data-test="save-and-create-another"')
-            ->assertDontSee('Salvar e novo')
+            ->assertDontSee('Salvar e lançar outro')
             ->assertSee('Salvar Lançamento');
     }
 
@@ -370,7 +370,7 @@ class TransactionFlowTest extends TestCase
         Volt::test('banking.transactions.index')
             ->call('create', 'expense')
             ->assertSee('Salvar')
-            ->assertSee('Salvar e novo')
+            ->assertSee('Salvar e lançar outro')
             ->assertDontSee('Criar Lançamento')
             ->set('formAmount', '12.00')
             ->set('formDescription', 'Material')
@@ -383,7 +383,7 @@ class TransactionFlowTest extends TestCase
             ->assertSet('formType', 'expense')
             ->assertSet('formAmount', '')
             ->assertSet('formDescription', '')
-            ->assertSet('formBankAccountId', null)
+            ->assertSet('formBankAccountId', $account->id) // Salvar e lançar outro mantém tipo e conta.
             ->assertSet('formSuccessMessage', 'Lançamento criado.');
 
         $this->assertDatabaseHas('transactions', [

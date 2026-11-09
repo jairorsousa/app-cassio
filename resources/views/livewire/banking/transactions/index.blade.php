@@ -91,6 +91,10 @@ new #[Layout('layouts.app')] class extends Component
     #[\Livewire\Attributes\Locked]
     public ?int $deletingId = null;
 
+    /** Modo "lançamento rápido": instância global no layout, só com o modal (sem lista, filtros nem URL própria). */
+    #[\Livewire\Attributes\Locked]
+    public bool $quick = false;
+
     public function openDistribution(int $id): void
     {
         try {
@@ -252,8 +256,18 @@ new #[Layout('layouts.app')] class extends Component
         }
     }
 
-    public function mount(): void
+    public function mount(bool $quick = false): void
     {
+        $this->quick = $quick;
+        if ($quick) {
+            return;
+        }
+
+        $distribuir = request()->query('distribuir');
+        if (is_numeric($distribuir)) {
+            $this->openDistribution((int) $distribuir);
+        }
+
         if ($this->from === '' && $this->vinculo === '') {
             $this->from = now()->startOfMonth()->format('Y-m-d');
             $this->to = now()->endOfMonth()->format('Y-m-d');
@@ -431,6 +445,43 @@ new #[Layout('layouts.app')] class extends Component
         $this->formIsCard = $type === 'card_expense';
         $this->formType = $this->formIsCard ? 'expense' : $type;
         $this->showFormModal = true;
+    }
+
+    /**
+     * Lançamento rápido: "+ Lançar" (topo), botão "+" (celular), atalhos do painel e teclas nr/nd/nt
+     * disparam este evento. Abre o MESMO formulário/validação do "Novo lançamento".
+     */
+    #[\Livewire\Attributes\On('quick-entry')]
+    public function quickEntry(string $type = 'expense'): void
+    {
+        $this->create(in_array($type, ['expense', 'income', 'card_expense', 'transfer'], true) ? $type : 'expense');
+        $this->dispatch('focus-transaction-amount');
+    }
+
+    /** Abas Despesa/Receita/Transferência (só em lançamento novo): troca o tipo mantendo valor, data, descrição, conta e observações. */
+    public function switchType(string $type): void
+    {
+        if ($this->editingId || ! in_array($type, ['expense', 'income', 'card_expense', 'transfer'], true)) {
+            return;
+        }
+        $isCard = $type === 'card_expense';
+        $newType = $isCard ? 'expense' : $type;
+        if ($newType !== $this->formType || $isCard !== $this->formIsCard) {
+            $this->reset(['formCategoryId', 'formAllocationEnabled', 'formAllocationRows', 'formAllocationMode']);
+        }
+        if ($newType !== 'transfer') {
+            $this->reset('formTransferToId');
+        }
+        if (! $isCard) {
+            $this->reset(['formCreditCardId', 'formInvoiceMonth', 'formIsCardRefund']);
+            $this->formInstallments = 1;
+        }
+        if ($newType !== 'income') {
+            $this->reset('formDestinateAfterSave');
+        }
+        $this->formIsCard = $isCard;
+        $this->formType = $newType;
+        $this->resetValidation();
     }
 
     public function edit(int $id): void
@@ -892,13 +943,31 @@ new #[Layout('layouts.app')] class extends Component
             }
         }
 
+        // "Salvar e lançar outro": mantém o tipo e a conta (cartão, fatura e data no cartão).
+        $keepAccount = $reopenType !== null && ! $keepCard ? $this->formBankAccountId : null;
+
         $this->resetForm();
         $this->resetPage();
-        session()->flash('status', $result['message']);
+        $this->dispatch('transaction-saved');
+        if ($this->quick && $destinate) {
+            // Destinar a receita acontece na tela de Lançamentos (mesmo fluxo de sempre).
+            session()->flash('status', $result['message']);
+            $this->redirect(route('banking.transactions.index', ['distribuir' => $result['receipt_id']]));
+
+            return;
+        }
+        if ($this->quick) {
+            $this->dispatch('toast', type: 'success', message: $result['message']);
+        } else {
+            session()->flash('status', $result['message']);
+        }
         if ($destinate) {
             $this->distributingId = $result['receipt_id'];
         } elseif ($reopenType !== null) {
             $this->create($reopenType);
+            if ($keepAccount) {
+                $this->formBankAccountId = $keepAccount;
+            }
             if ($keepCard) {
                 $this->formDate = $keepCard['date'];
                 $this->formCreditCardId = $keepCard['card'];
@@ -1073,8 +1142,24 @@ new #[Layout('layouts.app')] class extends Component
         ];
     }
 
+    /** Dados que o modal do lançamento usa (compartilhado entre a tela de Lançamentos e o lançamento rápido). */
+    private function formViewData(): array
+    {
+        return [
+            'activeCategories' => Category::active()->selectable()->orderBy('name')->get(),
+            'formIsHistorical' => ! $this->formIsCard && $this->formBankAccountId && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)
+                && (bool) BankAccount::find($this->formBankAccountId)?->isHistoricalDate($this->formDate),
+            'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
+            'linkOptions' => $this->linkOptions(),
+            'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
+        ];
+    }
+
     public function with(): array
     {
+        if ($this->quick) {
+            return $this->showFormModal ? $this->formViewData() : [];
+        }
         if ($this->preview === 'ofx') {
             return [];
         }
@@ -1135,22 +1220,20 @@ new #[Layout('layouts.app')] class extends Component
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
             'filterAccountOptions' => $filterAccountOptions,
-            'activeCategories' => Category::active()->selectable()->orderBy('name')->get(),
-            'formIsHistorical' => ! $this->formIsCard && $this->formBankAccountId && preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->formDate)
-                && (bool) BankAccount::find($this->formBankAccountId)?->isHistoricalDate($this->formDate),
-            'activeAccounts' => BankAccount::active()->orderBy('name')->get(),
-            'linkOptions' => $this->linkOptions(),
             'linkFilterOptions' => $this->linkFilterOptions(),
             'holderOptions' => CreditCard::holderFilterOptions(),
-            'cards' => CreditCard::where(fn ($q) => $q->where('status', true)->when($this->editingId && $this->formCreditCardId, fn ($q) => $q->orWhere('id', $this->formCreditCardId)))->orderBy('name')->get(),
-        ];
+        ] + $this->formViewData();
     }
 }; ?>
 
+@unless ($quick)
 <x-slot name="header">{{ $preview === 'ofx' ? 'Prévia da importação OFX' : 'Financeiro' }}</x-slot>
+@endunless
 
-<div class="flex flex-col gap-space-5">
-@if ($preview === 'ofx')
+<div @if ($quick) data-quick-entry @else class="flex flex-col gap-space-5" @endif>
+@if ($quick)
+    {{-- Lançamento rápido global: só o modal abaixo. --}}
+@elseif ($preview === 'ofx')
     <livewire:banking.transactions.import-preview />
 @else
     <x-banking.subnav />
@@ -1533,8 +1616,9 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     @endif
+@endif
 
-    @if ($showFormModal)
+    @if ($showFormModal && $preview !== 'ofx')
         @php
             $formHeading = $formIsCard ? ($editingId ? 'Editar despesa no cartão' : 'Nova despesa no cartão de crédito') : ($editingId ? 'Editar Lançamento' : match ($formType) {
                 'income' => 'Nova receita',
@@ -1565,6 +1649,22 @@ new #[Layout('layouts.app')] class extends Component
                         <span class="material-icons-outlined text-[22px]">close</span>
                     </button>
                 </div>
+
+                @if (! $editingId)
+                    {{-- Abas do lançamento rápido / novo lançamento: trocam o tipo sem perder o que já foi digitado. --}}
+                    <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-mono-100 px-6 py-3" role="tablist" aria-label="Tipo do lançamento" data-quick-tabs>
+                        @foreach (['expense' => ['Despesa', 'trending_down'], 'income' => ['Receita', 'trending_up'], 'transfer' => ['Transferência', 'sync_alt']] as $tabKey => [$tabLabel, $tabIcon])
+                            <button type="button" role="tab" aria-selected="{{ $formType === $tabKey ? 'true' : 'false' }}" wire:click="switchType('{{ $tabKey }}')" data-quick-tab="{{ $tabKey }}" class="qe-tab">
+                                <span class="material-icons-outlined text-[18px]" aria-hidden="true">{{ $tabIcon }}</span>{{ $tabLabel }}
+                            </button>
+                        @endforeach
+                        @if ($formType === 'expense' && count($cards) > 0)
+                            <button type="button" wire:click="switchType('{{ $formIsCard ? 'expense' : 'card_expense' }}')" aria-pressed="{{ $formIsCard ? 'true' : 'false' }}" data-quick-card-toggle class="qe-card-toggle">
+                                <span class="material-icons-outlined text-[16px]" aria-hidden="true">credit_card</span>No cartão de crédito
+                            </button>
+                        @endif
+                    </div>
+                @endif
 
                 <form wire:submit="saveTransaction" class="flex min-h-0 flex-1 flex-col">
                     <div class="flex-1 overflow-y-auto px-6 py-5">
@@ -1809,7 +1909,7 @@ new #[Layout('layouts.app')] class extends Component
                             @if (! $editingId)
                                 <button type="button" wire:click="saveAndCreateAnother" wire:loading.attr="disabled" wire:target="saveTransaction,saveAndCreateAnother" class="inline-flex h-11 items-center gap-2 rounded-pill border border-primary-200 bg-primary-50 px-5 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:opacity-50" data-test="save-and-create-another">
                                     <span class="material-icons-outlined text-[18px]" aria-hidden="true">add_task</span>
-                                    Salvar e novo
+                                    Salvar e lançar outro
                                 </button>
                             @endif
                         </div>
@@ -1818,5 +1918,4 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     @endif
-@endif
 </div>

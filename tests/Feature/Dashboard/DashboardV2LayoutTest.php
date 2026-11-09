@@ -48,7 +48,7 @@ class DashboardV2LayoutTest extends TestCase
         $this->actingAs($user);
         Livewire::withoutLazyLoading();
         Volt::test('dashboard.index')
-            ->assertSee('+ Novo')->assertSee('Editar painel')
+            ->assertSee('+ Outros')->assertSee('Editar painel')
             ->assertSee('Requisitórios a receber (6 meses)')
             ->call('setWritsMonths', 12)
             ->assertSee('Requisitórios a receber (12 meses)')
