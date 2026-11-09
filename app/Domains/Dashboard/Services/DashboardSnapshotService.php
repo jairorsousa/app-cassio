@@ -34,7 +34,8 @@ class DashboardSnapshotService
     {
         $regime = \App\Domains\Banking\Services\OwnFinancialService::currentRegime();
 
-        return $regime === 'cash' ? self::CACHE_KEY : self::CACHE_KEY.':'.$regime;
+        // Chave base = regime padrão (Competência); Caixa usa chave própria.
+        return $regime === \App\Domains\Banking\Services\OwnFinancialService::ACCRUAL ? self::CACHE_KEY : self::CACHE_KEY.':'.$regime;
     }
 
     public function current(): array
@@ -56,6 +57,7 @@ class DashboardSnapshotService
     {
         try {
             Cache::forget(self::CACHE_KEY);
+            Cache::forget(self::CACHE_KEY.':cash');
             Cache::forget(self::CACHE_KEY.':accrual');
         } catch (Throwable $exception) {
             Log::warning('Failed to invalidate dashboard snapshot cache.', [

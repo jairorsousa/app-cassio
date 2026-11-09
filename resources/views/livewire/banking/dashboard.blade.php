@@ -98,7 +98,6 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
 
 <div class="flex flex-col gap-space-5">
     <x-banking.subnav active="overview" />
-    <x-quick-entry.shortcuts />
     <div class="flex justify-end"><livewire:banking.regime-switch /></div>
     <x-banking.cash-position
         :accounts-balance="$accountsBalance"

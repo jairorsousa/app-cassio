@@ -204,16 +204,15 @@ class QuickEntryTest extends TestCase
             ->assertSet('formType', 'transfer');
     }
 
-    public function test_dashboard_and_finance_overview_have_shortcuts_and_listen(): void
+    public function test_dashboard_and_finance_overview_without_big_shortcuts_still_refresh(): void
     {
         $this->actingAs($this->admin());
         Livewire::withoutLazyLoading();
 
         Volt::test('dashboard.index')
-            ->assertSeeHtml('data-quick-shortcuts')
-            ->assertSeeHtml('data-quick-shortcut="expense"')
-            ->assertSeeHtml('data-quick-shortcut="income"')
-            ->assertSeeHtml('data-quick-shortcut="transfer"')
+            // Atalhos grandes removidos a pedido (t254u): fica só o + Lançar do topo e o + do celular.
+            ->assertDontSeeHtml('data-quick-shortcuts')
+            ->assertSee('+ Outros')
             ->assertSee('Editar painel')
             ->assertDontSee('+ Novo')
             ->call('toggleCustomize')
@@ -223,7 +222,7 @@ class QuickEntryTest extends TestCase
 
         Livewire::withoutLazyLoading();
         Volt::test('banking.dashboard')
-            ->assertSeeHtml('data-quick-shortcuts')
+            ->assertDontSeeHtml('data-quick-shortcuts')
             ->dispatch('transaction-saved')
             ->assertOk();
     }

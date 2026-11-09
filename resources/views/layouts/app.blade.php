@@ -55,12 +55,6 @@
             .qe-tab[aria-selected=true][data-quick-tab=transfer]{background:var(--colors-mono-g100);border-color:var(--colors-mono-g600);color:var(--colors-mono-g900)}
             .qe-card-toggle{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:0 10px;border-radius:9999px;border:1px dashed var(--colors-mono-g200);font-size:12px;font-weight:600;color:var(--colors-mono-g600)}
             .qe-card-toggle[aria-pressed=true]{border-style:solid;border-color:#0d9488;color:#0d9488}
-            .qe-shortcut{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:76px;padding:10px 6px;border-radius:14px;border:1px solid var(--colors-mono-g200);background:var(--colors-mono-white);font-size:15px;font-weight:700;color:var(--colors-mono-g900)}
-            .qe-shortcut .material-icons-outlined{font-size:26px}
-            @media (min-width:640px){.qe-shortcut{flex-direction:row;gap:10px;min-height:64px;font-size:16px}}
-            .qe-shortcut-expense{background:var(--qe-out-bg);border-color:var(--qe-out-bd);color:var(--amount-out)}
-            .qe-shortcut-income{background:var(--qe-in-bg);border-color:var(--qe-in-bd);color:var(--amount-in)}
-            .qe-shortcut:hover{filter:brightness(.97)}
         </style>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>

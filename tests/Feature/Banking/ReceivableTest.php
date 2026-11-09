@@ -62,7 +62,7 @@ class ReceivableTest extends TestCase
 
     private function totals(): array
     {
-        return app(OwnFinancialService::class)->totals(today()->startOfMonth(), today()->endOfMonth());
+        return app(OwnFinancialService::class)->totals(today()->startOfMonth(), today()->endOfMonth(), OwnFinancialService::CASH); // testes escritos para o regime de Caixa (padrão antigo)
     }
 
     public function test_client_advance_moves_cash_without_becoming_expense_and_can_be_repaid_partially(): void

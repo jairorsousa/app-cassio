@@ -7,8 +7,9 @@ use Brick\Math\BigInteger;
 use Illuminate\Support\Carbon;
 
 /**
- * Receitas e despesas próprias. Regime de caixa (padrão): compra no cartão entra pelo pagamento da fatura.
- * Regime de competência: compra no cartão entra pela data da compra e o pagamento da fatura não conta.
+ * Receitas e despesas próprias. Regime de caixa: compra no cartão entra pelo pagamento da fatura.
+ * Regime de competência (padrão): compra no cartão entra pela data da compra e o pagamento da fatura não conta.
+ * O regime é preferência de cada usuário (users.financial_regime), escolhida em Configurações.
  * Transferências, lançamentos históricos (antes do saldo inicial datado) e testes ficam fora.
  */
 class OwnFinancialService
@@ -21,7 +22,7 @@ class OwnFinancialService
     {
         $regime = auth()->user()?->financial_regime;
 
-        return in_array($regime, [self::CASH, self::ACCRUAL], true) ? $regime : self::CASH;
+        return in_array($regime, [self::CASH, self::ACCRUAL], true) ? $regime : self::ACCRUAL;
     }
 
     public function totals(Carbon $start, Carbon $end, ?string $regime = null): array

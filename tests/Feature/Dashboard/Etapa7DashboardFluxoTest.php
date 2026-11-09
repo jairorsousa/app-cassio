@@ -168,7 +168,7 @@ class Etapa7DashboardFluxoTest extends TestCase
         $this->tx('income', 1200, '2026-11-02');
         $c = Volt::test('dashboard.index');
         $c->assertSee('Saldo bruto, terceiros e caixa próprio')->assertSee('Empréstimos em aberto')->assertSee('Posição em 05/11/2026')
-            ->assertSee('data-quick-shortcut="expense"', false);
+            ->assertSee('+ Outros')->assertDontSee('data-quick-shortcuts', false);
         $c->call('toggleWidget', 'loans')->assertDontSee('Abrir Empréstimos');
         $c->call('toggleCustomize')->assertSee('Restaurar padrão')->assertSee('Mover Saldos por conta para cima');
         $this->get('/dashboard')->assertOk();

@@ -38,7 +38,7 @@ class CashPositionTest extends TestCase
 
     public function test_dashboard_and_financeiro_show_the_same_cash_and_month_result(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['financial_regime' => 'cash']));
         $checking = BankAccount::create(['name' => 'BB Corrente', 'type' => 'checking', 'initial_balance' => 1000, 'status' => true]);
         $savings = BankAccount::create(['name' => 'BB Poupança', 'type' => 'savings', 'initial_balance' => 0, 'status' => true]);
         BankAccount::create(['name' => 'Cliente', 'type' => 'repasse', 'initial_balance' => -400, 'status' => true]);

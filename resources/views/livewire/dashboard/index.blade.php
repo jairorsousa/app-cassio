@@ -213,7 +213,6 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
     @endif
 
     {{-- Filtro de período --}}
-    <x-quick-entry.shortcuts />
 
     <x-fx.card>
         <div class="flex flex-col lg:flex-row lg:items-end gap-space-4">
@@ -237,7 +236,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component {
                     </div>
                 </div>
             @endif
-            <livewire:banking.regime-switch />
+            {{-- Regime do resultado (Caixa/Competência) agora fica em Configurações, por usuário. --}}
             <div class="lg:ml-auto flex flex-wrap items-center gap-space-3">
                 <div class="relative" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false" data-new-menu>
                     {{-- Despesa/Receita/Transferência ficaram nos atalhos grandes do topo; aqui só o que não é lançamento. --}}

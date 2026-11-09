@@ -1,5 +1,6 @@
 <?php
 
+use App\Domains\Banking\Services\OwnFinancialService;
 use App\Support\UserPreferences;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -15,6 +16,9 @@ new #[Layout('layouts.app')] class extends Component {
 
     public string $home = 'dashboard';
 
+    /** Regime do resultado (por usuário, coluna users.financial_regime). Padrão: Competência. */
+    public string $regime = OwnFinancialService::ACCRUAL;
+
     public ?string $message = null;
 
     public function with(): array
@@ -25,18 +29,27 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->fill(UserPreferences::for(auth()->user()));
+        $this->regime = OwnFinancialService::currentRegime();
     }
 
     public function save(): void
     {
-        $data = $this->validate(UserPreferences::rules());
-        auth()->user()->forceFill(['preferences' => $data])->save();
+        $data = $this->validate(UserPreferences::rules() + ['regime' => ['required', 'in:'.OwnFinancialService::CASH.','.OwnFinancialService::ACCRUAL]]);
+        $regime = $data['regime'];
+        unset($data['regime']);
+        $user = auth()->user();
+        $regimeChanged = $user->financial_regime !== $regime;
+        $user->forceFill(['preferences' => $data, 'financial_regime' => $regime])->save();
+        if ($regimeChanged) {
+            app(\App\Domains\Dashboard\Services\DashboardSnapshotService::class)->invalidate();
+        }
         $this->redirectRoute('settings', ['salvo' => 1]);
     }
 
     public function cancel(): void
     {
         $this->fill(UserPreferences::for(auth()->user()));
+        $this->regime = OwnFinancialService::currentRegime();
         $this->resetValidation();
         $this->message = 'Alterações descartadas.';
         $this->dispatch('prefs-preview', accent: $this->accent);
@@ -45,6 +58,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function restoreDefaults(): void
     {
         $this->fill(UserPreferences::DEFAULTS);
+        $this->regime = OwnFinancialService::ACCRUAL;
         $this->message = 'Padrões carregados no formulário. Clique em Salvar para aplicar.';
         $this->dispatch('prefs-preview', accent: $this->accent);
     }
@@ -55,7 +69,7 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="mx-auto max-w-3xl space-y-6" data-settings-page>
     <div>
         <h2 class="text-2xl font-bold tracking-tight">Configurações</h2>
-        <p class="mt-2 text-sm text-mono-600">Preferências de aparência só da sua conta. Não mudam dados, permissões nem o que outros usuários veem.</p>
+        <p class="mt-2 text-sm text-mono-600">Preferências só da sua conta (aparência e forma de ver o resultado). Não mudam dados, permissões nem o que outros usuários veem.</p>
     </div>
 
     @if (request('salvo'))<x-jr.alert variant="success">Preferências salvas e aplicadas.</x-jr.alert>@endif
@@ -127,6 +141,16 @@ new #[Layout('layouts.app')] class extends Component {
             <p class="mb-3 text-sm text-mono-600">Tela aberta depois de entrar e ao acessar o endereço principal do app.</p>
             <select wire:model="home" class="h-10 w-full rounded-sm border border-mono-200 bg-mono-white px-2 text-sm">@foreach (UserPreferences::HOMES as $k => [$l])<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
             @error('home')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
+        </x-jr.card>
+
+        <x-jr.card data-settings-regime>
+            <h3 class="font-bold">Regime do resultado</h3>
+            <p class="mb-3 text-sm text-mono-600">Como compras no cartão entram nas receitas, despesas e resultado do painel, do Financeiro e dos relatórios. Vale só para a sua conta; não altera nenhum lançamento.</p>
+            <div class="grid gap-2 sm:grid-cols-2">
+                <label class="flex cursor-pointer items-start gap-2 rounded-sm border border-mono-200 p-3 text-sm"><input type="radio" wire:model="regime" value="accrual" class="mt-1"> <span><strong>Competência</strong> (padrão)<br><span class="text-mono-600">Compra no cartão conta na data da compra.</span></span></label>
+                <label class="flex cursor-pointer items-start gap-2 rounded-sm border border-mono-200 p-3 text-sm"><input type="radio" wire:model="regime" value="cash" class="mt-1"> <span><strong>Caixa</strong><br><span class="text-mono-600">Compra no cartão conta quando a fatura é paga.</span></span></label>
+            </div>
+            @error('regime')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
         </x-jr.card>
 
         <div class="flex flex-wrap gap-3">
