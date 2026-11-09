@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 /** Importação do export B3/Midas por linha de comando. Padrão = só prévia (não grava). Gravar exige --confirm e --user. */
 class ImportB3MidasCommand extends Command
 {
-    protected $signature = 'investments:b3-import {dir : pasta com posicao.csv, proventos.csv e meta.json} {--base-date= : data-base da posição (AAAA-MM-DD); padrão meta.json} {--confirm : grava (somente após o Cassio aprovar a prévia)} {--user= : e-mail de quem confirmou}';
+    protected $signature = 'investments:b3-import {dir : pasta com posicao.csv, proventos.csv, movimentacao.csv (opcional) e meta.json} {--base-date= : data-base da posição (AAAA-MM-DD); padrão meta.json} {--confirm : grava (somente após o Cassio aprovar a prévia)} {--user= : e-mail de quem confirmou}';
 
     protected $description = 'Prévia (padrão) ou importação idempotente da posição B3 e proventos do Midas, sem criar lançamentos no Financeiro';
 
@@ -39,6 +39,7 @@ class ImportB3MidasCommand extends Command
             $pos = $read('posicao.csv');
             $inc = $read('proventos.csv');
             $metaRaw = $read('meta.json');
+            $mov = $read('movimentacao.csv');
         } catch (\RuntimeException $e) {
             $this->error($e->getMessage());
 
@@ -56,7 +57,7 @@ class ImportB3MidasCommand extends Command
             return self::FAILURE;
         }
         $base = $this->option('base-date') ?: ($meta['posicao_data_base'] ?? null);
-        $preview = $service->preview($pos, $inc, $base, $meta);
+        $preview = $service->preview($pos, $inc, $base, $meta, $mov);
 
         $this->line(json_encode(['ok' => $preview['ok'], 'errors' => $preview['errors'], 'warnings' => $preview['warnings'], 'summary' => $preview['summary']], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         if (! $this->option('confirm')) {
@@ -77,7 +78,8 @@ class ImportB3MidasCommand extends Command
             'summary' => $preview['summary'],
         ]);
         $created = $service->confirm($preview, $batch, $user->id);
-        $this->info("Importação #{$batch->id} confirmada: {$created['positions']} posições e {$created['income']} proventos novos.");
+        $done = $batch->fresh()->summary['created'] ?? $created;
+        $this->info("Importação #{$batch->id} confirmada: ".json_encode($done, JSON_UNESCAPED_UNICODE));
 
         return self::SUCCESS;
     }
