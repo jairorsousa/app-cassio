@@ -111,15 +111,21 @@ document.addEventListener('alpine:init', () => {
         let mask;
         let disposed = false;
         let commitTimer = null;
+        let unsent = false; // valor já no $wire, mas ainda não enviado ao servidor (campos .live/.blur)
 
         const push = (send) => {
             const binding = wireModelBinding(el);
             const wire = binding ? componentWire(el) : null;
             if (!binding || !wire || binding.expression === '' || !mask || !mask.isTouched()) return;
             const modelValue = mask.model();
-            const changed = String(wire.get(binding.expression) ?? '') !== modelValue;
-            if (changed) wire.set(binding.expression, modelValue, false);
-            if (send && (binding.live || binding.blur) && (changed || send === 'force')) wire.$commit();
+            if (String(wire.get(binding.expression) ?? '') !== modelValue) {
+                wire.set(binding.expression, modelValue, false);
+                unsent = true;
+            }
+            if (send && (binding.live || binding.blur) && unsent) {
+                unsent = false;
+                wire.$commit();
+            }
         };
 
         const onType = () => {
@@ -127,7 +133,7 @@ document.addEventListener('alpine:init', () => {
             push(false);
             if (binding && binding.live && !binding.blur) {
                 clearTimeout(commitTimer);
-                commitTimer = setTimeout(() => push('force'), binding.debounce ?? 150);
+                commitTimer = setTimeout(() => push(true), binding.debounce ?? 150);
             }
         };
         const onCommit = () => { clearTimeout(commitTimer); push(true); };
