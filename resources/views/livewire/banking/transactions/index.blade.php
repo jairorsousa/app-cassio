@@ -1360,7 +1360,10 @@ new #[Layout('layouts.app')] class extends Component
                                 <span class="text-fs-12 text-cryptex-text-tertiary ml-1 font-mono">{{ $t->installment_number }}/{{ $t->installment_total }}</span>
                             @endif
                             @if ($t->isReadOnly())
-                                <x-fx.badge variant="neutral" class="ml-space-2">{{ match ($t->source_type) { \App\Domains\Banking\Models\ReceiptDestinationPayment::class => 'Repasse vinculado', \App\Domains\Banking\Models\ReceiptDestination::class => 'Valor a repassar', default => 'origem: '.class_basename($t->source_type) } }}</x-fx.badge>
+                                <x-fx.badge variant="neutral" class="ml-space-2">{{ match ($t->source_type) { \App\Domains\Banking\Models\ReceiptDestinationPayment::class => 'Repasse vinculado', \App\Domains\Banking\Models\ReceiptDestination::class => 'Valor a repassar', \App\Domains\Assets\Models\PropertyPayment::class => 'Pagamento de bem', default => 'origem: '.class_basename($t->source_type) } }}</x-fx.badge>
+                            @endif
+                            @if ($bem = $t->propertyPaymentLink())
+                                <p class="mt-1 text-xs text-cryptex-text-secondary" data-bem-link>Bem: <a href="{{ route('bens.index', ['bem' => $bem->id]) }}" class="text-primary-600">{{ $bem->description }}</a></p>
                             @endif
                             @if ($t->writLinks->isNotEmpty())
                                 <p class="mt-1 text-xs text-cryptex-text-secondary">R$ {{ number_format((float) $t->writLinks->sum('writ_amount'), 2, ',', '.') }} vinculados a recebimentos de processo. Valor desta linha: entrada restante, para contar o dinheiro uma única vez.</p>

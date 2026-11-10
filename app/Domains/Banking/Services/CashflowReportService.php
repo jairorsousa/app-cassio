@@ -345,6 +345,10 @@ class CashflowReportService
         if (($transaction->credit_card_invoice_id && $transaction->type === 'expense' && ! $accrual) || ($accrual && $transaction->type === 'invoice_payment' && $transaction->credit_card_invoice_id) || $transaction->bankAccount?->type === 'repasse') {
             return [];
         }
+        // Aquisição de bem: dinheiro virou patrimônio, não é despesa (fora dos gráficos por categoria).
+        if ($transaction->allocations->isEmpty() && $this->own->isAssetPurchase($transaction)) {
+            return [];
+        }
         $ownCents = $this->own->ownCents($transaction, $regime);
         $profitName = Category::WRIT_PROFIT_NAME;
 

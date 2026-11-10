@@ -792,3 +792,11 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - **Complete seu cadastro:** obrigatórios: nome completo, celular, data de nascimento, CPF, CEP, rua, número, bairro, cidade e UF. Opcionais: complemento e Pix. Ao concluir, o nome real substitui o apelido no usuário, nos participantes de todos os grupos (mesmo e-mail), no Contato e no convite.
 - Backup antes da migração: `/root/app-cassio-backups/user_invitations-antes-celular-20261107.json`.
 - Teste: tests/Feature/SimpleInviteNicknameTest.php. Suíte completa: 721 testes passando, no banco isolado.
+
+## 2026-11-10 — Bens: pagamentos (entrada, cartão parcelado e previstos)
+
+- Cada bem ganhou a seção **Pagamentos**: valor total da compra (o antigo "valor de aquisição"), barra "pago X de Y, falta Z", "+ Pagamento" pela conta (vira lançamento no extrato) ou no cartão (compra parcelada nas faturas), e pagamentos **previstos** com o botão "Paguei" (conta ou cartão, data e parcelas escolhidos na hora).
+- Lançamentos gerados ficam ligados ao bem (link "Bem: ..." no Financeiro) e só são alterados pelo bem; apagar o pagamento apaga o lançamento e recalcula a fatura.
+- Proteções: aviso quando pago + previsto passa do total; aviso de lançamento parecido já existente na conta (extrato importado); a importação de extrato marca "possível duplicata: pagamento de bem"; não deixa excluir bem com pagamento lançado.
+- Nova categoria de sistema **Aquisição de bem** (padrão nos pagamentos de bens, pode ser trocada): tira da conta ou entra na fatura, mas fica fora do resultado e dos gráficos de despesas, nos dois regimes.
+- Bens antigos continuam iguais. Teste: tests/Feature/PropertyPaymentsTest.php. Backup: /root/app-cassio-backups/bens-pagamentos-20261110/.

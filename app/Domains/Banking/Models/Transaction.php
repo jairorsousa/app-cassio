@@ -189,6 +189,17 @@ class Transaction extends Model
         return $this->belongsTo(self::class, 'related_transaction_id');
     }
 
+    /** Pagamento de bem que gerou este lançamento (só quando source_type é PropertyPayment). */
+    public function propertyPayment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Assets\Models\PropertyPayment::class, 'source_id');
+    }
+
+    public function propertyPaymentLink(): ?\App\Domains\Assets\Models\Property
+    {
+        return $this->source_type === \App\Domains\Assets\Models\PropertyPayment::class ? $this->propertyPayment?->property : null;
+    }
+
     public function isReadOnly(): bool
     {
         return ! is_null($this->source_type);

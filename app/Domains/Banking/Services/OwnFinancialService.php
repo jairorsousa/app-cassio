@@ -44,6 +44,25 @@ class OwnFinancialService
         return ['income' => $income / 100, 'expense' => $expense / 100, 'result' => ($income - $expense) / 100];
     }
 
+    private int|false|null $assetPurchaseId = null;
+
+    /** Categoria "Aquisição de bem" (sem criar): lançamentos nela ficam fora do resultado e dos gráficos de despesas. */
+    public function assetPurchaseCategoryId(): ?int
+    {
+        if ($this->assetPurchaseId === null) {
+            $this->assetPurchaseId = (int) \App\Domains\Banking\Models\Category::where('system_key', \App\Domains\Banking\Models\Category::ASSET_PURCHASE_KEY)->value('id') ?: false;
+        }
+
+        return $this->assetPurchaseId ?: null;
+    }
+
+    public function isAssetPurchase(Transaction $row): bool
+    {
+        $id = $this->assetPurchaseCategoryId();
+
+        return $id !== null && $row->type === 'expense' && (int) $row->category_id === $id;
+    }
+
     public function ownCents(Transaction $row, ?string $regime = null): int
     {
         $regime ??= self::currentRegime();
@@ -83,6 +102,10 @@ class OwnFinancialService
             if ($row->source_type === \App\Domains\Investments\Models\AssetOperation::class) {
                 return 0;
             }
+            // Aquisição de bem (categoria de sistema): conversão de caixa em patrimônio, fora do resultado.
+            if ($this->isAssetPurchase($row)) {
+                return 0;
+            }
             if ($row->credit_card_invoice_id && $regime !== self::ACCRUAL) {
                 return 0;
             }
@@ -102,6 +125,8 @@ class OwnFinancialService
             return 0;
         }
         $thirdParty = $purchases->sum(fn ($purchase) => $purchase->receivableInstallments->sum(fn ($part) => $part->amountCents()));
+        // Compras de bem na fatura (categoria Aquisição de bem) também ficam fora do resultado no regime de caixa.
+        $thirdParty += $purchases->filter(fn ($purchase) => $this->isAssetPurchase($purchase))->sum(fn ($purchase) => (int) round((float) $purchase->amount * 100));
         $own = max(0, $total - $thirdParty);
         // Cumulative allocation avoids rounding drift when a bill is paid in several parts.
         $before = (int) round((float) $invoice->transactions()->where('type', 'invoice_payment')->where('status', 'settled')

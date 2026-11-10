@@ -21,6 +21,23 @@ class Category extends Model
 
     public const LOAN_INTEREST_KEY = 'loan_interest';
 
+    public const ASSET_PURCHASE_KEY = 'asset_purchase';
+
+    /** Pagamento de bem (relógio, carro...): sai da conta ou entra na fatura, mas é troca de dinheiro por patrimônio, fora do resultado. */
+    public static function assetPurchaseCategoryId(): int
+    {
+        $id = self::where('system_key', self::ASSET_PURCHASE_KEY)->value('id');
+        if (! $id) {
+            $category = new self(['name' => 'Aquisição de bem', 'type' => 'transfer', 'status' => true]);
+            $category->is_system = true;
+            $category->system_key = self::ASSET_PURCHASE_KEY;
+            $category->save();
+            $id = $category->id;
+        }
+
+        return (int) $id;
+    }
+
     private static ?int $loanDisbursementId = null;
 
     private static ?int $loanInterestId = null;

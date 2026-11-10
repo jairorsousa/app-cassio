@@ -55,7 +55,7 @@ class StatementImportAnalyzer
         $to = Carbon::parse(max($dates))->addDays(5)->toDateString();
         $col = $target === 'card' ? 'credit_card_id' : 'bank_account_id';
         $same = Transaction::query()->where($col, $targetId)->whereBetween('date', [$from, $to])
-            ->get(['id', 'date', 'amount', 'type', 'description', 'ofx_fitid']);
+            ->get(['id', 'date', 'amount', 'type', 'description', 'ofx_fitid', 'source_type']);
         $others = $target === 'bank'
             ? Transaction::query()->whereNotNull('bank_account_id')->where('bank_account_id', '!=', $targetId)->whereBetween('date', [$from, $to])->get(['id', 'date', 'amount', 'type', 'description', 'bank_account_id', 'related_transaction_id'])
             : collect();
@@ -106,6 +106,9 @@ class StatementImportAnalyzer
             } elseif ($dup = $same->first(fn ($t) => round(abs((float) $t->amount), 2) === $abs && abs($t->date->diffInDays(Carbon::parse($r['date']))) <= 2)) {
                 $status = 'duplicate';
                 $note = 'Possível duplicata: já há '.$dup->date->format('d/m').' R$ '.number_format($abs, 2, ',', '.').' · '.mb_substr((string) $dup->description, 0, 40);
+                if ($dup->source_type === \App\Domains\Assets\Models\PropertyPayment::class) {
+                    $note = 'Possível duplicata: pagamento de bem já lançado em '.$dup->date->format('d/m').' R$ '.number_format($abs, 2, ',', '.').' · '.mb_substr((string) $dup->description, 0, 40).'. Se for o mesmo, não importe.';
+                }
             } elseif ($kind === 'payment') {
                 $status = 'payment';
                 $note = 'Pagamento da fatura: registre pelo botão Pagar da fatura, não como compra.';
