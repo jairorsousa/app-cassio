@@ -93,6 +93,7 @@ new #[Layout('layouts.app')] class extends Component
                         $fail('Informe um CPF ou CNPJ válido.');
                     }
                 },
+                app(\App\Domains\Contacts\Services\PersonIdentityService::class)->uniqueDocumentRule($this->editingId),
             ],
             'birth_date' => 'nullable|date',
             'phone' => 'nullable|string|max:30',
@@ -104,7 +105,7 @@ new #[Layout('layouts.app')] class extends Component
             }],
             'email' => 'nullable|email|max:200',
             'emails' => 'array',
-            'emails.*' => 'nullable|email|max:200',
+            'emails.*' => ['nullable', 'email', 'max:200', app(\App\Domains\Contacts\Services\PersonIdentityService::class)->uniqueEmailRule($this->editingId)],
             'address' => 'nullable|string',
             'zip_code' => 'nullable|string|max:20',
             'street' => 'nullable|string|max:255',
@@ -171,7 +172,14 @@ new #[Layout('layouts.app')] class extends Component
 
         if ($this->editingId) {
             $contact = Contact::find($this->editingId);
-            $contact?->update($data);
+            if ($contact) {
+                // Quem não é admin não troca CPF já cadastrado nem exclui e-mail: vira pedido para aprovação.
+                [$data, $notices] = app(\App\Domains\Contacts\Services\PersonIdentityService::class)->guardContactEdit($contact, $data, auth()->user());
+                $contact->update($data);
+                if ($notices !== []) {
+                    session()->flash('identity_notices', $notices);
+                }
+            }
             $msg = 'Contato atualizado com sucesso.';
         } else {
             $contact = Contact::create($data);
@@ -354,6 +362,9 @@ new #[Layout('layouts.app')] class extends Component
 <x-slot name="header">Contatos</x-slot>
 
 <div class="flex flex-col gap-6">
+    @if (session('identity_notices'))
+        <x-jr.alert variant="info">@foreach ((array) session('identity_notices') as $notice)<p>{{ $notice }}</p>@endforeach</x-jr.alert>
+    @endif
     @if (session('status'))
         <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>
     @endif

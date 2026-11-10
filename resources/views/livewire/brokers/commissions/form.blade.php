@@ -95,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component {
         return [
             'caseTypes' => CaseType::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
-            'writs' => \App\Domains\Writs\Models\Writ::query()->orderByDesc('id')->limit(200)->get(['id', 'process_number', 'assignor_name']),
+            'writs' => \App\Domains\Writs\Models\Writ::query()->with('assignors.contact:id,name')->orderByDesc('id')->limit(200)->get(['id', 'process_number', 'assignor_name']),
         ];
     }
 }; ?>
@@ -145,7 +145,7 @@ new #[Layout('layouts.app')] class extends Component {
                     <select wire:model="writ_id" class="fx-form-field">
                         <option value="">— opcional —</option>
                         @foreach ($writs as $writ)
-                            <option value="{{ $writ->id }}">#{{ $writ->id }} · {{ $writ->process_number }} · {{ $writ->assignor_name }}</option>
+                            <option value="{{ $writ->id }}">#{{ $writ->id }} · {{ $writ->process_number }} · {{ $writ->beneficiaryName() }}</option>
                         @endforeach
                     </select>
                 </div>

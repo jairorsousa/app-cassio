@@ -100,6 +100,7 @@ new #[Layout('layouts.app')] class extends Component
                         $fail('Informe um CPF ou CNPJ válido.');
                     }
                 },
+                app(\App\Domains\Contacts\Services\PersonIdentityService::class)->uniqueDocumentRule($this->contact?->id),
             ],
             'birth_date' => 'nullable|date',
             'phone' => 'nullable|string|max:30',
@@ -111,7 +112,7 @@ new #[Layout('layouts.app')] class extends Component
             }],
             'email' => 'nullable|email|max:200',
             'emails' => 'array',
-            'emails.*' => 'nullable|email|max:200',
+            'emails.*' => ['nullable', 'email', 'max:200', app(\App\Domains\Contacts\Services\PersonIdentityService::class)->uniqueEmailRule($this->contact?->id)],
             'address' => 'nullable|string',
             'zip_code' => 'nullable|string|max:20',
             'street' => 'nullable|string|max:255',
@@ -214,7 +215,10 @@ new #[Layout('layouts.app')] class extends Component
         }
         $data['type'] = in_array($this->type, $data['roles'], true) ? $this->type : $data['roles'][0];
 
+        $notices = [];
         if ($this->contact) {
+            // Quem não é admin não troca CPF já cadastrado nem exclui e-mail: vira pedido para aprovação.
+            [$data, $notices] = app(\App\Domains\Contacts\Services\PersonIdentityService::class)->guardContactEdit($this->contact, $data, auth()->user());
             $this->contact->update($data);
             $contact = $this->contact;
         } else {
@@ -226,6 +230,9 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         session()->flash('status', 'Contato salvo.');
+        if ($notices !== []) {
+            session()->flash('identity_notices', $notices);
+        }
 
         return $this->redirectRoute('contacts.show', $contact, navigate: true);
     }

@@ -32,12 +32,28 @@ new #[Layout('layouts.app')] class extends Component
 <x-slot name="header">{{ $contact->name }}</x-slot>
 
 <div class="flex flex-col gap-6">
+    @if (session('identity_notices'))
+        <x-jr.alert variant="info">@foreach ((array) session('identity_notices') as $notice)<p>{{ $notice }}</p>@endforeach</x-jr.alert>
+    @endif
     @if (session('status'))
         <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert>
     @endif
 
     @if (session('error'))
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
+    @endif
+
+    @php $identityPending = $contact->identityRequests()->pending()->get(); @endphp
+    @if ($identityPending->isNotEmpty())
+        <x-jr.alert variant="info" :dismissible="false">
+            <p class="font-semibold">Pedidos aguardando aprovação</p>
+            @foreach ($identityPending as $req)
+                <p>{{ $req->typeLabel() }}: {{ $req->type === 'document' ? ($req->old_value ?: '—').' → '.$req->new_value : $req->old_value }}</p>
+            @endforeach
+            @if (auth()->user()?->isAdmin())
+                <a href="{{ route('settings.identity') }}" class="mt-1 inline-block font-semibold underline" wire:navigate>Ver e decidir</a>
+            @endif
+        </x-jr.alert>
     @endif
 
     @php

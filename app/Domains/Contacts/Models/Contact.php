@@ -64,12 +64,17 @@ class Contact extends Model
             }
         });
 
-        // Renomear em Contatos atualiza o usuário e os participantes do Divisões vinculados (PersonNameSync).
+        // Nome/CPF alterado em Contatos (ou pela própria pessoa) vale em todos os módulos ligados (PersonNameSync).
         static::updated(function (Contact $contact) {
-            if ($contact->wasChanged('name')) {
+            if ($contact->wasChanged(['name', 'document'])) {
                 \App\Support\PersonNameSync::fromContact($contact);
             }
         });
+    }
+
+    public function identityRequests(): HasMany
+    {
+        return $this->hasMany(IdentityChangeRequest::class);
     }
 
     public function receivables(): HasMany

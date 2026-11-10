@@ -5,7 +5,8 @@
 ])
 
 @php
-    $clientName = $writ->assignor_name ?: ($writ->assignors->first()?->contact?->name ?: 'Cedente não informado');
+    // Nome pelo vínculo com Contatos (assignor_name é cópia antiga, só reserva).
+    $clientName = $writ->assignors->first()?->contact?->name ?: ($writ->assignor_name ?: 'Cedente não informado');
     $faceValue = (float) $writ->face_value;
     $negotiatedValue = (float) $writ->negotiated_amount;
     $totalCost = (float) $writ->totalCost();

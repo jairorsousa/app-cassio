@@ -162,7 +162,7 @@ new class extends Component {
                             <select id="writ-income" wire:model.live="writIncomeId" required class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900">
                                 <option value="">Selecione o requisitório</option>
                                 @foreach ($writIncomes as $income)
-                                    <option value="{{ $income->id }}">{{ $income->sourceWrit->process_number ?: '#'.$income->source_id }} · {{ $income->sourceWrit->assignor_name }} · Disponível: R$ {{ number_format((float) $income->amount, 2, ',', '.') }}</option>
+                                    <option value="{{ $income->id }}">{{ $income->sourceWrit->process_number ?: '#'.$income->source_id }} · {{ $income->sourceWrit->beneficiaryName() }} · Disponível: R$ {{ number_format((float) $income->amount, 2, ',', '.') }}</option>
                                 @endforeach
                             </select>
                             @error('writIncomeId')<p role="alert" class="mt-2 text-sm text-error">{{ $message }}</p>@enderror

@@ -24,6 +24,13 @@
 
     <div class="ml-auto flex shrink-0 items-center gap-2">
         <x-quick-entry.launcher variant="header" />
+        @if (auth()->user()?->isAdmin() && ($identityPending = \App\Domains\Contacts\Services\PersonIdentityService::pendingCount()) > 0)
+            {{-- Aviso de pedidos de troca de CPF / exclusão de e-mail aguardando aprovação. --}}
+            <a href="{{ route('settings.identity') }}" class="relative flex h-10 w-10 items-center justify-center rounded-full text-mono-600 transition-colors hover:bg-mono-50" title="Pendências de cadastro" aria-label="{{ $identityPending }} pendência(s) de cadastro" data-identity-bell>
+                <span class="material-icons-outlined text-[22px]">notifications</span>
+                <span class="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-error px-1 text-[11px] font-bold leading-none text-white" data-identity-count>{{ $identityPending > 99 ? '99+' : $identityPending }}</span>
+            </a>
+        @endif
         <button
             type="button"
             class="flex h-10 w-10 items-center justify-center rounded-full text-mono-600 transition-colors hover:bg-mono-50"

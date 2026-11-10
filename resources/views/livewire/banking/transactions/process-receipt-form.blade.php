@@ -154,7 +154,7 @@ new class extends Component {
             'clientAdvances' => empty($this->form['client_contact_id']) ? collect() : \App\Domains\Banking\Models\Receivable::with('installments.settlements')->where('contact_id', $this->form['client_contact_id'])->get()->filter(fn ($row) => $row->remainingCents() > 0),
             'clientOffset' => collect($this->form['receivables'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (float) $amount : 0),
             'brokers' => Broker::selectable()->orderBy('name')->get(),
-            'writs' => Writ::where('paid_amount', '>', 0)->where(fn ($q) => $q->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt'])->orWhere('id', $this->form['writ_id'] ?: 0))->orderBy('assignor_name')->get(),
+            'writs' => Writ::where('paid_amount', '>', 0)->where(fn ($q) => $q->whereIn('stage', ['paid', 'petitioning', 'awaiting_receipt'])->orWhere('id', $this->form['writ_id'] ?: 0))->with('assignors.contact:id,name')->orderBy('assignor_name')->get(),
             'categories' => Category::active()->where('type', 'income')->orderBy('name')->get(),
         ];
     }
@@ -172,7 +172,7 @@ new class extends Component {
         @if ($form['includes_writ'])
             <p class="text-xs text-mono-600">Essa parte não é receita nem repasse ao cliente: o requisitório passa para <strong>Recebido</strong> na data desta entrada, com o valor informado, e o prazo real é calculado desde o pagamento da aquisição. A entrada continua única no banco.</p>
             <div class="grid gap-4 md:grid-cols-2">
-                <div><label for="process-writ" class="mb-2 block text-sm text-mono-600">Requisitório comprado *</label><select id="process-writ" wire:model.live="form.writ_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar</option>@foreach ($writs as $writ)<option value="{{ $writ->id }}">{{ $writ->assignor_name }} · {{ $writ->process_number ?: '#'.$writ->id }} · {{ $writ->stageLabel() }}</option>@endforeach</select></div>
+                <div><label for="process-writ" class="mb-2 block text-sm text-mono-600">Requisitório comprado *</label><select id="process-writ" wire:model.live="form.writ_id" class="h-12 w-full rounded-xl border-mono-200 text-sm"><option value="">Selecionar</option>@foreach ($writs as $writ)<option value="{{ $writ->id }}">{{ $writ->beneficiaryName() }} · {{ $writ->process_number ?: '#'.$writ->id }} · {{ $writ->stageLabel() }}</option>@endforeach</select></div>
                 <x-jr.input label="Valor do crédito do requisitório (R$) *" name="form.writ_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.writ_amount" />
             </div>
             @if ($writs->isEmpty())<p class="text-xs text-error">Nenhum requisitório comprado (Pago, Peticionar ou Aguardando recebimento) disponível.</p>@endif

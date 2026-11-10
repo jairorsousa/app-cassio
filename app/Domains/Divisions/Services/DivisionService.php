@@ -512,7 +512,8 @@ class DivisionService
         if ($user && ! $user->isAdmin()) {
             $user->forceFill(['name' => $name])->save();
             if ($user->contact_id) {
-                \App\Domains\Contacts\Models\Contact::whereKey($user->contact_id)->update(['name' => $name]);
+                // Pelo modelo, para o nome valer também em Corretores, repasses e convites (PersonNameSync).
+                \App\Domains\Contacts\Models\Contact::withTests()->find($user->contact_id)?->update(['name' => $name]);
             }
         }
     }

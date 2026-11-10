@@ -86,6 +86,12 @@ new #[Layout('layouts.app')] class extends Component {
             <p class="mb-3 text-sm text-mono-600">Quem criou, editou ou excluiu cada registro (com antes e depois) e os acessos.</p>
             <a href="{{ route('settings.audit') }}" class="text-sm font-semibold text-primary-600">Abrir log de auditoria →</a>
         </x-jr.card>
+        @php $identityPendingCount = \App\Domains\Contacts\Services\PersonIdentityService::pendingCount(); @endphp
+        <x-jr.card data-settings-identity>
+            <h3 class="font-bold">Pendências de cadastro @if ($identityPendingCount)<span class="ml-1 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-error px-2 text-xs font-bold text-white">{{ $identityPendingCount }}</span>@endif</h3>
+            <p class="mb-3 text-sm text-mono-600">Pedidos de troca de CPF e de exclusão de e-mail feitos pelas pessoas. Só mudam depois da sua aprovação.</p>
+            <a href="{{ route('settings.identity') }}" class="text-sm font-semibold text-primary-600">Abrir pendências →</a>
+        </x-jr.card>
     @endif
 
     @include('livewire.settings.logo-section')

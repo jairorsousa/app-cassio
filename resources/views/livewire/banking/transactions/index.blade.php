@@ -1049,7 +1049,11 @@ new #[Layout('layouts.app')] class extends Component
         };
 
         return [
-            'writs' => $search(\App\Domains\Writs\Models\Writ::class, ['assignor_name', 'process_number'], $this->formLinkWritId, 100),
+            // Requisitório: busca e exibe o cedente pelo vínculo com Contatos.
+            'writs' => \App\Domains\Writs\Models\Writ::query()->with('assignors.contact:id,name')
+                ->when($term !== '', fn ($q) => $q->where(fn ($q) => $q->where('assignor_name', 'like', $like)->orWhere('process_number', 'like', $like)->orWhereHas('assignors.contact', fn ($c) => $c->where('name', 'like', $like))))
+                ->when($this->formLinkWritId && $term !== '', fn ($q) => $q->orWhere('id', $this->formLinkWritId))
+                ->orderBy('process_number')->limit(100)->get(),
             'brokers' => $search(\App\Domains\Brokers\Models\Broker::class, ['name'], $this->formLinkBrokerId, 100, 'status'),
             'contacts' => $search(\App\Domains\Contacts\Models\Contact::class, ['name'], $this->formLinkContactId, 150, 'status'),
         ];
@@ -1059,8 +1063,8 @@ new #[Layout('layouts.app')] class extends Component
     private function linkFilterOptions(): array
     {
         $options = [];
-        foreach (\App\Domains\Writs\Models\Writ::whereIn('id', Transaction::whereNotNull('link_writ_id')->select('link_writ_id'))->orWhereIn('id', \App\Domains\Banking\Models\ProcessReceipt::whereNotNull('writ_id')->select('writ_id'))->orderBy('assignor_name')->get() as $w) {
-            $options['writ:'.$w->id] = 'Requisitório: '.$w->assignor_name.' · '.($w->process_number ?: '#'.$w->id);
+        foreach (\App\Domains\Writs\Models\Writ::whereIn('id', Transaction::whereNotNull('link_writ_id')->select('link_writ_id'))->orWhereIn('id', \App\Domains\Banking\Models\ProcessReceipt::whereNotNull('writ_id')->select('writ_id'))->with('assignors.contact:id,name')->get()->sortBy(fn ($w) => $w->beneficiaryName()) as $w) {
+            $options['writ:'.$w->id] = 'Requisitório: '.$w->beneficiaryName().' · '.($w->process_number ?: '#'.$w->id);
         }
         foreach (\App\Domains\Brokers\Models\Broker::withTrashed()->whereIn('id', Transaction::whereNotNull('link_broker_id')->select('link_broker_id'))->orWhereIn('id', \App\Domains\Banking\Models\ProcessReceiptBroker::select('broker_id'))->orderBy('name')->get() as $b) {
             $options['broker:'.$b->id] = 'Corretor: '.$b->name;
@@ -1173,7 +1177,7 @@ new #[Layout('layouts.app')] class extends Component
         } elseif ($this->historico === 'somente') {
             $q->whereHas('bankAccount', fn ($a) => $a->whereNotNull('initial_balance_date')->whereColumn('bank_accounts.initial_balance_date', '>', 'transactions.date'));
         }
-        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination', 'linkWrit', 'linkBroker', 'linkContact', 'attachments', 'processReceipt.brokerShares.broker', 'processReceipt.writ']);
+        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination', 'linkWrit.assignors.contact', 'linkBroker', 'linkContact', 'attachments', 'processReceipt.brokerShares.broker', 'processReceipt.writ']);
         if (preg_match('/^(writ|broker|contact):(\d+)$/', $this->vinculo, $m)) {
             $column = 'link_'.$m[1].'_id';
             $q->where(fn ($q) => $q->where($column, (int) $m[2])
@@ -1370,7 +1374,7 @@ new #[Layout('layouts.app')] class extends Component
                             @if ($t->hasLinks())
                                 <p class="mt-1 text-xs text-cryptex-text-secondary">
                                     @if ($t->link_process)<span class="mr-2">Processo: <a href="{{ route('banking.transactions.index', ['vinculo' => 'process:'.$t->link_process]) }}" class="text-primary-600">{{ $t->link_process }}</a></span>@endif
-                                    @if ($t->linkWrit)<span class="mr-2">Requisitório: <a href="{{ route('banking.transactions.index', ['vinculo' => 'writ:'.$t->link_writ_id]) }}" class="text-primary-600">{{ $t->linkWrit->assignor_name }} · {{ $t->linkWrit->process_number ?: '#'.$t->link_writ_id }}</a></span>@endif
+                                    @if ($t->linkWrit)<span class="mr-2">Requisitório: <a href="{{ route('banking.transactions.index', ['vinculo' => 'writ:'.$t->link_writ_id]) }}" class="text-primary-600">{{ $t->linkWrit->beneficiaryName() }} · {{ $t->linkWrit->process_number ?: '#'.$t->link_writ_id }}</a></span>@endif
                                     @if ($t->linkBroker)<span class="mr-2">Corretor: <a href="{{ route('banking.transactions.index', ['vinculo' => 'broker:'.$t->link_broker_id]) }}" class="text-primary-600">{{ $t->linkBroker->name }}</a></span>@endif
                                     @if ($t->linkContact)<span class="mr-2">Pessoa: <a href="{{ route('banking.transactions.index', ['vinculo' => 'contact:'.$t->link_contact_id]) }}" class="text-primary-600">{{ $t->linkContact->name }}</a></span>@endif
                                 </p>
@@ -1856,7 +1860,7 @@ new #[Layout('layouts.app')] class extends Component
                                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                                     <div class="md:col-span-2"><x-jr.input label="Buscar requisitório, corretor ou pessoa" icon="search" name="linkSearch" wire:model.live.debounce.400ms="linkSearch" placeholder="Nome ou número do processo" /></div>
                                     <x-jr.input label="Processo (número)" name="formLinkProcess" wire:model="formLinkProcess" x-process-number maxlength="120" />
-                                    <div><label for="form-link-writ" class="mb-2 block text-sm font-medium text-mono-600">Requisitório</label><select id="form-link-writ" wire:model="formLinkWritId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhum</option>@foreach ($linkOptions['writs'] as $o)<option value="{{ $o->id }}">{{ $o->assignor_name }} · {{ $o->process_number ?: '#'.$o->id }}</option>@endforeach</select>@error('formLinkWritId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
+                                    <div><label for="form-link-writ" class="mb-2 block text-sm font-medium text-mono-600">Requisitório</label><select id="form-link-writ" wire:model="formLinkWritId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhum</option>@foreach ($linkOptions['writs'] as $o)<option value="{{ $o->id }}">{{ $o->beneficiaryName() }} · {{ $o->process_number ?: '#'.$o->id }}</option>@endforeach</select>@error('formLinkWritId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
                                     <div><label for="form-link-broker" class="mb-2 block text-sm font-medium text-mono-600">Corretor</label><select id="form-link-broker" wire:model="formLinkBrokerId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhum</option>@foreach ($linkOptions['brokers'] as $o)<option value="{{ $o->id }}">{{ $o->name }}</option>@endforeach</select>@error('formLinkBrokerId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
                                     <div><label for="form-link-contact" class="mb-2 block text-sm font-medium text-mono-600">Pessoa (contato)</label><select id="form-link-contact" wire:model="formLinkContactId" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhuma</option>@foreach ($linkOptions['contacts'] as $o)<option value="{{ $o->id }}">{{ $o->name }}</option>@endforeach</select>@error('formLinkContactId') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror</div>
                                     <div class="md:col-span-2">

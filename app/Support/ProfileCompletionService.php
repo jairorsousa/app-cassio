@@ -89,6 +89,16 @@ class ProfileCompletionService
                 'pix_key' => ($data['pix_key'] ?? '') ?: null,
             ];
             $role = $this->roleFor($user);
+            // CPF é único e, depois de cadastrado, só muda com aprovação do administrador.
+            $identity = app(\App\Domains\Contacts\Services\PersonIdentityService::class);
+            if ($identity->documentOwner($data['document'], $contact?->id)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['document' => 'Este CPF já está em outro cadastro. Fale com o administrador.']);
+            }
+            $documentRequest = $contact && BrazilianDocuments::digits($contact->document) !== ''
+                && BrazilianDocuments::digits($contact->document) !== BrazilianDocuments::digits($data['document']);
+            if ($documentRequest) {
+                $fields['document'] = $contact->document;
+            }
             if ($contact) {
                 $phones = array_values(array_unique(array_filter(array_merge([$phone], (array) $contact->phones))));
                 $emails = array_values(array_unique(array_filter(array_merge([$email], array_map('mb_strtolower', (array) $contact->emails)))));
@@ -96,6 +106,9 @@ class ProfileCompletionService
                 $contact->update($fields + ['phone' => $phone, 'phones' => $phones, 'email' => $email, 'emails' => $emails, 'roles' => $roles]);
             } else {
                 $contact = Contact::create($fields + ['type' => $role, 'roles' => [$role], 'phone' => $phone, 'phones' => [$phone], 'email' => $email, 'emails' => [$email], 'status' => true]);
+            }
+            if ($documentRequest) {
+                $identity->requestDocumentChange($contact, $data['document'], $user);
             }
             $user->forceFill(['name' => $fields['name'], 'contact_id' => $contact->id, 'profile_completed_at' => now()])->save();
             // Liga participantes deste e-mail à conta e preenche o celular só onde está vazio (manual não é sobrescrito).
