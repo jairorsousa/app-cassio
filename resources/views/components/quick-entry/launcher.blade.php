@@ -4,7 +4,9 @@
     $qeAction = \App\Support\QuickEntry::moduleAction(request()->route()?->getName(), $qeUser);
 @endphp
 @if (\App\Support\QuickEntry::enabled($qeUser))
-    @if ($variant === 'fab')
+    @if ($variant === 'fab' && request()->routeIs('divisions.show'))
+        {{-- Divisões já tem o próprio botão flutuante (Adicionar despesa) no mesmo canto. --}}
+    @elseif ($variant === 'fab')
         {{-- Celular: botão "+" redondo no canto inferior direito, respeitando a área segura do iPhone. --}}
         <div class="qe-fab" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape.window="open = false" data-quick-fab>
             @if ($qeAction)

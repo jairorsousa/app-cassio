@@ -1,5 +1,5 @@
 import './bootstrap';
-import { bindMoneyInput, centsToModel, parseToCents } from './money-mask';
+import { bindMoneyInput } from './money-mask';
 import { bindDecimalInput } from './decimal-mask';
 import { registerSessionExpiredHandler } from './session-expired';
 
@@ -54,6 +54,7 @@ function wireModelBinding(el) {
             return {
                 expression: attribute.value,
                 live: attribute.name.includes('.live'),
+                blur: attribute.name.includes('.blur') || attribute.name.includes('.change'),
                 debounce: debounce ? Number(debounce[1]) : (attribute.name.includes('.live') ? 150 : null),
             };
         }
@@ -101,27 +102,37 @@ document.addEventListener('alpine:init', () => {
         cleanup(() => el.removeEventListener('input', onInput, true));
     });
 
-    // x-money: o que aparece é 1.234,56. O Livewire recebe 1234.56 (vazio = '').
-    // x-money.signed aceita valor negativo (ex.: saldo inicial).
-    // O valor digitado não volta cru para o campo enquanto a pessoa digita.
+    // x-money: o campo mostra "R$ 1.234,56" e a digitação é estilo caixa eletrônico (resources/js/money-mask.js).
+    // O Livewire recebe "1234.56" (vazio = ''). x-money.signed aceita valor negativo (ex.: saldo inicial).
+    // wire:model (sem .live): o valor fica guardado no $wire a cada tecla e vai junto na próxima ação.
+    // wire:model.live: envia com o debounce do campo. wire:model.blur / .live.blur: envia ao sair do campo.
     Alpine.directive('money', (el, { modifiers }, { cleanup }) => {
         const allowNegative = modifiers.includes('signed');
         let mask;
         let disposed = false;
+        let commitTimer = null;
 
-        // O Livewire só recebe o valor no blur, no Enter ou no submit (nunca a cada tecla).
-        const syncWire = () => {
+        const push = (send) => {
             const binding = wireModelBinding(el);
             const wire = binding ? componentWire(el) : null;
             if (!binding || !wire || binding.expression === '' || !mask || !mask.isTouched()) return;
-            mask.read();
-            const modelValue = mask.isEmpty() ? '' : centsToModel(mask.getCents());
-            if (String(wire.get(binding.expression) ?? '') !== modelValue) {
-                wire.set(binding.expression, modelValue, binding.live);
-            }
+            const modelValue = mask.model();
+            const changed = String(wire.get(binding.expression) ?? '') !== modelValue;
+            if (changed) wire.set(binding.expression, modelValue, false);
+            if (send && (binding.live || binding.blur) && (changed || send === 'force')) wire.$commit();
         };
 
-        mask = bindMoneyInput(el, { onCommit: syncWire, allowNegative });
+        const onType = () => {
+            const binding = wireModelBinding(el);
+            push(false);
+            if (binding && binding.live && !binding.blur) {
+                clearTimeout(commitTimer);
+                commitTimer = setTimeout(() => push('force'), binding.debounce ?? 150);
+            }
+        };
+        const onCommit = () => { clearTimeout(commitTimer); push(true); };
+
+        mask = bindMoneyInput(el, { onCommit, onType, allowNegative });
         el._moneyMask = mask;
 
         const wrapModel = () => {
@@ -134,31 +145,23 @@ document.addEventListener('alpine:init', () => {
         queueMicrotask(() => {
             if (disposed) return;
             wrapModel();
-            if (document.activeElement === el) return;
+            if (document.activeElement === el && mask.isTouched()) return;
             mask.setFromExternal((el._x_model ? el._x_model.get() : el.value) ?? '');
         });
 
+        // Formulário comum (sem wire:model): envia o número com ponto.
         const form = el.closest('form');
         const onSubmit = () => {
-            syncWire();
-            if (!wireModelBinding(el)) {
-                mask.read();
-                el.value = mask.isEmpty() ? '' : centsToModel(mask.getCents());
-            }
+            push(false);
+            if (!wireModelBinding(el)) el.value = mask.model();
         };
         if (form) form.addEventListener('submit', onSubmit, { capture: true });
 
-        // Botões de salvar fora do <form> (wire:click): manda o valor antes do clique.
-        const onDocPointer = (event) => {
-            if (document.activeElement === el && event.target !== el && mask.isTouched()) syncWire();
-        };
-        document.addEventListener('pointerdown', onDocPointer, true);
-
         cleanup(() => {
             disposed = true;
+            clearTimeout(commitTimer);
             mask.cleanup();
             if (form) form.removeEventListener('submit', onSubmit, { capture: true });
-            document.removeEventListener('pointerdown', onDocPointer, true);
             if (el._moneyOriginalForce) el._x_forceModelUpdate = el._moneyOriginalForce;
             el._moneyWrapped = false;
             delete el._moneyMask;
@@ -245,7 +248,7 @@ document.addEventListener('livewire:initialized', () => {
             requestAnimationFrame(() => {
                 document.querySelectorAll('[x-money]').forEach((el) => {
                     const mask = el._moneyMask;
-                    if (!mask || (el.value && el.value.includes(','))) {
+                    if (!mask || (el.value && el.value.includes('R$'))) {
                         return;
                     }
 

@@ -173,7 +173,11 @@ new #[Layout('layouts.app')] class extends Component {
 @if ($editingQuoteAssetId)
 <x-investments.modal :title="$this->editingAutomaticLiquidity() ? 'Atualizar saldo da aplicação' : 'Atualizar cotação'" submit="saveQuote">
 <x-jr.input label="Data da cotação *" type="date" name="quoteDate" wire:model="quoteDate" required />
-<x-jr.input :label="$this->editingAutomaticLiquidity() ? 'Saldo atual (R$) *' : 'Preço por unidade (R$) *'" type="text" x-decimal.pad="{{ $this->editingAutomaticLiquidity() ? 2 : 4 }}" placeholder="{{ $this->editingAutomaticLiquidity() ? '0,00' : '0,0000' }}" name="quotePrice" wire:model="quotePrice" required />
+@if ($this->editingAutomaticLiquidity())
+<x-jr.input label="Saldo atual (R$) *" type="text" x-money name="quotePrice" wire:model="quotePrice" wire:key="quote-balance" required />
+@else
+<x-jr.input label="Preço por unidade (R$) *" type="text" x-decimal.pad="4" placeholder="0,0000" name="quotePrice" wire:model="quotePrice" wire:key="quote-price" required />
+@endif
 <p class="text-sm text-mono-600 md:col-span-2">{{ $this->editingAutomaticLiquidity() ? 'Informe o saldo total mostrado pelo banco. A diferença será reconhecida como valorização da aplicação.' : 'O valor mais recente por data será utilizado na carteira.' }}</p>
 </x-investments.modal>
 @endif

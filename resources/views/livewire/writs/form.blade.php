@@ -720,14 +720,18 @@ new #[Layout('layouts.app')] class extends Component
                         </div>
                         <div>
                             <label class="block text-xxs text-mono-600 mb-xxxs">Modo</label>
-                            <select wire:model="default_brokers.{{ $i }}.mode" class="fx-form-field">
+                            <select wire:model.live="default_brokers.{{ $i }}.mode" class="fx-form-field">
                                 <option value="percent">Percentual</option>
                                 <option value="fixed">Valor fixo</option>
                             </select>
                         </div>
                         <div>
                             <label class="block text-xxs text-mono-600 mb-xxxs">Taxa / valor</label>
-                            <input type="text" wire:model="default_brokers.{{ $i }}.rate_or_amount" class="fx-form-field" />
+                            @if (($row['mode'] ?? 'percent') === 'fixed')
+                                <input type="text" x-money wire:model="default_brokers.{{ $i }}.rate_or_amount" wire:key="dbr-fixed-{{ $i }}" class="fx-form-field" />
+                            @else
+                                <input type="text" x-decimal="4" wire:model="default_brokers.{{ $i }}.rate_or_amount" wire:key="dbr-pct-{{ $i }}" class="fx-form-field" placeholder="%" />
+                            @endif
                         </div>
                         <button type="button" wire:click="removeDefaultBroker({{ $i }})" class="text-system-error text-sm px-xs h-9 hover:opacity-70" title="Remover">✕</button>
                     </div>
