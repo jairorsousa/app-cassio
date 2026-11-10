@@ -31,7 +31,7 @@ class DivisionExpense extends Model
 
     protected $fillable = ['group_id', 'description', 'category', 'date', 'amount', 'paid_by_member_id', 'split_mode', 'status',
         'installment_group_id', 'installment_number', 'installment_total', 'transaction_id', 'receipt_path', 'receipt_original_name',
-        'receipt_mime', 'notes', 'created_by', 'payment_method', 'kind', 'purchase_mode'];
+        'receipt_mime', 'notes', 'created_by', 'payment_method', 'kind', 'purchase_mode', 'owner_category_id'];
 
     protected $casts = ['date' => 'date', 'amount' => 'decimal:2', 'installment_number' => 'integer', 'installment_total' => 'integer'];
 
@@ -74,6 +74,12 @@ class DivisionExpense extends Model
         $custom = DivisionCategory::orderBy('label')->pluck('label', 'key')->all();
 
         return $fixed + $custom + $outros;
+    }
+
+    /** Categoria do Financeiro do Cassio para a parte dele (só ele vê; os outros participantes usam a categoria do grupo). */
+    public function ownerCategory(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Banking\Models\Category::class, 'owner_category_id');
     }
 
     public function isPurchase(): bool

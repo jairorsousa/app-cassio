@@ -69,6 +69,14 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $purchaseMode = 'advance';
 
+    /** Categoria do Financeiro do Cassio para a parte dele (só o Cassio vê). */
+    public $ownerCategoryId = null;
+
+    /** "Trocar categoria" de uma despesa já lançada (só a categoria do Cassio). */
+    public ?int $categoryExpenseId = null;
+
+    public $quickCategoryId = null;
+
     public $receipt = null;
 
     // Acerto
@@ -134,6 +142,11 @@ new #[Layout('layouts.app')] class extends Component
                 $this->expenseCategory = $last->category;
             }
         }
+        // Vindo do Financeiro › "Trocar categoria" no lançamento "sua parte" / "Divisões".
+        $ask = (int) request()->query('categoria');
+        if ($ask > 0 && auth()->user()->isAdmin() && DivisionExpense::where('group_id', $group->id)->whereKey($ask)->exists()) {
+            $this->openCategory($ask);
+        }
     }
 
     private function linkedProperty(): ?\App\Domains\Assets\Models\Property
@@ -165,6 +178,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId', 'paymentMethod', 'payAccount', 'payCard', 'showNewCategory', 'newCategoryLabel', 'expenseKind', 'purchaseMode');
         $this->expenseDate = now()->toDateString();
         $this->expenseCategory = 'outros';
+        $this->ownerCategoryId = auth()->user()->isAdmin() ? $this->service()->financeCategoryId('outros') : null;
         $this->splitMode = 'equal';
         $this->installments = 1;
         $this->paidBy = (string) ($this->me()?->id ?? '');
@@ -191,6 +205,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->expenseAmount = number_format((float) $e->amount, 2, '.', '');
         $this->expenseDate = $e->date->toDateString();
         $this->expenseCategory = $e->category;
+        $this->ownerCategoryId = $e->owner_category_id;
         $this->paidBy = (string) $e->paid_by_member_id;
         $this->splitMode = $e->split_mode;
         $this->transactionId = (string) ($e->transaction_id ?? '');
@@ -242,6 +257,7 @@ new #[Layout('layouts.app')] class extends Component
                 'amount' => $this->expenseAmount, 'paid_by_member_id' => (int) $this->paidBy, 'split_mode' => $this->splitMode,
                 'inputs' => $inputs, 'installments' => $this->installments, 'transaction_id' => $method ? null : ($this->transactionId ?: null), 'notes' => $this->expenseNotes,
                 'kind' => $this->expenseKind, 'purchase_mode' => $this->purchaseMode,
+                'owner_category_id' => $this->ownerCategoryId ?: null,
                 'payment_method' => $method, 'bank_account_id' => $method === 'account' ? (int) $this->payAccount : null, 'credit_card_id' => $method === 'card' ? (int) $this->payCard : null,
             ], $this->receipt, $editing);
         } catch (ValidationException $e) {
@@ -261,6 +277,42 @@ new #[Layout('layouts.app')] class extends Component
         } else {
             $this->showExpenseModal = false;
         }
+    }
+
+    /** Ao trocar a categoria do grupo, a sua acompanha a sugestão enquanto você não escolheu outra. */
+    public function updatingExpenseCategory($value): void
+    {
+        if (! auth()->user()->isAdmin()) {
+            return;
+        }
+        $prev = $this->service()->financeCategoryId($this->expenseCategory);
+        if (! $this->ownerCategoryId || (int) $this->ownerCategoryId === (int) $prev) {
+            $this->ownerCategoryId = $this->service()->financeCategoryId((string) $value);
+        }
+    }
+
+    public function openCategory(int $id): void
+    {
+        abort_unless(auth()->user()->isAdmin(), 403);
+        $e = DivisionExpense::where('group_id', $this->group->id)->findOrFail($id);
+        $this->resetValidation();
+        $this->categoryExpenseId = $e->id;
+        $this->quickCategoryId = $e->owner_category_id;
+    }
+
+    public function saveCategory(): void
+    {
+        $e = DivisionExpense::where('group_id', $this->group->id)->findOrFail((int) $this->categoryExpenseId);
+        try {
+            $this->service()->setOwnerCategory(auth()->user(), $e, $this->quickCategoryId ?: null);
+        } catch (ValidationException $ex) {
+            $this->fail($ex);
+
+            return;
+        }
+        $name = $e->fresh()->ownerCategory?->name;
+        $this->notice = $name ? "Categoria da sua parte em \"{$e->description}\": {$name}." : "A despesa \"{$e->description}\" ficou sem categoria.";
+        $this->categoryExpenseId = null;
     }
 
     public function createCategory(): void
@@ -557,7 +609,7 @@ new #[Layout('layouts.app')] class extends Component
             'groupAudits' => $this->group->audits()->whereNull('expense_id')->with('user')->latest('id')->limit(30)->get(),
             'chargeMember' => $this->chargeMemberId ? $members[$this->chargeMemberId] ?? null : null,
             'transfers' => $service->simplify($net),
-            'expenses' => $this->group->expenses()->with('payer', 'shares.member', 'audits.user', 'creator', 'transaction')
+            'expenses' => $this->group->expenses()->with(array_merge(['payer', 'shares.member', 'audits.user', 'creator', 'transaction'], $user->isAdmin() ? ['ownerCategory'] : []))
                 ->when(! $user->isAdmin(), fn ($q) => $q->where(fn ($q) => $q->where('status', '!=', 'rejected')->orWhere('created_by', $user->id)))
                 ->orderByDesc('date')->orderByDesc('id')->get(),
             'settlements' => $this->group->settlements()->with('from', 'to', 'transaction')->orderByDesc('date')->get(),
@@ -571,6 +623,8 @@ new #[Layout('layouts.app')] class extends Component
             'totals' => $this->splitTotals(),
             'linkedProperty' => $this->linkedProperty(),
             'service' => $service,
+            'ownerCategories' => $user->isAdmin() ? $service->ownerCategoryOptions() : collect(),
+            'categoryExpense' => $user->isAdmin() && $this->categoryExpenseId ? DivisionExpense::with('payer', 'ownerCategory')->find($this->categoryExpenseId) : null,
         ];
     }
 }; ?>
@@ -580,6 +634,23 @@ new #[Layout('layouts.app')] class extends Component
 <div class="flex flex-col gap-md" data-division-show>
     @if ($notice)<x-jr.alert variant="success">{{ $notice }}</x-jr.alert>@endif
     @error('expense')<x-jr.alert variant="error">{{ $message }}</x-jr.alert>@enderror
+    @if ($isAdmin)
+        @php($missingCategory = $expenses->filter(fn ($e) => $service->needsOwnerCategory($e, $owner)))
+        @if ($missingCategory->isNotEmpty())
+            <div class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-missing-banner>
+                <p class="font-semibold">{{ $missingCategory->count() === 1 ? '1 despesa está' : $missingCategory->count().' despesas estão' }} sem a sua categoria no Financeiro</p>
+                <p class="mt-1 text-xs">Enquanto não escolher, a sua parte aparece como "sem categoria" nos relatórios. Só você vê esta categoria.</p>
+                <div class="mt-2 flex flex-col gap-1">
+                    @foreach ($missingCategory as $e)
+                        <button type="button" class="flex min-h-[40px] items-center justify-between gap-2 rounded-xl bg-mono-white px-3 py-2 text-left text-xs" wire:click="openCategory({{ $e->id }})" data-missing-item="{{ $e->id }}">
+                            <span class="min-w-0"><span class="block truncate font-semibold">{{ $e->description }}</span><span class="block text-mono-600">{{ $e->date->format('d/m/Y') }} · pago por {{ $e->payer?->name }}</span></span>
+                            <span class="shrink-0 font-semibold text-primary-500">Escolher categoria</span>
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+    @endif
 
     <x-fx.card>
         <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
@@ -816,6 +887,25 @@ new #[Layout('layouts.app')] class extends Component
         @endif
     </x-fx.card>
 
+    @if ($categoryExpense)
+        <div class="fixed inset-0 z-modal flex items-end justify-center px-0 sm:items-center sm:px-4" data-category-modal>
+            <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="$set('categoryExpenseId', null)" aria-label="Fechar"></button>
+            <div class="relative w-full max-w-lg rounded-t-2xl border border-mono-100 bg-mono-white p-5 shadow-elevated sm:rounded-2xl">
+                <h3 class="text-lg font-bold text-mono-900">Trocar categoria</h3>
+                <p class="mt-1 text-sm text-mono-600">{{ $categoryExpense->description }} · {{ $categoryExpense->date->format('d/m/Y') }} · pago por {{ $categoryExpense->payer?->name }}</p>
+                @if ($categoryExpense->isPurchase())
+                    <p class="mt-3 rounded-xl bg-mono-50 p-3 text-sm">Compra do bem: a sua parte fica sempre em "Aquisição de bem".</p>
+                    <div class="mt-4 flex justify-end"><button type="button" class="fx-btn fx-btn--standard" wire:click="$set('categoryExpenseId', null)">Fechar</button></div>
+                @else
+                    <div class="mt-3"><x-banking.category-picker :categories="$ownerCategories" :selected-id="$quickCategoryId" model="quickCategoryId" id="division-quick-category" label="Sua categoria no Financeiro" placeholder="Sem categoria" /></div>
+                    @error('ownerCategoryId')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
+                    <p class="mt-2 text-xs text-mono-600">Muda só a categoria da sua parte no Financeiro. Valor, saldos e a despesa dos outros participantes continuam iguais.</p>
+                    <div class="mt-4 flex justify-end gap-2"><button type="button" class="fx-btn fx-btn--standard" wire:click="$set('categoryExpenseId', null)">Cancelar</button><button type="button" class="fx-btn fx-btn--primary" wire:click="saveCategory" data-save-category>Salvar</button></div>
+                @endif
+            </div>
+        </div>
+    @endif
+
     @if ($showExpenseModal)
         <div class="fixed inset-0 z-modal flex items-center justify-center overflow-y-auto px-4 py-6" data-expense-modal>
             <button type="button" class="fixed inset-0 h-full w-full bg-black/45" wire:click="closeModals" aria-label="Fechar modal"></button>
@@ -834,7 +924,20 @@ new #[Layout('layouts.app')] class extends Component
                                     <div class="mt-2 flex gap-2" data-new-category-form><input type="text" wire:model="newCategoryLabel" wire:keydown.enter.prevent="createCategory" placeholder="Nome da nova categoria" class="h-10 min-w-0 flex-1 rounded-xl border-mono-200 text-sm">
                                         <button type="button" class="fx-btn fx-btn--primary" wire:click="createCategory">Criar</button></div>
                                     @error('newCategoryLabel')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
-                                @endif</div>
+                                @endif
+                                @if ($isAdmin)<p class="mt-1 text-xs text-mono-600">Categoria do grupo: todos os participantes veem.</p>@endif</div>
+                            @if ($isAdmin)
+                                <div class="md:col-span-2 rounded-xl border border-mono-100 p-3" data-owner-category-field>
+                                    @if ($expenseKind === 'purchase')
+                                        <p class="text-sm font-medium text-mono-600">Sua categoria no Financeiro</p>
+                                        <p class="mt-1 text-xs text-mono-600">Compra do bem: a sua parte vai sempre para "Aquisição de bem" (fora do resultado).</p>
+                                    @else
+                                        <x-banking.category-picker :categories="$ownerCategories" :selected-id="$ownerCategoryId" model="ownerCategoryId" id="division-owner-category" label="Sua categoria no Financeiro" placeholder="Sem categoria" />
+                                        <p class="mt-1 text-xs text-mono-600">Só você vê. A sua parte (paga por você ou por outro sócio) entra no Financeiro nesta categoria.</p>
+                                        @error('ownerCategoryId')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
+                                    @endif
+                                </div>
+                            @endif
                             <div><label class="mb-2 block text-sm font-medium text-mono-600">Quem pagou *</label>
                                 <select wire:model.live="paidBy" class="h-12 w-full rounded-pill border border-mono-200 px-4 text-sm">@foreach ($formMembers as $m)<option value="{{ $m->id }}">{{ $m->name }}</option>@endforeach</select>
                                 @error('paidBy')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror</div>

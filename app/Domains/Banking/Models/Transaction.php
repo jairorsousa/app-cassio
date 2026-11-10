@@ -200,6 +200,17 @@ class Transaction extends Model
         return $this->source_type === \App\Domains\Assets\Models\PropertyPayment::class ? $this->propertyPayment?->property : null;
     }
 
+    /** Despesa do Divisões cuja parte do Cassio é este lançamento (gerado pela despesa ou "sua parte"), para "Trocar categoria". */
+    public function divisionExpenseForCategory(): ?\App\Domains\Divisions\Models\DivisionExpense
+    {
+        if (! in_array($this->source_type, ['division_expense', 'division_share'], true) || ! $this->source_id) {
+            return null;
+        }
+        $e = \App\Domains\Divisions\Models\DivisionExpense::find($this->source_id);
+
+        return $e && ! $e->isPurchase() ? $e : null;
+    }
+
     public function isReadOnly(): bool
     {
         return ! is_null($this->source_type);

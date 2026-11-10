@@ -9,7 +9,7 @@
             @php($iPaid = $meId && (int) $e->paid_by_member_id === (int) $meId)
             @php($involved = $meId && ($iPaid || $e->shares->contains('member_id', $meId)))
             @php($lent = $iPaid ? $cents - $myShare : -$myShare)
-            <div class="border-b border-mono-100 py-3 last:border-0" x-data="{ open: false }" wire:key="e-{{ $variant ?? 'x' }}-{{ $e->id }}" data-expense-row data-lent="{{ $involved ? $lent : 'none' }}">
+            <div class="border-b border-mono-100 py-3 last:border-0 {{ $isAdmin && $service->needsOwnerCategory($e, $owner) ? 'bg-amber-50' : '' }}" x-data="{ open: false }" wire:key="e-{{ $variant ?? 'x' }}-{{ $e->id }}" data-expense-row data-lent="{{ $involved ? $lent : 'none' }}">
                 <div class="flex items-start gap-3">
                     <button type="button" class="flex min-w-0 flex-1 items-start gap-3 text-left" x-on:click="open = !open">
                         <span class="w-10 shrink-0 text-center leading-tight text-mono-600"><span class="block text-[11px] uppercase">{{ \Illuminate\Support\Carbon::parse($e->date)->locale('pt_BR')->translatedFormat('M') }}</span><span class="block text-fs-18 font-semibold">{{ $e->date->format('d') }}</span></span>
@@ -19,6 +19,13 @@
                                 @if ($e->isPurchase())<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500" data-purchase-badge>Compra do bem{{ $e->purchase_mode === 'increase' ? ' · aumenta a parte' : '' }}</span>@endif
                                 @if ($isAdmin && $e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</span>
                             <span class="block text-xs text-mono-600" data-payer-line>{{ $iPaid ? 'Você' : $e->payer?->name }} pagou R$ {{ $service->money($cents) }} · {{ $e->categoryLabel() }}</span>
+                            @if ($isAdmin && ! $e->isPurchase() && $involved)
+                                @if ($service->needsOwnerCategory($e, $owner))
+                                    <span class="mt-1 inline-block rounded-pill bg-amber-100 px-2 text-xs font-semibold text-amber-900" data-missing-category>Sem a sua categoria</span>
+                                @else
+                                    <span class="block text-xs text-mono-400" data-owner-category>Sua categoria: {{ $e->ownerCategory?->name ?? 'sem categoria' }}</span>
+                                @endif
+                            @endif
                             @if (($variant ?? '') === 'd')<span class="block text-xs text-mono-400" data-desktop-details>{{ $e->date->format('d/m/Y') }} · {{ $e->categoryLabel() }} · pago por {{ $e->payer?->name }} · {{ \App\Domains\Divisions\Models\DivisionExpense::MODES[$e->split_mode] ?? '' }}</span>@endif
                         </span>
                     </button>
@@ -39,6 +46,9 @@
                     @if ($isAdmin && $e->status === 'pending')
                         <button type="button" class="text-xs text-error" wire:click="decideExpense({{ $e->id }}, false)">Recusar</button>
                         <button type="button" class="text-xs text-green-600" wire:click="decideExpense({{ $e->id }}, true)">Aprovar</button>
+                    @endif
+                    @if ($isAdmin && ! $e->isPurchase() && $involved)
+                        <button type="button" class="text-xs {{ $service->needsOwnerCategory($e, $owner) ? 'font-semibold text-amber-700' : 'text-primary-500' }}" wire:click="openCategory({{ $e->id }})" data-change-category="{{ $e->id }}">{{ $service->needsOwnerCategory($e, $owner) ? 'Escolher categoria' : 'Trocar categoria' }}</button>
                     @endif
                     @if ($isAdmin || ($e->created_by === auth()->id() && $e->status === 'pending'))
                         <button type="button" class="text-xs text-primary-500" wire:click="editExpense({{ $e->id }})">Editar</button>

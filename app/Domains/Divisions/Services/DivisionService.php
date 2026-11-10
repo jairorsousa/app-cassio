@@ -768,6 +768,15 @@ class DivisionService
             $shares = $this->computeShares($total, (string) ($data['split_mode'] ?? ''), $inputs);
         }
         $n = $editing ? 1 : max(1, min(60, (int) ($data['installments'] ?? 1)));
+        // Categoria do Financeiro do Cassio para a parte dele: só ele escolhe (e só ele vê). Quem não é ele não mexe;
+        // em despesa nova de outro participante entra a sugestão pela categoria do grupo (se existir no Financeiro).
+        if ($actor->isAdmin() && array_key_exists('owner_category_id', $data)) {
+            $ownerCategoryId = $this->validOwnerCategory($data['owner_category_id']);
+        } elseif ($editing) {
+            $ownerCategoryId = $editing->owner_category_id;
+        } else {
+            $ownerCategoryId = $this->financeCategoryId($category);
+        }
 
         $transactionId = ! empty($data['transaction_id']) ? (int) $data['transaction_id'] : null;
         // Como foi pago: account/card gera a saída no Financeiro; vazio = não lança (ou vincula a um lançamento existente).
@@ -798,7 +807,7 @@ class DivisionService
         }
         $status = ($isMember && $group->requires_approval) ? 'pending' : 'approved';
 
-        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing, $method, $payAccountId, $payCardId, $oldTxId, $kind, $purchaseMode) {
+        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing, $method, $payAccountId, $payCardId, $oldTxId, $kind, $purchaseMode, $ownerCategoryId) {
             $parts = $this->allocate($total, array_fill(1, $n, 1));
             $weights = array_map(fn ($s) => $s['cents'], $shares);
             $groupUuid = $n > 1 ? (string) Str::uuid() : null;
@@ -821,7 +830,7 @@ class DivisionService
                     'transaction_id' => $i === 1 ? $transactionId : null,
                     'payment_method' => $method ?? ($i === 1 && $transactionId ? 'link' : null),
                     'notes' => trim((string) ($data['notes'] ?? '')) ?: null,
-                    'kind' => $kind, 'purchase_mode' => $purchaseMode,
+                    'kind' => $kind, 'purchase_mode' => $purchaseMode, 'owner_category_id' => $ownerCategoryId,
                 ];
                 if ($n > 1) {
                     $attrs += ['installment_group_id' => $groupUuid, 'installment_number' => $i, 'installment_total' => $n];
@@ -855,6 +864,9 @@ class DivisionService
                 if ($transactionId && $i === 1) {
                     $this->audit($group, $actor, 'expense_linked', ['lançamento' => $transactionId], $expense->id);
                 }
+                if ($actor->isAdmin() && array_key_exists('owner_category_id', $data)) {
+                    $this->applyOwnerCategoryToLinked($expense);
+                }
                 $this->syncOwnerShare($expense);
                 $created->push($expense);
             }
@@ -871,7 +883,7 @@ class DivisionService
         $attrs = [
             'type' => 'expense', 'date' => $expense->date->toDateString(), 'amount' => $expense->amount,
             'description' => mb_substr('Divisões: '.$expense->description, 0, 255), 'status' => 'settled',
-            'category_id' => $expense->isPurchase() ? Category::assetPurchaseCategoryId() : $this->financeCategoryId($expense->category), 'bank_account_id' => null,
+            'category_id' => $this->ownerCategoryFor($expense), 'bank_account_id' => null,
             'credit_card_id' => null, 'credit_card_invoice_id' => null, 'source_type' => 'division_expense', 'source_id' => $expense->id,
         ];
         $invoice = null;
@@ -913,11 +925,112 @@ class DivisionService
         }
     }
 
-    private function financeCategoryId(string $key): ?int
+    /** Sugestão: a categoria do Financeiro com o mesmo nome da categoria do grupo (se existir). */
+    public function financeCategoryId(string $key): ?int
     {
         $label = DivisionExpense::categories()[$key] ?? null;
 
         return $label ? Category::where('name', $label)->where('type', 'expense')->value('id') : null;
+    }
+
+    /** Categoria que a parte do Cassio usa no Financeiro: compra do bem = Aquisição de bem; senão a que ele escolheu (pode ser nenhuma). */
+    public function ownerCategoryFor(DivisionExpense $expense): ?int
+    {
+        return $expense->isPurchase() ? Category::assetPurchaseCategoryId() : ($expense->owner_category_id ? (int) $expense->owner_category_id : null);
+    }
+
+    /** Categorias do Financeiro que o Cassio pode escolher para a parte dele (de saída, ativas, com subcategorias). */
+    public function ownerCategoryOptions(): \Illuminate\Support\Collection
+    {
+        return Category::active()->selectable()->where('type', 'expense')->orderBy('name')->get();
+    }
+
+    private function validOwnerCategory(mixed $raw): ?int
+    {
+        $id = (int) $raw;
+        if ($id <= 0) {
+            return null;
+        }
+        if (! Category::active()->selectable()->where('type', 'expense')->whereKey($id)->exists()) {
+            throw ValidationException::withMessages(['ownerCategoryId' => 'Escolha uma categoria de saída do Financeiro.']);
+        }
+
+        return $id;
+    }
+
+    /** Despesa que entra no Financeiro do Cassio e ainda está sem a categoria dele. */
+    public function needsOwnerCategory(DivisionExpense $expense, ?DivisionMember $owner): bool
+    {
+        if (! $owner || $expense->trashed() || $expense->status !== 'approved' || $expense->isPurchase() || $expense->owner_category_id) {
+            return false;
+        }
+        $expense->loadMissing('shares');
+
+        return (int) $expense->paid_by_member_id === (int) $owner->id || (float) ($expense->shares->firstWhere('member_id', $owner->id)?->amount ?? 0) > 0;
+    }
+
+    /** Leva a categoria do Cassio ao lançamento vinculado manualmente (não gerado), se ele não estiver rateado. */
+    private function applyOwnerCategoryToLinked(DivisionExpense $expense): void
+    {
+        if (! $expense->transaction_id || $expense->isPurchase()) {
+            return;
+        }
+        $tx = Transaction::find($expense->transaction_id);
+        if ($tx && $tx->source_type === null && ! $tx->allocations()->exists() && (int) $tx->category_id !== (int) $expense->owner_category_id) {
+            $tx->update(['category_id' => $expense->owner_category_id]);
+        }
+    }
+
+    /**
+     * Troca só a categoria do Cassio numa despesa já lançada (qualquer pagador, qualquer autor). Não muda a despesa
+     * para os outros participantes, nem valor, conta ou saldo: só a categoria dos lançamentos dele.
+     */
+    public function setOwnerCategory(User $actor, DivisionExpense $expense, mixed $categoryId): DivisionExpense
+    {
+        $this->assertAdmin($actor);
+        if ($expense->isPurchase()) {
+            throw ValidationException::withMessages(['ownerCategoryId' => 'Compra do bem fica sempre em "Aquisição de bem".']);
+        }
+        $id = $this->validOwnerCategory($categoryId);
+
+        return DB::transaction(function () use ($expense, $id) {
+            $expense->forceFill(['owner_category_id' => $id])->save();
+            Transaction::where('source_type', 'division_expense')->where('source_id', $expense->id)->get()->each(fn ($t) => $t->update(['category_id' => $id]));
+            $this->applyOwnerCategoryToLinked($expense);
+            $this->syncOwnerShare($expense);
+
+            return $expense->fresh();
+        });
+    }
+
+    /**
+     * Preenche (uma vez) a categoria do Cassio nas despesas antigas copiando a categoria que o lançamento dele já tem;
+     * sem lançamento dele, usa a sugestão pela categoria do grupo. Lançamento sem categoria continua sem (fica destacado).
+     *
+     * @return array<int, array{id:int, from:string, category:?int}>
+     */
+    public function backfillOwnerCategories(): array
+    {
+        $asset = Category::assetPurchaseCategoryId();
+        $out = [];
+        foreach (DivisionExpense::withTrashed()->whereNull('owner_category_id')->where('kind', '!=', 'purchase')->orderBy('id')->get() as $e) {
+            $tx = Transaction::where('source_type', self::OWNER_SHARE_SOURCE)->where('source_id', $e->id)->first()
+                ?? Transaction::where('source_type', 'division_expense')->where('source_id', $e->id)->first()
+                ?? ($e->transaction_id ? Transaction::find($e->transaction_id) : null);
+            if ($tx) {
+                $cat = $tx->category_id && (int) $tx->category_id !== $asset ? (int) $tx->category_id : null;
+                $from = 'lançamento #'.$tx->id;
+            } else {
+                $cat = $this->financeCategoryId($e->category);
+                $from = 'sugestão pela categoria do grupo';
+            }
+            if ($cat) {
+                $e->forceFill(['owner_category_id' => $cat])->save();
+            }
+            $out[] = ['id' => $e->id, 'from' => $from, 'category' => $cat];
+        }
+
+        return $out;
     }
 
     /** "+ Nova categoria": cria na hora (e a mesma categoria de saída no Financeiro, se for o Cassio). */
@@ -1032,7 +1145,7 @@ class DivisionService
             'type' => 'expense', 'status' => 'settled', 'date' => $expense->date->toDateString(), 'amount' => $cents / 100,
             'description' => mb_substr('Divisões: '.$expense->description.' · sua parte (pago por '.($payer?->name ?? 'outro sócio').')', 0, 255),
             'notes' => 'Sem saída de conta: a parte fica a pagar no Divisões ('.$group->name.').',
-            'category_id' => $this->financeCategoryId($expense->category), 'bank_account_id' => null, 'credit_card_id' => null,
+            'category_id' => $this->ownerCategoryFor($expense), 'bank_account_id' => null, 'credit_card_id' => null,
             'credit_card_invoice_id' => null, 'source_type' => self::OWNER_SHARE_SOURCE, 'source_id' => $expense->id,
         ];
         if ($tx) {
@@ -1084,7 +1197,7 @@ class DivisionService
             }
             $tx = Transaction::where('source_type', 'division_expense')->where('source_id', $expense->id)->first();
             if ($tx) {
-                $tx->update(['category_id' => $kind === 'purchase' ? Category::assetPurchaseCategoryId() : $this->financeCategoryId($expense->category)]);
+                $tx->update(['category_id' => $this->ownerCategoryFor($expense->fresh())]);
             }
             $this->syncOwnerShare($expense);
             $expense->unsetRelation('shares');

@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 10/11/2026 — Divisões: categoria do Financeiro do Cassio para a parte dele (Auditor Fin)
+
+Pedido do Cassio: escolher a categoria da parte dele entre as categorias do Financeiro dele (com subcategorias e busca, também no celular), sem criar categorias novas.
+
+1. Nova coluna `division_expenses.owner_category_id`: a categoria do Cassio fica separada da categoria do grupo (que os outros participantes veem). Os participantes não veem nem dependem dela.
+2. No formulário da despesa (Cassio): campo "Sua categoria no Financeiro" com busca e subcategorias; a parte dele — paga por ele (lançamento da conta/cartão ou lançamento vinculado) ou por outro sócio ("sua parte") — usa essa categoria. Compra do bem continua sempre em "Aquisição de bem".
+3. "Trocar categoria" em qualquer despesa já lançada (qualquer pagador, qualquer autor), no Divisões e no Financeiro (link nos lançamentos "Divisões" e "sua parte"). Muda só a categoria dos lançamentos dele; valores e saldos iguais; não entra no histórico do grupo.
+4. Despesas sem a categoria dele ficam destacadas, com aviso no topo do grupo e botão "Escolher categoria".
+5. Despesas antigas: `DivisionService::backfillOwnerCategories()` copiou a categoria que cada lançamento já tinha (sem lançamento: sugestão pelo nome da categoria do grupo). Pizza (#5) colocada em "Restaurantes & Refeições" (a pedido).
+
+Migração: `2026_11_10_210000_divisoes_categoria_propria`. Testes: `tests/Feature/Divisions/DivisionsOwnerCategoryTest.php`. Backup: `/root/app-cassio-backups/divisoes-categorias-20261110/`.
+
 ## 10/11/2026 — Divisões: só a sua parte no resultado + Bens: compra em sociedade (Auditor Fin)
 
 Pedido do Cassio (fazenda João Barbudo e grupos do Divisões):
