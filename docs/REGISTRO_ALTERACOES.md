@@ -1,5 +1,16 @@
 # Registro de alterações
 
+## 10/11/2026 — Divisões: só a sua parte no resultado + Bens: compra em sociedade (Auditor Fin)
+
+Pedido do Cassio (fazenda João Barbudo e grupos do Divisões):
+
+1. **Regra geral para todos os grupos.** Quando o Cassio paga uma despesa dividida, a conta continua com a saída inteira, mas no resultado e nos gráficos de despesa entra só a parte dele; o resto é adiantamento aos sócios (a receber, fora do resultado). Quando outro sócio paga, a parte do Cassio vira um lançamento **sem conta e sem cartão** (`source_type = division_share`, só leitura, na data e categoria da despesa), que não mexe em saldo nenhum. Acertos (`division_settlement`) não são receita nem despesa. Grupo zerado ⇒ despesas do Cassio = exatamente a parte dele.
+2. **Retroativo** sem mexer em saldo: as regras do resultado valem para tudo; os lançamentos da parte foram gerados por `DivisionService::rebuildOwnerShares()` (idempotente).
+3. **Bens › Compra em sociedade.** Bem ligado a um grupo do Divisões (`properties.division_group_id`). Cada despesa de grupo ligado tem tipo **Despesa** (padrão) ou **Compra do bem** (`division_expenses.kind`). A parte do Cassio na compra vai para "Aquisição de bem" (fora do resultado); um só lançamento na conta. Quem paga a mais escolhe **Adiantamento aos sócios** (segue a divisão, vira crédito) ou **Aumentar minha parte** (`purchase_mode = increase`: parcela toda de quem pagou, sem dívida, aumenta o %). O bem mostra % e quanto cada sócio pagou, total pago pelo grupo × valor total e quanto falta; patrimônio = valor atual × % do Cassio. "+ Pagamento" num bem em sociedade abre a despesa no Divisões já como compra.
+4. **Dados reais:** criado o bem "Fazenda João Barbudo" (imóvel rural, dono Cassio, grupo #3) sem valores (aviso "informe o valor total"); despesas #1 e #4 marcadas Compra do bem / adiantamento; lançamento #1482 passou para "Aquisição de bem" (saldo igual); #7 e #8 seguem Despesa.
+
+Migração: `2026_11_10_190000_divisoes_bens_sociedade`. Testes: `tests/Feature/Divisions/DivisionsSocietyTest.php`. Backup: `/root/app-cassio-backups/divisoes-bens-sociedade-20261110/`.
+
 ## 06/11/2026 — Padrão Cancelar / Salvar (+ Salvar e novo só em série) (Auditor Fin)
 
 Escopo pedido pelo Cassio:

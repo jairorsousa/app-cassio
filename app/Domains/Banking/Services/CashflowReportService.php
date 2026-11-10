@@ -349,6 +349,10 @@ class CashflowReportService
         if ($transaction->allocations->isEmpty() && $this->own->isAssetPurchase($transaction)) {
             return [];
         }
+        // Acerto do Divisões: devolução entre sócios, fora das categorias.
+        if ($transaction->source_type === 'division_settlement') {
+            return [];
+        }
         $ownCents = $this->own->ownCents($transaction, $regime);
         $profitName = Category::WRIT_PROFIT_NAME;
 

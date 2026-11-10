@@ -748,7 +748,25 @@ class DivisionService
         }
         $inputs = array_filter((array) ($data['inputs'] ?? []), fn ($v, $k) => in_array((int) $k, $memberIds, true), ARRAY_FILTER_USE_BOTH);
         $total = (int) round(\App\Support\Money::toFloat($data['amount'] ?? '') * 100);
-        $shares = $this->computeShares($total, (string) ($data['split_mode'] ?? ''), $inputs);
+        // Tipo: só o Cassio marca "Compra do bem", e só em grupo ligado a um bem (Bens › Compra em sociedade).
+        $kind = ($data['kind'] ?? null) === 'purchase' ? 'purchase' : 'expense';
+        if (! $actor->isAdmin()) {
+            $kind = $editing?->kind ?? 'expense';
+        }
+        if ($kind === 'purchase' && ! \App\Domains\Assets\Models\Property::where('division_group_id', $group->id)->exists()) {
+            throw ValidationException::withMessages(['expenseKind' => 'Este grupo não está ligado a um bem. Ligue em Bens › Compra em sociedade.']);
+        }
+        $purchaseMode = $kind === 'purchase' ? (($data['purchase_mode'] ?? null) === 'increase' ? 'increase' : 'advance') : null;
+        if ($purchaseMode === 'increase') {
+            // Aumentar minha parte: a parcela fica toda para quem pagou, sem dívida com os sócios.
+            if ($total <= 0) {
+                throw ValidationException::withMessages(['expenseAmount' => 'Informe um valor maior que zero.']);
+            }
+            $data['split_mode'] = 'amount';
+            $shares = [$payer => ['input' => $total / 100, 'cents' => $total]];
+        } else {
+            $shares = $this->computeShares($total, (string) ($data['split_mode'] ?? ''), $inputs);
+        }
         $n = $editing ? 1 : max(1, min(60, (int) ($data['installments'] ?? 1)));
 
         $transactionId = ! empty($data['transaction_id']) ? (int) $data['transaction_id'] : null;
@@ -780,7 +798,7 @@ class DivisionService
         }
         $status = ($isMember && $group->requires_approval) ? 'pending' : 'approved';
 
-        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing, $method, $payAccountId, $payCardId, $oldTxId) {
+        return DB::transaction(function () use ($actor, $group, $description, $category, $date, $payer, $shares, $total, $n, $transactionId, $status, $data, $receipt, $editing, $method, $payAccountId, $payCardId, $oldTxId, $kind, $purchaseMode) {
             $parts = $this->allocate($total, array_fill(1, $n, 1));
             $weights = array_map(fn ($s) => $s['cents'], $shares);
             $groupUuid = $n > 1 ? (string) Str::uuid() : null;
@@ -803,6 +821,7 @@ class DivisionService
                     'transaction_id' => $i === 1 ? $transactionId : null,
                     'payment_method' => $method ?? ($i === 1 && $transactionId ? 'link' : null),
                     'notes' => trim((string) ($data['notes'] ?? '')) ?: null,
+                    'kind' => $kind, 'purchase_mode' => $purchaseMode,
                 ];
                 if ($n > 1) {
                     $attrs += ['installment_group_id' => $groupUuid, 'installment_number' => $i, 'installment_total' => $n];
@@ -836,6 +855,7 @@ class DivisionService
                 if ($transactionId && $i === 1) {
                     $this->audit($group, $actor, 'expense_linked', ['lançamento' => $transactionId], $expense->id);
                 }
+                $this->syncOwnerShare($expense);
                 $created->push($expense);
             }
 
@@ -851,7 +871,7 @@ class DivisionService
         $attrs = [
             'type' => 'expense', 'date' => $expense->date->toDateString(), 'amount' => $expense->amount,
             'description' => mb_substr('Divisões: '.$expense->description, 0, 255), 'status' => 'settled',
-            'category_id' => $this->financeCategoryId($expense->category), 'bank_account_id' => null,
+            'category_id' => $expense->isPurchase() ? Category::assetPurchaseCategoryId() : $this->financeCategoryId($expense->category), 'bank_account_id' => null,
             'credit_card_id' => null, 'credit_card_invoice_id' => null, 'source_type' => 'division_expense', 'source_id' => $expense->id,
         ];
         $invoice = null;
@@ -969,6 +989,7 @@ class DivisionService
             throw ValidationException::withMessages(['expense' => 'Esta despesa não está aguardando aprovação.']);
         }
         $expense->update(['status' => $approve ? 'approved' : 'rejected']);
+        $this->syncOwnerShare($expense);
         $this->audit($expense->group, $actor, $approve ? 'expense_approved' : 'expense_rejected', [], $expense->id);
     }
 
@@ -980,6 +1001,96 @@ class DivisionService
         DB::transaction(function () use ($expense) {
             $this->dropGenerated($expense->id);
             $expense->delete();
+            $this->syncOwnerShare($expense);
+        });
+    }
+
+    // ---------- Parte do Cassio quando outro sócio paga ----------
+
+    public const OWNER_SHARE_SOURCE = 'division_share';
+
+    /**
+     * Quando outro sócio paga uma despesa comum, a parte do Cassio entra como despesa dele na data e na categoria da despesa,
+     * num lançamento SEM conta e sem cartão (não mexe em saldo nenhum; a dívida fica no Divisões).
+     * Compra do bem, despesa não aprovada/excluída ou paga pelo próprio Cassio: não há esse lançamento.
+     */
+    public function syncOwnerShare(DivisionExpense $expense): ?Transaction
+    {
+        $tx = Transaction::where('source_type', self::OWNER_SHARE_SOURCE)->where('source_id', $expense->id)->first();
+        $group = DivisionGroup::withTrashed()->with('members')->find($expense->group_id);
+        $owner = $group?->ownerMember();
+        $cents = $owner ? (int) round((float) $expense->shares()->where('member_id', $owner->id)->sum('amount') * 100) : 0;
+        $want = ! $expense->trashed() && $expense->status === 'approved' && ! $expense->isPurchase() && $owner
+            && (int) $expense->paid_by_member_id !== (int) $owner->id && $cents > 0 && ! $group->trashed();
+        if (! $want) {
+            $tx?->delete();
+
+            return null;
+        }
+        $payer = $group->members->firstWhere('id', $expense->paid_by_member_id);
+        $attrs = [
+            'type' => 'expense', 'status' => 'settled', 'date' => $expense->date->toDateString(), 'amount' => $cents / 100,
+            'description' => mb_substr('Divisões: '.$expense->description.' · sua parte (pago por '.($payer?->name ?? 'outro sócio').')', 0, 255),
+            'notes' => 'Sem saída de conta: a parte fica a pagar no Divisões ('.$group->name.').',
+            'category_id' => $this->financeCategoryId($expense->category), 'bank_account_id' => null, 'credit_card_id' => null,
+            'credit_card_invoice_id' => null, 'source_type' => self::OWNER_SHARE_SOURCE, 'source_id' => $expense->id,
+        ];
+        if ($tx) {
+            $tx->fill($attrs);
+            if ($tx->isDirty()) {
+                $tx->save();
+            }
+
+            return $tx;
+        }
+
+        return Transaction::create($attrs);
+    }
+
+    /** Refaz (idempotente) as partes do Cassio pagas por outros sócios em todos os grupos. */
+    public function rebuildOwnerShares(): array
+    {
+        $out = ['created' => 0, 'updated' => 0, 'removed' => 0];
+        $before = Transaction::where('source_type', self::OWNER_SHARE_SOURCE)->pluck('updated_at', 'id');
+        foreach (DivisionExpense::withTrashed()->orderBy('id')->get() as $e) {
+            $this->syncOwnerShare($e);
+        }
+        $after = Transaction::where('source_type', self::OWNER_SHARE_SOURCE)->pluck('updated_at', 'id');
+        $out['created'] = $after->keys()->diff($before->keys())->count();
+        $out['removed'] = $before->keys()->diff($after->keys())->count();
+        $out['updated'] = $after->filter(fn ($v, $k) => $before->has($k) && (string) $before[$k] !== (string) $v)->count();
+
+        return $out;
+    }
+
+    /** Marca o tipo da despesa (o Cassio, em grupo ligado a bem). "Aumentar minha parte" refaz a divisão: tudo para quem pagou. */
+    public function setKind(User $actor, DivisionExpense $expense, string $kind, ?string $mode = null): DivisionExpense
+    {
+        $this->assertAdmin($actor);
+        $kind = $kind === 'purchase' ? 'purchase' : 'expense';
+        if ($kind === 'purchase' && ! \App\Domains\Assets\Models\Property::where('division_group_id', $expense->group_id)->exists()) {
+            throw ValidationException::withMessages(['expenseKind' => 'Este grupo não está ligado a um bem.']);
+        }
+        $mode = $kind === 'purchase' ? ($mode === 'increase' ? 'increase' : 'advance') : null;
+
+        return DB::transaction(function () use ($actor, $expense, $kind, $mode) {
+            $before = $this->snapshot($expense) + ['tipo' => DivisionExpense::KINDS[$expense->kind] ?? $expense->kind, 'modo' => $expense->purchase_mode];
+            $expense->update(['kind' => $kind, 'purchase_mode' => $mode]);
+            if ($mode === 'increase') {
+                $cents = (int) round((float) $expense->amount * 100);
+                $expense->shares()->delete();
+                $expense->shares()->create(['member_id' => $expense->paid_by_member_id, 'input' => $cents / 100, 'amount' => $cents / 100]);
+                $expense->update(['split_mode' => 'amount']);
+            }
+            $tx = Transaction::where('source_type', 'division_expense')->where('source_id', $expense->id)->first();
+            if ($tx) {
+                $tx->update(['category_id' => $kind === 'purchase' ? Category::assetPurchaseCategoryId() : $this->financeCategoryId($expense->category)]);
+            }
+            $this->syncOwnerShare($expense);
+            $expense->unsetRelation('shares');
+            $this->audit($expense->group, $actor, 'expense_updated', ['antes' => $before, 'depois' => $this->snapshot($expense) + ['tipo' => DivisionExpense::KINDS[$kind], 'modo' => $mode]], $expense->id);
+
+            return $expense->fresh();
         });
     }
 

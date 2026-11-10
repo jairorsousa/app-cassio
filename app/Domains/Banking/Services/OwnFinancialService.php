@@ -63,10 +63,42 @@ class OwnFinancialService
         return $id !== null && $row->type === 'expense' && (int) $row->category_id === $id;
     }
 
+    /** @var array<int, int>|null lançamento → centavos fora do resultado (adiantamento aos sócios ou compra do bem) */
+    private ?array $divisionOut = null;
+
+    /**
+     * Despesas do Divisões pagas pelo Cassio com lançamento no Financeiro: quanto do lançamento NÃO é despesa dele.
+     * Despesa comum: o adiantamento aos sócios (total − parte dele). Compra do bem: a despesa inteira (a parte dele é
+     * aquisição de bem e o resto adiantamento). Só despesas aprovadas e não excluídas.
+     */
+    public function divisionOutCents(Transaction $row): int
+    {
+        if ($this->divisionOut === null) {
+            $this->divisionOut = [];
+            $expenses = \App\Domains\Divisions\Models\DivisionExpense::whereNotNull('transaction_id')->where('status', 'approved')
+                ->with(['shares', 'group' => fn ($q) => $q->withTrashed()->with('members')])->get();
+            foreach ($expenses as $e) {
+                $owner = $e->group?->ownerMember();
+                if (! $owner || (int) $e->paid_by_member_id !== (int) $owner->id) {
+                    continue;
+                }
+                $total = (int) round((float) $e->amount * 100);
+                $mine = (int) round((float) $e->shares->where('member_id', $owner->id)->sum('amount') * 100);
+                $this->divisionOut[(int) $e->transaction_id] = ($this->divisionOut[(int) $e->transaction_id] ?? 0) + ($e->isPurchase() ? $total : max(0, $total - $mine));
+            }
+        }
+
+        return $row->type === 'expense' ? ($this->divisionOut[(int) $row->id] ?? 0) : 0;
+    }
+
     public function ownCents(Transaction $row, ?string $regime = null): int
     {
         $regime ??= self::currentRegime();
         if ($row->bankAccount?->type === 'repasse') {
+            return 0;
+        }
+        // Acerto do Divisões (receber ou pagar diferença): devolução, nem receita nem despesa.
+        if ($row->source_type === 'division_settlement') {
             return 0;
         }
         $amount = (int) round((float) $row->amount * 100);
@@ -110,7 +142,8 @@ class OwnFinancialService
                 return 0;
             }
 
-            return $amount - $row->receivableInstallments->sum(fn ($part) => $part->amountCents());
+            // Divisões: só a parte do Cassio é despesa; o resto é adiantamento aos sócios (a receber), fora do resultado.
+            return max(0, $amount - $row->receivableInstallments->sum(fn ($part) => $part->amountCents()) - $this->divisionOutCents($row));
         }
         if ($row->type === 'invoice_payment' && $regime === self::ACCRUAL && $row->credit_card_invoice_id) {
             return 0;
@@ -127,6 +160,8 @@ class OwnFinancialService
         $thirdParty = $purchases->sum(fn ($purchase) => $purchase->receivableInstallments->sum(fn ($part) => $part->amountCents()));
         // Compras de bem na fatura (categoria Aquisição de bem) também ficam fora do resultado no regime de caixa.
         $thirdParty += $purchases->filter(fn ($purchase) => $this->isAssetPurchase($purchase))->sum(fn ($purchase) => (int) round((float) $purchase->amount * 100));
+        // Compras do Divisões na fatura: o adiantamento aos sócios também fica fora (regime de caixa).
+        $thirdParty += $purchases->reject(fn ($purchase) => $this->isAssetPurchase($purchase))->sum(fn ($purchase) => $this->divisionOutCents($purchase));
         $own = max(0, $total - $thirdParty);
         // Cumulative allocation avoids rounding drift when a bill is paid in several parts.
         $before = (int) round((float) $invoice->transactions()->where('type', 'invoice_payment')->where('status', 'settled')

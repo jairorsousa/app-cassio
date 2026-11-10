@@ -21,11 +21,17 @@ class DivisionExpense extends Model
 
     public const MODES = ['equal' => 'Partes iguais', 'percent' => 'Por percentual', 'amount' => 'Por valor', 'shares' => 'Por cotas'];
 
+    /** Tipo: despesa comum (regra geral) ou parcela da compra do bem ligado ao grupo. */
+    public const KINDS = ['expense' => 'Despesa', 'purchase' => 'Compra do bem'];
+
+    /** Na compra do bem, quem pagou a mais: adiantamento (segue a divisão, gera crédito) ou aumenta a própria parte (sem dívida). */
+    public const PURCHASE_MODES = ['advance' => 'Adiantamento aos sócios', 'increase' => 'Aumentar minha parte'];
+
     public const STATUS = ['pending' => 'Aguardando aprovação', 'approved' => 'Aprovada', 'rejected' => 'Recusada'];
 
     protected $fillable = ['group_id', 'description', 'category', 'date', 'amount', 'paid_by_member_id', 'split_mode', 'status',
         'installment_group_id', 'installment_number', 'installment_total', 'transaction_id', 'receipt_path', 'receipt_original_name',
-        'receipt_mime', 'notes', 'created_by', 'payment_method'];
+        'receipt_mime', 'notes', 'created_by', 'payment_method', 'kind', 'purchase_mode'];
 
     protected $casts = ['date' => 'date', 'amount' => 'decimal:2', 'installment_number' => 'integer', 'installment_total' => 'integer'];
 
@@ -68,6 +74,11 @@ class DivisionExpense extends Model
         $custom = DivisionCategory::orderBy('label')->pluck('label', 'key')->all();
 
         return $fixed + $custom + $outros;
+    }
+
+    public function isPurchase(): bool
+    {
+        return $this->kind === 'purchase';
     }
 
     public function categoryLabel(): string

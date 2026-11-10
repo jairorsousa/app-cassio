@@ -64,6 +64,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $expenseNotes = '';
 
+    /** Grupo ligado a um bem: tipo da despesa (expense|purchase) e, na compra, quem pagou a mais (advance|increase). */
+    public string $expenseKind = 'expense';
+
+    public string $purchaseMode = 'advance';
+
     public $receipt = null;
 
     // Acerto
@@ -120,6 +125,20 @@ new #[Layout('layouts.app')] class extends Component
         $service->assertView(auth()->user(), $group);
         abort_unless($group->status === 'approved', 404);
         $this->group = $group;
+        // Vindo de Bens › "+ Pagamento" de um bem em sociedade: abre a despesa já marcada como Compra do bem.
+        if (request()->query('nova') === 'compra' && auth()->user()->isAdmin() && $this->linkedProperty()) {
+            $this->newExpense();
+            $this->expenseKind = 'purchase';
+            $last = DivisionExpense::where('group_id', $group->id)->where('kind', 'purchase')->latest('date')->first();
+            if ($last) {
+                $this->expenseCategory = $last->category;
+            }
+        }
+    }
+
+    private function linkedProperty(): ?\App\Domains\Assets\Models\Property
+    {
+        return \App\Domains\Assets\Models\Property::where('division_group_id', $this->group->id)->first();
     }
 
     private function service(): DivisionService
@@ -143,7 +162,7 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetExpense(): void
     {
-        $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId', 'paymentMethod', 'payAccount', 'payCard', 'showNewCategory', 'newCategoryLabel');
+        $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId', 'paymentMethod', 'payAccount', 'payCard', 'showNewCategory', 'newCategoryLabel', 'expenseKind', 'purchaseMode');
         $this->expenseDate = now()->toDateString();
         $this->expenseCategory = 'outros';
         $this->splitMode = 'equal';
@@ -183,6 +202,8 @@ new #[Layout('layouts.app')] class extends Component
             $this->transactionId = '';
         }
         $this->expenseNotes = (string) $e->notes;
+        $this->expenseKind = $e->kind ?? 'expense';
+        $this->purchaseMode = $e->purchase_mode ?? 'advance';
         foreach ($this->splitRows as $id => $row) {
             $share = $e->shares->firstWhere('member_id', $id);
             $value = $share ? ($e->split_mode === 'amount' ? number_format((float) $share->amount, 2, '.', '') : rtrim(rtrim(number_format((float) $share->input, 4, ',', ''), '0'), ',')) : '';
@@ -220,6 +241,7 @@ new #[Layout('layouts.app')] class extends Component
                 'description' => $this->expenseDescription, 'category' => $this->expenseCategory, 'date' => $this->expenseDate,
                 'amount' => $this->expenseAmount, 'paid_by_member_id' => (int) $this->paidBy, 'split_mode' => $this->splitMode,
                 'inputs' => $inputs, 'installments' => $this->installments, 'transaction_id' => $method ? null : ($this->transactionId ?: null), 'notes' => $this->expenseNotes,
+                'kind' => $this->expenseKind, 'purchase_mode' => $this->purchaseMode,
                 'payment_method' => $method, 'bank_account_id' => $method === 'account' ? (int) $this->payAccount : null, 'credit_card_id' => $method === 'card' ? (int) $this->payCard : null,
             ], $this->receipt, $editing);
         } catch (ValidationException $e) {
@@ -547,6 +569,7 @@ new #[Layout('layouts.app')] class extends Component
             'categories' => DivisionExpense::categories(),
             'canLink' => $user->isAdmin() && $owner && (int) $this->paidBy === $owner->id,
             'totals' => $this->splitTotals(),
+            'linkedProperty' => $this->linkedProperty(),
             'service' => $service,
         ];
     }
@@ -820,6 +843,28 @@ new #[Layout('layouts.app')] class extends Component
                             @unless ($editingExpenseId)
                                 <x-jr.input label="Parcelas" icon="view_week" type="number" min="1" max="60" name="installments" wire:model="installments" helper="1 = sem parcelamento. Cada parcela cai um mês depois." />
                             @endunless
+                            @if ($linkedProperty && $isAdmin)
+                                <div class="md:col-span-2 rounded-xl border border-primary-100 bg-mono-50 p-3" data-expense-kind>
+                                    <label class="mb-2 block text-sm font-medium text-mono-600">Tipo (grupo ligado ao bem "{{ $linkedProperty->description }}")</label>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        @foreach (\App\Domains\Divisions\Models\DivisionExpense::KINDS as $k => $l)
+                                            <label class="flex min-h-[44px] cursor-pointer items-center justify-center rounded-pill border {{ $expenseKind === $k ? 'border-primary-500 bg-mono-white font-semibold text-primary-500' : 'border-mono-200 bg-mono-white' }}"><input type="radio" class="sr-only" value="{{ $k }}" wire:model.live="expenseKind" data-kind="{{ $k }}">{{ $l }}</label>
+                                        @endforeach
+                                    </div>
+                                    <p class="mt-2 text-xs text-mono-600">{{ $expenseKind === 'purchase' ? 'Parcela do bem: a sua parte entra em "Aquisição de bem", fora do resultado, e conta na sua parte do bem.' : 'Despesa comum (trator, aceiro...): só a sua parte entra no resultado; não mexe no bem.' }}</p>
+                                    @if ($expenseKind === 'purchase')
+                                        <label class="mt-3 mb-2 block text-sm font-medium text-mono-600">Quem pagou a mais</label>
+                                        <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2" data-purchase-mode>
+                                            <label class="flex cursor-pointer items-start gap-2 rounded-xl border {{ $purchaseMode === 'advance' ? 'border-primary-500 bg-mono-white' : 'border-mono-200 bg-mono-white' }} p-3"><input type="radio" value="advance" wire:model.live="purchaseMode" data-mode="advance" class="mt-1"><span><strong>Adiantamento aos sócios</strong><span class="block text-xs text-mono-600">Segue a divisão abaixo; o que pagou a mais vira crédito a acertar.</span></span></label>
+                                            <label class="flex cursor-pointer items-start gap-2 rounded-xl border {{ $purchaseMode === 'increase' ? 'border-primary-500 bg-mono-white' : 'border-mono-200 bg-mono-white' }} p-3"><input type="radio" value="increase" wire:model.live="purchaseMode" data-mode="increase" class="mt-1"><span><strong>Aumentar minha parte</strong><span class="block text-xs text-mono-600">A parcela fica toda para quem pagou, sem dívida, e aumenta o percentual dele no bem.</span></span></label>
+                                        </div>
+                                    @endif
+                                    @error('expenseKind')<p class="mt-2 text-xs text-error">{{ $message }}</p>@enderror
+                                </div>
+                            @endif
+                            @if ($expenseKind === 'purchase' && $purchaseMode === 'increase' && $linkedProperty && $isAdmin)
+                                <p class="md:col-span-2 rounded-xl border border-mono-100 p-3 text-xs text-mono-600" data-split-increase>Sem divisão: a parcela inteira fica na parte de quem pagou.</p>
+                            @else
                             <div class="md:col-span-2 rounded-xl border border-mono-100 p-3" data-split-rows>
                                 @foreach ($formMembers as $m)
                                     <div class="flex items-center justify-between gap-3 py-1 text-sm" wire:key="sr-{{ $m->id }}-{{ $splitMode }}">
@@ -844,6 +889,7 @@ new #[Layout('layouts.app')] class extends Component
                                 @error('splitRows')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
                                 @error('splitMode')<p class="mt-1 text-xs text-error">{{ $message }}</p>@enderror
                             </div>
+                            @endif
                             @if ($canLink)
                                 <div class="md:col-span-2 rounded-xl border border-mono-100 p-3" data-payment>
                                     <label class="mb-2 block text-sm font-medium text-mono-600">Como foi pago</label>

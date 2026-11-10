@@ -39,6 +39,9 @@ new #[Layout('layouts.app')] class extends Component {
 
     public string $bank_account_id = '';
 
+    /** Compra em sociedade: grupo do Divisões ligado ao bem ('' = compra só minha). */
+    public string $division_group_id = '';
+
     public string $status = 'active';
 
     public string $sold_at = '';
@@ -100,6 +103,12 @@ new #[Layout('layouts.app')] class extends Component {
     public function newPayment(): void
     {
         $property = Property::findOrFail($this->payingId);
+        if ($property->isShared()) {
+            // Compra em sociedade: o pagamento nasce no Divisões (um lançamento só na conta).
+            $this->redirectRoute('divisions.show', ['group' => $property->division_group_id, 'nova' => 'compra']);
+
+            return;
+        }
         $this->resetPayForm();
         $this->payDate = now()->toDateString();
         $this->payCategory = (string) Category::assetPurchaseCategoryId();
@@ -228,12 +237,13 @@ new #[Layout('layouts.app')] class extends Component {
             $this->{$f} = $p->{$f} === null ? '' : (string) $p->{$f};
         }
         $this->bank_account_id = (string) ($p->bank_account_id ?? '');
+        $this->division_group_id = (string) ($p->division_group_id ?? '');
         $this->showForm = true;
     }
 
     private function resetForm(): void
     {
-        $this->reset(['editingId', 'kind', 'description', 'identifier', 'acquired_at', 'acquisition_value', 'current_value', 'current_value_date', 'owner', 'bank_account_id', 'status', 'sold_at', 'sale_value', 'notes', 'attachment']);
+        $this->reset(['editingId', 'kind', 'description', 'identifier', 'acquired_at', 'acquisition_value', 'current_value', 'current_value_date', 'owner', 'bank_account_id', 'division_group_id', 'status', 'sold_at', 'sale_value', 'notes', 'attachment']);
         $this->resetValidation();
     }
 
@@ -252,6 +262,7 @@ new #[Layout('layouts.app')] class extends Component {
             'current_value_date' => ['nullable', 'date'],
             'owner' => ['nullable', Rule::in(array_keys(Property::OWNERS))],
             'bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
+            'division_group_id' => ['nullable', 'integer', 'exists:division_groups,id'],
             'status' => ['required', Rule::in(['active', 'sold'])],
             'sold_at' => ['nullable', 'required_if:status,sold', 'date'],
             'sale_value' => ['nullable', 'numeric', 'min:0'],
@@ -261,6 +272,25 @@ new #[Layout('layouts.app')] class extends Component {
         unset($data['attachment']);
         $data = array_map(fn ($v) => $v === '' ? null : $v, $data);
         $property = $this->editingId ? Property::findOrFail($this->editingId) : new Property;
+        if ($data['division_group_id'] ?? null) {
+            if (! auth()->user()?->isAdmin()) {
+                $this->addError('division_group_id', 'Só o Cassio liga um bem a um grupo do Divisões.');
+
+                return;
+            }
+            if ($property->exists && (int) $property->division_group_id !== (int) $data['division_group_id'] && $property->payments()->exists()) {
+                $this->addError('division_group_id', 'Este bem já tem pagamentos próprios. Apague-os antes de ligar a compra a um grupo do Divisões.');
+
+                return;
+            }
+            if (Property::where('division_group_id', $data['division_group_id'])->whereKeyNot($property->id ?? 0)->exists()) {
+                $this->addError('division_group_id', 'Este grupo já está ligado a outro bem.');
+
+                return;
+            }
+        } elseif ($property->exists && $property->division_group_id && ! auth()->user()?->isAdmin()) {
+            $data['division_group_id'] = $property->division_group_id;
+        }
         $property->fill($data)->save();
         if ($this->attachment) {
             if ($property->attachment_path) {
@@ -306,6 +336,7 @@ new #[Layout('layouts.app')] class extends Component {
             'properties' => Property::with(['bankAccount', 'payments'])->orderBy('status')->orderBy('description')->get(),
             'total' => Property::activeTotal(),
             'accounts' => BankAccount::orderBy('name')->get(['id', 'name']),
+            'divisionGroups' => auth()->user()?->isAdmin() ? \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(['id', 'name']) : collect(),
             'paying' => $this->payingId ? Property::with(['payments.bankAccount', 'payments.creditCard', 'payments.category', 'payments.transactions'])->find($this->payingId) : null,
             'payAccounts' => BankAccount::active()->whereNot('type', 'repasse')->orderBy('name')->get(['id', 'name']),
             'payCards' => CreditCard::active()->orderBy('name')->get(['id', 'name']),
@@ -324,7 +355,7 @@ new #[Layout('layouts.app')] class extends Component {
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
     @if ($paying)
-        @include('bens.partials.payments', ['p' => $paying])
+        @include($paying->isShared() ? 'bens.partials.society' : 'bens.partials.payments', ['p' => $paying])
     @endif
     <x-fx.card>
         <div class="flex flex-wrap items-center gap-space-3">
@@ -351,7 +382,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <dt class="text-mono-600">Valor atual</dt><dd class="text-right">{{ $m($p->current_value) }}@if ($p->current_value_date) · {{ $p->current_value_date->format('d/m/Y') }}@endif</dd>
                         <dt class="text-mono-600">{{ $p->payments->isNotEmpty() ? 'Total da compra' : 'Aquisição' }}</dt><dd class="text-right">{{ $m($p->acquisition_value) }}@if ($p->acquired_at) · {{ $p->acquired_at->format('d/m/Y') }}@endif</dd>
                     </dl>
-                    @if ($p->payments->isNotEmpty())@include('bens.partials.bar', ['s' => $p->paymentSummary()])@endif
+                    @if ($p->isShared())@include('bens.partials.society-bar', ['p' => $p])@elseif ($p->payments->isNotEmpty())@include('bens.partials.bar', ['s' => $p->paymentSummary()])@endif
                     <div class="mt-2 flex gap-4 text-xs">
                         @if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar anexo</a>@endif
                         <button type="button" wire:click="openPayments({{ $p->id }})" class="text-cryptex-brand-400" data-open-payments="{{ $p->id }}">Pagamentos</button>
@@ -370,7 +401,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td><strong>{{ $p->description }}</strong>@if ($p->identifier)<div class="text-xs text-mono-600">{{ $p->identifier }}</div>@endif</td>
                             <td>{{ \App\Domains\Assets\Models\Property::KINDS[$p->kind] ?? $p->kind }}</td>
                             <td>{{ \App\Domains\Assets\Models\Property::OWNERS[$p->owner] ?? 'Não informado' }}</td>
-                            <td class="text-right">{{ $m($p->acquisition_value) }}<div class="text-xs text-mono-600">{{ $p->acquired_at?->format('d/m/Y') }}</div>@if ($p->payments->isNotEmpty())<div class="min-w-[170px] text-left">@include('bens.partials.bar', ['s' => $p->paymentSummary()])</div>@endif</td>
+                            <td class="text-right">{{ $m($p->acquisition_value) }}<div class="text-xs text-mono-600">{{ $p->acquired_at?->format('d/m/Y') }}</div>@if ($p->isShared())<div class="min-w-[170px] text-left">@include('bens.partials.society-bar', ['p' => $p])</div>@elseif ($p->payments->isNotEmpty())<div class="min-w-[170px] text-left">@include('bens.partials.bar', ['s' => $p->paymentSummary()])</div>@endif</td>
                             <td class="text-right">{{ $m($p->current_value) }}<div class="text-xs text-mono-600">{{ $p->current_value_date?->format('d/m/Y') }}</div></td>
                             <td>{{ $p->status === 'sold' ? 'Vendido'.($p->sold_at ? ' em '.$p->sold_at->format('d/m/Y') : '') : 'Ativo' }}</td>
                             <td>@if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar</a>@else — @endif</td>
@@ -392,6 +423,9 @@ new #[Layout('layouts.app')] class extends Component {
                 <label class="flex flex-col gap-1">Identificação (matrícula, placa)<input wire:model="identifier" class="{{ $in }}" /></label>
                 <label class="flex flex-col gap-1">Titular<select wire:model="owner" class="{{ $in }}"><option value="">Não informado</option>@foreach (\App\Domains\Assets\Models\Property::OWNERS as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></label>
                 <label class="flex flex-col gap-1">Conta vinculada (opcional)<select wire:model="bank_account_id" class="{{ $in }}"><option value="">Nenhuma</option>@foreach ($accounts as $a)<option value="{{ $a->id }}">{{ $a->name }}</option>@endforeach</select></label>
+                @if ($divisionGroups->isNotEmpty())
+                    <label class="flex flex-col gap-1">Compra em sociedade (grupo do Divisões)<select wire:model="division_group_id" class="{{ $in }}" data-society-group><option value="">Não — compra só minha</option>@foreach ($divisionGroups as $g)<option value="{{ $g->id }}">{{ $g->name }}</option>@endforeach</select>@error('division_group_id')<span class="text-system-down text-xs">{{ $message }}</span>@enderror<span class="text-xs text-cryptex-text-tertiary">As parcelas são lançadas no Divisões como "Compra do bem"; o patrimônio conta só a sua parte.</span></label>
+                @endif
                 <label class="flex flex-col gap-1">Data de aquisição<input type="date" wire:model="acquired_at" class="{{ $in }}" /></label>
                 <label class="flex flex-col gap-1">Valor total da compra (aquisição)<input type="text" x-money wire:model="acquisition_value" class="{{ $in }}" placeholder="0,00" />@error('acquisition_value')<span class="text-system-down text-xs">{{ $message }}</span>@enderror</label>
                 <span></span>

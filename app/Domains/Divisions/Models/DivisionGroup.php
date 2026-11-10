@@ -30,6 +30,12 @@ class DivisionGroup extends Model
         return $this->hasMany(DivisionExpense::class, 'group_id');
     }
 
+    /** Bem comprado em sociedade ligado a este grupo (Bens › Compra em sociedade). */
+    public function property(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(\App\Domains\Assets\Models\Property::class, 'division_group_id');
+    }
+
     public function settlements(): HasMany
     {
         return $this->hasMany(DivisionSettlement::class, 'group_id');

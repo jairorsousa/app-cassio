@@ -16,6 +16,7 @@
                         <span class="min-w-0">
                             <span class="block truncate font-semibold text-mono-900">{{ $e->description }}
                                 @if ($e->status !== 'approved')<span class="ml-1 rounded-pill {{ $e->status === 'pending' ? 'bg-primary-100 text-primary-500' : 'bg-mono-100 text-mono-600' }} px-2 text-xs">{{ \App\Domains\Divisions\Models\DivisionExpense::STATUS[$e->status] }}</span>@endif
+                                @if ($e->isPurchase())<span class="ml-1 rounded-pill bg-primary-100 px-2 text-xs text-primary-500" data-purchase-badge>Compra do bem{{ $e->purchase_mode === 'increase' ? ' · aumenta a parte' : '' }}</span>@endif
                                 @if ($isAdmin && $e->transaction_id)<span class="ml-1 rounded-pill bg-mono-100 px-2 text-xs" title="Vinculada ao Financeiro">Financeiro #{{ $e->transaction_id }}</span>@endif</span>
                             <span class="block text-xs text-mono-600" data-payer-line>{{ $iPaid ? 'Você' : $e->payer?->name }} pagou R$ {{ $service->money($cents) }} · {{ $e->categoryLabel() }}</span>
                             @if (($variant ?? '') === 'd')<span class="block text-xs text-mono-400" data-desktop-details>{{ $e->date->format('d/m/Y') }} · {{ $e->categoryLabel() }} · pago por {{ $e->payer?->name }} · {{ \App\Domains\Divisions\Models\DivisionExpense::MODES[$e->split_mode] ?? '' }}</span>@endif
