@@ -195,6 +195,42 @@ class PersonIdentityService
         $contact->update(['emails' => $emails, 'email' => $emails[0]]);
     }
 
+    /**
+     * Só o admin troca o e-mail de login. O novo não pode ser de outra pessoa; o antigo continua na lista do contato.
+     * Nenhum e-mail é enviado. O vínculo Google é zerado para o novo e-mail Google se ligar no próximo login.
+     */
+    public function changeLoginEmail(User $user, string $newEmail, User $admin): void
+    {
+        $this->assertAdmin($admin);
+        $new = self::normEmail($newEmail);
+        $old = self::normEmail($user->email);
+        if (! filter_var($new, FILTER_VALIDATE_EMAIL) || mb_strlen($new) > 200) {
+            throw ValidationException::withMessages(['newLoginEmail' => 'Informe um e-mail válido.']);
+        }
+        if ($new === $old) {
+            throw ValidationException::withMessages(['newLoginEmail' => 'Este já é o e-mail de acesso.']);
+        }
+        if (User::whereRaw('lower(email) = ?', [$new])->whereKeyNot($user->id)->exists()) {
+            throw ValidationException::withMessages(['newLoginEmail' => 'Este e-mail já é o acesso de outro usuário.']);
+        }
+        if ($owner = $this->emailOwnerName($new, $user->contact_id)) {
+            throw ValidationException::withMessages(['newLoginEmail' => 'Este e-mail pertence a '.$owner.'.']);
+        }
+
+        DB::transaction(function () use ($user, $new, $old, $admin) {
+            $user->forceFill(['email' => $new, 'google_sub' => null])->save();
+            $contact = $user->contact_id ? Contact::withTests()->withTrashed()->find($user->contact_id) : null;
+            if ($contact) {
+                $emails = array_values(array_unique(array_merge([$new], $this->emailsOf($contact), [$old])));
+                $contact->update(['emails' => $emails, 'email' => $new]);
+            }
+            // Participações do Divisões desta conta seguem o novo e-mail (o vínculo principal é o user_id).
+            \App\Domains\Divisions\Models\DivisionMember::where('user_id', $user->id)->whereRaw('lower(email) = ?', [$old])->update(['email' => $new]);
+            DB::table('password_reset_tokens')->whereRaw('lower(email) = ?', [$old])->delete();
+            \App\Support\AuditLogger::write('login_email_changed', 'User', $user->id, $user->name, ['email' => $old], ['email' => $new], $admin);
+        });
+    }
+
     public function approve(IdentityChangeRequest $request, User $admin): void
     {
         $this->assertAdmin($admin);

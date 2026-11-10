@@ -8,7 +8,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Titular de cartão (lista editável: Cássio, Luciane, Cassius Augusto, Isabela...). */
 class CardHolder extends Model
 {
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'contact_id'];
+
+    /** Pessoa (Contatos) deste titular, quando ligada. */
+    public function contact(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Contacts\Models\Contact::class)->withTrashed();
+    }
 
     public function cards(): HasMany
     {

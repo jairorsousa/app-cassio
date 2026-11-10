@@ -116,6 +116,10 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     </x-jr.card>
 
+    @if (auth()->user()?->isAdmin())
+        <livewire:contacts.login-email :contact="$contact" :key="'login-email-'.$contact->id" />
+    @endif
+
     <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <x-jr.card>
             <div class="flex items-center gap-4">

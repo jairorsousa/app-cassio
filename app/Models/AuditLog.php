@@ -8,7 +8,7 @@ class AuditLog extends Model
 {
     public const UPDATED_AT = null;
 
-    public const ACTIONS = ['created' => 'Criou', 'updated' => 'Editou', 'deleted' => 'Excluiu', 'login' => 'Entrou', 'logout' => 'Saiu'];
+    public const ACTIONS = ['created' => 'Criou', 'updated' => 'Editou', 'deleted' => 'Excluiu', 'login' => 'Entrou', 'logout' => 'Saiu', 'login_email_changed' => 'Trocou o e-mail de acesso'];
 
     protected $guarded = [];
 

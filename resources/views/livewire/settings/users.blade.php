@@ -311,7 +311,7 @@ new #[Layout('layouts.app')] class extends Component {
         $smtp = (int) auth()->id() === 1 ? InvitationMailService::settingOrDefaults() : null;
 
         return [
-            'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'role', 'status', 'modules']),
+            'users' => User::orderBy('id')->get(['id', 'name', 'email', 'is_admin', 'role', 'status', 'modules', 'contact_id']),
             'invitations' => UserInvitation::visible()->orderByDesc('id')->limit(50)->get(),
             'moduleLabels' => Access::MODULES,
             'divGroups' => \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(),
@@ -452,6 +452,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <div>
                             <p class="font-semibold">{{ $u->name }} @if ($u->is_admin)<span class="ml-1 rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-600">Administrador</span>@endif</p>
                             <p class="text-xs text-mono-600">{{ $u->email }} · {{ $u->status === 'blocked' ? 'Bloqueado' : 'Ativo' }}</p>
+                            @if ($u->contact_id)<a href="{{ route('contacts.show', $u->contact_id) }}#acesso" class="text-xs font-semibold text-primary-600" data-user-login-link>Trocar e-mail de acesso</a>@endif
                         </div>
                         @if (!($u->is_admin || $u->id === auth()->id()))
                             <div class="flex gap-2 text-xs">

@@ -18,6 +18,26 @@ new class extends Component {
 
     public ?string $birth_date = null;
 
+    public string $zip_code = '';
+
+    public string $street = '';
+
+    public string $number = '';
+
+    public string $complement = '';
+
+    public string $neighborhood = '';
+
+    public string $city = '';
+
+    public string $state = '';
+
+    public string $pix_key_type = '';
+
+    public string $pix_key = '';
+
+    public string $addressMessage = '';
+
     public string $newDocument = '';
 
     public string $newEmail = '';
@@ -31,6 +51,9 @@ new class extends Component {
             $this->name = (string) $contact->name;
             $this->phone = (string) $contact->phone;
             $this->birth_date = $contact->birth_date?->toDateString();
+            foreach (['zip_code', 'street', 'number', 'complement', 'neighborhood', 'city', 'state', 'pix_key_type', 'pix_key'] as $f) {
+                $this->{$f} = (string) ($contact->{$f} ?? '');
+            }
         }
     }
 
@@ -68,6 +91,59 @@ new class extends Component {
         $contact->update(['name' => $name, 'phone' => $phone ?? ($phones[0] ?? null), 'phones' => $phones, 'birth_date' => $data['birth_date'] ?: null]);
         $this->name = $name;
         $this->message = 'Dados salvos. O nome já vale em todo o sistema.';
+    }
+
+    /** Endereço e Pix: valem direto (sem aprovação) e ficam no log de auditoria pelo próprio Contato. */
+    public function saveAddress(): void
+    {
+        $contact = $this->mine();
+        $this->addressMessage = '';
+        $data = $this->validate([
+            'zip_code' => ['nullable', 'string', 'max:20', fn ($a, $v, $fail) => trim((string) $v) === '' || strlen(BrazilianDocuments::digits($v)) === 8 ? null : $fail('CEP com 8 números.')],
+            'street' => 'nullable|string|max:255',
+            'number' => 'nullable|string|max:30',
+            'complement' => 'nullable|string|max:255',
+            'neighborhood' => 'nullable|string|max:120',
+            'city' => 'nullable|string|max:120',
+            'state' => ['nullable', 'string', 'max:2', fn ($a, $v, $fail) => trim((string) $v) === '' || preg_match('/^[A-Za-z]{2}$/', trim($v)) ? null : $fail('Use a sigla (ex.: CE).')],
+            'pix_key_type' => 'nullable|in:email,cpf,telefone,aleatoria',
+            'pix_key' => ['nullable', 'string', 'max:200', function ($a, $v, $fail) {
+                $v = trim((string) $v);
+                if ($v === '') {
+                    return;
+                }
+                $ok = match ($this->pix_key_type) {
+                    'email' => (bool) filter_var($v, FILTER_VALIDATE_EMAIL),
+                    'cpf' => BrazilianDocuments::isValidCpfOrCnpj($v),
+                    'telefone' => (bool) preg_match('/^\d{10,13}$/', BrazilianDocuments::digits($v)),
+                    'aleatoria' => mb_strlen($v) >= 8,
+                    default => false,
+                };
+                if (! $ok) {
+                    $fail($this->pix_key_type === '' ? 'Escolha o tipo da chave Pix.' : 'Chave Pix não confere com o tipo escolhido.');
+                }
+            }],
+        ], [], ['zip_code' => 'CEP', 'street' => 'rua', 'state' => 'UF']);
+        $digits = BrazilianDocuments::digits($data['zip_code']);
+        $fields = [
+            'zip_code' => $digits !== '' ? substr($digits, 0, 5).'-'.substr($digits, 5) : null,
+            'street' => trim((string) $data['street']) ?: null,
+            'number' => trim((string) $data['number']) ?: null,
+            'complement' => trim((string) $data['complement']) ?: null,
+            'neighborhood' => trim((string) $data['neighborhood']) ?: null,
+            'city' => trim((string) $data['city']) ?: null,
+            'state' => trim((string) $data['state']) !== '' ? mb_strtoupper(trim($data['state'])) : null,
+            'pix_key_type' => ($data['pix_key_type'] ?? '') ?: null,
+            'pix_key' => trim((string) $data['pix_key']) ?: null,
+        ];
+        $line = trim(collect([$fields['street'], $fields['number']])->filter()->implode(', '));
+        $details = trim(collect([$fields['neighborhood'], $fields['complement'], $fields['city'], $fields['state'], $fields['zip_code']])->filter()->implode(' - '));
+        $fields['address'] = collect([$line, $details])->filter()->implode(' | ') ?: null;
+        $contact->update($fields);
+        foreach (['zip_code', 'state'] as $f) {
+            $this->{$f} = (string) ($fields[$f] ?? '');
+        }
+        $this->addressMessage = 'Endereço e Pix salvos.';
     }
 
     public function requestDocument(PersonIdentityService $service): void
@@ -167,6 +243,53 @@ new class extends Component {
             <x-jr.input label="Celular" name="phone" id="my-phone" type="tel" x-phone placeholder="(99) 99999-9999" maxlength="15" wire:model="phone" />
             <x-jr.input label="Data de nascimento" name="birth_date" id="my-birth" type="date" wire:model="birth_date" />
             <div class="md:col-span-2"><x-jr.button type="submit" class="w-full md:w-auto" data-save-my-data>Salvar meus dados</x-jr.button></div>
+        </form>
+
+        {{-- Endereço e Pix. O CEP é buscado pelo navegador (ViaCEP); se não achar, preenche à mão. --}}
+        <form wire:submit="saveAddress" class="border-t border-mono-100 pt-5" data-my-address
+            x-data="{
+                cepStatus: '',
+                async lookup() {
+                    const d = ($wire.zip_code || '').replace(/\D/g, '');
+                    if (d.length !== 8) { this.cepStatus = ''; return; }
+                    this.cepStatus = 'buscando';
+                    try {
+                        const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 5000);
+                        const r = await fetch('https://viacep.com.br/ws/' + d + '/json/', { signal: ctl.signal }); clearTimeout(t);
+                        const j = await r.json();
+                        if (!r.ok || j.erro) throw new Error('cep');
+                        $wire.street = j.logradouro || $wire.street; $wire.neighborhood = j.bairro || $wire.neighborhood;
+                        $wire.city = j.localidade || $wire.city; $wire.state = j.uf || $wire.state;
+                        if (j.complemento && !$wire.complement) $wire.complement = j.complemento;
+                        this.cepStatus = 'ok';
+                    } catch (e) { this.cepStatus = 'falhou'; }
+                },
+                maskCep(el) { let d = el.value.replace(/\D/g, '').slice(0, 8); el.value = d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d; $wire.zip_code = el.value; }
+            }">
+            <h3 class="font-bold text-mono-900">Endereço e Pix</h3>
+            <p class="mt-1 text-sm text-mono-600">Valem na hora, sem aprovação.</p>
+            @if ($addressMessage)<x-jr.alert variant="success" class="mt-3">{{ $addressMessage }}</x-jr.alert>@endif
+            <div class="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                    <x-jr.input label="CEP" name="zip_code" id="my-zip" inputmode="numeric" maxlength="9" placeholder="00000-000" wire:model="zip_code" x-on:input="maskCep($event.target)" x-on:blur="lookup()" x-on:keyup="($event.target.value.replace(/\D/g, '').length === 8 && cepStatus === '') && lookup()" />
+                    <p class="mt-1 text-xs text-mono-600" x-show="cepStatus === 'buscando'" x-cloak>Buscando o endereço…</p>
+                    <p class="mt-1 text-xs text-success" x-show="cepStatus === 'ok'" x-cloak data-cep-ok>Endereço preenchido pelo CEP. Confira o número.</p>
+                    <p class="mt-1 text-xs text-mono-600" x-show="cepStatus === 'falhou'" x-cloak data-cep-fail>Não achamos o CEP agora. Preencha o endereço à mão.</p>
+                </div>
+                <x-jr.input label="Rua" name="street" id="my-street" wire:model="street" autocomplete="address-line1" />
+                <x-jr.input label="Número" name="number" id="my-number" wire:model="number" />
+                <x-jr.input label="Complemento" name="complement" id="my-complement" wire:model="complement" />
+                <x-jr.input label="Bairro" name="neighborhood" id="my-neighborhood" wire:model="neighborhood" />
+                <x-jr.input label="Cidade" name="city" id="my-city" wire:model="city" autocomplete="address-level2" />
+                <x-jr.input label="UF" name="state" id="my-state" maxlength="2" placeholder="CE" wire:model="state" x-on:input="$event.target.value = $event.target.value.toUpperCase()" />
+                <div>
+                    <label for="my-pix-type" class="mb-2 block text-sm font-medium text-mono-600">Tipo de chave Pix</label>
+                    <select id="my-pix-type" wire:model="pix_key_type" class="h-12 w-full rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900"><option value="">Nenhuma</option><option value="cpf">CPF/CNPJ</option><option value="email">E-mail</option><option value="telefone">Telefone</option><option value="aleatoria">Aleatória</option></select>
+                    @error('pix_key_type')<p class="mt-2 text-xs font-medium text-error">{{ $message }}</p>@enderror
+                </div>
+                <x-jr.input label="Chave Pix" name="pix_key" id="my-pix" wire:model="pix_key" autocomplete="off" />
+                <div class="md:col-span-2"><x-jr.button type="submit" class="w-full md:w-auto" data-save-address>Salvar endereço e Pix</x-jr.button></div>
+            </div>
         </form>
 
         <div class="border-t border-mono-100 pt-5" data-my-document>
