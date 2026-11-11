@@ -211,9 +211,9 @@ class Etapa4RequisitoriosTest extends TestCase
         \Livewire\Livewire::withoutLazyLoading();
 
         Volt::test('writs.kanban')
-            ->assertSee('Custo total (pago + despesas)')
-            ->assertSee('Monitorar, Negociação, Cessão, Assinatura e Perdido não entram como aquisição')
-            ->assertSee('Lucro esperado sobre o custo')
+            ->assertSee('Total investido até hoje')
+            ->assertSee('ainda não houve compra')
+            ->assertSee('Lucro esperado')
             ->assertSee('Assinatura');
     }
 

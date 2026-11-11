@@ -1,5 +1,22 @@
 # Registro de alterações
 
+## 2026-11-11 — Requisitórios: painel de métricas mais claro
+
+Pedido do Cassio (t291u): bater o olho no painel, entender o que está acontecendo, quanto já recebeu por mês e por ano, e as médias, com nomes mais claros e um gráfico simples. Só apresentação e cálculo; nenhum requisitório foi alterado.
+
+- Os 3 cartões antigos (Totais, Em aberto (já pagos), Recebido) foram reorganizados em 4 cartões, na linguagem do dia a dia:
+  - **Dinheiro investido aguardando pagamento** (antes "Custo total em aberto"): o que já foi pago nos comprados que o tribunal ainda não depositou, quanto deve voltar e o lucro esperado.
+  - **Já recebido**: o que já entrou, o que tinha sido investido nesses casos e o lucro real (% sobre o custo).
+  - **Total investido até hoje** (antes "Custo total (pago + despesas)"): soma do em aberto com o já recebido. O valor de face e o valor negociado dos comprados continuam aqui, como informação secundária, com a mesma regra de antes (Monitorar, Negociação, Cessão, Assinatura e Perdido não entram).
+  - **Situação agora**: quantos estão aguardando o tribunal, com previsão vencida, já recebidos e em análise (ainda não comprados).
+- **Recebido por mês:** gráfico de barras (biblioteca SVG já usada no Dashboard) e tabela, com seletor "Últimos 12 meses" ou um ano. A data é a do recebimento, no fuso de Fortaleza.
+- **Resumo por ano:** recebido, custo, lucro, % e quantidade.
+- **Médias:** média mensal recebida e de lucro no ano (dividida pelos meses já decorridos, inclusive os sem depósito) e nos últimos 12 meses; tempo médio entre a compra e o recebimento; lucro médio por requisitório recebido; rentabilidade mensal equivalente do conjunto, só com operações de pelo menos 30 dias (as muito curtas distorcem o cálculo e ficam de fora).
+- **Próximos recebimentos previstos** por mês, e um aviso separado com quantos estão com a previsão já vencida (só mostra; não altera cadastro nem etapa).
+- Cada número tem um **"?"** curto (`<x-fx.help-tip>`). Os filtros do quadro continuam valendo para o painel. O kanban e o restante do módulo não mudaram.
+- Serviço novo `WritPipelineMetrics` (só leitura). Testes: `tests/Unit/Writs/WritPipelineMetricsTest.php`, `tests/Feature/Writs/WritPipelinePanelTest.php`, e os testes do kanban/Etapa 4 atualizados nos rótulos. Backup do código: `/root/app-cassio-backups/requisitorios-painel-20261111/`.
+
+
 ## 2026-11-11 — Financeiro › Lançamentos: filtros legíveis e com nomes claros
 
 - **Texto cortado nos selects:** os selects "Históricos", titular e vínculo tinham 32 px de altura, mas o padding (8 + 8 px) somado à altura da linha (24 px) pedia 40 px, então a parte de baixo do texto sumia. Agora eles têm 48 px de altura, sem padding vertical e com o mesmo estilo dos outros filtros. Uma varredura das telas no ambiente de teste achou o mesmo problema (2 px de corte) no seletor de regime (Visão geral e Fluxo de caixa), em Configurações (Tamanho do texto e Densidade) e em Investimentos › Posição B3 (Ano e Tipo). Todos foram corrigidos.

@@ -154,23 +154,19 @@ class WritKanbanPageTest extends TestCase
         }
 
         Volt::test('writs.kanban')
-            ->assertSeeHtml('lg:grid-cols-3')
+            ->assertSeeHtml('data-metrics-panel')
+            ->assertSeeHtml('xl:grid-cols-4')
             ->assertSeeInOrder([
-                'Totais',
-                'Valor negociado (adquiridos)',
-                'R$ 2.200,00',
-                'Custo total (pago + despesas)',
-                'Em aberto (já pagos)',
-                'Custo total em aberto',
-                'Recebimento previsto',
+                'Dinheiro investido aguardando pagamento',
+                'Quanto deve voltar',
                 'R$ 15.000,00',
-                'Lucro esperado sobre o custo',
+                'Lucro esperado',
                 'sem custo',
                 'R$ 15.000,00',
-                'Recebido',
-                'Custo total finalizado',
-                'Total recebido',
-                'Lucro líquido sobre o custo',
+                'Já recebido',
+                'Total investido até hoje',
+                'Valor negociado',
+                'R$ 2.200,00',
             ]);
     }
 
@@ -188,7 +184,7 @@ class WritKanbanPageTest extends TestCase
 
         Volt::test('writs.kanban')
             ->assertSeeInOrder([
-                'Lucro esperado sobre o custo',
+                'Lucro esperado',
                 '123,56%',
                 'R$ 170.230,00',
             ]);
@@ -217,17 +213,17 @@ class WritKanbanPageTest extends TestCase
 
         Volt::test('writs.kanban')
             ->assertSeeInOrder([
-                'Custo total (pago + despesas)',
-                'R$ 233.103,22',
-                'Custo total em aberto',
+                'Dinheiro investido aguardando pagamento',
                 'R$ 137.770,00',
-                'Custo total finalizado',
-                'R$ 95.333,22',
-                'Total recebido',
+                'Já recebido',
                 'R$ 152.554,85',
-                'Lucro líquido sobre o custo',
+                'Você tinha investido',
+                'R$ 95.333,22',
+                'Lucro real',
                 '60,02%',
                 'R$ 57.221,63',
+                'Total investido até hoje',
+                'R$ 233.103,22',
             ]);
     }
 
@@ -263,13 +259,11 @@ class WritKanbanPageTest extends TestCase
         $component = Volt::test('writs.kanban')
             ->set('type', 'rpv')
             ->assertSeeInOrder([
-                'Custo total (pago + despesas)',
+                'Dinheiro investido aguardando pagamento',
                 'R$ 100,00',
-                'Custo total em aberto',
-                'R$ 100,00',
-                'Recebimento previsto',
+                'Quanto deve voltar',
                 'R$ 160,00',
-                'Lucro esperado sobre o custo',
+                'Lucro esperado',
                 '60,00%',
                 'R$ 60,00',
             ])
@@ -279,14 +273,8 @@ class WritKanbanPageTest extends TestCase
             ->call('clearFilters')
             ->set('debtor', 'Estado Beta')
             ->assertSeeInOrder([
-                'Custo total (pago + despesas)',
-                'R$ 210,00',
-                'Custo total em aberto',
-                'R$ 0,00',
-                'Custo total finalizado',
-                'R$ 210,00',
-                'Total recebido',
                 'R$ 300,00',
+                'R$ 210,00',
                 '42,86%',
                 'R$ 90,00',
             ])

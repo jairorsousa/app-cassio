@@ -8,6 +8,7 @@ use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Models\WritAssignor;
 use App\Domains\Writs\Models\WritStageHistory;
 use App\Domains\Writs\Services\WritGoogleCalendarSyncDispatcher;
+use App\Domains\Writs\Services\WritPipelineMetrics;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
@@ -21,10 +22,11 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
     {
         return <<<'HTML'
         <div class="space-y-6 animate-pulse">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="h-24 bg-mono-100 rounded-2xl"></div>
-                <div class="h-24 bg-mono-100 rounded-2xl"></div>
-                <div class="h-24 bg-mono-100 rounded-2xl"></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div class="h-36 bg-mono-100 rounded-2xl"></div>
+                <div class="h-36 bg-mono-100 rounded-2xl"></div>
+                <div class="h-36 bg-mono-100 rounded-2xl"></div>
+                <div class="h-36 bg-mono-100 rounded-2xl"></div>
             </div>
             <div class="h-12 bg-mono-100 rounded-pill"></div>
             <div class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-9 gap-4">
@@ -59,6 +61,8 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
 
     #[Url]
     public string $dateFilter = '';
+
+    public string $metricsPeriod = '12m';
 
     #[Session(key: 'writs-visible-stages')]
     public array $visibleStages = Writ::STAGES;
@@ -978,6 +982,12 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         $this->resetDateFilterWhenPeriodIsEmpty();
     }
 
+
+    public function setMetricsPeriod(string $period): void
+    {
+        $this->metricsPeriod = $period;
+    }
+
     private function resetDateFilterWhenPeriodIsEmpty(): void
     {
         if (blank($this->from) && blank($this->to)) {
@@ -1035,36 +1045,9 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             ];
         }
 
-        $acquiredOpen = $filteredWrits->whereIn('stage', Writ::ACQUIRED_OPEN_STAGES);
-        $finalizedWrits = $filteredWrits->where('stage', 'finalized');
-        $acquiredAll = $filteredWrits->whereIn('stage', Writ::ACQUIRED_STAGES);
+        $metrics = app(WritPipelineMetrics::class)->forCollection($filteredWrits, $this->metricsPeriod);
 
-        // Face negociada so das aquisicoes (Monitorar/Negociacao/Cessao/Assinatura/Perdido ficam de fora).
-        $totalFaceAcquired = $acquiredAll->sum('face_value');
-        $totalNegotiated = $acquiredAll->sum(fn (Writ $writ) => (float) ($writ->negotiated_amount ?: $writ->face_value));
-
-        $totalOpenInvested = round($acquiredOpen->sum(fn (Writ $writ) => $writ->totalCost()), 2);
-        $totalEstimatedReceipt = round($acquiredOpen->sum(fn (Writ $writ) => (float) $writ->estimated_receipt_amount), 2);
-        $expectedProfitAmount = round((float) $totalEstimatedReceipt - (float) $totalOpenInvested, 2);
-        $expectedProfitPercentage = $totalOpenInvested > 0
-            ? round($expectedProfitAmount / (float) $totalOpenInvested * 100, 2)
-            : null;
-        $openWithoutCost = $acquiredOpen->filter(fn (Writ $writ) => $writ->totalCost() <= 0)->count();
-
-        $totalReceived = round($finalizedWrits->sum(fn (Writ $writ) => (float) $writ->actual_receipt_amount), 2);
-        $totalFinalizedCost = round($finalizedWrits->sum(fn (Writ $writ) => $writ->totalCost()), 2);
-        $totalInvested = round((float) $totalOpenInvested + (float) $totalFinalizedCost, 2);
-        $profitAmount = round((float) $totalReceived - (float) $totalFinalizedCost, 2);
-        $profitPercentage = $totalFinalizedCost > 0
-            ? round($profitAmount / (float) $totalFinalizedCost * 100, 2)
-            : null;
-
-        return compact(
-            'situationCounts',
-            'stages', 'totalFaceAcquired', 'totalNegotiated', 'totalInvested', 'totalOpenInvested', 'totalFinalizedCost',
-            'totalEstimatedReceipt', 'expectedProfitAmount', 'expectedProfitPercentage', 'openWithoutCost',
-            'totalReceived', 'profitAmount', 'profitPercentage'
-        ) + [
+        return compact('situationCounts', 'stages', 'metrics') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => Contact::active()->orderBy('name')->get(),
         ];
@@ -1081,97 +1064,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         <x-jr.alert variant="error">{{ session('error') }}</x-jr.alert>
     @endif
 
-    <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
-            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-mono-100 text-mono-600">
-                    <span class="material-icons-outlined text-[20px]">pie_chart_outline</span>
-                </div>
-                <h2 class="text-base font-bold text-mono-900">Totais</h2>
-            </div>
-
-            <dl class="divide-y divide-mono-100">
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Valor de face (adquiridos)</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalFaceAcquired, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Valor negociado (adquiridos)</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalNegotiated, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Custo total (pago + despesas)</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-mono-900">R$ {{ number_format($totalInvested, 2, ',', '.') }}</dd>
-                </div>
-            </dl>
-            <p class="mt-2 text-[11px] text-mono-500">Monitorar, Negociação, Cessão, Assinatura e Perdido não entram como aquisição.</p>
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
-            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-500">
-                    <span class="material-icons-outlined text-[20px]">account_balance_wallet</span>
-                </div>
-                <h2 class="text-base font-bold text-mono-900">Em aberto (já pagos)</h2>
-            </div>
-
-            <dl class="divide-y divide-mono-100">
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Custo total em aberto</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalOpenInvested, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Recebimento previsto</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($totalEstimatedReceipt, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Lucro esperado sobre o custo</dt>
-                    <dd class="flex shrink-0 items-center gap-2">
-                        @if ($expectedProfitPercentage === null)
-                            <span class="rounded-pill bg-mono-100 px-2 py-1 text-[11px] font-bold text-mono-500">sem custo</span>
-                        @else
-                            <span class="rounded-pill bg-primary-100 px-2 py-1 text-[11px] font-bold text-primary-500">{{ number_format($expectedProfitPercentage, 2, ',', '.') }}%</span>
-                        @endif
-                        <span class="whitespace-nowrap text-lg font-bold text-primary-500">R$ {{ number_format($expectedProfitAmount, 2, ',', '.') }}</span>
-                    </dd>
-                </div>
-            </dl>
-            @if ($openWithoutCost > 0)
-                <p class="mt-2 text-[11px] text-mono-500">{{ $openWithoutCost }} card(s) em aberto sem custo informado — % não calculado sobre eles.</p>
-            @endif
-        </x-jr.card>
-
-        <x-jr.card :padding="false" class="min-w-0 p-4 lg:min-h-[232px]">
-            <div class="flex items-center gap-3 border-b border-mono-100 pb-3">
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-up-bg text-up">
-                    <span class="material-icons-outlined text-[20px]">check_circle</span>
-                </div>
-                <h2 class="text-base font-bold text-mono-900">Recebido</h2>
-            </div>
-
-            <dl class="divide-y divide-mono-100">
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Custo total finalizado</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalFinalizedCost, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Total recebido</dt>
-                    <dd class="shrink-0 whitespace-nowrap text-lg font-bold text-up">R$ {{ number_format($totalReceived, 2, ',', '.') }}</dd>
-                </div>
-                <div class="flex min-h-14 items-center justify-between gap-4 py-3">
-                    <dt class="text-xs font-medium text-mono-600">Lucro líquido sobre o custo</dt>
-                    <dd class="flex shrink-0 items-center gap-2">
-                        @if ($profitPercentage === null)
-                            <span class="rounded-pill bg-mono-100 px-2 py-1 text-[11px] font-bold text-mono-500">sem custo</span>
-                        @else
-                            <span class="rounded-pill px-2 py-1 text-[11px] font-bold {{ $profitAmount >= 0 ? 'bg-up-bg text-up' : 'bg-down-bg text-down' }}">{{ number_format($profitPercentage, 2, ',', '.') }}%</span>
-                        @endif
-                        <span class="whitespace-nowrap text-lg font-bold {{ $profitAmount >= 0 ? 'text-up' : 'text-down' }}">R$ {{ number_format($profitAmount, 2, ',', '.') }}</span>
-                    </dd>
-                </div>
-            </dl>
-        </x-jr.card>
-    </div>
+    @include('livewire.writs.partials.metrics-panel')
 
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
         <div class="min-w-0 flex-1">
