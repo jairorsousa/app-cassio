@@ -172,7 +172,11 @@ class Etapa6ValoresReceberEmprestimosTest extends TestCase
     {
         $this->get(route('banking.loans.index'))->assertOk()->assertSee('Empréstimos concedidos')->assertSee('Empréstimos');
         Volt::test('banking.loans.index')->assertSee('Novo empréstimo');
-        Volt::test('banking.receivables.index')->assertSee('Encargos opcionais');
+        Volt::test('banking.receivables.index')
+            ->assertSee('Registrar que paguei por alguém')
+            ->call('startCreate')
+            ->assertSee('Paguei por alguém')
+            ->assertSee('Encargos opcionais');
         $this->get(route('banking.transactions.index'))->assertOk();
 
         auth()->logout();
