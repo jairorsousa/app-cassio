@@ -17,6 +17,8 @@ new #[Layout('layouts.app')] class extends Component {
     public ?int $accountId = null;
     public ?int $cardId = null;
     public string $invoiceMonth = '';
+    /** auto = cada compra na fatura do ciclo; fixed = todas na fatura escolhida. */
+    public string $invoiceMode = 'auto';
     public $file = null;
 
     /** @var list<array<string, mixed>> */
@@ -83,7 +85,50 @@ new #[Layout('layouts.app')] class extends Component {
                 $this->warnings[] = 'Cartão escolhido é adicional: a fatura é a do principal ('.$card->parent->name.').';
             }
             $this->resolveFinals();
+            $this->suggestInvoices();
         }
+    }
+
+    public function updatedInvoiceMode(): void
+    {
+        if ($this->target === 'card' && $this->rows) {
+            $this->suggestInvoices();
+        }
+    }
+
+    public function updatedInvoiceMonth(): void
+    {
+        if ($this->target === 'card' && $this->rows) {
+            $this->suggestInvoices();
+        }
+    }
+
+    private function suggestInvoices(): void
+    {
+        foreach (array_keys($this->rows) as $k) {
+            $this->suggestInvoiceFor((int) $k);
+        }
+    }
+
+    private function suggestInvoiceFor(int $k): void
+    {
+        $card = CreditCard::find($this->cardId);
+        if (! $card || empty($this->rows[$k]['date'])) {
+            return;
+        }
+        try {
+            $date = \Illuminate\Support\Carbon::parse($this->rows[$k]['date']);
+        } catch (\Throwable $e) {
+            return;
+        }
+        $suggested = app(\App\Domains\Banking\Services\InvoiceService::class)->referenceMonthForPurchase($card, $date);
+        $this->rows[$k]['suggested_invoice_month'] = $suggested;
+        if ($this->invoiceMode === 'fixed' && $this->invoiceMonth) {
+            $this->rows[$k]['invoice_month'] = $this->invoiceMonth;
+        } elseif (empty($this->rows[$k]['invoice_month'])) {
+            $this->rows[$k]['invoice_month'] = $suggested;
+        }
+        $this->rows[$k]['invoice_mismatch'] = ($this->rows[$k]['invoice_month'] ?? '') !== $suggested;
     }
 
     /** Associa cada "Final Cartão" ao principal, a um adicional dele ou pede para escolher (final desconhecido). */
@@ -184,6 +229,9 @@ new #[Layout('layouts.app')] class extends Component {
     /** Ao trocar tipo ou conta da transferência, procura de novo a contrapartida já lançada. */
     public function updatedRows($value, string $key): void
     {
+        if ($this->target === 'card' && preg_match('/^(\d+)\.(date|invoice_month)$/', $key, $m) && isset($this->rows[(int) $m[1]])) {
+            $this->suggestInvoiceFor((int) $m[1]);
+        }
         if (! preg_match('/^(\d+)\.(type|transfer_account_id)$/', $key, $m) || ! isset($this->rows[(int) $m[1]])) {
             return;
         }
@@ -261,13 +309,20 @@ new #[Layout('layouts.app')] class extends Component {
                 'notes' => 'Importado de extrato ('.$this->source.')', 'category_id' => $r['category_id'] ? (int) $r['category_id'] : null,
                 'card_kind' => $r['card_kind'],
                 'additional_card_id' => $r['additional_card_id'] ?? null,
+                'invoice_month' => $this->target === 'card' ? ($r['invoice_month'] ?? null) : null,
             ];
         }
         try {
             $tr = ['created' => 0, 'linked' => 0, 'skipped' => 0];
             \Illuminate\Support\Facades\DB::transaction(function () use ($ofx, $payload, $transfers, &$res, &$tr) {
                 if ($this->target === 'card') {
-                    $res = $ofx->importCard(CreditCard::findOrFail($this->cardId), $this->invoiceMonth, $payload);
+                    $month = $this->invoiceMode === 'fixed' ? $this->invoiceMonth : null;
+                    $res = $ofx->importCard(CreditCard::findOrFail($this->cardId), $month, $payload, [
+                        'filename' => $this->file?->getClientOriginalName(),
+                        'source_label' => $this->source,
+                        'invoice_mode' => $this->invoiceMode,
+                        'user_id' => auth()->id(),
+                    ]);
                 } else {
                     $account = BankAccount::findOrFail($this->accountId);
                     $res = $payload ? $ofx->import($account, $payload) : ['imported' => 0, 'skipped' => 0];
@@ -341,10 +396,20 @@ new #[Layout('layouts.app')] class extends Component {
                         <select wire:model="cardId" class="mt-1 h-11 w-full rounded-xl border border-mono-200 px-3"><option value="">Escolha…</option>@foreach ($cards as $c)<option value="{{ $c->id }}">{{ $c->name }}</option>@endforeach</select>
                         @error('cardId')<span class="text-xs text-error">{{ $message }}</span>@enderror
                     </label>
-                    <label class="text-sm">Fatura (mês) *
-                        <input type="month" wire:model="invoiceMonth" class="mt-1 h-11 w-full rounded-xl border border-mono-200 px-3">
+                    <div class="text-sm">
+                        <p class="font-medium">Fatura de cada compra</p>
+                        <label class="mt-1 flex items-start gap-2">
+                            <input type="radio" wire:model.live="invoiceMode" value="auto" class="mt-1">
+                            <span>Automática, pela data da compra e pelo ciclo do cartão (recomendado)</span>
+                        </label>
+                        <label class="mt-1 flex items-start gap-2">
+                            <input type="radio" wire:model.live="invoiceMode" value="fixed" class="mt-1">
+                            <span>Usar esta fatura para todas:</span>
+                        </label>
+                        <input type="month" wire:model.live="invoiceMonth" class="mt-1 h-11 w-full rounded-xl border border-mono-200 px-3" @disabled($invoiceMode !== 'fixed')>
+                        <p class="mt-1 text-xs text-mono-600">Se a data de uma compra não combinar com a fatura, o sistema avisa na revisão. Você pode manter ou trocar.</p>
                         @error('invoiceMonth')<span class="text-xs text-error">{{ $message }}</span>@enderror
-                    </label>
+                    </div>
                 @endif
                 <label class="text-sm md:col-span-2">Arquivo *
                     <input type="file" wire:model="file" accept=".ofx,.qfx,.csv,.txt,.xlsx,.pdf,.html,.htm,.bin,.jpg,.jpeg,.png,.webp" class="mt-1 block w-full text-sm">
@@ -377,6 +442,15 @@ new #[Layout('layouts.app')] class extends Component {
                 <div data-invoice-check>
                     @php $prevBal = $invoiceSummary['previous_balance'] ?? 0; $bankTotal = $invoiceSummary['invoice_total'] ?? null; $calc = round($importSum + (float) $prevBal, 2); @endphp
                     <p class="text-sm font-semibold">Fatura de {{ $principalCard->name }}</p>
+                    <div class="mt-2 text-xs">
+                        <label class="mr-3"><input type="radio" wire:model.live="invoiceMode" value="auto"> Automática pelo ciclo</label>
+                        <label class="mr-3"><input type="radio" wire:model.live="invoiceMode" value="fixed"> Todas nesta fatura</label>
+                        <input type="month" wire:model.live="invoiceMonth" class="h-9 rounded-lg border border-mono-200 px-2" @disabled($invoiceMode !== 'fixed')>
+                    </div>
+                    @php $mismatchCount = collect($rows)->where('invoice_mismatch', true)->where('selected', true)->count(); @endphp
+                    @if ($mismatchCount)
+                        <p class="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900" data-invoice-mismatch-summary>{{ $mismatchCount }} compra(s) com data que não combina com a fatura escolhida. Confira a coluna Fatura antes de gravar.</p>
+                    @endif
                     <p class="text-xs text-mono-600">Lançamentos (compras − créditos, sem o pagamento): R$ {{ number_format($importSum, 2, ',', '.') }}@if ($prevBal) · saldo da fatura anterior: R$ {{ number_format($prevBal, 2, ',', '.') }}@endif · soma: <strong>R$ {{ number_format($calc, 2, ',', '.') }}</strong></p>
                     @if ($bankTotal !== null)
                         <p class="text-xs {{ abs($calc - $bankTotal) < 0.01 ? 'text-up' : 'text-down' }}" data-invoice-match="{{ abs($calc - $bankTotal) < 0.01 ? '1' : '0' }}">Total da fatura no banco: R$ {{ number_format($bankTotal, 2, ',', '.') }} — {{ abs($calc - $bankTotal) < 0.01 ? 'bate' : 'diferença de R$ '.number_format($calc - $bankTotal, 2, ',', '.') }}</p>
@@ -435,6 +509,14 @@ new #[Layout('layouts.app')] class extends Component {
                             <input type="date" wire:model.blur="rows.{{ $k }}.date" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" aria-label="Data">
                             <input type="text" wire:model.blur="rows.{{ $k }}.description" class="h-9 rounded-lg border border-mono-200 px-2 text-xs md:col-span-2" aria-label="Descrição">
                             <input type="text" inputmode="decimal" x-money wire:model.blur="rows.{{ $k }}.amount" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" aria-label="Valor" data-row-amount-input>
+                            @if ($target === 'card')
+                                <label class="text-xs md:col-span-4">Fatura
+                                    <input type="month" wire:model.blur="rows.{{ $k }}.invoice_month" class="mt-1 h-9 w-full rounded-lg border px-2 {{ ! empty($r['invoice_mismatch']) ? 'border-amber-500' : 'border-mono-200' }}" aria-label="Fatura da compra" data-row-invoice>
+                                    @if (! empty($r['invoice_mismatch']))
+                                        <span class="text-amber-800" data-row-invoice-mismatch>A data desta compra combina com {{ isset($r['suggested_invoice_month']) ? \Illuminate\Support\Carbon::createFromFormat('Y-m', $r['suggested_invoice_month'])->translatedFormat('M/Y') : 'outra fatura' }}.</span>
+                                    @endif
+                                </label>
+                            @endif
                             @if ($target === 'bank')
                                 <select wire:model.live="rows.{{ $k }}.type" class="h-9 rounded-lg border border-mono-200 px-2 text-xs" aria-label="Tipo" data-row-type>
                                     <option value="expense">Despesa</option><option value="income">Receita</option><option value="transfer">Transferência</option>
