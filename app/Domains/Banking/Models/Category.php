@@ -23,6 +23,36 @@ class Category extends Model
 
     public const ASSET_PURCHASE_KEY = 'asset_purchase';
 
+    /** Proventos (dividendos, JCP, rendimentos de FII) lançados automaticamente pelo módulo Investimentos. */
+    public const DIVIDEND_INCOME_KEY = 'dividend_income';
+
+    public const DIVIDEND_INCOME_NAME = 'Ações e FIIs (Proventos)';
+
+    private static ?int $dividendIncomeId = null;
+
+    /** Categoria de receita dos proventos: pela chave estável; se faltar, pelo nome; se não existir, cria (editável). */
+    public static function dividendIncomeCategoryId(): int
+    {
+        if (self::$dividendIncomeId && self::whereKey(self::$dividendIncomeId)->exists()) {
+            return self::$dividendIncomeId;
+        }
+        $id = self::where('system_key', self::DIVIDEND_INCOME_KEY)->value('id')
+            ?: self::where('name', self::DIVIDEND_INCOME_NAME)->where('type', 'income')->value('id');
+        if (! $id) {
+            $category = new self([
+                'name' => self::DIVIDEND_INCOME_NAME,
+                'type' => 'income',
+                'status' => true,
+                'parent_id' => self::where('name', 'Rendimento de Investimentos')->where('type', 'income')->value('id'),
+            ]);
+            $category->system_key = self::DIVIDEND_INCOME_KEY;
+            $category->save();
+            $id = $category->id;
+        }
+
+        return self::$dividendIncomeId = (int) $id;
+    }
+
     /** Pagamento de bem (relógio, carro...): sai da conta ou entra na fatura, mas é troca de dinheiro por patrimônio, fora do resultado. */
     public static function assetPurchaseCategoryId(): int
     {

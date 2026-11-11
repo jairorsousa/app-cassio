@@ -2,6 +2,7 @@
 
 namespace App\Domains\Investments\Services;
 
+use App\Domains\Banking\Models\Category;
 use App\Domains\Investments\Models\AssetDividend;
 use App\Domains\Investments\Models\AssetOperation;
 
@@ -30,7 +31,13 @@ class InvestmentBankSyncService
             ? ($record->type === 'buy' ? -(float) $record->total : (float) $record->total)
             : (float) $record->total;
 
-        $record->transactions()->updateOrCreate([], [
+        // Provento: grava "Ações e FIIs (Proventos)", sem sobrescrever uma categoria já escolhida à mão.
+        $extra = [];
+        if (! $isOperation && ! $record->transactions()->whereNotNull('category_id')->exists()) {
+            $extra['category_id'] = Category::dividendIncomeCategoryId();
+        }
+
+        $record->transactions()->updateOrCreate([], $extra + [
             'type' => $automaticLiquidity ? 'transfer' : ($isOperation && $record->type === 'buy' ? 'expense' : 'income'),
             'date' => $date, 'amount' => $amount,
             'description' => $label.' '.$record->asset?->ticker,

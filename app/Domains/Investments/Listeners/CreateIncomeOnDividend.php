@@ -2,6 +2,7 @@
 
 namespace App\Domains\Investments\Listeners;
 
+use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Services\TransactionService;
 use App\Domains\Investments\Events\DividendReceived;
 use App\Domains\Investments\Models\AssetDividend;
@@ -32,6 +33,7 @@ class CreateIncomeOnDividend
             'type' => 'income',
             'date' => $div->payment_date,
             'amount' => $div->total,
+            'category_id' => Category::dividendIncomeCategoryId(),
             'description' => "{$label} {$ticker}",
             'status' => 'settled',
             'bank_account_id' => $div->bank_account_id,

@@ -965,3 +965,15 @@ Base: commit `20d9037` (fim da Etapa 6). Nenhum dado financeiro foi criado, alte
 - Proteções: aviso quando pago + previsto passa do total; aviso de lançamento parecido já existente na conta (extrato importado); a importação de extrato marca "possível duplicata: pagamento de bem"; não deixa excluir bem com pagamento lançado.
 - Nova categoria de sistema **Aquisição de bem** (padrão nos pagamentos de bens, pode ser trocada): tira da conta ou entra na fatura, mas fica fora do resultado e dos gráficos de despesas, nos dois regimes.
 - Bens antigos continuam iguais. Teste: tests/Feature/PropertyPaymentsTest.php. Backup: /root/app-cassio-backups/bens-pagamentos-20261110/.
+
+## 11/11/2026 — Categorias: Honorários, Reembolsos, Conta remunerada e proventos automáticos (aprovado por Cassio, t287s1553)
+- **Backup:** `/root/app-cassio-backups/categorias-20261111/` (categories.json, transactions.json, process_receipts_cat.json e os 3 arquivos PHP alterados).
+- **Migration** `2026_11_11_070000_categorias_honorarios_reembolsos_rendimentos` (idempotente; rodada antes do código; não cria nada em banco sem a árvore do Cassio):
+  - "Variável (Comissões/Bônus)" (id 27) → **"Honorários (minha parte)"**; mesmo id, 1 lançamento + 5 recebimentos de processo continuam ligados. Nenhum código usava o nome antigo (só fixtures de teste, que criam a própria categoria).
+  - **"Reembolsos e Ressarcimentos"** em par: receita (id 547, em Outras Receitas) + despesa (id 548, raiz). O seletor de categoria filtra por tipo, então uma categoria só não serviria para saída e entrada; com o par, a saída para terceiros e a devolução se anulam no resultado (efeito líquido zero). Obs.: os totais brutos de receitas e de despesas sobem o mesmo valor; deixar totalmente fora do resultado exigiria mudar `OwnFinancialService`/relatórios (não feito).
+  - **"Conta remunerada / rendimento automático"** (id 549) em Rendimento de Investimentos, ao lado de Renda Fixa & CDBs.
+  - "Ações e FIIs (Proventos)" (id 30) recebe `system_key = dividend_income` (continua editável; não é is_system).
+- **Código:** `Category::dividendIncomeCategoryId()` (chave → nome → cria). `CreateIncomeOnDividend` e `InvestmentBankSyncService` gravam essa categoria nos proventos (dividendo, JCP, rendimento FII); o sync não sobrescreve categoria escolhida à mão. Aluguel de ações (lending_fee) não gera lançamento no Financeiro hoje e não há categoria própria.
+- **Lançamentos antigos:** 0 recategorizados — nenhum lançamento sem categoria tem vínculo com o módulo Investimentos (asset_dividends vazio; asset_income_events sem transaction_id). Os 8 proventos existentes já estavam em Proventos.
+- **Prova:** resultado out/2026 (R$ 113.120,64 / R$ 65.657,42) e nov/2026 (R$ 0,00 / R$ 6.991,88), saldos das 10 contas e contagem/soma por categoria idênticos antes e depois.
+- **Testes:** `tests/Feature/Banking/CategoriasProventosReembolsosTest.php`; suíte completa no SQLite isolado: 942 aprovados.
