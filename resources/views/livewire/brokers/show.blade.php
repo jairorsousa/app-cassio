@@ -13,12 +13,16 @@ use App\Domains\Brokers\Services\BrokerLedgerDeletionService;
 use App\Domains\Brokers\Services\BrokerProfileService;
 use App\Domains\Brokers\Services\BrokerStatementService;
 use App\Domains\Contacts\Models\Contact;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
     public Contact $broker;
 
     public ?Broker $financialBroker = null;
@@ -76,6 +80,27 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->launch_date = \App\Support\BusinessDate::today();
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return match ($this->records_tab) {
+            'advances' => 'broker_advances',
+            'commissions' => 'broker_commissions',
+            'payments' => 'broker_payments',
+            default => 'broker_statement',
+        };
+    }
+
+    protected function sortLists(): array
+    {
+        return ['broker_statement', 'broker_advances', 'broker_commissions', 'broker_payments'];
+    }
+
+    public function updatedRecordsTab(): void
+    {
+        $this->loadSort();
     }
 
     public function updatedPeriod(): void
@@ -437,6 +462,53 @@ new #[Layout('layouts.app')] class extends Component
                     $paymentCommissions = $paymentCommissions->prepend($editedPaymentCommission);
                 }
             }
+        }
+
+
+        if ($this->financialBroker) {
+            [$sBy, $sDir] = $this->sortState('broker_statement');
+            $statementEntries = ColumnSorter::sort($statementEntries, $sBy, $sDir, [
+                'date' => fn ($e) => $e['date'],
+                'movement' => fn ($e) => $e['type'],
+                'description' => fn ($e) => $e['description'],
+                'amount' => fn ($e) => $e['amount'],
+                'balance' => fn ($e) => ! empty($e['affects_personal']) ? ($e['running_balance'] ?? null) : null,
+            ], $sBy === 'date'
+                ? [[fn ($e) => $e['sort'] ?? '', $sDir]]
+                : [[fn ($e) => $e['date'], 'desc'], [fn ($e) => $e['sort'] ?? '', 'desc']]);
+
+            [$aBy, $aDir] = $this->sortState('broker_advances');
+            $allAdvances = ColumnSorter::sort($allAdvances, $aBy, $aDir, [
+                'date' => fn ($a) => $a->date,
+                'amount' => fn ($a) => (float) $a->amount,
+                'payment_method' => fn ($a) => $a->payment_method ?: '',
+                'account' => fn ($a) => $a->bankAccount?->name ?: '',
+                'settled' => fn ($a) => $a->settledAmount(),
+                'balance' => fn ($a) => $a->remainingBalance(),
+                'notes' => fn ($a) => $a->notes ?: '',
+            ], $aBy === 'date' ? [[fn ($a) => $a->id, $aDir]] : [[fn ($a) => $a->date, 'desc'], [fn ($a) => $a->id, 'desc']]);
+
+            [$cBy, $cDir] = $this->sortState('broker_commissions');
+            $allCommissions = ColumnSorter::sort($allCommissions, $cBy, $cDir, [
+                'date' => fn ($c) => $c->reference_date,
+                'case_type' => fn ($c) => $c->caseType?->name ?: '',
+                'name' => fn ($c) => $c->name ?: '',
+                'amount' => fn ($c) => (float) $c->commission_amount,
+                'settled' => fn ($c) => $c->settledAmount(),
+                'repassed' => fn ($c) => $c->paidAmount(),
+                'balance' => fn ($c) => $c->remainingAmount(),
+                'status' => fn ($c) => ['pending' => 'Pendente', 'paid' => 'Pago', 'partially_paid' => 'Parcial'][$c->status] ?? $c->status,
+            ], $cBy === 'date' ? [[fn ($c) => $c->id, $cDir]] : [[fn ($c) => $c->reference_date, 'desc'], [fn ($c) => $c->id, 'desc']]);
+
+            [$pBy, $pDir] = $this->sortState('broker_payments');
+            $allPayments = ColumnSorter::sort($allPayments, $pBy, $pDir, [
+                'date' => fn ($p) => $p->paid_at,
+                'case_type' => fn ($p) => $p->commission?->caseType?->name ?? '',
+                'name' => fn ($p) => $p->commission?->name ?: '',
+                'account' => fn ($p) => $p->bankAccount?->name ?? '',
+                'amount' => fn ($p) => (float) $p->amount,
+                'notes' => fn ($p) => $p->notes ?: '',
+            ], $pBy === 'date' ? [[fn ($p) => $p->id, $pDir]] : [[fn ($p) => $p->paid_at, 'desc'], [fn ($p) => $p->id, 'desc']]);
         }
 
         return [
@@ -853,15 +925,16 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 </div>
             @else
+                <x-fx.sort-mobile list="broker_statement" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
                         <thead>
                             <tr>
-                                <th class="text-left">Data</th>
-                                <th class="text-left">Movimento</th>
-                                <th class="text-left">Descrição</th>
-                                <th class="text-right">Valor</th>
-                                <th class="text-right">Saldo</th>
+                                <x-fx.sort-th column="date" label="Data" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="movement" label="Movimento" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="description" label="Descrição" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="amount" label="Valor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
                             </tr>
                         </thead>
                         <tbody>
@@ -903,17 +976,18 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 </div>
             @else
+                <x-fx.sort-mobile list="broker_advances" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
                         <thead>
                             <tr>
-                                <th class="text-left">Data</th>
-                                <th class="text-right">Valor</th>
-                                <th class="text-left">Forma pgto</th>
-                                <th class="text-left">Conta</th>
-                                <th class="text-right">Compensado</th>
-                                <th class="text-right">Saldo</th>
-                                <th class="text-left">Notas</th>
+                                <x-fx.sort-th column="date" label="Data" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="amount" label="Valor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="payment_method" label="Forma pgto" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="account" label="Conta" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="settled" label="Compensado" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="notes" label="Notas" :sort-by="$sortBy" :sort-dir="$sortDir" />
                                 <th class="text-right">Ações</th>
                             </tr>
                         </thead>
@@ -973,18 +1047,19 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 </div>
             @else
+                <x-fx.sort-mobile list="broker_commissions" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
                         <thead>
                             <tr>
-                                <th class="text-left">Data ref.</th>
-                                <th class="text-left">Tipo de caso</th>
-                                <th class="text-left">Nome</th>
-                                <th class="text-right">Comissão</th>
-                                <th class="text-right">Compensado</th>
-                                <th class="text-right">Repassado</th>
-                                <th class="text-right">Saldo</th>
-                                <th class="text-center">Status</th>
+                                <x-fx.sort-th column="date" label="Data ref." :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="case_type" label="Tipo de caso" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="amount" label="Comissão" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="settled" label="Compensado" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="repassed" label="Repassado" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="status" label="Status" align="center" :sort-by="$sortBy" :sort-dir="$sortDir" />
                                 <th class="text-right">Ações</th>
                             </tr>
                         </thead>
@@ -1036,16 +1111,17 @@ new #[Layout('layouts.app')] class extends Component
                     <div class="mt-xxs text-xs text-mono-600">Os repasses em dinheiro ao corretor aparecerão aqui.</div>
                 </div>
             @else
+                <x-fx.sort-mobile list="broker_payments" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
                         <thead>
                             <tr>
-                                <th class="text-left">Data</th>
-                                <th class="text-left">Tipo de caso</th>
-                                <th class="text-left">Nome</th>
-                                <th class="text-left">Conta</th>
-                                <th class="text-right">Valor</th>
-                                <th class="text-left">Notas</th>
+                                <x-fx.sort-th column="date" label="Data" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="case_type" label="Tipo de caso" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="account" label="Conta" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="amount" label="Valor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                                <x-fx.sort-th column="notes" label="Notas" :sort-by="$sortBy" :sort-dir="$sortDir" />
                                 <th class="text-right">Ações</th>
                             </tr>
                         </thead>

@@ -4,10 +4,14 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerProcessExpense;
 use App\Domains\Brokers\Services\BrokerProcessExpenseService;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new class extends Component {
+    use SortsColumns;
+
     #[Locked] public int $brokerId;
     #[Locked] public ?int $editingId = null;
     public bool $showForm = false;
@@ -19,6 +23,16 @@ new class extends Component {
     public ?int $contactId = null;
     public bool $createAnotherAfterSave = false;
     public ?string $formSuccessMessage = null;
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'broker_process_expenses';
+    }
 
     public function create(): void
     {
@@ -95,8 +109,19 @@ new class extends Component {
 
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+        $expenses = BrokerProcessExpense::where('broker_id', $this->brokerId)->with('bankAccount', 'contact', 'recoveries.destination.receipt')->orderByDesc('date')->orderByDesc('id')->get();
+        $expenses = ColumnSorter::sort($expenses, $by, $dir, [
+            'date' => fn ($e) => $e->date,
+            'description' => fn ($e) => $e->description,
+            'account' => fn ($e) => $e->bankAccount?->name ?: '',
+            'amount' => fn ($e) => (float) $e->amount,
+            'status' => fn ($e) => $e->remainingCents() === 0 ? 'Recuperada' : ($e->recoveredCents() > 0 ? 'Parcialmente recuperada' : 'A recuperar'),
+            'balance' => fn ($e) => $e->remainingCents() / 100,
+        ], $by === 'date' ? [[fn ($e) => $e->id, $dir]] : [[fn ($e) => $e->date, 'desc'], [fn ($e) => $e->id, 'desc']]);
+
         return [
-            'expenses' => BrokerProcessExpense::where('broker_id', $this->brokerId)->with('bankAccount', 'contact', 'recoveries.destination.receipt')->orderByDesc('date')->orderByDesc('id')->get(),
+            'expenses' => $expenses,
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'contacts' => \App\Domains\Contacts\Models\Contact::active()->orderBy('name')->limit(300)->get(),
             'openTotal' => BrokerProcessExpense::where('broker_id', $this->brokerId)->with('recoveries')->get()->sum(fn ($e) => $e->remainingCents()) / 100,
@@ -139,14 +164,42 @@ new class extends Component {
             </div>
         </form>
     @endif
-    @forelse ($expenses as $expense)
-        <div wire:key="process-expense-{{ $expense->id }}" class="space-y-2 rounded-xl border border-mono-100 p-4 text-sm">
-            <div class="flex flex-wrap justify-between gap-3">
-                <div><strong class="text-mono-900">{{ $expense->description }}</strong><p class="mt-1 text-mono-600">{{ $expense->date->format('d/m/Y') }} · {{ $expense->bankAccount?->name }} · R$ {{ number_format((float) $expense->amount, 2, ',', '.') }}</p></div>
-                <div class="flex items-start gap-3"><button type="button" wire:click="edit({{ $expense->id }})" class="text-primary-600">Editar</button><button type="button" wire:click="delete({{ $expense->id }})" wire:confirm="Excluir esta despesa e a saída correspondente na conta?" class="text-error">Excluir</button></div>
-            </div>
-            <p class="text-mono-600">{{ $expense->remainingCents() === 0 ? 'Recuperada' : ($expense->recoveredCents() > 0 ? 'Parcialmente recuperada' : 'A recuperar') }} · Saldo disponível: <strong>R$ {{ number_format($expense->remainingCents() / 100, 2, ',', '.') }}</strong></p>
-            @if ($expense->recoveries->isNotEmpty())<details><summary class="cursor-pointer text-primary-600">Ver descontos realizados</summary>@foreach ($expense->recoveries as $recovery)<p class="mt-2 text-xs text-mono-600">Recebimento #{{ $recovery->destination->receipt_id }} · {{ $recovery->destination->receipt?->description }} · R$ {{ number_format((float) $recovery->amount, 2, ',', '.') }}</p>@endforeach</details>@endif
+    @if ($expenses->isEmpty())
+        <p class="rounded-xl bg-mono-50 p-5 text-sm text-mono-600">Nenhuma despesa de processos cadastrada para este corretor.</p>
+    @else
+        <x-fx.sort-mobile list="broker_process_expenses" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
+        <div class="overflow-x-auto">
+            <table class="fx-table w-full text-sm">
+                <thead>
+                    <tr>
+                        <x-fx.sort-th column="date" label="Data" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="description" label="Descrição" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="account" label="Conta" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="amount" label="Valor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="status" label="Situação" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <th class="text-right">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($expenses as $expense)
+                        <tr wire:key="process-expense-{{ $expense->id }}">
+                            <td>{{ $expense->date->format('d/m/Y') }}</td>
+                            <td>
+                                <strong class="text-mono-900">{{ $expense->description }}</strong>
+                                @if ($expense->recoveries->isNotEmpty())
+                                    <details class="mt-1"><summary class="cursor-pointer text-primary-600">Ver descontos realizados</summary>@foreach ($expense->recoveries as $recovery)<p class="mt-2 text-xs text-mono-600">Recebimento #{{ $recovery->destination->receipt_id }} · {{ $recovery->destination->receipt?->description }} · R$ {{ number_format((float) $recovery->amount, 2, ',', '.') }}</p>@endforeach</details>
+                                @endif
+                            </td>
+                            <td>{{ $expense->bankAccount?->name }}</td>
+                            <td class="text-right font-semibold">R$ {{ number_format((float) $expense->amount, 2, ',', '.') }}</td>
+                            <td class="text-mono-600">{{ $expense->remainingCents() === 0 ? 'Recuperada' : ($expense->recoveredCents() > 0 ? 'Parcialmente recuperada' : 'A recuperar') }}</td>
+                            <td class="text-right">Saldo disponível: <strong>R$ {{ number_format($expense->remainingCents() / 100, 2, ',', '.') }}</strong></td>
+                            <td class="text-right whitespace-nowrap"><button type="button" wire:click="edit({{ $expense->id }})" class="text-primary-600">Editar</button> <button type="button" wire:click="delete({{ $expense->id }})" wire:confirm="Excluir esta despesa e a saída correspondente na conta?" class="text-error">Excluir</button></td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
         </div>
-    @empty<p class="rounded-xl bg-mono-50 p-5 text-sm text-mono-600">Nenhuma despesa de processos cadastrada para este corretor.</p>@endforelse
+    @endif
 </div>

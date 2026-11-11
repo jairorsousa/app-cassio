@@ -12,6 +12,8 @@ use App\Domains\Brokers\Services\BrokerCommissionService;
 use App\Domains\Brokers\Services\BrokerProfileService;
 use App\Domains\Contacts\Models\Contact;
 use Illuminate\Validation\Rule;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -19,6 +21,7 @@ use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
     use WithPagination;
+    use SortsColumns;
 
     #[Url]
     public string $search = '';
@@ -42,6 +45,12 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(BrokerProfileService $profiles): void
     {
         $profiles->synchronizeDirectory();
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'brokers';
     }
 
     public function openLaunchModal(?int $contactId = null, string $type = 'advance'): void
@@ -239,9 +248,9 @@ new #[Layout('layouts.app')] class extends Component {
                 ->values();
         }
 
-        $brokers = $q->with('brokerProfile')->orderBy('name')->paginate(25);
+        $allBrokers = $q->with('brokerProfile')->orderBy('name')->get();
         $pendingByFinancialBroker = $balances->pendingBalancesFor(
-            $brokers->getCollection()
+            $allBrokers
                 ->pluck('brokerProfile.id')
                 ->filter()
                 ->map(fn ($id) => (int) $id)
@@ -249,13 +258,24 @@ new #[Layout('layouts.app')] class extends Component {
         );
 
         $brokerBalances = [];
-        foreach ($brokers as $broker) {
+        foreach ($allBrokers as $broker) {
             $financialId = $broker->brokerProfile?->id;
             $brokerBalances[$broker->id] = $pendingByFinancialBroker[$financialId] ?? [
                 'advance_pending' => 0.0,
                 'commission_pending' => 0.0,
             ];
         }
+
+        [$by, $dir] = $this->sortState();
+        $sorted = ColumnSorter::sort($allBrokers, $by, $dir, [
+            'name' => fn ($b) => $b->name,
+            'document' => fn ($b) => $b->document ?: '',
+            'phone' => fn ($b) => $b->phone ?: '',
+            'advance_balance' => fn ($b) => (float) ($brokerBalances[$b->id]['advance_pending'] ?? 0),
+            'commission_balance' => fn ($b) => (float) ($brokerBalances[$b->id]['commission_pending'] ?? 0),
+            'status' => fn ($b) => $b->status ? 'Ativo' : 'Inativo',
+        ], [[fn ($b) => $b->id, 'asc']]);
+        $brokers = ColumnSorter::paginate($sorted, $this, 25);
 
         return [
             'brokers' => $brokers,
@@ -399,14 +419,15 @@ new #[Layout('layouts.app')] class extends Component {
         @else
             <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm">
+                <x-fx.sort-mobile list="brokers" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <thead>
                     <tr>
-                        <th class="text-left">Nome</th>
-                        <th class="text-left">Documento</th>
-                        <th class="text-left">Telefone</th>
-                        <th class="text-right">Saldo Adiantamento</th>
-                        <th class="text-right">Saldo Corretor</th>
-                        <th class="text-center">Status</th>
+                        <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="document" label="Documento" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="phone" label="Telefone" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="advance_balance" label="Saldo Adiantamento" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="commission_balance" label="Saldo Corretor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="status" label="Status" align="center" :sort-by="$sortBy" :sort-dir="$sortDir" />
                         <th class="text-right">Ações</th>
                     </tr>
                 </thead>

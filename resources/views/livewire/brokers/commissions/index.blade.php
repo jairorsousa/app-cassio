@@ -3,12 +3,15 @@
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Models\BrokerCommission;
 use App\Domains\Brokers\Services\BrokerCommissionService;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
     use WithPagination;
+    use SortsColumns;
 
     public Broker $broker;
     public bool $showSettleModal = false;
@@ -17,6 +20,12 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(Broker $broker): void
     {
         $this->broker = $broker;
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'broker_commissions_index';
     }
 
     public function openSettle(int $commissionId): void
@@ -49,10 +58,19 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function with(): array
     {
-        $commissions = BrokerCommission::where('broker_id', $this->broker->id)
-            ->with('caseType', 'settlements.advance')
-            ->orderByDesc('reference_date')
-            ->paginate(25);
+        [$by, $dir] = $this->sortState();
+        $all = BrokerCommission::where('broker_id', $this->broker->id)->with('caseType', 'settlements.advance')->orderByDesc('reference_date')->get();
+        $commissions = ColumnSorter::paginate(ColumnSorter::sort($all, $by, $dir, [
+            'date' => fn ($c) => $c->reference_date,
+            'case_type' => fn ($c) => $c->caseType?->name ?: '',
+            'name' => fn ($c) => $c->name ?: '',
+            'base' => fn ($c) => (float) ($c->base_amount ?? 0),
+            'percent' => fn ($c) => (float) ($c->percentage_applied ?? 0),
+            'amount' => fn ($c) => (float) $c->commission_amount,
+            'settled' => fn ($c) => $c->settledAmount(),
+            'balance' => fn ($c) => $c->remainingAmount(),
+            'status' => fn ($c) => ['pending' => 'Pendente', 'paid' => 'Pago', 'partially_paid' => 'Parcial'][$c->status] ?? $c->status,
+        ], $by === 'date' ? [[fn ($c) => $c->id, $dir]] : [[fn ($c) => $c->reference_date, 'desc'], [fn ($c) => $c->id, 'desc']]), $this, 25);
 
         $settleCommission = $this->settleCommissionId
             ? BrokerCommission::with('settlements.advance')->find($this->settleCommissionId)
@@ -78,18 +96,19 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($commissions->isEmpty())
             <div class="text-sm text-mono-600">Nenhuma comissão registrada.</div>
         @else
+            <x-fx.sort-mobile list="broker_commissions_index" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
             <table class="fx-table w-full text-sm">
                 <thead>
                     <tr>
-                        <th class="text-left">Data ref.</th>
-                        <th class="text-left">Tipo de caso</th>
-                        <th class="text-left">Nome</th>
-                        <th class="text-right">Base</th>
-                        <th class="text-right">%</th>
-                        <th class="text-right">Comissão</th>
-                        <th class="text-right">Compensado</th>
-                        <th class="text-right">A pagar</th>
-                        <th class="text-center">Status</th>
+                        <x-fx.sort-th column="date" label="Data ref." :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="case_type" label="Tipo de caso" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="base" label="Base" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="percent" label="%" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="amount" label="Comissão" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="settled" label="Compensado" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="balance" label="A pagar" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="status" label="Status" align="center" :sort-by="$sortBy" :sort-dir="$sortDir" />
                         <th class="text-right">Ações</th>
                     </tr>
                 </thead>

@@ -1,10 +1,14 @@
 <?php
 
 use App\Domains\Brokers\Models\CaseType;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
     public string $name = '';
     public bool $status = true;
     public ?int $editingId = null;
@@ -45,10 +49,25 @@ new #[Layout('layouts.app')] class extends Component {
         $this->reset(['name', 'status', 'editingId']);
     }
 
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'case_types';
+    }
+
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+
         return [
-            'caseTypes' => CaseType::orderBy('name')->get(),
+            'caseTypes' => ColumnSorter::sort(CaseType::orderBy('name')->get(), $by, $dir, [
+                'name' => fn ($t) => $t->name,
+                'status' => fn ($t) => $t->status ? 'Ativo' : 'Inativo',
+            ], [[fn ($t) => $t->id, 'asc']]),
         ];
     }
 }; ?>
@@ -98,11 +117,12 @@ new #[Layout('layouts.app')] class extends Component {
                     <div class="max-w-sm text-sm text-mono-600">Use o formulário ao lado para cadastrar o primeiro tipo e liberar o registro de comissões.</div>
                 </div>
             @else
+                <x-fx.sort-mobile list="case_types" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <table class="fx-table w-full text-sm">
                     <thead>
                         <tr>
-                            <th class="text-left">Nome</th>
-                            <th class="text-center">Status</th>
+                            <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                            <x-fx.sort-th column="status" label="Status" align="center" :sort-by="$sortBy" :sort-dir="$sortDir" />
                             <th class="text-right">Ações</th>
                         </tr>
                     </thead>
