@@ -3,10 +3,23 @@
 use App\Domains\Brokers\Models\Broker;
 use App\Domains\Brokers\Services\BrokerReportService;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'broker_report_commissions';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['broker_report_commissions', 'broker_report_brokers', 'broker_report_totals'];
+    }
+
     public string $month;
 
     public string $year;
@@ -19,6 +32,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(): void
     {
+        $this->loadSort();
         $this->month = (string) now()->month;
         $this->year = (string) now()->year;
     }
@@ -38,6 +52,27 @@ new #[Layout('layouts.app')] class extends Component
             $this->start_date,
             $this->end_date,
         );
+        $report['annualByBroker'] = $this->sortRows($report['annualByBroker'] ?? [], 'broker_report_brokers', [
+            'broker' => fn ($r) => $r['broker_name'],
+            'quantity' => fn ($r) => (float) $r['count'],
+            'total' => fn ($r) => (float) $r['total'],
+        ], [[fn ($r) => $r['broker_name'], 'asc']])->all();
+        if (isset($report['paidCommissions'])) {
+            $report['paidCommissions'] = $this->sortRows($report['paidCommissions'], 'broker_report_commissions', [
+                'date' => fn ($c) => $c->reference_date,
+                'broker' => fn ($c) => $c->broker?->name,
+                'case_type' => fn ($c) => $c->caseType?->name,
+                'name' => fn ($c) => $c->name,
+                'amount' => fn ($c) => (float) $c->commission_amount,
+            ], [[fn ($c) => $c->id, $this->sortState('broker_report_commissions')[1]]]);
+        }
+        if (isset($report['brokers'])) {
+            $report['brokers'] = $this->sortRows($report['brokers'], 'broker_report_totals', [
+                'broker' => fn ($b) => $b->name,
+                'quantity' => fn ($b) => (float) $b->commissions->count(),
+                'total' => fn ($b) => (float) $b->commissions->sum('commission_amount'),
+            ], [[fn ($b) => $b->name, 'asc']]);
+        }
         $brokerOptions = Broker::query()->withoutTestContacts()->orderBy('name')->get(['id', 'name']);
         $years = range(now()->year + 2, now()->year - 3);
 
@@ -134,7 +169,7 @@ new #[Layout('layouts.app')] class extends Component
         @else
             <div class="overflow-x-auto">
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Corretor</th><th class="text-right">Qtd</th><th class="text-right">Total</th></tr></thead>
+                    <thead><tr><x-fx.sort-th column="broker" label="Corretor" list="broker_report_brokers" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtd" list="broker_report_brokers" :sorts="$sorts" align="right" /><x-fx.sort-th column="total" label="Total" list="broker_report_brokers" :sorts="$sorts" align="right" /></tr></thead>
                     <tbody>
                         @foreach ($annualByBroker as $row)
                             <tr>
@@ -176,20 +211,13 @@ new #[Layout('layouts.app')] class extends Component
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-md">
         <x-fx.card>
             <h3 class="text-md font-semibold mb-sm">Comissões</h3>
+            <x-fx.sort-mobile list="broker_report_commissions" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
             @if ($paidCommissions->isEmpty())
                 <div class="text-sm text-mono-600">Nenhuma comissão no período selecionado.</div>
             @else
                 <div class="overflow-x-auto">
                     <table class="fx-table w-full text-sm">
-                        <thead>
-                            <tr>
-                                <th class="text-left">Data</th>
-                                <th class="text-left">Corretor</th>
-                                <th class="text-left">Tipo de caso</th>
-                                <th class="text-left">Nome</th>
-                                <th class="text-right">Comissão</th>
-                            </tr>
-                        </thead>
+                        <thead><tr><x-fx.sort-th column="date" label="Data" list="broker_report_commissions" :sorts="$sorts" /><x-fx.sort-th column="broker" label="Corretor" list="broker_report_commissions" :sorts="$sorts" /><x-fx.sort-th column="case_type" label="Tipo de caso" list="broker_report_commissions" :sorts="$sorts" /><x-fx.sort-th column="name" label="Nome" list="broker_report_commissions" :sorts="$sorts" /><x-fx.sort-th column="amount" label="Comissão" list="broker_report_commissions" :sorts="$sorts" align="right" /></tr></thead>
                         <tbody>
                             @foreach ($paidCommissions as $com)
                                 <tr>
@@ -212,7 +240,7 @@ new #[Layout('layouts.app')] class extends Component
                 <div class="text-sm text-mono-600">Nenhum corretor com comissões no período selecionado.</div>
             @else
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Corretor</th><th class="text-right">Comissões (Qtd)</th><th class="text-right">Valor Total</th></tr></thead>
+                    <thead><tr><x-fx.sort-th column="broker" label="Corretor" list="broker_report_totals" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Comissões (Qtd)" list="broker_report_totals" :sorts="$sorts" align="right" /><x-fx.sort-th column="total" label="Valor Total" list="broker_report_totals" :sorts="$sorts" align="right" /></tr></thead>
                     <tbody>
                         @foreach ($brokers as $b)
                             <tr>

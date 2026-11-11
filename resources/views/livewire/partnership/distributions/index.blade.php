@@ -4,10 +4,23 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Partnership\Models\Partnership;
 use App\Domains\Partnership\Models\PartnershipDistribution;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'partnership_distributions';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['partnership_distributions'];
+    }
+
     public Partnership $partnership;
 
     public string $filterFrom = '';
@@ -32,6 +45,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Partnership $partnership): void
     {
+        $this->loadSort();
         $this->partnership = $partnership;
         $this->distDate = \App\Support\BusinessDate::today();
         $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
@@ -136,7 +150,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return [
-            'distributions' => $distributions->orderByDesc('date')->orderByDesc('id')->get(),
+            'distributions' => $distributions->orderByDesc('date')->orderByDesc('id')->get()->pipe(fn ($items) => $this->sortRows($items, 'partnership_distributions', ['date' => fn ($d) => $d->date, 'source' => fn ($d) => $d->source, 'account' => fn ($d) => $d->bankAccount?->name, 'amount' => fn ($d) => (float) $d->amount], [[fn ($x) => $x->id, $this->sortState('partnership_distributions')[1]]])),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -182,14 +196,10 @@ new #[Layout('layouts.app')] class extends Component
             <x-jr.empty-state icon="paid" title="Nenhuma distribuição encontrada" description="Ajuste os filtros acima ou registre uma nova distribuição." />
         @else
             <div class="overflow-x-auto">
+                <x-fx.sort-mobile list="partnership_distributions" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <table class="fx-table text-sm">
                     <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Origem</th>
-                            <th>Conta de destino</th>
-                            <th class="text-right">Valor recebido</th>
-                            <th class="w-20"></th>
+                        <tr><x-fx.sort-th column="date" label="Data" list="partnership_distributions" :sorts="$sorts" /><x-fx.sort-th column="source" label="Origem" list="partnership_distributions" :sorts="$sorts" /><x-fx.sort-th column="account" label="Conta de destino" list="partnership_distributions" :sorts="$sorts" /><x-fx.sort-th column="amount" label="Valor recebido" list="partnership_distributions" :sorts="$sorts" align="right" /><th class="w-20"></th>
                         </tr>
                     </thead>
                     <tbody>

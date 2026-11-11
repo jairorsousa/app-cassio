@@ -4,10 +4,23 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Partnership\Models\Partnership;
 use App\Domains\Partnership\Models\PartnershipContribution;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'partnership_contributions';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['partnership_contributions'];
+    }
+
     public Partnership $partnership;
 
     public string $filterFrom = '';
@@ -36,6 +49,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Partnership $partnership): void
     {
+        $this->loadSort();
         $this->partnership = $partnership;
         $this->contribDate = \App\Support\BusinessDate::today();
         $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
@@ -168,7 +182,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return [
-            'contributions' => $contributions->orderByDesc('date')->orderByDesc('id')->get(),
+            'contributions' => $contributions->orderByDesc('date')->orderByDesc('id')->get()->pipe(fn ($items) => $this->sortRows($items, 'partnership_contributions', ['date' => fn ($c) => $c->date, 'status' => fn ($c) => $c->status === 'done' ? 'Realizado' : 'Pendente', 'purpose' => fn ($c) => $c->purpose, 'account' => fn ($c) => $c->bankAccount?->name, 'amount' => fn ($c) => (float) $c->amount], [[fn ($x) => $x->id, $this->sortState('partnership_contributions')[1]]])),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
     }
@@ -223,15 +237,10 @@ new #[Layout('layouts.app')] class extends Component
             <x-jr.empty-state icon="savings" title="Nenhum aporte encontrado" description="Ajuste os filtros acima ou registre um novo aporte." />
         @else
             <div class="overflow-x-auto">
+                <x-fx.sort-mobile list="partnership_contributions" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <table class="fx-table text-sm">
                     <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Status</th>
-                            <th>Finalidade</th>
-                            <th>Conta</th>
-                            <th class="text-right">Valor</th>
-                            <th class="w-28"></th>
+                        <tr><x-fx.sort-th column="date" label="Data" list="partnership_contributions" :sorts="$sorts" /><x-fx.sort-th column="status" label="Status" list="partnership_contributions" :sorts="$sorts" /><x-fx.sort-th column="purpose" label="Finalidade" list="partnership_contributions" :sorts="$sorts" /><x-fx.sort-th column="account" label="Conta" list="partnership_contributions" :sorts="$sorts" /><x-fx.sort-th column="amount" label="Valor" list="partnership_contributions" :sorts="$sorts" align="right" /><th class="w-28"></th>
                         </tr>
                     </thead>
                     <tbody>

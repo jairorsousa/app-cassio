@@ -5,10 +5,23 @@ use App\Domains\Banking\Models\Category;
 use App\Domains\Partnership\Models\Partnership;
 use App\Domains\Partnership\Models\PartnershipExpense;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'partnership_expenses';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['partnership_expenses'];
+    }
+
     public Partnership $partnership;
 
     public string $filterFrom = '';
@@ -39,6 +52,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Partnership $partnership): void
     {
+        $this->loadSort();
         $this->partnership = $partnership;
         $this->expenseDate = \App\Support\BusinessDate::today();
         $this->applied_percentage = (string) $partnership->participation_percentage;
@@ -167,7 +181,7 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return [
-            'expenses' => $expenses->orderByDesc('date')->orderByDesc('id')->get(),
+            'expenses' => $expenses->orderByDesc('date')->orderByDesc('id')->get()->pipe(fn ($items) => $this->sortRows($items, 'partnership_expenses', ['date' => fn ($e) => $e->date, 'description' => fn ($e) => $e->description, 'category' => fn ($e) => $e->category?->name, 'account' => fn ($e) => $e->bankAccount?->name, 'total' => fn ($e) => (float) $e->total_amount, 'share' => fn ($e) => (float) $e->applied_percentage, 'amount' => fn ($e) => (float) $e->proportional_amount], [[fn ($x) => $x->id, $this->sortState('partnership_expenses')[1]]])),
             'categories' => Category::active()->where('type', 'expense')->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
@@ -223,17 +237,10 @@ new #[Layout('layouts.app')] class extends Component
             <x-jr.empty-state icon="receipt_long" title="Nenhuma despesa encontrada" description="Ajuste os filtros acima ou registre uma nova despesa." />
         @else
             <div class="overflow-x-auto">
+                <x-fx.sort-mobile list="partnership_expenses" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <table class="fx-table text-sm">
                     <thead>
-                        <tr>
-                            <th>Data</th>
-                            <th>Descrição</th>
-                            <th>Categoria</th>
-                            <th>Conta</th>
-                            <th class="text-right">Total</th>
-                            <th class="text-right">Participação</th>
-                            <th class="text-right">Valor do sócio</th>
-                            <th class="w-20"></th>
+                        <tr><x-fx.sort-th column="date" label="Data" list="partnership_expenses" :sorts="$sorts" /><x-fx.sort-th column="description" label="Descrição" list="partnership_expenses" :sorts="$sorts" /><x-fx.sort-th column="category" label="Categoria" list="partnership_expenses" :sorts="$sorts" /><x-fx.sort-th column="account" label="Conta" list="partnership_expenses" :sorts="$sorts" /><x-fx.sort-th column="total" label="Total" list="partnership_expenses" :sorts="$sorts" align="right" /><x-fx.sort-th column="share" label="Participação" list="partnership_expenses" :sorts="$sorts" align="right" /><x-fx.sort-th column="amount" label="Valor do sócio" list="partnership_expenses" :sorts="$sorts" align="right" /><th class="w-20"></th>
                         </tr>
                     </thead>
                     <tbody>

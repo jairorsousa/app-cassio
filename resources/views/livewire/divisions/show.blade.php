@@ -9,11 +9,24 @@ use App\Domains\Divisions\Models\DivisionSettlement;
 use App\Domains\Divisions\Services\DivisionService;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'division_movements';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['division_movements'];
+    }
+
     use WithFileUploads;
 
     public DivisionGroup $group;
@@ -129,6 +142,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(DivisionGroup $group, DivisionService $service): void
     {
+        $this->loadSort();
         $service->claimMemberships(auth()->user());
         $service->assertView(auth()->user(), $group);
         abort_unless($group->status === 'approved', 404);
@@ -613,7 +627,13 @@ new #[Layout('layouts.app')] class extends Component
                 ->when(! $user->isAdmin(), fn ($q) => $q->where(fn ($q) => $q->where('status', '!=', 'rejected')->orWhere('created_by', $user->id)))
                 ->orderByDesc('date')->orderByDesc('id')->get(),
             'settlements' => $this->group->settlements()->with('from', 'to', 'transaction')->orderByDesc('date')->get(),
-            'statement' => $service->statement($this->group),
+            // Saldos acumulados calculados na ordem cronológica pelo serviço; a setinha só muda a exibição.
+            'statement' => $this->sortRows(collect($service->statement($this->group))->values()->map(fn ($r, $i) => $r + ['_i' => $i]), 'division_movements', [
+                'date' => fn ($r) => $r['date'],
+                'type' => fn ($r) => $r['kind'],
+                'description' => fn ($r) => $r['description'],
+                'amount' => fn ($r) => (float) $r['cents'],
+            ], [[fn ($r) => $r['_i'], $this->sortState('division_movements')[1]]])->all(),
             'accounts' => $user->isAdmin() ? BankAccount::active()->orderBy('name')->get() : collect(),
             'ownerInvolved' => $owner && in_array((int) $owner->id, [(int) $this->settleFrom, (int) $this->settleTo], true),
             'linkable' => $linkable,
@@ -862,9 +882,10 @@ new #[Layout('layouts.app')] class extends Component
                 <a href="{{ route('divisions.pdf', array_filter(['group' => $group->id, 'de' => $pdfFrom, 'ate' => $pdfTo])) }}" class="fx-btn fx-btn--standard" data-pdf-link><span class="material-icons-outlined text-[18px]">picture_as_pdf</span> Baixar PDF</a>
             </div>
         </div>
+        <x-fx.sort-mobile list="division_movements" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
         <div class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-                <thead><tr class="border-b border-mono-100 text-mono-600"><th class="py-2">Data</th><th>Tipo</th><th>Descrição</th><th class="text-right">Valor</th>@foreach ($members as $m)<th class="text-right">{{ $m->name }}</th>@endforeach</tr></thead>
+                <thead><tr class="border-b border-mono-100 text-mono-600"><x-fx.sort-th column="date" label="Data" list="division_movements" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="division_movements" :sorts="$sorts" /><x-fx.sort-th column="description" label="Descrição" list="division_movements" :sorts="$sorts" /><x-fx.sort-th column="amount" label="Valor" list="division_movements" :sorts="$sorts" align="right" />@foreach ($members as $m)<th class="text-right">{{ $m->name }}</th>@endforeach</tr></thead>
                 <tbody>
                     @forelse ($statement as $r)
                         <tr class="border-b border-mono-100">
