@@ -213,8 +213,8 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         @endif
         <div class="flex flex-wrap gap-space-3 items-end mb-space-3 text-sm">
-            <label class="flex flex-col gap-1">Ano<select wire:model.live="year" class="h-10 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2"><option value="">Todos</option>@foreach ($years as $y)<option value="{{ $y }}">{{ $y }}</option>@endforeach</select></label>
-            <label class="flex flex-col gap-1">Tipo<select wire:model.live="type" class="h-10 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2"><option value="">Todos</option>@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></label>
+            <label class="flex flex-col gap-1">Ano<select wire:model.live="year" class="h-10 py-0 pl-2 pr-10 leading-5 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary"><option value="">Todos</option>@foreach ($years as $y)<option value="{{ $y }}">{{ $y }}</option>@endforeach</select></label>
+            <label class="flex flex-col gap-1">Tipo<select wire:model.live="type" class="h-10 py-0 pl-2 pr-10 leading-5 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary"><option value="">Todos</option>@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select></label>
             <label class="flex flex-col gap-1">Ticker<input wire:model.live.debounce.500ms="ticker" class="h-10 w-28 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2 uppercase" /></label>
             <div class="ml-auto">Total filtrado: <strong>{{ $m($eventsTotal) }}</strong></div>
         </div>

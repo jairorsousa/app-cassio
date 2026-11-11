@@ -24,7 +24,7 @@ new class extends Component
 
 <div class="flex flex-col gap-1">
     <label for="financial-regime" class="block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]">Regime do resultado</label>
-    <select id="financial-regime" wire:model.live="regime" class="h-[40px] px-3 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary">
+    <select id="financial-regime" wire:model.live="regime" class="h-[40px] py-0 pl-3 pr-10 leading-5 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-14 text-cryptex-text-primary">
         <option value="cash">Caixa (compra no cartão pelo pagamento da fatura)</option>
         <option value="accrual">Competência (compra no cartão pela data da compra)</option>
     </select>

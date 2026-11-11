@@ -133,11 +133,11 @@ new #[Layout('layouts.app')] class extends Component {
             <p class="mb-3 text-sm text-mono-600">Texto maior amplia toda a interface. Compacta reduz espaços em tabelas e margens para caber mais informação.</p>
             <div class="grid gap-4 sm:grid-cols-2">
                 <label class="flex flex-col gap-1 text-sm">Tamanho do texto
-                    <select wire:model="text_size" class="h-10 rounded-sm border border-mono-200 bg-mono-white px-2">@foreach (UserPreferences::TEXT_SIZES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
+                    <select wire:model="text_size" class="h-10 py-0 pl-2 pr-10 leading-5 rounded-sm border border-mono-200 bg-mono-white">@foreach (UserPreferences::TEXT_SIZES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
                     @error('text_size')<span class="text-xs text-error">{{ $message }}</span>@enderror
                 </label>
                 <label class="flex flex-col gap-1 text-sm">Densidade
-                    <select wire:model="density" class="h-10 rounded-sm border border-mono-200 bg-mono-white px-2">@foreach (UserPreferences::DENSITIES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
+                    <select wire:model="density" class="h-10 py-0 pl-2 pr-10 leading-5 rounded-sm border border-mono-200 bg-mono-white">@foreach (UserPreferences::DENSITIES as $k => $l)<option value="{{ $k }}">{{ $l }}</option>@endforeach</select>
                     @error('density')<span class="text-xs text-error">{{ $message }}</span>@enderror
                 </label>
             </div>

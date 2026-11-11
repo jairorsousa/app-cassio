@@ -1,5 +1,16 @@
 # Registro de alterações
 
+## 2026-11-11 — Financeiro › Lançamentos: filtros legíveis e com nomes claros
+
+- **Texto cortado nos selects:** os selects "Históricos", titular e vínculo tinham 32 px de altura, mas o padding (8 + 8 px) somado à altura da linha (24 px) pedia 40 px, então a parte de baixo do texto sumia. Agora eles têm 48 px de altura, sem padding vertical e com o mesmo estilo dos outros filtros. Uma varredura das telas no ambiente de teste achou o mesmo problema (2 px de corte) no seletor de regime (Visão geral e Fluxo de caixa), em Configurações (Tamanho do texto e Densidade) e em Investimentos › Posição B3 (Ano e Tipo). Todos foram corrigidos.
+- **Nomes novos, com rótulo visível e um "?" com dica curta** (a lógica dos filtros não mudou e os valores na URL continuam os mesmos):
+  - "Históricos / Mostrar" passou a ser **"Lançamentos antigos (antes de 01/10/2026)"**, com as opções Mostrar (junto com os demais) / Ocultar os antigos / Só os antigos. São os lançamentos com data anterior ao saldo inicial da conta: ficam registrados, mas não mudam o saldo. A data vem das contas; se houver datas diferentes, o rótulo diz "antes do saldo inicial da conta".
+  - "Todos os titulares" passou a ser **"Titular do cartão"**, com as opções Todos (contas e cartões) e o nome de cada titular. Mostra só as compras nos cartões da pessoa; compra em cartão adicional conta para quem usa o adicional.
+  - "Todos os vínculos" passou a ser **"Vínculo"**, com as opções Todos (com ou sem vínculo), Só os que têm algum vínculo, e depois Requisitórios, Corretores e Pessoas em grupos.
+  - "Mostrar lançamentos de teste" passou a ser **"Incluir lançamentos de teste"**. "Limpar filtros" ganhou uma área de toque maior.
+- Novo componente `<x-fx.help-tip>`: o "?" abre a dica ao tocar, ao clicar ou ao passar o mouse e fecha com Esc ou ao clicar fora.
+- Testes: `tests/Feature/Banking/TransactionFilterLabelsTest.php` (3 testes: rótulos, lógica inalterada e selects sem corte). Backup do código: `/root/app-cassio-backups/filtros-lancamentos-20261111/`.
+
 ## 2026-11-11 — Recebimento de processo: "Minha parte extra" é só do Cassio
 
 Pedido do Cassio (t290u): o honorário extra é sempre só dele, nunca entra na parte do escritório nem na base do corretor.

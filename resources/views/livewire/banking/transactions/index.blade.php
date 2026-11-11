@@ -1397,29 +1397,67 @@ new #[Layout('layouts.app')] class extends Component
                 @endforeach
             </div>
         </div>
-        <div class="mt-space-3 flex flex-wrap items-center gap-space-4 text-fs-12">
-            <label class="flex items-center gap-2 text-cryptex-text-secondary">
-                Históricos
-                <select wire:model.live="historico" class="h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
-                    <option value="">Mostrar</option>
-                    <option value="ocultar">Ocultar</option>
-                    <option value="somente">Somente históricos</option>
+        @php
+            // Só texto da tela: a regra do filtro "historico" continua a mesma (data anterior ao saldo inicial da conta).
+            $historicDates = \App\Domains\Banking\Models\BankAccount::whereNotNull('initial_balance_date')->pluck('initial_balance_date')->map(fn ($d) => \Illuminate\Support\Carbon::parse($d)->format('d/m/Y'))->unique()->values();
+            $historicWhen = $historicDates->count() === 1 ? 'antes de '.$historicDates->first() : 'antes do saldo inicial da conta';
+            $extraLabel = 'block text-fs-12 font-medium text-cryptex-text-tertiary uppercase tracking-[0.05em]';
+            $extraSelect = 'h-[48px] w-full min-w-0 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary py-0 pl-space-4 pr-10 text-fs-14 leading-5 text-cryptex-text-primary focus:border-cryptex-brand-400 focus:outline-none transition-colors';
+            $linkGroups = ['writ' => 'Requisitórios', 'broker' => 'Corretores', 'contact' => 'Pessoas'];
+        @endphp
+        <div class="mt-space-3 grid grid-cols-1 gap-space-3 sm:grid-cols-2 lg:grid-cols-3" data-test="transaction-filters-extra">
+            <div class="flex min-w-0 flex-col gap-space-1">
+                <div class="relative flex items-center gap-1">
+                    <label for="transaction-historico-filter" class="{{ $extraLabel }}">Lançamentos antigos ({{ $historicWhen }})</label>
+                    <x-fx.help-tip text="Antigos são os lançamentos com data anterior ao saldo inicial da conta ({{ $historicWhen }}). Ficam registrados para consulta, mas não mudam o saldo. Escolha se quer vê-los junto, escondê-los ou ver só eles." />
+                </div>
+                <select id="transaction-historico-filter" wire:model.live="historico" data-test="historico-filter" class="{{ $extraSelect }}">
+                    <option value="">Mostrar (junto com os demais)</option>
+                    <option value="ocultar">Ocultar os antigos</option>
+                    <option value="somente">Só os antigos</option>
                 </select>
-                <select wire:model.live="titular" aria-label="Gastos por titular do cartão" class="ml-2 h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
-                    <option value="">Todos os titulares</option>
-                    @foreach ($holderOptions as $value => $label)<option value="{{ $value }}">Cartão: {{ $label }}</option>@endforeach
+            </div>
+            <div class="flex min-w-0 flex-col gap-space-1">
+                <div class="relative flex items-center gap-1">
+                    <label for="transaction-titular-filter" class="{{ $extraLabel }}">Titular do cartão</label>
+                    <x-fx.help-tip text="Mostra só as compras feitas nos cartões dessa pessoa. Compra em cartão adicional conta para quem usa o adicional. Com um titular escolhido, lançamentos de conta bancária não aparecem." />
+                </div>
+                <select id="transaction-titular-filter" wire:model.live="titular" data-test="titular-filter" class="{{ $extraSelect }}">
+                    <option value="">Todos (contas e cartões)</option>
+                    @foreach ($holderOptions as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
                 </select>
-                <select wire:model.live="vinculo" aria-label="Filtrar por vínculo" class="ml-2 h-[32px] px-2 rounded-sm bg-cryptex-bg-tertiary border border-cryptex-border-default text-fs-12 text-cryptex-text-primary">
-                    <option value="">Todos os vínculos</option>
-                    <option value="com">Somente com vínculo</option>
-                    @foreach ($linkFilterOptions as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
+            </div>
+            <div class="flex min-w-0 flex-col gap-space-1 sm:col-span-2 lg:col-span-1">
+                <div class="relative flex items-center gap-1">
+                    <label for="transaction-vinculo-filter" class="{{ $extraLabel }}">Vínculo</label>
+                    <x-fx.help-tip text="Vínculo é o processo, requisitório, corretor ou pessoa ligado ao lançamento (em “Adicionar vínculos” ou no recebimento de processo). Escolha um para ver só os lançamentos ligados a ele." />
+                </div>
+                <select id="transaction-vinculo-filter" wire:model.live="vinculo" data-test="vinculo-filter" class="{{ $extraSelect }}">
+                    <option value="">Todos (com ou sem vínculo)</option>
+                    <option value="com">Só os que têm algum vínculo</option>
+                    @foreach ($linkGroups as $prefix => $groupLabel)
+                        @php $groupOptions = collect($linkFilterOptions)->filter(fn ($l, $v) => str_starts_with($v, $prefix.':')); @endphp
+                        @if ($groupOptions->isNotEmpty())
+                            <optgroup label="{{ $groupLabel }}">
+                                @foreach ($groupOptions as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach
+                            </optgroup>
+                        @endif
+                    @endforeach
                     @if (str_starts_with($vinculo, 'process:'))<option value="{{ $vinculo }}">Processo: {{ substr($vinculo, 8) }}</option>@endif
                 </select>
-            </label>
-            <label class="flex items-center gap-2 text-cryptex-text-secondary">
-                <input type="checkbox" wire:model.live="testes" value="1" true-value="1" false-value=""> Mostrar lançamentos de teste
-            </label>
-            <button class="text-cryptex-brand-400 hover:text-cryptex-brand-300 font-medium text-fs-12 transition-colors" wire:click="clearFilters">Limpar filtros</button>
+            </div>
+        </div>
+        <div class="mt-space-3 flex flex-wrap items-center justify-between gap-space-3 text-fs-14">
+            <div class="relative flex items-center gap-1">
+                <label class="flex min-h-[44px] cursor-pointer items-center gap-2 text-cryptex-text-secondary">
+                    <input type="checkbox" wire:model.live="testes" value="1" true-value="1" false-value="" class="h-5 w-5 rounded border-mono-300 text-primary-500 focus:ring-primary-500"> Incluir lançamentos de teste
+                </label>
+                <x-fx.help-tip text="Lançamentos marcados como teste ficam escondidos por padrão. Marque para vê-los também na lista." />
+            </div>
+            <button type="button" class="inline-flex min-h-[44px] items-center gap-1 font-medium text-cryptex-brand-400 transition-colors hover:text-cryptex-brand-300" wire:click="clearFilters">
+                <span class="material-icons-outlined text-[18px]" aria-hidden="true">filter_alt_off</span>
+                Limpar filtros
+            </button>
         </div>
     </x-fx.card>
 
