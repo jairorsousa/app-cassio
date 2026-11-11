@@ -19,6 +19,7 @@ new class extends Component {
         'fees' => '0.00', 'fees_mode' => 'amount', 'office_amount' => '0.00',
         'commission_mode' => 'amount', 'expenses' => [], 'brokers' => [],
         'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '',
+        'fee_extras' => [], 'is_extra_only' => false,
     ];
 
     public function mount(int $receiptId): void
@@ -28,7 +29,7 @@ new class extends Component {
         $receipt = Transaction::findOrFail($receiptId);
         app(\App\Domains\Banking\Services\ReceiptDestinationService::class)->eligible($receipt);
         $parts = $receipt->destinations()->with('commission')->orderBy('id')->get();
-        $process = $receipt->processReceipt()->with('brokerShares')->first();
+        $process = $receipt->processReceipt()->with(['brokerShares', 'feeItems'])->first();
         $brokers = $process && $process->brokerShares->isNotEmpty()
             ? $process->brokerShares->map(fn ($share) => ['key' => (string) Str::uuid(), 'broker_id' => $share->broker_id, 'base' => $share->base, 'mode' => $share->mode, 'value' => (string) $share->rate_or_amount, 'auto' => false,
                 'advances' => $share->commission_id ? \App\Domains\Brokers\Models\BrokerCommissionSettlement::where('commission_id', $share->commission_id)->get()->groupBy('advance_id')->map(fn ($rows) => number_format((float) $rows->sum('amount_offset'), 2, '.', ''))->all() : []])->all()
@@ -44,6 +45,16 @@ new class extends Component {
             'includes_writ' => (bool) $process?->writ_id,
             'writ_id' => $process?->writ_id,
             'writ_amount' => $process?->writ_amount ? (string) $process->writ_amount : '',
+            'is_extra_only' => (bool) $process?->is_extra_only,
+            'fee_extras' => $process
+                ? $process->feeItems->map(fn ($item) => [
+                    'key' => (string) Str::uuid(),
+                    'type' => $item->kind === 'other' ? 'other' : 'extra',
+                    'description' => (string) ($item->description ?? ''),
+                    'amount' => (string) $item->amount,
+                    'in_commission_base' => (bool) $item->in_commission_base,
+                ])->all()
+                : [],
         ]);
     }
 
@@ -56,6 +67,21 @@ new class extends Component {
         if ($key && preg_match('/^brokers\.(\d+)\.broker_id$/', $key, $m)) { $this->form['brokers'][$m[1]]['advances'] = []; $this->form['brokers'][$m[1]]['auto'] = false; $this->form['expenses'] = []; }
         if ($key && preg_match('/^brokers\.(\d+)\.auto$/', $key, $m) && empty($this->form['brokers'][$m[1]]['auto'])) { $this->form['brokers'][$m[1]]['advances'] = []; }
         if ($key === 'includes_writ' && ! $this->form['includes_writ']) { $this->form['writ_id'] = null; $this->form['writ_amount'] = ''; }
+        if ($key === 'is_extra_only' && ! empty($this->form['is_extra_only'])) {
+            $this->form['fees_mode'] = 'amount';
+            $this->form['fees'] = '0.00';
+            $this->form['commission_mode'] = 'amount';
+            $this->form['office_amount'] = '0.00';
+            $hasExtra = collect($this->form['fee_extras'] ?? [])->contains(fn ($row) => ($row['amount'] ?? '') !== '' && (float) ($row['amount'] ?? 0) > 0);
+            if (! $hasExtra) {
+                $gross = Transaction::find($this->receiptId)?->amount;
+                $this->form['fee_extras'] = [[
+                    'key' => (string) Str::uuid(), 'type' => 'extra', 'description' => 'Honorário extra',
+                    'amount' => $gross ? number_format((float) $gross, 2, '.', '') : '0.00',
+                    'in_commission_base' => false,
+                ]];
+            }
+        }
         if ($key === 'writ_id' && $this->form['writ_id']) {
             $writ = Writ::with('defaultBrokers')->find($this->form['writ_id']);
             if ($writ && $this->form['writ_amount'] === '' && $writ->estimated_receipt_amount) {
@@ -98,13 +124,27 @@ new class extends Component {
         }
     }
 
+    public function addFeeExtra(): void
+    {
+        if (count($this->form['fee_extras'] ?? []) < 20) {
+            $this->form['fee_extras'][] = ['key' => (string) Str::uuid(), 'type' => 'extra', 'description' => '', 'amount' => '', 'in_commission_base' => false];
+        }
+    }
+
+    public function removeFeeExtra(int $index): void
+    {
+        if (isset($this->form['fee_extras'][$index])) {
+            array_splice($this->form['fee_extras'], $index, 1);
+        }
+    }
+
     public function setMode(string $field, string $mode, ProcessReceiptService $service): void
     {
         if (! in_array($field, ['fees_mode', 'commission_mode'], true) || ! in_array($mode, ['amount', 'percent'], true)) { return; }
         if ($this->form[$field] === $mode) { return; }
         try {
             $values = $service->calculate(Transaction::findOrFail($this->receiptId), $this->payload());
-            $base = $field === 'fees_mode' ? $values['total'] : $values['fees'];
+            $base = $field === 'fees_mode' ? $values['total'] : ($values['commission_base'] ?? $values['fees']);
             $legacy = array_key_exists('broker_id', $this->form);
             foreach ($field === 'fees_mode' ? ['fees' => 'fees'] : ($legacy ? ['broker_amount' => 'broker', 'office_amount' => 'office'] : ['office_amount' => 'office']) as $input => $result) {
                 $this->form[$input] = $mode === 'amount' ? $service->money($values[$result]) : number_format($base ? $values[$result] * 100 / $base : 0, 2, '.', '');
@@ -118,6 +158,8 @@ new class extends Component {
     {
         $data = $this->form;
         $data['includes_writ'] = (bool) ($data['includes_writ'] ?? false);
+        $data['is_extra_only'] = (bool) ($data['is_extra_only'] ?? false);
+        $data['fee_extras'] = array_values(array_filter($data['fee_extras'] ?? [], fn ($row) => is_array($row) && ($row['amount'] ?? '') !== '' && $row['amount'] !== null));
         if (array_key_exists('broker_id', $data)) {
             unset($data['brokers']);
 
@@ -144,7 +186,7 @@ new class extends Component {
         $previewError = null;
         try { $preview = $service->calculate($receipt, $this->payload()); }
         catch (\DomainException $e) { $previewError = $e->getMessage(); }
-        $this->form += ['brokers' => [], 'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '', 'process_ref' => '', 'expenses' => []];
+        $this->form += ['brokers' => [], 'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '', 'process_ref' => '', 'expenses' => [], 'fee_extras' => [], 'is_extra_only' => false];
         $brokerIds = collect($this->form['brokers'])->pluck('broker_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $expenses = $brokerIds->isEmpty() ? collect() : BrokerProcessExpense::with('broker')->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($expense) => $expense->remainingCents() > 0);
         // Adiantamentos em aberto por corretor (mais antigo primeiro). Na edição, o que este recebimento já compensou conta como disponível.
@@ -174,11 +216,11 @@ new class extends Component {
 }; ?>
 
 <form wire:submit="save" class="space-y-5">
-    <p class="text-sm text-mono-600">Uma única entrada no banco, com o valor bruto. Separe a parte do cliente (ou do requisitório que você comprou) e os honorários; os honorários são divididos entre escritório, um ou mais corretores e a sua receita.</p>
+    <p class="text-sm text-mono-600">Uma única entrada no banco, com o valor bruto. Separe a parte do cliente (ou do requisitório que você comprou) e os honorários. Honorário principal é o valor do processo. Extra é um valor seu, cobrado à parte. A parte do escritório e a do corretor saem do principal, salvo se você marcar o contrário.</p>
     <div class="grid gap-4 md:grid-cols-2">
         <div><label for="process-client-contact" class="mb-2 block text-sm text-mono-600">Contato do cliente</label><select id="process-client-contact" wire:model.live="form.client_contact_id" class="h-12 w-full rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Não vinculado</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
         <x-jr.input label="Cliente (nome no repasse) *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
-        <x-jr.input label="Processo (número)" name="form.process_ref" wire:model="form.process_ref" x-process-number maxlength="120" placeholder="0000000-00.0000.0.00.0000" />
+        <x-jr.input label="Processo (número){{ ! empty($form['is_extra_only']) ? ' *' : '' }}" name="form.process_ref" wire:model="form.process_ref" x-process-number maxlength="120" placeholder="0000000-00.0000.0.00.0000" />
     </div>
     <section class="space-y-3 rounded-xl border border-mono-100 p-4">
         <label class="inline-flex cursor-pointer items-center gap-3 text-sm font-semibold text-mono-900"><input type="checkbox" wire:model.live="form.includes_writ" class="rounded border-mono-200 text-primary-500"> Este valor inclui crédito que eu já comprei (requisitório)</label>
@@ -192,35 +234,63 @@ new class extends Component {
         @endif
     </section>
     <section class="space-y-4 rounded-xl border border-mono-100 bg-mono-50 p-4">
-        <h4 class="font-semibold text-mono-900">1. Cliente e honorários</h4>
-        <div class="flex gap-2" role="group" aria-label="Informar honorários por">
+        <h4 class="font-semibold text-mono-900">1. Meus honorários</h4>
+        <p class="text-xs text-mono-600">Honorário principal é o valor do processo. Extra é um valor seu, cobrado à parte. A parte do escritório e a do corretor saem do principal, salvo se você marcar o contrário.</p>
+        <label class="inline-flex cursor-pointer items-start gap-3 text-sm text-mono-900"><input type="checkbox" wire:model.live="form.is_extra_only" class="mt-0.5 rounded border-mono-200 text-primary-500" data-test="so-honorario-extra"> <span><strong>Este recebimento é só honorário extra do mesmo processo</strong><span class="block text-xs text-mono-600">Use quando você já lançou o honorário principal e agora cobra um extra, em outra entrada. Informe o mesmo número do processo. Sem comissão de escritório ou corretor, salvo se você incluir.</span></span></label>
+        <div class="flex gap-2" role="group" aria-label="Informar honorário principal por">
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('fees_mode', '{{ $mode }}')" aria-pressed="{{ $form['fees_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['fees_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
         <div class="grid items-end gap-4 md:grid-cols-2">
             <div wire:key="process-fees-{{ $form['fees_mode'] }}">
                 @if ($form['fees_mode'] === 'percent')
-                    <x-jr.input label="Honorários (% do recebimento)" name="form.fees" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.fees" required />
+                    <x-jr.input label="Honorário principal (% do recebimento)" name="form.fees" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.fees" required />
                 @else
-                    <x-jr.input label="Honorários (R$)" name="form.fees" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fees" required />
+                    <x-jr.input label="Honorário principal (R$)" name="form.fees" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fees" required />
                 @endif
             </div>
-    @if ($preview)<p class="pb-3 text-sm text-mono-900">Valor bruto do cliente: <strong>R$ {{ number_format($preview['client'] / 100, 2, ',', '.') }}</strong></p>@endif
+            @if ($preview)<p class="pb-3 text-sm text-mono-900">Valor bruto do cliente: <strong>R$ {{ number_format($preview['client'] / 100, 2, ',', '.') }}</strong></p>@endif
         </div>
+        <div class="space-y-3">
+            @foreach (($form['fee_extras'] ?? []) as $index => $extra)
+                <div wire:key="fee-extra-{{ $extra['key'] ?? $index }}" class="space-y-3 rounded-xl border border-mono-100 bg-white p-3">
+                    <div class="grid items-end gap-3 md:grid-cols-[1fr_1.4fr_1fr_auto]">
+                        <div>
+                            <label class="mb-1 block text-xs text-mono-600" for="fee-extra-type-{{ $index }}">Tipo</label>
+                            <select id="fee-extra-type-{{ $index }}" wire:model.live="form.fee_extras.{{ $index }}.type" class="h-11 w-full rounded-xl border-mono-200 text-sm">
+                                <option value="extra">Extra</option>
+                                <option value="other">Outro</option>
+                            </select>
+                        </div>
+                        <x-jr.input label="Descrição" :name="'form.fee_extras.'.$index.'.description'" wire:model="form.fee_extras.{{ $index }}.description" maxlength="200" />
+                        <x-jr.input label="Valor (R$)" :name="'form.fee_extras.'.$index.'.amount'" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fee_extras.{{ $index }}.amount" />
+                        <button type="button" wire:click="removeFeeExtra({{ $index }})" class="h-11 px-2 text-sm text-error" aria-label="Remover honorário extra {{ $index + 1 }}">Remover</button>
+                    </div>
+                    <label class="inline-flex cursor-pointer items-start gap-2 text-sm text-mono-900"><input type="checkbox" wire:model.live="form.fee_extras.{{ $index }}.in_commission_base" class="mt-0.5 rounded border-mono-200 text-primary-500"> Entra na base do escritório e do corretor</label>
+                </div>
+            @endforeach
+            <button type="button" wire:click="addFeeExtra" class="text-sm font-semibold text-primary-600">+ Adicionar honorário extra</button>
+        </div>
+        @if ($preview)
+            <div class="grid gap-3 sm:grid-cols-2 text-sm text-mono-900">
+                <p>Total dos honorários: <strong>R$ {{ number_format(($preview['fees_total'] ?? $preview['fees']) / 100, 2, ',', '.') }}</strong></p>
+                <p>Minha receita: <strong>R$ {{ number_format($preview['own'] / 100, 2, ',', '.') }}</strong></p>
+            </div>
+        @endif
     </section>
     <section class="space-y-4 rounded-xl border border-mono-100 bg-mono-50 p-4">
-        <h4 class="font-semibold text-mono-900">2. Distribuição dos honorários @if ($preview) · R$ {{ number_format($preview['fees'] / 100, 2, ',', '.') }} @endif</h4>
+        <h4 class="font-semibold text-mono-900">2. Parte do escritório e corretores @if ($preview) · base R$ {{ number_format(($preview['commission_base'] ?? $preview['fees']) / 100, 2, ',', '.') }} @endif</h4>
         <div class="flex gap-2" role="group" aria-label="Informar comissões por">
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('commission_mode', '{{ $mode }}')" aria-pressed="{{ $form['commission_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['commission_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
-        <p class="text-xs text-mono-600">Este seletor vale para a comissão do escritório (percentual sobre os honorários). Cada corretor tem a própria base e modo abaixo.</p>
+        <p class="text-xs text-mono-600">Este seletor vale para a parte do escritório (percentual sobre o honorário principal, mais os extras que você marcar). Cada corretor tem a própria base e modo abaixo.</p>
         <p class="text-sm text-mono-600">Ao salvar, o valor líquido do cliente ficará negativo na conta <strong>Cliente</strong> e a parte do escritório na conta <strong>Mota e Silva Advogados</strong>, indicando os valores a repassar. O dinheiro permanece na conta bancária até o pagamento. Registre pagamentos totais ou parciais em <strong>Contas → Gerenciar repasses</strong>. Cadastre essas contas com o tipo <strong>Repasse</strong> em <a href="{{ route('banking.accounts.index') }}" class="font-semibold text-primary-600">Contas</a>.</p>
 
         <div class="grid gap-4 md:grid-cols-2">
             <div wire:key="process-office-amount-{{ $form['commission_mode'] }}">
                 @if ($form['commission_mode'] === 'percent')
-                    <x-jr.input label="Comissão do escritório (%)" name="form.office_amount" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.office_amount" required />
+                    <x-jr.input label="Parte do escritório (Mota e Silva Advogados) (%)" name="form.office_amount" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.office_amount" required />
                 @else
-                    <x-jr.input label="Comissão do escritório (R$)" name="form.office_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.office_amount" required />
+                    <x-jr.input label="Parte do escritório (Mota e Silva Advogados) (R$)" name="form.office_amount" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.office_amount" required />
                 @endif
             </div>
             <div class="rounded-xl bg-white p-3 text-sm text-mono-600">Escritório<strong class="mt-1 block text-mono-900">Mota e Silva Advogados</strong></div>
@@ -312,8 +382,8 @@ new class extends Component {
                 if ($writCents > 0) { $summary['Requisitório comprado (não é receita)'] = $writCents; }
                 $summary['Cliente líquido a repassar'] = $preview['client'] - $writCents - $recovered - (int) round($clientOffset * 100);
                 if ($recovered) { $summary['Despesas recuperadas'] = $recovered; }
-                $summary['Honorários'] = $preview['fees'];
-                $summary['Comissão do escritório'] = $preview['office'];
+                $summary['Total dos honorários'] = $preview['fees_total'] ?? $preview['fees'];
+                $summary['Parte do escritório (Mota e Silva Advogados)'] = $preview['office'];
                 $brokerNames = $brokers->keyBy('id');
                 foreach (collect($form['brokers'])->filter(fn ($r) => ! empty($r['broker_id']))->values() as $i => $r) { $summary['Corretor · '.($brokerNames[(int) $r['broker_id']]->name ?? '#'.$r['broker_id'])] = $preview['brokers'][$i] ?? 0; }
                 if ($offset) { $summary['Adiantamentos compensados'] = $offset; }

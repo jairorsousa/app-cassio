@@ -12,9 +12,9 @@ class ProcessReceipt extends Model
 
     public const PROCESS_NUMBER_FIELDS = ['process_ref'];
 
-    protected $fillable = ['receipt_id', 'broker_id', 'writ_id', 'writ_amount', 'process_ref', 'fees_amount', 'category_id'];
+    protected $fillable = ['receipt_id', 'broker_id', 'writ_id', 'writ_amount', 'process_ref', 'fees_amount', 'is_extra_only', 'category_id'];
 
-    protected $casts = ['fees_amount' => 'decimal:2', 'writ_amount' => 'decimal:2'];
+    protected $casts = ['fees_amount' => 'decimal:2', 'writ_amount' => 'decimal:2', 'is_extra_only' => 'boolean'];
 
     public function receipt(): BelongsTo
     {
@@ -39,5 +39,27 @@ class ProcessReceipt extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function feeItems(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(ProcessReceiptFeeItem::class)->orderBy('id');
+    }
+
+    public function extrasCents(): int
+    {
+        return (int) round((float) $this->feeItems->sum('amount') * 100);
+    }
+
+    public function totalFeesCents(): int
+    {
+        return (int) round((float) $this->fees_amount * 100) + $this->extrasCents();
+    }
+
+    public function commissionBaseCents(): int
+    {
+        $inBase = (int) round((float) $this->feeItems->where('in_commission_base', true)->sum('amount') * 100);
+
+        return (int) round((float) $this->fees_amount * 100) + $inBase;
     }
 }

@@ -1261,7 +1261,7 @@ new #[Layout('layouts.app')] class extends Component
         } elseif ($this->historico === 'somente') {
             $q->whereHas('bankAccount', fn ($a) => $a->whereNotNull('initial_balance_date')->whereColumn('bank_accounts.initial_balance_date', '>', 'transactions.date'));
         }
-        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination', 'linkWrit.assignors.contact', 'linkBroker', 'linkContact', 'attachments', 'processReceipt.brokerShares.broker', 'processReceipt.writ']);
+        $q->with(['receivableInstallments.receivable', 'receivableSettlements', 'category', 'allocations.category', 'bankAccount', 'creditCard', 'distributionPart', 'related.distributionPart', 'processReceipt.category', 'destinations.recoveries', 'destinations.commission', 'destinations.payments.transaction', 'destinationPayment.destination', 'writLinks.destination', 'linkWrit.assignors.contact', 'linkBroker', 'linkContact', 'attachments', 'processReceipt.brokerShares.broker', 'processReceipt.writ', 'processReceipt.feeItems']);
         if (preg_match('/^(writ|broker|contact):(\d+)$/', $this->vinculo, $m)) {
             $column = 'link_'.$m[1].'_id';
             $q->where(fn ($q) => $q->where($column, (int) $m[2])
@@ -1509,6 +1509,10 @@ new #[Layout('layouts.app')] class extends Component
                                 <x-fx.badge variant="neutral">Recebimento de processo</x-fx.badge>
                                 <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
                                     <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
+                                    @if ($t->processReceipt?->is_extra_only)<div>Só honorário extra</div>@endif
+                                    @if (($t->processReceipt?->feeItems->count() ?? 0) > 0)
+                                        <div>Honorários extras: @foreach ($t->processReceipt->feeItems as $item){{ $item->kindLabel() }}@if ($item->description) · {{ $item->description }}@endif R$ {{ number_format((float) $item->amount, 2, ',', '.') }}@if (! $loop->last); @endif @endforeach</div>
+                                    @endif
                                     @php $writOwn = $t->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount')); @endphp
                                     @if ($writOwn > 0)<div>Requisitórios adquiridos: <strong>R$ {{ number_format($writOwn, 2, ',', '.') }}</strong></div>@endif
                                     @if ($t->processReceipt?->writ)<div>Requisitório baixado: <strong>{{ $t->processReceipt->writ->process_number ?: '#'.$t->processReceipt->writ_id }}</strong> · {{ $t->processReceipt->writ->stageLabel() }}@php $realDays = app(\App\Domains\Writs\Services\WritProfitabilityCalculator::class)->realized($t->processReceipt->writ)['days_elapsed']; @endphp @if ($realDays !== null) · prazo real {{ (int) $realDays }} dias @endif</div>@endif

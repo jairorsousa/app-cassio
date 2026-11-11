@@ -2,6 +2,12 @@
 
 O recebimento bancário é dividido em valor do cliente e honorários. Dos honorários saem a comissão do corretor, a comissão do escritório e a receita própria. O controle de despesas e adiantamentos é por corretor: não existe vínculo com cadastro ou número de processo. O resumo do recebimento mostra a composição dos valores, sem estados de pagamento, saldos pendentes ou ações para registrar repasses.
 
+## Honorário principal e extras
+
+Os honorários do processo podem ter um **honorário principal** e, se necessário, uma ou mais linhas de **honorário extra** (tipo Extra ou Outro, com descrição e valor). O extra lançado na mesma entrada sai do saldo do cliente e entra na **Minha receita**. Por padrão, ele não entra no percentual da parte do escritório nem do corretor; a caixa **Entra na base do escritório e do corretor** inclui aquele extra na base. A categoria da Minha receita vale também para os extras.
+
+Quando o extra é cobrado depois, em outra entrada do mesmo processo, marque **Este recebimento é só honorário extra do mesmo processo** e informe o número do processo. Nesse caso o padrão é sem comissão de escritório ou corretor. Recebimentos já lançados continuam com um único honorário principal, sem extras, até serem editados.
+
 ## Uso
 
 1. Cadastre duas contas ativas do tipo **Repasse**, com os nomes **Cliente** e **Mota e Silva Advogados**. O tipo anteriormente exibido como Caixa passa a se chamar **Dinheiro**, preservando os saldos existentes. Depois, cadastre as despesas pagas na aba **Despesas de processos** do corretor, informando data, valor, descrição e conta. Cada cadastro gera uma única saída no financeiro. A aba mostra o valor recuperado, o saldo disponível e o histórico dos descontos.

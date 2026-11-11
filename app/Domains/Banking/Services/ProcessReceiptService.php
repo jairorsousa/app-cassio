@@ -81,6 +81,48 @@ class ProcessReceiptService
     }
 
     /**
+     * Linhas de honorário extra/outro. Valores vazios são ignorados.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function extrasRows(array $data): array
+    {
+        $rows = [];
+        foreach ((array) ($data['fee_extras'] ?? []) as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $amount = $row['amount'] ?? '';
+            if ($amount === '' || $amount === null) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        return array_values($rows);
+    }
+
+    /**
+     * Totais dos extras em centavos: os que entram na base do escritório/corretor e os que não entram.
+     *
+     * @return array{in: int, out: int, total: int}
+     */
+    public function extrasTotals(array $data): array
+    {
+        $in = $out = 0;
+        foreach ($this->extrasRows($data) as $row) {
+            $cents = $this->destinations->cents((string) ($row['amount'] ?? '0'), true);
+            if (! empty($row['in_commission_base'])) {
+                $in += $cents;
+            } else {
+                $out += $cents;
+            }
+        }
+
+        return ['in' => $in, 'out' => $out, 'total' => $in + $out];
+    }
+
+    /**
      * IDs das comissões geradas por este recebimento (usadas para tratar as compensações dele como disponíveis ao editar).
      *
      * @return array<int, int>
@@ -146,17 +188,33 @@ class ProcessReceiptService
         }
         $total = $this->destinations->cents((string) $receipt->amount);
         $fees = $this->portion((string) ($data['fees'] ?? '0'), $data['fees_mode'] ?? 'amount', $total);
-        if ($fees > $total) {
-            throw new \DomainException('Os honorários não podem superar a entrada.');
+        $extras = $this->extrasTotals($data);
+        if ($fees + $extras['total'] > $total) {
+            throw new \DomainException($extras['total'] > 0
+                ? 'Os honorários e os extras não podem superar a entrada.'
+                : 'Os honorários não podem superar a entrada.');
         }
-        $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
-        $brokers = array_map(fn ($row) => $this->brokerAmount($row, $fees, $total), $this->brokerRows($data));
+        $base = $fees + $extras['in'];
+        $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $base);
+        $brokers = array_map(fn ($row) => $this->brokerAmount($row, $base, $total), $this->brokerRows($data));
         $sum = array_sum($brokers);
-        if ($office + $sum > $fees) {
-            throw new \DomainException('Escritório + corretores (R$ '.number_format(($office + $sum) / 100, 2, ',', '.').') superam os honorários (R$ '.number_format($fees / 100, 2, ',', '.').'). Minha receita não pode ficar negativa.');
+        if ($office + $sum > $base) {
+            throw new \DomainException('Escritório + corretores (R$ '.number_format(($office + $sum) / 100, 2, ',', '.').') superam a base dos honorários (R$ '.number_format($base / 100, 2, ',', '.').'). Minha receita não pode ficar negativa.');
         }
 
-        return ['total' => $total, 'fees' => $fees, 'client' => $total - $fees, 'broker' => $sum, 'brokers' => $brokers, 'office' => $office, 'own' => $fees - $sum - $office];
+        return [
+            'total' => $total,
+            'fees' => $fees,
+            'extras' => $extras['total'],
+            'extras_in_base' => $extras['in'],
+            'commission_base' => $base,
+            'fees_total' => $fees + $extras['total'],
+            'client' => $total - $fees - $extras['total'],
+            'broker' => $sum,
+            'brokers' => $brokers,
+            'office' => $office,
+            'own' => $base - $sum - $office + $extras['out'],
+        ];
     }
 
     /** All percentages for commissions are based on fees, never on the client's share. */
@@ -164,17 +222,19 @@ class ProcessReceiptService
     {
         $total = $this->destinations->cents((string) $receipt->amount);
         $fees = $this->portion((string) ($data['fees'] ?? '0'), $data['fees_mode'] ?? 'amount', $total);
-        $broker = empty($data['broker_id']) ? 0 : $this->portion((string) ($data['broker_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
-        $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $fees);
+        $extras = $this->extrasTotals($data);
+        $base = $fees + $extras['in'];
+        $broker = empty($data['broker_id']) ? 0 : $this->portion((string) ($data['broker_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $base);
+        $office = $this->portion((string) ($data['office_amount'] ?? '0'), $data['commission_mode'] ?? 'amount', $base);
         if (($data['commission_mode'] ?? 'amount') === 'percent') {
             $brokerPercent = empty($data['broker_id']) ? 0 : $this->destinations->cents((string) ($data['broker_amount'] ?? '0'), true);
             $officePercent = $this->destinations->cents((string) ($data['office_amount'] ?? '0'), true);
             if ($brokerPercent + $officePercent > 10000) {
                 throw new \DomainException('As comissões não podem superar 100% dos honorários.');
             }
-            if ($fees > 0) {
+            if ($base > 0) {
                 // Distribute leftover cents deterministically, keeping the exact total.
-                $parts = app(TransactionAllocationService::class)->fromPercentages($this->money($fees), [
+                $parts = app(TransactionAllocationService::class)->fromPercentages($this->money($base), [
                     ['percentage' => $this->money($brokerPercent)],
                     ['percentage' => $this->money($officePercent)],
                     ['percentage' => $this->money(10000 - $brokerPercent - $officePercent)],
@@ -183,15 +243,30 @@ class ProcessReceiptService
                 $office = $this->destinations->cents($parts[1]['amount'], true);
             }
         }
-        if ($fees > $total || $broker + $office > $fees) {
-            throw new \DomainException('Os honorários não podem superar a entrada, e as comissões não podem superar os honorários.');
+        if ($fees + $extras['total'] > $total || $broker + $office > $base) {
+            throw new \DomainException($extras['total'] > 0
+                ? 'Os honorários e os extras não podem superar a entrada, e as comissões não podem superar a base dos honorários.'
+                : 'Os honorários não podem superar a entrada, e as comissões não podem superar os honorários.');
         }
 
-        return ['total' => $total, 'fees' => $fees, 'client' => $total - $fees, 'broker' => $broker, 'brokers' => $broker > 0 ? [$broker] : [], 'office' => $office, 'own' => $fees - $broker - $office];
+        return [
+            'total' => $total,
+            'fees' => $fees,
+            'extras' => $extras['total'],
+            'extras_in_base' => $extras['in'],
+            'commission_base' => $base,
+            'fees_total' => $fees + $extras['total'],
+            'client' => $total - $fees - $extras['total'],
+            'broker' => $broker,
+            'brokers' => $broker > 0 ? [$broker] : [],
+            'office' => $office,
+            'own' => $base - $broker - $office + $extras['out'],
+        ];
     }
 
     public function save(Transaction $receipt, array $data): void
     {
+        $data['fee_extras'] = $this->extrasRows($data);
         $legacy = ! array_key_exists('brokers', $data);
         if ($legacy && empty($data['broker_id'])) {
             $data['broker_id'] = null;
@@ -220,7 +295,13 @@ class ProcessReceiptService
             'receivables' => 'sometimes|array|max:200',
             'receivables.*' => ['nullable', ...$money],
             'client_name' => 'required|string|max:200',
-            'process_ref' => 'nullable|string|max:120',
+            'process_ref' => [\Illuminate\Validation\Rule::requiredIf(! empty($data['is_extra_only'])), 'nullable', 'string', 'max:120'],
+            'is_extra_only' => 'sometimes|boolean',
+            'fee_extras' => 'sometimes|array|max:20',
+            'fee_extras.*.type' => 'required|in:extra,other',
+            'fee_extras.*.description' => 'nullable|string|max:200',
+            'fee_extras.*.amount' => ['required', ...$money],
+            'fee_extras.*.in_commission_base' => 'sometimes|boolean',
             'includes_writ' => 'sometimes|boolean',
             'writ_id' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', 'integer', Rule::exists('writs', 'id')->whereNull('deleted_at')],
             'writ_amount' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', ...$money],
@@ -236,6 +317,7 @@ class ProcessReceiptService
             'broker_rows.*.broker_id.distinct' => 'Cada corretor deve aparecer uma única vez no recebimento.',
             'writ_id.required' => 'Selecione o requisitório comprado incluído neste recebimento.',
             'writ_amount.required' => 'Informe o valor do crédito do requisitório comprado.',
+            'process_ref.required' => 'Informe o número do processo para marcar este recebimento como honorário extra.',
         ])->validate();
         DB::transaction(function () use ($receipt, $data, $rows) {
             $receipt = Transaction::lockForUpdate()->findOrFail($receipt->id);
@@ -299,8 +381,22 @@ class ProcessReceiptService
             $process = ProcessReceipt::create([
                 'receipt_id' => $receipt->id, 'broker_id' => $brokers[0]->id ?? null,
                 'process_ref' => trim((string) ($data['process_ref'] ?? '')) ?: null,
-                'fees_amount' => $this->money($values['fees']), 'category_id' => $data['category_id'] ?? null,
+                'fees_amount' => $this->money($values['fees']),
+                'is_extra_only' => ! empty($data['is_extra_only']),
+                'category_id' => $data['category_id'] ?? null,
             ]);
+            foreach ($this->extrasRows($data) as $row) {
+                $cents = $this->destinations->cents((string) ($row['amount'] ?? '0'), true);
+                if (! $cents) {
+                    continue;
+                }
+                $process->feeItems()->create([
+                    'kind' => (($row['type'] ?? $row['kind'] ?? 'extra') === 'other') ? 'other' : 'extra',
+                    'description' => trim((string) ($row['description'] ?? '')) ?: null,
+                    'amount' => $this->money($cents),
+                    'in_commission_base' => ! empty($row['in_commission_base']),
+                ]);
+            }
             $client = $receipt->destinations()->where('kind', 'client')->sole();
             $brokerParts = $receipt->destinations()->where('kind', 'broker')->orderBy('id')->get()->values();
             $recovered = 0;

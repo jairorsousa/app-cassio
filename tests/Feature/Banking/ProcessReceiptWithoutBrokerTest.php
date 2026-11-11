@@ -60,7 +60,7 @@ class ProcessReceiptWithoutBrokerTest extends TestCase
         $this->assertDatabaseCount('broker_commissions', 0);
         $this->assertDatabaseCount('case_types', 0);
         $this->assertDatabaseCount('receipt_destinations', 3);
-        Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Sem corretor')->assertSee('Comissão do escritório')->assertDontSee('Comissões de corretor e escritório');
+        Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])->assertSee('Sem corretor')->assertSee('Parte do escritório (Mota e Silva Advogados)')->assertDontSee('Corretores e parte do escritório');
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])->assertSet('form.broker_id', null);
         $report = Volt::test('banking.reports.cashflow')->set('month', $receipt->date->format('Y-m'));
         $this->assertEquals(3600, $report->viewData('ownIncome'));

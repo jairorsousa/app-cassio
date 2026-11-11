@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 2026-11-11 — Recebimento de processo: honorário principal e honorários extras
+
+Pedido do Cassio (t282u / t286u): a parte de honorários do Recebimento de processo estava confusa, e às vezes ele cobra um honorário principal e um extra no mesmo processo.
+
+1. A seção passou a se chamar **Meus honorários**, com o **Honorário principal** (valor ou % da entrada, o mesmo campo de antes) e o botão **+ Adicionar honorário extra**. Cada linha extra tem tipo (Extra ou Outro), descrição, valor em R$ e a caixa **Entra na base do escritório e do corretor**, desmarcada por padrão.
+2. A tela mostra o **Total dos honorários** e, separado, a **Minha receita**. O rótulo **Comissão do escritório** virou **Parte do escritório (Mota e Silva Advogados)**. Há um texto curto de ajuda.
+3. Extra lançado na mesma entrada sai do saldo do cliente e entra na Minha receita. Não entra no percentual do escritório nem do corretor, salvo se a caixa estiver marcada. A soma continua fechando com o valor do banco.
+4. Extra cobrado depois: dá para marcar o recebimento como **só honorário extra do mesmo processo** (exige o número do processo). Nesse caso o padrão é sem comissão de escritório ou corretor. A categoria é a mesma da Minha receita.
+5. Recebimentos já existentes não mudam (ficam sem extras). Em **Editar divisão** dá para acrescentar extras, com as mesmas proteções de hoje (repasse feito ou comissão paga) e a compensação automática de adiantamentos.
+
+Migração: `2026_11_11_060000_add_process_receipt_fee_extras` (`process_receipts.is_extra_only` e tabela `process_receipt_fee_items`), rodada antes do código entrar no ar. Testes: `tests/Feature/Banking/HonorariosExtrasTest.php` (e ajuste de rótulo em `ProcessReceiptWithoutBrokerTest.php`). Backup: `/root/app-cassio-backups/honorarios-extras-20261111/`.
+
 ## 2026-11-11 — Botão "← Voltar" padronizado em todas as telas internas
 
 - Novo componente único `<x-back-button>` (seta + "Voltar", área de toque de 44 px, no topo, visível no celular). Leva ao "pai" lógico da tela; se a página anterior era exatamente esse pai, usa o histórico do navegador para manter filtros e rolagem. `<x-banking.back-button>` virou apenas um atalho para ele.
