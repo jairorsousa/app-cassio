@@ -11,11 +11,24 @@ class InvoiceService
 {
     public function findOrCreateForPurchase(CreditCard $card, Carbon $purchaseDate): CreditCardInvoice
     {
-        $reference = $purchaseDate->day <= $card->closing_day
-            ? $purchaseDate->copy()
-            : $purchaseDate->copy()->addMonthNoOverflow();
+        return $this->findOrCreateForReference($card, $this->referenceDateForPurchase($card, $purchaseDate));
+    }
 
-        return $this->findOrCreateForReference($card, $reference);
+    public function referenceDateForPurchase(CreditCard $card, Carbon $purchaseDate): Carbon
+    {
+        return $purchaseDate->day <= $card->closing_day
+            ? $purchaseDate->copy()->startOfDay()
+            : $purchaseDate->copy()->addMonthNoOverflow()->startOfDay();
+    }
+
+    public function referenceMonthForPurchase(CreditCard $card, Carbon $purchaseDate): string
+    {
+        return $this->referenceDateForPurchase($card, $purchaseDate)->format('Y-m');
+    }
+
+    public function purchaseMatchesInvoice(CreditCard $card, Carbon $purchaseDate, string $referenceMonth): bool
+    {
+        return $this->referenceMonthForPurchase($card, $purchaseDate) === $referenceMonth;
     }
 
     public function findOrCreateForReference(CreditCard $card, Carbon $reference): CreditCardInvoice
@@ -100,5 +113,46 @@ class InvoiceService
 
             return $invoice->fresh();
         });
+    }
+
+    public function reopenInvoice(CreditCardInvoice $invoice): CreditCardInvoice
+    {
+        return DB::transaction(function () use ($invoice) {
+            $invoice->update([
+                'status' => 'open',
+                'closed_at' => null,
+            ]);
+
+            return $this->syncPayments($invoice->fresh());
+        });
+    }
+
+    public function updateDates(CreditCardInvoice $invoice, string $closingDate, string $dueDate): CreditCardInvoice
+    {
+        $closing = Carbon::parse($closingDate)->startOfDay();
+        $due = Carbon::parse($dueDate)->startOfDay();
+        if ($due->lt($closing)) {
+            throw new \InvalidArgumentException('A data de vencimento não pode ser anterior à de fechamento.');
+        }
+        $invoice->update([
+            'closing_date' => $closing,
+            'due_date' => $due,
+        ]);
+
+        return $invoice->fresh();
+    }
+
+    public function deleteIfEmpty(CreditCardInvoice $invoice): void
+    {
+        $invoice->loadMissing('transactions');
+        $payments = $invoice->transactions->where('type', 'invoice_payment');
+        $purchases = $invoice->transactions->where('type', 'expense');
+        if ($payments->isNotEmpty() || (float) $invoice->paid_amount > 0.004) {
+            throw new \InvalidArgumentException('Esta fatura tem pagamento registrado. Estorne o pagamento antes de excluir a fatura.');
+        }
+        if ($purchases->isNotEmpty()) {
+            throw new \InvalidArgumentException('Esta fatura ainda tem compras. Mova ou exclua as compras antes de excluir a fatura.');
+        }
+        $invoice->delete();
     }
 }

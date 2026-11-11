@@ -4,6 +4,7 @@ namespace App\Domains\Banking\Services;
 
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\CreditCard;
+use App\Domains\Banking\Models\StatementImportBatch;
 use App\Domains\Banking\Models\Transaction;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -243,35 +244,75 @@ class OfxImportService
         });
     }
 
-    public function importCard(CreditCard $card, string $referenceMonth, array $transactions): array
+    public function importCard(CreditCard $card, ?string $referenceMonth, array $transactions, array $batchMeta = []): array
     {
-        return DB::transaction(function () use ($card, $referenceMonth, $transactions) {
+        return DB::transaction(function () use ($card, $referenceMonth, $transactions, $batchMeta) {
             $card = CreditCard::query()->lockForUpdate()->findOrFail($card->id);
             $existing = $this->existingFitids($card, $transactions);
             $invoices = app(InvoiceService::class);
-            $invoice = $invoices->findOrCreateForReference($card, Carbon::createFromFormat('!Y-m', $referenceMonth));
-            $invoice = $invoice->newQuery()->lockForUpdate()->findOrFail($invoice->id);
-            if (! $invoice->isOpen()) {
-                throw new InvalidArgumentException('A fatura selecionada está fechada ou paga. Escolha uma fatura aberta.');
+            $fixed = $referenceMonth ? $invoices->findOrCreateForReference($card, Carbon::createFromFormat('!Y-m', $referenceMonth)) : null;
+            if ($fixed) {
+                $fixed = $fixed->newQuery()->lockForUpdate()->findOrFail($fixed->id);
+                if (! $fixed->isOpen()) {
+                    throw new InvalidArgumentException('A fatura selecionada está fechada ou paga. Escolha uma fatura aberta ou use a sugestão automática pelo ciclo.');
+                }
+            }
+            $batch = null;
+            if ($batchMeta) {
+                $batch = StatementImportBatch::create([
+                    'user_id' => $batchMeta['user_id'] ?? auth()->id(),
+                    'credit_card_id' => $card->id,
+                    'filename' => $batchMeta['filename'] ?? null,
+                    'source_label' => $batchMeta['source_label'] ?? null,
+                    'invoice_mode' => $batchMeta['invoice_mode'] ?? ($referenceMonth ? 'fixed' : 'auto'),
+                    'invoice_month' => $referenceMonth,
+                    'items_count' => 0,
+                    'total_amount' => 0,
+                    'imported_at' => now(),
+                ]);
             }
             $imported = 0;
+            $total = 0.0;
+            $touched = [];
             foreach ($transactions as $row) {
                 if (isset($existing[$row['fitid']]) || ($row['card_kind'] ?? '') === 'payment') {
                     continue;
                 }
+                $date = Carbon::parse($row['date']);
+                $month = $row['invoice_month'] ?? null;
+                if ($month) {
+                    $invoice = $invoices->findOrCreateForReference($card, Carbon::createFromFormat('!Y-m', $month));
+                } elseif ($fixed) {
+                    $invoice = $fixed;
+                } else {
+                    $invoice = $invoices->findOrCreateForPurchase($card, $date);
+                }
+                $invoice = $invoice->newQuery()->lockForUpdate()->findOrFail($invoice->id);
+                if (! $invoice->isOpen()) {
+                    throw new InvalidArgumentException('A fatura '.$invoice->reference_month.' está fechada ou paga. Reabra-a ou escolha outra.');
+                }
+                $amount = ($row['card_kind'] === 'refund' ? '-' : '').$row['amount'];
                 Transaction::create([
                     'type' => 'expense', 'date' => $row['date'],
-                    'amount' => ($row['card_kind'] === 'refund' ? '-' : '').$row['amount'],
+                    'amount' => $amount,
                     'description' => $row['description'], 'notes' => $row['notes'],
                     'status' => 'settled', 'category_id' => $row['category_id'] ?? null,
                     'credit_card_id' => $card->id, 'credit_card_invoice_id' => $invoice->id,
                     'additional_card_id' => ! empty($row['additional_card_id']) && (int) $row['additional_card_id'] !== (int) $card->id ? (int) $row['additional_card_id'] : null,
                     'ofx_fitid' => $row['fitid'],
+                    'import_batch_id' => $batch?->id,
                 ]);
                 $imported++;
+                $total += (float) $amount;
+                $touched[$invoice->id] = $invoice;
             }
-            $invoices->recalculateTotal($invoice);
-            return ['imported' => $imported, 'skipped' => count($transactions) - $imported];
+            foreach ($touched as $invoice) {
+                $invoices->recalculateTotal($invoice->fresh());
+            }
+            if ($batch) {
+                $batch->update(['items_count' => $imported, 'total_amount' => round($total, 2)]);
+            }
+            return ['imported' => $imported, 'skipped' => count($transactions) - $imported, 'batch_id' => $batch?->id];
         });
     }
 
