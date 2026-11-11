@@ -83,6 +83,66 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetPage();
     }
 
+    /** Ordenação (coluna e direção), lembrada por usuário. Não fica na URL nem é apagada por "Limpar filtros". */
+    public string $sortBy = 'date';
+
+    public string $sortDir = 'desc';
+
+    /** Toque no cabeçalho: outra coluna ordena crescente; a mesma coluna inverte a direção. */
+    public function sortByColumn(string $column): void
+    {
+        $dir = $column === $this->sortBy ? ($this->sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
+        $this->applySort($column, $dir);
+    }
+
+    public function toggleSortDir(): void
+    {
+        $this->applySort($this->sortBy, $this->sortDir === 'asc' ? 'desc' : 'asc');
+    }
+
+    public function updatedSortBy($value): void
+    {
+        $this->applySort((string) $value, $value === 'date' ? 'desc' : 'asc');
+    }
+
+    public function updatedSortDir($value): void
+    {
+        $this->applySort($this->sortBy, (string) $value);
+    }
+
+    private function applySort(string $by, string $dir): void
+    {
+        [$this->sortBy, $this->sortDir] = \App\Support\UserPreferences::setSort(auth()->user(), $by, $dir);
+        $this->resetPage();
+    }
+
+    /**
+     * Ordena a consulta. Categoria e Conta pelo nome exibido na lista; Valor pelo valor com sinal
+     * (despesa e pagamento de fatura negativos; transferência já vem com sinal). Desempate estável: data, depois id.
+     */
+    private function applyListOrder($q): void
+    {
+        [$by, $dir] = \App\Support\UserPreferences::validSort($this->sortBy, $this->sortDir);
+        if ($by === 'date') {
+            $q->orderBy('transactions.date', $dir)->orderBy('transactions.id', $dir);
+
+            return;
+        }
+        $expr = match ($by) {
+            'description' => 'transactions.description',
+            'amount' => "(CASE WHEN transactions.type IN ('expense', 'invoice_payment') THEN -transactions.amount ELSE transactions.amount END)",
+            'category' => "(CASE WHEN EXISTS (SELECT 1 FROM process_receipts pr WHERE pr.receipt_id = transactions.id)"
+                ." THEN COALESCE((SELECT c.name FROM process_receipts pr JOIN categories c ON c.id = pr.category_id WHERE pr.receipt_id = transactions.id LIMIT 1), 'Sem categoria')"
+                ." WHEN EXISTS (SELECT 1 FROM transaction_allocations ta WHERE ta.transaction_id = transactions.id)"
+                ." THEN (SELECT MIN(COALESCE(c.name, 'Sem categoria')) FROM transaction_allocations ta LEFT JOIN categories c ON c.id = ta.category_id WHERE ta.transaction_id = transactions.id)"
+                ." ELSE COALESCE((SELECT c.name FROM categories c WHERE c.id = transactions.category_id), '') END)",
+            'account' => "COALESCE((SELECT b.name FROM bank_accounts b WHERE b.id = transactions.bank_account_id AND b.deleted_at IS NULL),"
+                ." (SELECT cc.name FROM credit_cards cc WHERE cc.id = transactions.credit_card_id AND cc.deleted_at IS NULL),"
+                ." CASE WHEN transactions.source_type = 'division_share' THEN 'Sem conta (a pagar no Divisões)' ELSE '' END)",
+        };
+        $q->orderByRaw($expr.' '.$dir)->orderBy('transactions.date', 'desc')->orderBy('transactions.id', 'desc');
+    }
+
     /** '' = oculta testes; '1' = mostra também os lançamentos marcados como teste. */
     #[Url]
     public string $testes = '';
@@ -272,6 +332,7 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
         $this->perPage = \App\Support\UserPreferences::perPage(auth()->user());
+        [$this->sortBy, $this->sortDir] = \App\Support\UserPreferences::sort(auth()->user());
 
         $distribuir = request()->query('distribuir');
         if (is_numeric($distribuir)) {
@@ -1230,7 +1291,7 @@ new #[Layout('layouts.app')] class extends Component
 
         return [
             'deletingTransaction' => $this->deletingId ? Transaction::withCount('destinations')->with('destinationPayment')->find($this->deletingId) : null,
-            'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(in_array($this->perPage, \App\Support\UserPreferences::PER_PAGE_OPTIONS, true) ? $this->perPage : \App\Support\UserPreferences::PER_PAGE_DEFAULT),
+            'transactions' => tap($q, fn ($q) => $this->applyListOrder($q))->paginate(in_array($this->perPage, \App\Support\UserPreferences::PER_PAGE_OPTIONS, true) ? $this->perPage : \App\Support\UserPreferences::PER_PAGE_DEFAULT),
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
             'filterAccountOptions' => $filterAccountOptions,
@@ -1358,7 +1419,31 @@ new #[Layout('layouts.app')] class extends Component
                 <x-banking.new-transaction class="mt-space-4" align="left" />
             </x-fx.empty-state>
         @else
-            <x-fx.table :headers="['Data', 'Descrição', 'Categoria', 'Conta', 'Valor', '']">
+            {{-- Celular: escolher a ordem sem depender do cabeçalho (a tabela rola para o lado). --}}
+            <div class="mb-space-3 flex items-center gap-2 sm:hidden" data-sort-mobile>
+                <label for="transactions-sort" class="whitespace-nowrap text-fs-14 text-cryptex-text-secondary">Ordenar por</label>
+                <select id="transactions-sort" wire:model.live="sortBy" class="h-11 min-w-0 flex-1 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-3 text-fs-14 text-cryptex-text-primary" data-sort-select>
+                    @foreach (\App\Support\UserPreferences::SORT_COLUMNS as $col => $label)<option value="{{ $col }}">{{ $label }}</option>@endforeach
+                </select>
+                <button type="button" wire:click="toggleSortDir" class="inline-flex h-11 min-w-[88px] items-center justify-center gap-1 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-3 text-fs-14 font-semibold text-cryptex-text-primary" aria-label="Inverter ordem ({{ $sortDir === 'asc' ? 'crescente' : 'decrescente' }})" data-sort-dir="{{ $sortDir }}">
+                    <span class="material-icons-outlined text-[18px]" aria-hidden="true">{{ $sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward' }}</span>{{ $sortDir === 'asc' ? 'Cresc.' : 'Decresc.' }}
+                </button>
+            </div>
+            <x-fx.table>
+                <x-slot:head>
+                    <tr>
+                        @foreach (\App\Support\UserPreferences::SORT_COLUMNS as $col => $label)
+                            @php $active = $sortBy === $col; @endphp
+                            <th class="bg-cryptex-bg-tertiary px-space-4 py-space-3 text-fs-12 font-mono font-medium uppercase tracking-wider border-b border-cryptex-border-subtle whitespace-nowrap {{ $col === 'amount' ? 'text-right' : '' }}" aria-sort="{{ $active ? ($sortDir === 'asc' ? 'ascending' : 'descending') : 'none' }}">
+                                <button type="button" wire:click="sortByColumn('{{ $col }}')" class="inline-flex items-center gap-1 uppercase tracking-wider {{ $active ? 'text-cryptex-brand-400' : 'text-cryptex-text-tertiary hover:text-cryptex-text-secondary' }}" title="Ordenar por {{ mb_strtolower($label) }}" data-sort-col="{{ $col }}" @if ($active) data-sort-active="{{ $sortDir }}" @endif>
+                                    {{ $label }}
+                                    <span class="material-icons-outlined text-[16px] {{ $active ? '' : 'opacity-40' }}" aria-hidden="true">{{ $active ? ($sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more' }}</span>
+                                </button>
+                            </th>
+                        @endforeach
+                        <th class="bg-cryptex-bg-tertiary px-space-4 py-space-3 border-b border-cryptex-border-subtle"></th>
+                    </tr>
+                </x-slot:head>
                 @foreach ($transactions as $t)
                     <tr>
                         <td class="px-space-4 py-space-3 text-fs-14 font-mono text-cryptex-text-secondary whitespace-nowrap">{{ $t->date->format('d/m/Y') }}</td>

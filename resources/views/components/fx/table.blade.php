@@ -2,7 +2,10 @@
 
 <div class="w-full overflow-x-auto rounded-lg border border-cryptex-border-subtle bg-cryptex-bg-secondary">
     <table {{ $attributes->merge(['class' => 'w-full text-left border-collapse']) }}>
-        @if (count($headers))
+        @if (isset($head))
+            {{-- Cabeçalho personalizado (ex.: colunas ordenáveis). --}}
+            <thead>{{ $head }}</thead>
+        @elseif (count($headers))
             <thead>
                 <tr>
                     @foreach ($headers as $header)

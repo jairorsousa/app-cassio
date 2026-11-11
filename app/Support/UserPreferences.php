@@ -40,6 +40,42 @@ class UserPreferences
     }
 
     /** Guarda a escolha do usuário (sem mexer nas outras preferências). Valor fora da lista volta ao padrão. */
+    /** Ordenação da lista de Lançamentos: coluna => rótulo. Padrão: data mais nova em cima. */
+    public const SORT_COLUMNS = ['date' => 'Data', 'description' => 'Descrição', 'category' => 'Categoria', 'account' => 'Conta', 'amount' => 'Valor'];
+
+    public const SORT_DEFAULT = ['date', 'desc'];
+
+    /** @return array{0: string, 1: string} [coluna, direção] validados (lista fechada; inválido volta ao padrão). */
+    public static function sort(?User $user, string $list = 'transactions'): array
+    {
+        $v = (array) (((array) ($user?->preferences ?? []))['sort'][$list] ?? []);
+
+        return self::validSort((string) ($v['by'] ?? ''), (string) ($v['dir'] ?? ''));
+    }
+
+    /** @return array{0: string, 1: string} */
+    public static function validSort(string $by, string $dir): array
+    {
+        if (! array_key_exists($by, self::SORT_COLUMNS)) {
+            return self::SORT_DEFAULT;
+        }
+
+        return [$by, in_array($dir, ['asc', 'desc'], true) ? $dir : 'asc'];
+    }
+
+    /** @return array{0: string, 1: string} */
+    public static function setSort(?User $user, string $by, string $dir, string $list = 'transactions'): array
+    {
+        [$by, $dir] = self::validSort($by, $dir);
+        if ($user) {
+            $prefs = (array) ($user->fresh()?->preferences ?? $user->preferences ?? []);
+            $prefs['sort'] = array_merge((array) ($prefs['sort'] ?? []), [$list => ['by' => $by, 'dir' => $dir]]);
+            $user->forceFill(['preferences' => $prefs])->saveQuietly();
+        }
+
+        return [$by, $dir];
+    }
+
     public static function setPerPage(?User $user, int $value, string $list = 'transactions'): int
     {
         $value = in_array($value, self::PER_PAGE_OPTIONS, true) ? $value : self::PER_PAGE_DEFAULT;

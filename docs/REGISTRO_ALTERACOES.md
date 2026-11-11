@@ -1,5 +1,19 @@
 # Registro de alterações
 
+## 10/11/2026 — Financeiro › Lançamentos: ordenar por coluna (Auditor Fin)
+
+Pedido do Cassio: acompanhar a lista na mesma ordem dos extratos (ora do início do mês, ora do fim).
+
+1. Cabeçalho Data, Descrição, Categoria, Conta e Valor com seta clicável: um toque ordena por aquela coluna (crescente), outro toque inverte. A seta laranja mostra a coluna e a direção ativas. Padrão continua: data mais nova em cima.
+2. Celular: "Ordenar por" (Data/Descrição/Categoria/Conta/Valor) + botão ↑ Cresc. / ↓ Decresc. acima da lista.
+3. Vale também para extratos de conta e faturas de cartão (mesma tela). Funciona com os filtros e o seletor 25/50/100; ao trocar a ordem volta para a página 1; "Limpar filtros" não mexe na ordem.
+4. Lembrado por usuário (`users.preferences.sort.transactions`), lista fechada de colunas/direções (inválido volta ao padrão).
+5. Categoria e Conta pelo nome exibido (recebimento de processo: categoria dele; rateado: o menor nome entre as categorias do rateio; sem categoria/sem conta primeiro no crescente). Valor pelo valor com sinal (despesa e pagamento de fatura negativos). Desempate: data e id (na ordenação por data, na mesma direção; nas demais, mais novo primeiro).
+6. Não há saldo acumulado por linha nesta tela, então nada a recalcular.
+7. Componente `x-fx.table` aceita cabeçalho personalizado (slot `head`), sem mudar as outras tabelas.
+
+Sem migração. Testes: `tests/Feature/Banking/TransactionsSortTest.php`. Backup: `/root/app-cassio-backups/ordenar-colunas-20261110/`.
+
 ## 10/11/2026 — Datas sugeridas no "hoje do escritório" (Fortaleza) + data do lançamento #198 (Auditor Fin)
 
 Pedido do Cassio: depois das 21h (UTC-3) várias telas sugeriam/gravavam a data de amanhã porque usavam o "hoje" do relógio em UTC.
