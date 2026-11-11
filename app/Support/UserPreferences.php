@@ -27,6 +27,31 @@ class UserPreferences
         'petroleo' => ['Petróleo', ['#e3f4f4', '#0e7c86', '#0a646c'], ['#123033', '#2bb3be', '#1c9aa4']],
     ];
 
+    /** Itens por página nas listas (Financeiro › Lançamentos): só estes valores. */
+    public const PER_PAGE_OPTIONS = [25, 50, 100];
+
+    public const PER_PAGE_DEFAULT = 25;
+
+    public static function perPage(?User $user, string $list = 'transactions'): int
+    {
+        $v = (int) (((array) ($user?->preferences ?? []))['per_page'][$list] ?? 0);
+
+        return in_array($v, self::PER_PAGE_OPTIONS, true) ? $v : self::PER_PAGE_DEFAULT;
+    }
+
+    /** Guarda a escolha do usuário (sem mexer nas outras preferências). Valor fora da lista volta ao padrão. */
+    public static function setPerPage(?User $user, int $value, string $list = 'transactions'): int
+    {
+        $value = in_array($value, self::PER_PAGE_OPTIONS, true) ? $value : self::PER_PAGE_DEFAULT;
+        if ($user) {
+            $prefs = (array) ($user->preferences ?? []);
+            $prefs['per_page'] = array_merge((array) ($prefs['per_page'] ?? []), [$list => $value]);
+            $user->forceFill(['preferences' => $prefs])->saveQuietly();
+        }
+
+        return $value;
+    }
+
     public static function rules(): array
     {
         return [

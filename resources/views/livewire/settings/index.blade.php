@@ -39,7 +39,8 @@ new #[Layout('layouts.app')] class extends Component {
         unset($data['regime']);
         $user = auth()->user();
         $regimeChanged = $user->financial_regime !== $regime;
-        $user->forceFill(['preferences' => $data, 'financial_regime' => $regime])->save();
+        // Mantém outras preferências guardadas fora desta tela (ex.: itens por página nas listas).
+        $user->forceFill(['preferences' => array_merge((array) ($user->fresh()?->preferences ?? []), $data), 'financial_regime' => $regime])->save();
         if ($regimeChanged) {
             app(\App\Domains\Dashboard\Services\DashboardSnapshotService::class)->invalidate();
         }

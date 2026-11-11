@@ -74,6 +74,15 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetPage();
     }
 
+    /** Itens por página (25/50/100), lembrado por usuário. Não fica na URL nem é apagado por "Limpar filtros". */
+    public int $perPage = \App\Support\UserPreferences::PER_PAGE_DEFAULT;
+
+    public function updatedPerPage($value): void
+    {
+        $this->perPage = \App\Support\UserPreferences::setPerPage(auth()->user(), (int) $value);
+        $this->resetPage();
+    }
+
     /** '' = oculta testes; '1' = mostra também os lançamentos marcados como teste. */
     #[Url]
     public string $testes = '';
@@ -262,6 +271,7 @@ new #[Layout('layouts.app')] class extends Component
         if ($quick) {
             return;
         }
+        $this->perPage = \App\Support\UserPreferences::perPage(auth()->user());
 
         $distribuir = request()->query('distribuir');
         if (is_numeric($distribuir)) {
@@ -1220,7 +1230,7 @@ new #[Layout('layouts.app')] class extends Component
 
         return [
             'deletingTransaction' => $this->deletingId ? Transaction::withCount('destinations')->with('destinationPayment')->find($this->deletingId) : null,
-            'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(25),
+            'transactions' => $q->orderByDesc('date')->orderByDesc('id')->paginate(in_array($this->perPage, \App\Support\UserPreferences::PER_PAGE_OPTIONS, true) ? $this->perPage : \App\Support\UserPreferences::PER_PAGE_DEFAULT),
             'categories' => Category::orderBy('name')->get(),
             'accounts' => BankAccount::orderBy('name')->get(),
             'filterAccountOptions' => $filterAccountOptions,
@@ -1468,7 +1478,17 @@ new #[Layout('layouts.app')] class extends Component
                     </tr>
                 @endforeach
             </x-fx.table>
-            <div class="mt-space-4">{{ $transactions->links() }}</div>
+            <div class="mt-space-4 flex flex-col gap-space-3 sm:flex-row sm:items-center sm:justify-between" data-pagination-bar>
+                <label class="flex items-center gap-2 text-fs-14 text-cryptex-text-secondary" data-per-page>
+                    <span class="whitespace-nowrap">Por página:</span>
+                    <select wire:model.live="perPage" aria-label="Lançamentos por página" class="h-11 min-w-[88px] rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-3 text-fs-14 text-cryptex-text-primary" data-per-page-select>
+                        @foreach (\App\Support\UserPreferences::PER_PAGE_OPTIONS as $n)<option value="{{ $n }}">{{ $n }}</option>@endforeach
+                    </select>
+                    @if ($transactions->lastPage() === 1)<span class="text-fs-12 text-cryptex-text-tertiary">{{ $transactions->total() }} {{ $transactions->total() === 1 ? 'lançamento' : 'lançamentos' }}</span>
+                    @else<span class="text-fs-12 text-cryptex-text-tertiary sm:hidden" data-per-page-range>{{ $transactions->firstItem() }} a {{ $transactions->lastItem() }} de {{ $transactions->total() }}</span>@endif
+                </label>
+                <div class="min-w-0 flex-1">{{ $transactions->links() }}</div>
+            </div>
         @endif
     </x-fx.card>
 

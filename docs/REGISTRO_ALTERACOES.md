@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 10/11/2026 — Financeiro › Lançamentos: escolher 25, 50 ou 100 por página (Auditor Fin)
+
+Pedido do Cassio: poder escolher quantos lançamentos ver por página (25, 50 ou 100).
+
+1. Seletor "Por página: 25 / 50 / 100" ao lado da paginação, no celular e no computador (padrão 25). Só esses três valores são aceitos; qualquer outro volta para 25.
+2. Ao trocar, volta para a página 1 e mantém filtros (período, categoria, conta/cartão, situação, tipo, titular) e ordenação. "Limpar filtros" não mexe nessa escolha.
+3. A escolha fica salva por usuário (`users.preferences.per_page.transactions`), sem migração. Faturas de cartão e extratos de conta usam a mesma tela, então também têm o seletor.
+4. No celular aparece também "1 a 100 de N" ao lado do seletor.
+5. Correção junto: salvar a página Configurações não apaga mais outras preferências guardadas do usuário.
+
+Sem migração. Testes: `tests/Feature/Banking/TransactionsPerPageTest.php`. Backup: `/root/app-cassio-backups/por-pagina-20261110/`.
+
 ## 10/11/2026 — Divisões: categoria do Financeiro do Cassio para a parte dele (Auditor Fin)
 
 Pedido do Cassio: escolher a categoria da parte dele entre as categorias do Financeiro dele (com subcategorias e busca, também no celular), sem criar categorias novas.
