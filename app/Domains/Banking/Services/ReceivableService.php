@@ -11,6 +11,7 @@ use App\Domains\Banking\Models\Transaction;
 use App\Domains\Brokers\Models\BrokerCommissionPayment;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Dashboard\Services\DashboardSnapshotService;
+use App\Support\Money;
 use App\Support\SimpleInterest;
 use Brick\Math\BigInteger;
 use Illuminate\Support\Carbon;
@@ -34,6 +35,7 @@ class ReceivableService
     /** One actual payment can be shared by several people; its remainder is the owner's expense. */
     public function create(array $data): array
     {
+        $data = $this->normalizeCreatePayload($data);
         Validator::make($data, [
             'origin' => 'required|in:bank,card,existing', 'date' => 'required|date_format:Y-m-d|before_or_equal:'.\App\Support\BusinessDate::today(),
             'description' => 'required|string|max:200', 'amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
@@ -49,6 +51,20 @@ class ReceivableService
             'interest_start_date' => 'nullable|date_format:Y-m-d',
             'people' => 'required|array|min:1|max:20', 'people.*.contact_id' => 'required|integer|distinct',
             'people.*.amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
+        ], [
+            'origin.required' => 'Informe como o pagamento foi feito.',
+            'date.required' => 'Informe a data do pagamento ou da compra.',
+            'date.before_or_equal' => 'A data do pagamento não pode ser futura.',
+            'description.required' => 'Informe uma descrição para este pagamento.',
+            'amount.required' => 'Informe o valor total do pagamento.',
+            'amount.regex' => 'Informe o valor total no formato de dinheiro, por exemplo 150,00.',
+            'installments.required' => 'Informe o número de parcelas.',
+            'first_due_date.required' => 'Informe o primeiro vencimento da devolução.',
+            'people.required' => 'Informe quem deve devolver o valor.',
+            'people.*.contact_id.required' => 'Selecione a pessoa que deve devolver.',
+            'people.*.contact_id.distinct' => 'Cada pessoa só pode aparecer uma vez neste pagamento.',
+            'people.*.amount.required' => 'Informe quanto essa pessoa deve devolver.',
+            'people.*.amount.regex' => 'Informe a parte a devolver no formato de dinheiro, por exemplo 150,00.',
         ])->validate();
 
         return DB::transaction(function () use ($data) {
@@ -141,6 +157,38 @@ class ReceivableService
 
             return $created;
         });
+    }
+
+    /** Aceita máscara brasileira (1.234,56) e data vazia, que o MySQL estrito rejeita. */
+    private function normalizeCreatePayload(array $data): array
+    {
+        if (array_key_exists('amount', $data)) {
+            $data['amount'] = Money::normalize($data['amount'] ?? '');
+        }
+        if (! empty($data['people']) && is_array($data['people'])) {
+            foreach ($data['people'] as $index => $person) {
+                if (is_array($person) && array_key_exists('amount', $person)) {
+                    $data['people'][$index]['amount'] = Money::normalize($person['amount'] ?? '');
+                }
+            }
+        }
+        foreach (['interest_rate_am' => 4, 'penalty_pct' => 2, 'late_interest_rate_am' => 4] as $field => $decimals) {
+            if (array_key_exists($field, $data) && $data[$field] !== null && $data[$field] !== '') {
+                $data[$field] = Money::decimal($data[$field], $decimals);
+            }
+        }
+        foreach (['interest_start_date', 'first_due_date'] as $field) {
+            if (($data[$field] ?? '') === '') {
+                $data[$field] = null;
+            }
+        }
+        foreach (['bank_account_id', 'credit_card_id', 'transaction_id', 'writ_id'] as $field) {
+            if (($data[$field] ?? '') === '') {
+                $data[$field] = null;
+            }
+        }
+
+        return $data;
     }
 
     private function eligibleOrigin(Transaction $source): void
