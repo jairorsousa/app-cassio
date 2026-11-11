@@ -21,7 +21,7 @@ class Receivable extends Model
     use LogsActivity;
     use \App\Support\HidesTestRecords;
 
-    protected $fillable = ['is_test', 'contact_id', 'writ_id', 'description', 'date', 'repayment_mode', 'process_reference', 'notes', 'request_key', 'interest_rate_am', 'penalty_pct', 'late_interest_rate_am', 'interest_start_date'];
+    protected $fillable = ['is_test', 'contact_id', 'writ_id', 'description', 'date', 'repayment_mode', 'process_reference', 'notes', 'request_key', 'interest_rate_am', 'interest_type', 'penalty_pct', 'late_interest_rate_am', 'late_interest_type', 'interest_start_date'];
 
     protected $casts = ['is_test' => 'boolean', 'date' => 'date', 'interest_start_date' => 'date', 'interest_rate_am' => 'float', 'penalty_pct' => 'float', 'late_interest_rate_am' => 'float'];
 
@@ -88,6 +88,17 @@ class Receivable extends Model
         return ($this->interest_start_date ?? $this->date)->toDateString();
     }
 
+
+    public function interestType(): string
+    {
+        return SimpleInterest::normalizeType($this->interest_type ?? SimpleInterest::TYPE_SIMPLE);
+    }
+
+    public function lateInterestType(): string
+    {
+        return SimpleInterest::normalizeType($this->late_interest_type ?? SimpleInterest::TYPE_SIMPLE);
+    }
+
     public function balanceAsOf(?string $asOf = null): array
     {
         $asOf ??= \App\Support\BusinessDate::today();
@@ -101,6 +112,8 @@ class Receivable extends Model
             (float) ($this->late_interest_rate_am ?? 0),
             $asOf,
             $this->settlementChargeRows(),
+            $this->interestType(),
+            $this->lateInterestType(),
         );
     }
 

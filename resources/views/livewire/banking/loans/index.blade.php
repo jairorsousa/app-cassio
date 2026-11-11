@@ -53,6 +53,7 @@ new #[Layout('layouts.app')] class extends Component {
             'installments' => 1,
             'first_due_date' => '',
             'interest_rate_am' => '0',
+            'interest_type' => 'simple',
             'notes' => '',
         ];
     }
@@ -82,6 +83,7 @@ new #[Layout('layouts.app')] class extends Component {
             'installments' => (int) $loan->installment_count,
             'first_due_date' => $loan->first_due_date?->toDateString() ?? '',
             'interest_rate_am' => rtrim(rtrim(number_format((float) $loan->interest_rate_am, 4, '.', ''), '0'), '.') ?: '0',
+            'interest_type' => $loan->interestType(),
             'notes' => (string) $loan->notes,
         ];
         $this->creating = true;
@@ -186,11 +188,41 @@ new #[Layout('layouts.app')] class extends Component {
         return $preview;
     }
 
+    private function formCents(string $key): int
+    {
+        $raw = $this->form[$key] ?? '';
+        if ($raw === '' || $raw === null) {
+            return 0;
+        }
+        try {
+            return app(LoanService::class)->cents(\App\Support\Money::normalize((string) $raw), zero: true);
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    private function interestPreview(): ?array
+    {
+        $rate = (float) (\App\Support\Money::decimal((string) ($this->form['interest_rate_am'] ?? '0'), 4) ?: 0);
+        $start = $this->form['date'] ?? '';
+        if ($this->formCents('principal') <= 0 || $rate <= 0 || ! $start) {
+            return null;
+        }
+
+        return \App\Support\SimpleInterest::previewTotals(
+            $this->formCents('principal'),
+            $start,
+            ($this->form['first_due_date'] ?? '') ?: null,
+            $rate,
+        );
+    }
+
     public function save(LoanService $service): void
     {
         if (isset($this->form['interest_rate_am']) && is_string($this->form['interest_rate_am']) && str_contains($this->form['interest_rate_am'], ',')) {
             $this->form['interest_rate_am'] = \App\Support\Money::decimal($this->form['interest_rate_am'], 4);
         }
+        $this->form['interest_type'] = \App\Support\SimpleInterest::normalizeType($this->form['interest_type'] ?? null);
         try {
             if ($this->editingId) {
                 $loan = $service->update(Loan::findOrFail($this->editingId), $this->form);
@@ -332,6 +364,7 @@ new #[Layout('layouts.app')] class extends Component {
             'editingLocked' => $editingLocked,
             'returnPeople' => $returnPeople,
             'returnPreview' => $this->returning ? $this->returnPreview() : null,
+            'interestPreview' => $this->creating ? $this->interestPreview() : null,
             'contacts' => Contact::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->where('type', '!=', 'repasse')->orderBy('name')->get(),
             'cashAccounts' => BankAccount::active()->where('type', BankAccount::TYPE_CASH)->orderBy('name')->get(),
@@ -404,7 +437,7 @@ new #[Layout('layouts.app')] class extends Component {
                             · Juros: R$ {{ number_format($selectedBalance['interest_open']/100, 2, ',', '.') }}
                             · Saldo: <strong class="text-mono-900">R$ {{ number_format($selectedBalance['balance']/100, 2, ',', '.') }}</strong>
                         </p>
-                        <p class="mt-1 text-xs text-mono-600">Origem: {{ $selected->bankAccount->name }} · {{ $selected->date->format('d/m/Y') }} · Taxa {{ number_format((float)$selected->interest_rate_am, 2, ',', '.') }}% a.m.</p>
+                        <p class="mt-1 text-xs text-mono-600">Origem: {{ $selected->bankAccount->name }} · {{ $selected->date->format('d/m/Y') }} · Taxa {{ number_format((float)$selected->interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->interestType()) }})</p>
                         @if ($selected->hasAttachment())
                             <a class="mt-2 inline-block text-sm font-semibold text-primary-500" href="{{ route('banking.loans.attachment', $selected) }}">Baixar comprovante ({{ $selected->attachment_original_name }})</a>
                         @endif
@@ -554,15 +587,18 @@ new #[Layout('layouts.app')] class extends Component {
                         <fieldset @disabled($editingLocked) class="grid gap-4 md:grid-cols-2 {{ $editingLocked ? 'opacity-60' : '' }}">
                             <x-banking.contact-picker :contacts="$contacts" :selected-id="$form['contact_id'] ?? null" model="form.contact_id" id="loan-contact" />
                             <x-banking.account-picker :accounts="$accounts" :selected-id="$form['bank_account_id'] ?? null" model="form.bank_account_id" id="loan-account" label="Conta de origem (saída)" />
-                            <x-jr.input label="Valor emprestado (R$)" name="form.principal" x-money inputmode="numeric" wire:model="form.principal" />
-                            <x-jr.input label="Data" name="form.date" type="date" wire:model="form.date" />
+                            <x-jr.input label="Valor emprestado (R$)" name="form.principal" x-money inputmode="numeric" wire:model.live.debounce.400ms="form.principal" />
+                            <x-jr.input label="Data" name="form.date" type="date" wire:model.live="form.date" />
                             <x-jr.input label="Número de parcelas" name="form.installments" type="number" min="1" max="120" wire:model.live="form.installments" />
                             @if ((int) $form['installments'] > 1)
-                                <x-jr.input label="Primeiro vencimento" name="form.first_due_date" type="date" wire:model="form.first_due_date" />
+                                <x-jr.input label="Primeiro vencimento" name="form.first_due_date" type="date" wire:model.live="form.first_due_date" />
                             @else
-                                <x-jr.input label="Vencimento (opcional)" name="form.first_due_date" type="date" wire:model="form.first_due_date" />
+                                <x-jr.input label="Vencimento (opcional)" name="form.first_due_date" type="date" wire:model.live="form.first_due_date" />
                             @endif
-                            <x-jr.input label="Taxa de juros simples (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model="form.interest_rate_am" helper="Padrão 0. Juros só viram receita quando recebidos." />
+                            <div class="space-y-3" data-loan-interest>
+                                <x-jr.input label="Taxa de juros (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model.live.debounce.400ms="form.interest_rate_am" helper="Padrão 0. Juros só viram receita quando recebidos." />
+                                <x-banking.interest-type model="form.interest_type" id="loan-interest-type" :preview="$interestPreview" />
+                            </div>
                         </fieldset>
                         <div class="mt-4 grid gap-4 md:grid-cols-2">
                             <x-jr.input label="Descrição" name="form.description" wire:model="form.description" />

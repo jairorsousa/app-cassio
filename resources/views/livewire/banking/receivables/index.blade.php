@@ -32,6 +32,8 @@ new #[Layout('layouts.app')] class extends Component {
     public array $form = [];
     public array $payment = [];
     public array $dates = [];
+    public bool $editingCharges = false;
+    public array $charges = [];
 
     public function mount(): void
     {
@@ -93,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component {
             'bank_account_id' => null, 'credit_card_id' => null, 'transaction_id' => null, 'installments' => 1,
             'repayment_mode' => 'dated', 'first_due_date' => \Illuminate\Support\Carbon::parse($today)->addMonthNoOverflow()->toDateString(),
             'use_invoice_dates' => false, 'writ_id' => null, 'process_reference' => '', 'notes' => '',
-            'interest_rate_am' => '0', 'penalty_pct' => '0', 'late_interest_rate_am' => '0', 'interest_start_date' => '',
+            'interest_rate_am' => '0', 'interest_type' => 'simple', 'penalty_pct' => '0', 'late_interest_rate_am' => '0', 'late_interest_type' => 'simple', 'interest_start_date' => '',
             'people' => [['contact_id' => $this->contact ?: null, 'amount' => '']],
         ];
     }
@@ -167,9 +169,117 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function cancelCreate(): void { $this->creating = false; $this->resetValidation(); }
 
+
+    private function formAmountCents(): int
+    {
+        $raw = $this->form['people'][0]['amount'] ?? $this->form['amount'] ?? '';
+        if ($raw === '' || $raw === null) {
+            return 0;
+        }
+        $normalized = \App\Support\Money::normalize((string) $raw);
+        if ($normalized === '') {
+            return 0;
+        }
+
+        return (int) round((float) $normalized * 100);
+    }
+
+    private function interestPreview(): ?array
+    {
+        $raw = (string) ($this->form['interest_rate_am'] ?? '0');
+        $rate = (float) ((\App\Support\Money::decimal($raw, 4) ?: 0));
+        $start = ($this->form['interest_start_date'] ?? '') ?: ($this->form['date'] ?? '');
+        if ($this->formAmountCents() <= 0 || $rate <= 0 || ! $start) {
+            return null;
+        }
+
+        return \App\Support\SimpleInterest::previewTotals(
+            $this->formAmountCents(),
+            $start,
+            ($this->form['first_due_date'] ?? '') ?: null,
+            $rate,
+        );
+    }
+
+    private function lateInterestPreview(): ?array
+    {
+        $raw = (string) ($this->form['late_interest_rate_am'] ?? '0');
+        $rate = (float) ((\App\Support\Money::decimal($raw, 4) ?: 0));
+
+        return \App\Support\SimpleInterest::previewLateTotals($this->formAmountCents(), $rate);
+    }
+
+    private function chargesPreview(): ?array
+    {
+        $raw = (string) ($this->charges['interest_rate_am'] ?? '0');
+        $rate = (float) ((\App\Support\Money::decimal($raw, 4) ?: 0));
+        $start = ($this->charges['interest_start_date'] ?? '') ?: '';
+        $selected = $this->selectedId ? Receivable::with('installments')->find($this->selectedId) : null;
+        $principal = $selected?->amountCents() ?? 0;
+        if ($principal <= 0 || $rate <= 0 || ! $start) {
+            return null;
+        }
+
+        return \App\Support\SimpleInterest::previewTotals($principal, $start, $selected?->dueDateForCharges(), $rate);
+    }
+
+    private function chargesLatePreview(): ?array
+    {
+        $raw = (string) ($this->charges['late_interest_rate_am'] ?? '0');
+        $rate = (float) ((\App\Support\Money::decimal($raw, 4) ?: 0));
+        $selected = $this->selectedId ? Receivable::with('installments')->find($this->selectedId) : null;
+
+        return \App\Support\SimpleInterest::previewLateTotals($selected?->amountCents() ?? 0, $rate);
+    }
+
+    public function startEditCharges(): void
+    {
+        $row = Receivable::findOrFail($this->selectedId);
+        $this->resetValidation();
+        $this->charges = [
+            'interest_rate_am' => rtrim(rtrim(number_format((float) $row->interest_rate_am, 4, '.', ''), '0'), '.') ?: '0',
+            'interest_type' => $row->interestType(),
+            'penalty_pct' => rtrim(rtrim(number_format((float) $row->penalty_pct, 2, '.', ''), '0'), '.') ?: '0',
+            'late_interest_rate_am' => rtrim(rtrim(number_format((float) $row->late_interest_rate_am, 4, '.', ''), '0'), '.') ?: '0',
+            'late_interest_type' => $row->lateInterestType(),
+            'interest_start_date' => $row->interestStart(),
+        ];
+        $this->editingCharges = true;
+    }
+
+    public function cancelEditCharges(): void
+    {
+        $this->editingCharges = false;
+        $this->resetValidation();
+    }
+
+    public function saveCharges(ReceivableService $service): void
+    {
+        foreach (['interest_rate_am' => 4, 'penalty_pct' => 2, 'late_interest_rate_am' => 4] as $k => $d) {
+            if (isset($this->charges[$k]) && $this->charges[$k] !== '' && $this->charges[$k] !== null) {
+                $this->charges[$k] = \App\Support\Money::decimal($this->charges[$k], $d);
+            }
+        }
+        $this->charges['interest_type'] = \App\Support\SimpleInterest::normalizeType($this->charges['interest_type'] ?? null);
+        $this->charges['late_interest_type'] = \App\Support\SimpleInterest::normalizeType($this->charges['late_interest_type'] ?? null);
+        try {
+            $service->updateCharges(Receivable::findOrFail($this->selectedId), $this->charges);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            $this->addError('receivable', $e->getMessage());
+            return;
+        }
+        $this->editingCharges = false;
+        session()->flash('status', 'Encargos atualizados. O saldo em aberto foi recalculado. Baixas já registradas não foram refeitas.');
+        $this->open($this->selectedId);
+    }
+
     public function save(ReceivableService $service): void
     {
         $this->normalizeFormMoney();
+        $this->form['interest_type'] = \App\Support\SimpleInterest::normalizeType($this->form['interest_type'] ?? null);
+        $this->form['late_interest_type'] = \App\Support\SimpleInterest::normalizeType($this->form['late_interest_type'] ?? null);
         $data = $this->form;
         $data['interest_start_date'] = ($data['interest_start_date'] ?? '') ?: null;
         $data['first_due_date'] = ($data['first_due_date'] ?? '') ?: null;
@@ -269,10 +379,11 @@ new #[Layout('layouts.app')] class extends Component {
         $this->payment = ['kind' => 'cash', 'amount' => app(ReceivableService::class)->money($row->balanceCents()), 'date' => \App\Support\BusinessDate::today(),
             'bank_account_id' => null, 'transaction_id' => null, 'destination_id' => null, 'installment_id' => null, 'reason' => '', 'cash' => false];
         $this->dates = $row->installments->mapWithKeys(fn ($part) => [$part->id => $part->due_date?->toDateString() ?? ''])->all();
+        $this->editingCharges = false;
         $this->resetValidation();
     }
 
-    public function closeDetail(): void { $this->selectedId = null; $this->resetValidation(); }
+    public function closeDetail(): void { $this->selectedId = null; $this->editingCharges = false; $this->resetValidation(); }
 
     public function updatedPaymentCash($value): void
     {
@@ -353,6 +464,10 @@ new #[Layout('layouts.app')] class extends Component {
         $sources = $this->creating && $this->form['origin'] === 'existing' ? Transaction::where('type', 'expense')->where('status', 'settled')->whereNull('source_type')->where('amount', '>', 0)->whereDoesntHave('destinationPayment')->when($this->sourceSearch, fn ($q) => $q->where('description', 'like', '%'.$this->sourceSearch.'%'))->latest('date')->limit(200)->get()->merge(Transaction::whereKey($this->form['transaction_id'])->get())->unique('id') : collect();
         return [
             'isCardOrigin' => $this->form['origin'] === 'card' || ($this->form['origin'] === 'existing' && Transaction::whereKey($this->form['transaction_id'])->whereNotNull('credit_card_invoice_id')->exists()),
+            'interestPreview' => $this->creating ? $this->interestPreview() : null,
+            'lateInterestPreview' => $this->creating ? $this->lateInterestPreview() : null,
+            'chargesPreview' => $this->editingCharges ? $this->chargesPreview() : null,
+            'chargesLatePreview' => $this->editingCharges ? $this->chargesLatePreview() : null,
             'records' => $records, 'summary' => $summary, 'selected' => $selected, 'destinations' => $destinations,
             'contacts' => $contacts,
             'accounts' => $accounts,
@@ -396,7 +511,8 @@ new #[Layout('layouts.app')] class extends Component {
     @if ($selected)
         <x-fx.card>
             <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-bold text-mono-900">{{ $selected->description }}</h3><a class="text-sm text-primary-500" href="{{ route('contacts.show', $selected->contact_id) }}">{{ $selected->contact->name }}</a>@php $bal = $selected->balanceAsOf(); @endphp
-            <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p></div><x-banking.back-button action="closeDetail" label="Voltar" /></div>
+            <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p>
+            <p class="mt-1 text-xs text-mono-600" data-receivable-rates>Juros combinados {{ number_format((float) $selected->interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->interestType()) }}) · Multa {{ number_format((float) $selected->penalty_pct, 2, ',', '.') }}% · Mora {{ number_format((float) $selected->late_interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->lateInterestType()) }})</p></div><x-banking.back-button action="closeDetail" label="Voltar" /></div>
             @if ($selected->process_reference || $selected->writ_id)<p class="mt-3 text-sm text-mono-600">Processo: {{ $selected->process_reference ?: 'Requisitório #'.$selected->writ_id }}</p>@endif
             @if ($selected->notes)<p class="mt-3 text-sm text-mono-600">{{ $selected->notes }}</p>@endif
             <div class="mt-5 overflow-x-auto">
@@ -407,6 +523,37 @@ new #[Layout('layouts.app')] class extends Component {
                 </tbody></table>
             </div>
             <div class="mt-3 flex flex-wrap items-center gap-3"><x-jr.button variant="standard" wire:click="reschedule">Salvar vencimentos</x-jr.button><span class="text-xs text-mono-600">Deixe a data vazia quando ainda não houver previsão.</span></div>
+            <div class="mt-6 space-y-4 border-t border-mono-100 pt-5" data-receivable-charges>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <h4 class="font-semibold text-mono-900">Encargos</h4>
+                    @if (! $editingCharges)
+                        <x-jr.button variant="standard" wire:click="startEditCharges" data-edit-charges>Editar encargos</x-jr.button>
+                    @endif
+                </div>
+                @if ($editingCharges)
+                    <form wire:submit="saveCharges" class="space-y-4" data-charges-form>
+                        @if ($selected->settlements->isNotEmpty())
+                            <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">As baixas já registradas não são refeitas. Só o saldo em aberto é recalculado com o novo tipo e as novas taxas.</p>
+                        @endif
+                        <div class="grid gap-4 md:grid-cols-2">
+                            <div class="space-y-3">
+                                <x-jr.input label="Juros combinados (% a.m.)" name="charges.interest_rate_am" x-decimal="4" wire:model.live.debounce.400ms="charges.interest_rate_am" />
+                                <x-banking.interest-type model="charges.interest_type" id="charges-interest-type" :preview="$chargesPreview" />
+                            </div>
+                            <x-jr.input label="Início da contagem dos juros" name="charges.interest_start_date" type="date" wire:model.live="charges.interest_start_date" />
+                            <x-jr.input label="Multa após vencimento (%)" name="charges.penalty_pct" x-decimal="2" wire:model.live.debounce.400ms="charges.penalty_pct" />
+                            <div class="space-y-3">
+                                <x-jr.input label="Mora após vencimento (% a.m.)" name="charges.late_interest_rate_am" x-decimal="4" wire:model.live.debounce.400ms="charges.late_interest_rate_am" />
+                                <x-banking.interest-type model="charges.late_interest_type" id="charges-late-interest-type" legend="Tipo da mora" :preview="$chargesLatePreview" />
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap justify-end gap-3">
+                            <x-jr.button variant="standard" type="button" wire:click="cancelEditCharges">Cancelar</x-jr.button>
+                            <x-jr.button type="submit" wire:loading.attr="disabled" wire:target="saveCharges">Salvar encargos</x-jr.button>
+                        </div>
+                    </form>
+                @endif
+            </div>
             @if ($selected->remainingCents())
                 <form wire:submit="settle" class="mt-6 space-y-4 border-t border-mono-100 pt-5">
                     <h4 class="font-semibold text-mono-900">Registrar recebimento ou compensação</h4>
@@ -602,14 +749,20 @@ new #[Layout('layouts.app')] class extends Component {
                                 </div>
                             @endif
 
-                            <div class="rounded-lg border border-mono-100 bg-mono-50 p-4">
+                            <div class="rounded-lg border border-mono-100 bg-mono-50 p-4" data-receivable-create-charges>
                                 <h4 class="font-semibold text-mono-900">Encargos opcionais (padrão: nenhum)</h4>
-                                <p class="mt-1 text-xs text-mono-600">Só preencha se vocês combinaram juros ou multa. Vazio ou zero = sem encargos. Juros simples = principal × (taxa a.m./100) × (dias/30). Baixas abatem multa → juros → principal.</p>
+                                <p class="mt-1 text-xs text-mono-600">Só preencha se vocês combinaram juros ou multa. Vazio ou zero = sem encargos. Simples = P × (1 + i × n). Compostos = P × (1 + i)^n. Taxa em % a.m., n = dias/30. Multa uma vez + mora após o vencimento. Baixas abatem multa → juros → principal. Juros só viram receita quando recebidos. A prévia usa a primeira pessoa, o vencimento (ou 30 dias) e, na mora, 30 dias de atraso.</p>
                                 <div class="mt-3 grid gap-4 sm:grid-cols-2">
-                                    <x-jr.input label="Juros combinados (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model="form.interest_rate_am" />
-                                    <x-jr.input label="Início da contagem dos juros" name="form.interest_start_date" type="date" wire:model="form.interest_start_date" helper="Se deixar vazio, vale a data do pagamento" />
+                                    <div class="space-y-3">
+                                        <x-jr.input label="Juros combinados (% a.m.)" name="form.interest_rate_am" x-decimal="4" wire:model.live.debounce.400ms="form.interest_rate_am" />
+                                        <x-banking.interest-type model="form.interest_type" id="receivable-interest-type" :preview="$interestPreview" />
+                                    </div>
+                                    <x-jr.input label="Início da contagem dos juros" name="form.interest_start_date" type="date" wire:model.live="form.interest_start_date" helper="Se deixar vazio, vale a data do pagamento" />
                                     <x-jr.input label="Multa após vencimento (%)" name="form.penalty_pct" x-decimal="2" wire:model="form.penalty_pct" />
-                                    <x-jr.input label="Mora após vencimento (% a.m.)" name="form.late_interest_rate_am" x-decimal="4" wire:model="form.late_interest_rate_am" />
+                                    <div class="space-y-3">
+                                        <x-jr.input label="Mora após vencimento (% a.m.)" name="form.late_interest_rate_am" x-decimal="4" wire:model.live.debounce.400ms="form.late_interest_rate_am" />
+                                        <x-banking.interest-type model="form.late_interest_type" id="receivable-late-interest-type" legend="Tipo da mora" :preview="$lateInterestPreview" />
+                                    </div>
                                 </div>
                             </div>
 

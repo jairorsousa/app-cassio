@@ -38,11 +38,16 @@ class LoanService
      */
     private function normalize(array $data): array
     {
-        foreach (['first_due_date', 'notes', 'interest_rate_am'] as $key) {
+        foreach (['first_due_date', 'notes', 'interest_rate_am', 'interest_type'] as $key) {
             if (array_key_exists($key, $data) && (is_null($data[$key]) || (is_string($data[$key]) && trim($data[$key]) === ''))) {
-                $data[$key] = $key === 'interest_rate_am' ? '0' : null;
+                $data[$key] = match ($key) {
+                    'interest_rate_am' => '0',
+                    'interest_type' => SimpleInterest::TYPE_SIMPLE,
+                    default => null,
+                };
             }
         }
+        $data['interest_type'] = SimpleInterest::normalizeType($data['interest_type'] ?? null);
 
         return $data;
     }
@@ -58,6 +63,7 @@ class LoanService
             'installments' => 'required|integer|min:1|max:120',
             'first_due_date' => 'nullable|date_format:Y-m-d|after_or_equal:date',
             'interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'interest_type' => 'nullable|in:simple,compound',
             'notes' => 'nullable|string|max:5000',
         ];
     }
@@ -82,6 +88,7 @@ class LoanService
             }
             $count = (int) $data['installments'];
             $rate = (float) ($data['interest_rate_am'] ?? 0);
+            $type = SimpleInterest::normalizeType($data['interest_type'] ?? null);
             $firstDue = $data['first_due_date'] ?? null;
             if ($count > 1 && ! $firstDue) {
                 throw new \DomainException('Informe o primeiro vencimento das parcelas.');
@@ -96,6 +103,7 @@ class LoanService
                 'installment_count' => $count,
                 'first_due_date' => $firstDue,
                 'interest_rate_am' => $rate,
+                'interest_type' => $type,
                 'notes' => $data['notes'] ?? null,
                 'request_key' => $data['request_key'],
             ]);
@@ -163,6 +171,7 @@ class LoanService
             }
             $count = (int) $data['installments'];
             $rate = (float) ($data['interest_rate_am'] ?? 0);
+            $type = SimpleInterest::normalizeType($data['interest_type'] ?? null);
             $firstDue = $data['first_due_date'] ?? null;
             if ($count > 1 && ! $firstDue) {
                 throw new \DomainException('Informe o primeiro vencimento das parcelas.');
@@ -176,7 +185,7 @@ class LoanService
                     'data' => $data['date'] !== $loan->date->toDateString(),
                     'parcelas' => $count !== (int) $loan->installment_count,
                     'vencimento' => $firstDue !== $loan->first_due_date?->toDateString(),
-                    'juros' => abs($rate - (float) $loan->interest_rate_am) > 0.00001,
+                    'juros' => abs($rate - (float) $loan->interest_rate_am) > 0.00001 || $type !== $loan->interestType(),
                 ]));
                 if ($changed !== []) {
                     throw new \DomainException('Este empréstimo já tem devoluções registradas, então só dá para mudar a descrição e as observações. Para mudar '.implode(', ', $changed).', estorne antes as devoluções no histórico.');
@@ -210,6 +219,7 @@ class LoanService
                 'installment_count' => $count,
                 'first_due_date' => $firstDue,
                 'interest_rate_am' => $rate,
+                'interest_type' => $type,
                 'notes' => $data['notes'] ?? null,
             ]);
             $loan->installments()->delete();

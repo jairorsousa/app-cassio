@@ -46,8 +46,10 @@ class ReceivableService
             'writ_id' => 'nullable|integer|exists:writs,id', 'process_reference' => 'nullable|string|max:200',
             'notes' => 'nullable|string|max:5000', 'request_key' => 'required|uuid',
             'interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'interest_type' => 'nullable|in:simple,compound',
             'penalty_pct' => 'nullable|numeric|min:0|max:100',
             'late_interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'late_interest_type' => 'nullable|in:simple,compound',
             'interest_start_date' => 'nullable|date_format:Y-m-d',
             'people' => 'required|array|min:1|max:20', 'people.*.contact_id' => 'required|integer|distinct',
             'people.*.amount' => ['required', 'regex:/^\d{1,13}(?:\.\d{1,2})?$/'],
@@ -116,8 +118,10 @@ class ReceivableService
                     'process_reference' => $data['process_reference'] ?? null, 'notes' => $data['notes'] ?? null,
                     'request_key' => $index === 0 ? $data['request_key'] : null,
                     'interest_rate_am' => (float) ($data['interest_rate_am'] ?? 0),
+                    'interest_type' => SimpleInterest::normalizeType($data['interest_type'] ?? null),
                     'penalty_pct' => (float) ($data['penalty_pct'] ?? 0),
                     'late_interest_rate_am' => (float) ($data['late_interest_rate_am'] ?? 0),
+                    'late_interest_type' => SimpleInterest::normalizeType($data['late_interest_type'] ?? null),
                     'interest_start_date' => ($data['interest_start_date'] ?? null) ?: $data['date'], // '' quebra no MySQL estrito
                 ]);
                 $left = $amount;
@@ -177,6 +181,9 @@ class ReceivableService
                 $data[$field] = Money::decimal($data[$field], $decimals);
             }
         }
+        foreach (['interest_type', 'late_interest_type'] as $field) {
+            $data[$field] = SimpleInterest::normalizeType($data[$field] ?? null);
+        }
         foreach (['interest_start_date', 'first_due_date'] as $field) {
             if (($data[$field] ?? '') === '') {
                 $data[$field] = null;
@@ -189,6 +196,50 @@ class ReceivableService
         }
 
         return $data;
+    }
+
+
+    /**
+     * Atualiza taxas e tipo de juros. O saldo em aberto é recalculado; baixas já
+     * registradas não são refeitas (o principal/juros/multa já baixados permanecem).
+     */
+    public function updateCharges(Receivable $receivable, array $data): Receivable
+    {
+        foreach (['interest_rate_am', 'penalty_pct', 'late_interest_rate_am'] as $key) {
+            if (array_key_exists($key, $data) && (is_null($data[$key]) || (is_string($data[$key]) && trim($data[$key]) === ''))) {
+                $data[$key] = '0';
+            }
+        }
+        if (array_key_exists('interest_rate_am', $data) || array_key_exists('penalty_pct', $data) || array_key_exists('late_interest_rate_am', $data)) {
+            foreach (['interest_rate_am' => 4, 'penalty_pct' => 2, 'late_interest_rate_am' => 4] as $field => $decimals) {
+                if (array_key_exists($field, $data) && $data[$field] !== null && $data[$field] !== '') {
+                    $data[$field] = Money::decimal($data[$field], $decimals);
+                }
+            }
+        }
+        Validator::make($data, [
+            'interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'interest_type' => 'nullable|in:simple,compound',
+            'penalty_pct' => 'nullable|numeric|min:0|max:100',
+            'late_interest_rate_am' => 'nullable|numeric|min:0|max:100',
+            'late_interest_type' => 'nullable|in:simple,compound',
+            'interest_start_date' => 'nullable|date_format:Y-m-d',
+        ])->validate();
+
+        return DB::transaction(function () use ($receivable, $data) {
+            $receivable = Receivable::lockForUpdate()->findOrFail($receivable->id);
+            $receivable->update([
+                'interest_rate_am' => (float) ($data['interest_rate_am'] ?? 0),
+                'interest_type' => SimpleInterest::normalizeType($data['interest_type'] ?? null),
+                'penalty_pct' => (float) ($data['penalty_pct'] ?? 0),
+                'late_interest_rate_am' => (float) ($data['late_interest_rate_am'] ?? 0),
+                'late_interest_type' => SimpleInterest::normalizeType($data['late_interest_type'] ?? null),
+                'interest_start_date' => ($data['interest_start_date'] ?? null) ?: $receivable->date->toDateString(),
+            ]);
+            $this->invalidate();
+
+            return $receivable->fresh(['installments.settlements', 'contact']);
+        });
     }
 
     private function eligibleOrigin(Transaction $source): void

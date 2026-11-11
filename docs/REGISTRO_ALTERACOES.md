@@ -1,5 +1,16 @@
 # Registro de alterações
 
+## 2026-11-11 — Juros simples ou compostos em Empréstimos e Valores a receber
+
+Pedido do Cassio (card t280s1513): poder escolher o tipo de juros em todos os campos, começando em Simples.
+
+1. Em **Empréstimos** e **Valores a receber**, ao lado de cada taxa de juros (juros combinados e, nos valores a receber, também a mora), há o seletor **Simples / Compostos**. O padrão é Simples. A tela mostra a prévia do total nos dois tipos (ex.: "Simples: R$ 1.060,00 · Compostos: R$ 1.061,21"), no formato R$ 1.000,00, no celular e no computador.
+2. Fórmulas, com a mesma periodicidade já usada (% a.m., n = dias/30): simples = P × (1 + i × n); compostos = P × (1 + i)^n. A multa continua sendo um percentual único, sem tipo. Juros só viram receita quando recebidos.
+3. Registros já existentes ficam Simples e com o mesmo total de antes (nenhum saldo mudou). A edição permite trocar o tipo e recalcular: no empréstimo, enquanto não houver devoluções; nos valores a receber, em Encargos (baixas já registradas não são refeitas; só o saldo em aberto é recalculado). O tipo aparece nos detalhes, junto da taxa.
+4. Não há outros campos de juros editáveis no sistema (as taxas de aluguel de investimentos e a rentabilidade dos requisitórios não são campos de juros contratados).
+
+Migração: `2026_11_11_053000_add_interest_type_to_loans_and_receivables` (`loans.interest_type`, `receivables.interest_type` e `receivables.late_interest_type`, padrão `simple`), rodada antes do código entrar no ar. Testes: `tests/Unit/SimpleInterestTest.php`, `tests/Feature/Banking/InterestTypeTest.php`. Backup: `/root/app-cassio-backups/juros-tipo-20261111/`.
+
 ## 2026-11-11 — Paguei por alguém: correção do erro ao salvar e tela mais clara
 
 - O campo/atalho **Paguei por alguém** fica no Financeiro › Lançamentos (botão no rodapé da despesa ou da compra no cartão) e abre Financeiro › Valores a receber.

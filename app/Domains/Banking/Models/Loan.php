@@ -19,7 +19,7 @@ class Loan extends Model
 
     protected $fillable = [
         'is_test', 'contact_id', 'bank_account_id', 'disbursement_transaction_id', 'description',
-        'principal', 'date', 'installment_count', 'first_due_date', 'interest_rate_am', 'notes',
+        'principal', 'date', 'installment_count', 'first_due_date', 'interest_rate_am', 'interest_type', 'notes',
         'attachment_path', 'attachment_original_name', 'attachment_mime', 'attachment_size', 'request_key',
     ];
 
@@ -86,6 +86,11 @@ class Loan extends Model
         return ($open?->due_date ?? $this->first_due_date)?->toDateString();
     }
 
+    public function interestType(): string
+    {
+        return SimpleInterest::normalizeType($this->interest_type ?? SimpleInterest::TYPE_SIMPLE);
+    }
+
     public function balanceAsOf(?string $asOf = null): array
     {
         $asOf ??= \App\Support\BusinessDate::today();
@@ -99,6 +104,7 @@ class Loan extends Model
             0,
             $asOf,
             $this->settlementRows(),
+            $this->interestType(),
         );
     }
 
