@@ -37,7 +37,7 @@ class Transaction extends Model
         'type', 'date', 'amount', 'description', 'notes', 'status',
         'category_id', 'bank_account_id', 'credit_card_id', 'additional_card_id', 'credit_card_invoice_id',
         'related_transaction_id', 'source_type', 'source_id',
-        'ofx_fitid',
+        'ofx_fitid', 'import_batch_id',
         'installment_group_id', 'installment_number', 'installment_total',
         'is_test',
         'link_process', 'link_writ_id', 'link_broker_id', 'link_contact_id',
@@ -182,6 +182,11 @@ class Transaction extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(CreditCardInvoice::class, 'credit_card_invoice_id');
+    }
+
+    public function importBatch(): BelongsTo
+    {
+        return $this->belongsTo(StatementImportBatch::class, 'import_batch_id');
     }
 
     public function related(): BelongsTo
