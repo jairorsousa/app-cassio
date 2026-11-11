@@ -34,7 +34,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(): void
     {
-        $this->start_date = now()->format('Y-m-d');
+        $this->start_date = \App\Support\BusinessDate::today();
     }
 
     public function rules(): array
@@ -129,7 +129,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->type = 'expense';
         $this->frequency = 'monthly';
         $this->rec_status = 'active';
-        $this->start_date = now()->format('Y-m-d');
+        $this->start_date = \App\Support\BusinessDate::today();
         $this->resetValidation();
     }
 

@@ -40,10 +40,10 @@ new #[Layout('layouts.app')] class extends Component
     public function mount(Partnership $partnership): void
     {
         $this->partnership = $partnership;
-        $this->expenseDate = now()->format('Y-m-d');
+        $this->expenseDate = \App\Support\BusinessDate::today();
         $this->applied_percentage = (string) $partnership->participation_percentage;
-        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
-        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
     }
 
     public function rules(): array
@@ -135,8 +135,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public function clearFilters(): void
     {
-        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
-        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
         $this->filterCategory = '';
         $this->filterAccount = '';
     }
@@ -144,7 +144,7 @@ new #[Layout('layouts.app')] class extends Component
     private function resetForm(): void
     {
         $this->reset(['editingId', 'showFormModal', 'total_amount', 'description', 'category_id', 'bank_account_id', 'expenseNotes']);
-        $this->expenseDate = now()->format('Y-m-d');
+        $this->expenseDate = \App\Support\BusinessDate::today();
         $this->applied_percentage = (string) $this->partnership->participation_percentage;
         $this->resetValidation();
     }

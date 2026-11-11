@@ -75,18 +75,18 @@ new #[Layout('layouts.app')] class extends Component
             $this->financialBroker->load('advances', 'commissions.caseType');
         }
 
-        $this->launch_date = now()->format('Y-m-d');
+        $this->launch_date = \App\Support\BusinessDate::today();
     }
 
     public function updatedPeriod(): void
     {
         if ($this->period === 'month') {
-            $this->start_date = now()->startOfMonth()->format('Y-m-d');
-            $this->end_date = now()->endOfMonth()->format('Y-m-d');
+            $this->start_date = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+            $this->end_date = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
         }
 
         if ($this->period === 'year') {
-            $this->start_date = now()->startOfYear()->format('Y-m-d');
+            $this->start_date = \App\Support\BusinessDate::now()->startOfYear()->format('Y-m-d');
             $this->end_date = now()->endOfYear()->format('Y-m-d');
         }
 
@@ -491,7 +491,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->launch_mode = 'fixed';
 
         $this->launch_type = 'advance';
-        $this->launch_date = now()->format('Y-m-d');
+        $this->launch_date = \App\Support\BusinessDate::today();
         $this->launch_payment_method = 'PIX';
         $this->resetErrorBag();
     }

@@ -148,7 +148,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->form['use_invoice_dates'] = (bool) $source->credit_card_invoice_id;
         $total = $source->installment_group_id ? Transaction::where('installment_group_id', $source->installment_group_id)->sum('amount') : $source->amount;
         $this->form['amount'] = number_format((float) $total, 2, '.', '');
-        $this->form['date'] = min($source->date->toDateString(), today()->toDateString());
+        $this->form['date'] = min($source->date->toDateString(), \App\Support\BusinessDate::today());
         $this->form['description'] = $source->description;
         $this->form['installments'] = $source->credit_card_id ? 1 : $this->form['installments'];
         $this->form['people'][0]['amount'] = $this->form['amount'];

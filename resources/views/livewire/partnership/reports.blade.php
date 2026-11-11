@@ -20,7 +20,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->partnership = $partnership;
         if ($this->from === '') {
             $this->from = ($partnership->joined_at?->format('Y-m-d')) ?: now()->subYear()->format('Y-m-d');
-            $this->to = now()->format('Y-m-d');
+            $this->to = \App\Support\BusinessDate::today();
         }
     }
 

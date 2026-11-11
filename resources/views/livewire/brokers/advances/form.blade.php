@@ -20,7 +20,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(Broker $broker): void
     {
         $this->broker = $broker;
-        $this->date = now()->format('Y-m-d');
+        $this->date = \App\Support\BusinessDate::today();
     }
 
     public function saveAndCreateAnother(BrokerAdvanceService $advances)
@@ -62,7 +62,7 @@ new #[Layout('layouts.app')] class extends Component {
 
         if ($createAnother) {
             $this->reset(['amount', 'payment_method', 'bank_account_id', 'notes']);
-            $this->date = now()->format('Y-m-d');
+            $this->date = \App\Support\BusinessDate::today();
             $this->resetValidation();
             $this->formSuccessMessage = $message;
 

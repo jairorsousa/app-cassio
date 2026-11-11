@@ -105,7 +105,7 @@ class WritService
 
 
             if ($newStage === 'paid') {
-                $patch['paid_at'] = $context['paid_at'] ?? ($writ->paid_at ?? now()->toDateString());
+                $patch['paid_at'] = $context['paid_at'] ?? ($writ->paid_at ?? \App\Support\BusinessDate::today());
                 if (isset($context['paid_amount'])) {
                     $patch['paid_amount'] = $context['paid_amount'];
                 }
@@ -123,7 +123,7 @@ class WritService
             }
 
             if ($newStage === 'finalized') {
-                $patch['finalized_at'] = $context['finalized_at'] ?? ($writ->finalized_at ?? now()->toDateString());
+                $patch['finalized_at'] = $context['finalized_at'] ?? ($writ->finalized_at ?? \App\Support\BusinessDate::today());
                 if (isset($context['actual_receipt_amount'])) {
                     $patch['actual_receipt_amount'] = $context['actual_receipt_amount'];
                 }

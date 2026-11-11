@@ -25,7 +25,7 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(Broker $broker): void
     {
         $this->broker = $broker;
-        $this->reference_date = now()->format('Y-m-d');
+        $this->reference_date = \App\Support\BusinessDate::today();
     }
 
     public function saveAndCreateAnother(BrokerCommissionService $service)
@@ -77,7 +77,7 @@ new #[Layout('layouts.app')] class extends Component {
             if ($createAnother) {
                 $this->reset(['case_type_id', 'name', 'base_amount', 'rate_or_amount', 'process_ref', 'writ_id', 'bank_account_id', 'notes']);
                 $this->mode = 'percent';
-                $this->reference_date = now()->format('Y-m-d');
+                $this->reference_date = \App\Support\BusinessDate::today();
                 $this->resetValidation();
                 $this->formSuccessMessage = 'Comissão registrada.';
 

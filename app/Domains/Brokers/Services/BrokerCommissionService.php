@@ -347,7 +347,7 @@ class BrokerCommissionService
             $payment = BrokerCommissionPayment::create([
                 'broker_id' => $commission->broker_id,
                 'commission_id' => $commission->id,
-                'paid_at' => $paidAt ?: now()->toDateString(),
+                'paid_at' => $paidAt ?: \App\Support\BusinessDate::today(),
                 'amount' => $amount,
                 'bank_account_id' => $bankAccountId ?: $commission->bank_account_id,
                 'notes' => $notes,
@@ -410,7 +410,7 @@ class BrokerCommissionService
             }
 
             $payment->update([
-                'paid_at' => $paidAt ?: now()->toDateString(),
+                'paid_at' => $paidAt ?: \App\Support\BusinessDate::today(),
                 'amount' => $amount,
                 'bank_account_id' => $bankAccountId,
                 'notes' => $notes,
@@ -450,7 +450,7 @@ class BrokerCommissionService
         $this->payAmount(
             $commission,
             $commission->remainingAmount(),
-            now()->toDateString(),
+            \App\Support\BusinessDate::today(),
             $commission->bank_account_id,
             $commission->notes,
         );

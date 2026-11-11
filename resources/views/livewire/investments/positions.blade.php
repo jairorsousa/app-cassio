@@ -19,7 +19,7 @@ new #[Layout('layouts.app')] class extends Component {
     {
         $position = AssetPosition::with('asset')->where('asset_id', $assetId)->first();
         $this->editingQuoteAssetId = $assetId;
-        $this->quoteDate = today()->format("Y-m-d");
+        $this->quoteDate = \App\Support\BusinessDate::today();
         $this->resetValidation();
         $this->quotePrice = $position?->asset?->usesAutomaticLiquidity()
             ? \App\Support\Money::decimal(round($position->marketValue(), 2), 2)

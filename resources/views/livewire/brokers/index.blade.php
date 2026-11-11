@@ -187,7 +187,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->launch_mode = 'fixed';
 
         $this->launch_type = 'advance';
-        $this->launch_date = now()->format('Y-m-d');
+        $this->launch_date = \App\Support\BusinessDate::today();
         $this->launch_payment_method = 'PIX';
         $this->resetErrorBag();
     }

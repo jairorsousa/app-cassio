@@ -49,10 +49,10 @@ new #[Layout('layouts.app')] class extends Component
         $this->transition_monitoring_at = now()->format('Y-m-d\TH:i');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
         $this->transition_signature_at = $writ->signature_at?->format('Y-m-d\TH:i') ?: now()->format('Y-m-d\TH:i');
-        $this->transition_paid_at = now()->format('Y-m-d');
+        $this->transition_paid_at = \App\Support\BusinessDate::today();
         $this->transition_petitioned_at = now()->format('Y-m-d\TH:i');
         $this->transition_awaiting_receipt_at = now()->format('Y-m-d\TH:i');
-        $this->transition_finalized_at = now()->format('Y-m-d');
+        $this->transition_finalized_at = \App\Support\BusinessDate::today();
         $this->transition_paid_amount = (string) $writ->paid_amount;
         $this->transition_notary_expenses = (string) $writ->notary_expenses_amount;
         $this->transition_other_expenses = (string) $writ->other_expenses_amount;

@@ -33,9 +33,9 @@ new #[Layout('layouts.app')] class extends Component
     public function mount(Partnership $partnership): void
     {
         $this->partnership = $partnership;
-        $this->distDate = now()->format('Y-m-d');
-        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
-        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->distDate = \App\Support\BusinessDate::today();
+        $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
     }
 
     public function rules(): array
@@ -109,15 +109,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public function clearFilters(): void
     {
-        $this->filterFrom = now()->startOfMonth()->format('Y-m-d');
-        $this->filterTo = now()->endOfMonth()->format('Y-m-d');
+        $this->filterFrom = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+        $this->filterTo = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
         $this->filterAccount = '';
     }
 
     private function resetForm(): void
     {
         $this->reset(['editingId', 'showFormModal', 'amount', 'bank_account_id', 'source', 'distNotes']);
-        $this->distDate = now()->format('Y-m-d');
+        $this->distDate = \App\Support\BusinessDate::today();
         $this->resetValidation();
     }
 

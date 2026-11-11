@@ -1,5 +1,15 @@
 # Registro de alterações
 
+## 10/11/2026 — Datas sugeridas no "hoje do escritório" (Fortaleza) + data do lançamento #198 (Auditor Fin)
+
+Pedido do Cassio: depois das 21h (UTC-3) várias telas sugeriam/gravavam a data de amanhã porque usavam o "hoje" do relógio em UTC.
+
+1. Datas sugeridas e gravadas automaticamente passam a usar `App\Support\BusinessDate` (America/Fortaleza): Divisões (despesa e acerto), pagamento de Bens, Requisitórios (pago/finalizado no formulário, na ficha, no kanban e nos lançamentos automáticos), Corretores (comissões, adiantamentos, lançamentos, pagamento de comissão e despesa automática, período padrão e nome do PDF), Sociedade (despesas, aportes, distribuições, entrada, filtros do mês e relatório), recorrência (início), cotação manual, relatório de rentabilidade, recebíveis e o filtro do mês em Lançamentos.
+2. O relógio do sistema continua em UTC; datas digitadas pelo usuário não mudam. Os jobs noturnos (recorrências às 00:05 UTC e fechamento de faturas às 00:10 UTC) e os cálculos internos de Investimentos/Painel não foram alterados.
+3. Dado: lançamento #198 ("Recebimento requisitório", R$ 0,00, conta 3) teve só a data trocada de 11/10/2026 para 10/10/2026 (aprovado). Requisitório #41 não foi alterado; saldos conferidos iguais.
+
+Sem migração. Testes: `tests/Feature/BusinessDateDefaultsTest.php` (simula 22:00 UTC-3). Backup: `/root/app-cassio-backups/datas-fortaleza-20261110/`.
+
 ## 10/11/2026 — Financeiro › Lançamentos: escolher 25, 50 ou 100 por página (Auditor Fin)
 
 Pedido do Cassio: poder escolher quantos lançamentos ver por página (25, 50 ou 100).

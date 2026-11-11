@@ -16,13 +16,13 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(?Partnership $partnership = null): void
     {
-        $this->joined_at = now()->format('Y-m-d');
+        $this->joined_at = \App\Support\BusinessDate::today();
         if ($partnership && $partnership->exists) {
             $this->partnership = $partnership;
             $this->name = $partnership->name;
             $this->cnpj = (string) $partnership->cnpj;
             $this->participation_percentage = (string) $partnership->participation_percentage;
-            $this->joined_at = $partnership->joined_at?->format('Y-m-d') ?? now()->format('Y-m-d');
+            $this->joined_at = $partnership->joined_at?->format('Y-m-d') ?? \App\Support\BusinessDate::today();
             $this->partnershipStatus = (bool) $partnership->status;
             $this->notes = (string) $partnership->notes;
         }

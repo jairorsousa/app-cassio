@@ -110,7 +110,7 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
         $this->resetPayForm();
-        $this->payDate = now()->toDateString();
+        $this->payDate = \App\Support\BusinessDate::today();
         $this->payCategory = (string) Category::assetPurchaseCategoryId();
         $this->payAccount = (string) ($property->bank_account_id ?? '');
         $remaining = $property->paymentSummary()['remaining'] - $property->paymentSummary()['planned'];
@@ -125,7 +125,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->resetPayForm();
         $this->payMarkId = $payment->id;
         $this->payStatus = 'paid';
-        $this->payDate = $payment->date?->toDateString() ?? now()->toDateString();
+        $this->payDate = $payment->date?->toDateString() ?? \App\Support\BusinessDate::today();
         $this->payAmount = (string) $payment->amount;
         $this->payMethod = $payment->method ?? 'card';
         $this->payAccount = (string) ($payment->bank_account_id ?? $payment->property->bank_account_id ?? '');

@@ -29,7 +29,7 @@ class CreateIncomeOnFinalized
         // para nao tratar o custo como juros e sem criar outro credito no banco.
         $this->transactions->create([
             'type' => 'income',
-            'date' => $writ->finalized_at ?? now()->toDateString(),
+            'date' => $writ->finalized_at ?? \App\Support\BusinessDate::today(),
             'amount' => $writ->actual_receipt_amount,
             'description' => 'Recebimento requisitório · '.($writ->process_number ?: '#'.$writ->id),
             'status' => 'settled',

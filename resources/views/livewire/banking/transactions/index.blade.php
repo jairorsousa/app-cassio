@@ -279,8 +279,8 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         if ($this->from === '' && $this->vinculo === '') {
-            $this->from = now()->startOfMonth()->format('Y-m-d');
-            $this->to = now()->endOfMonth()->format('Y-m-d');
+            $this->from = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+            $this->to = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
         }
 
         $editar = request()->query('editar');
@@ -392,8 +392,8 @@ new #[Layout('layouts.app')] class extends Component
     public function clearFilters(): void
     {
         $this->reset(['from', 'to', 'category', 'account', 'accountType', 'status', 'type', 'testes', 'historico', 'vinculo']);
-        $this->from = now()->startOfMonth()->format('Y-m-d');
-        $this->to = now()->endOfMonth()->format('Y-m-d');
+        $this->from = \App\Support\BusinessDate::now()->startOfMonth()->format('Y-m-d');
+        $this->to = \App\Support\BusinessDate::now()->endOfMonth()->format('Y-m-d');
         $this->resetPage();
     }
 
@@ -634,7 +634,7 @@ new #[Layout('layouts.app')] class extends Component
         if (! $this->formIsCard) {
             $validator = validator(['date' => $this->formDate], ['date' => 'required|date_format:Y-m-d']);
             if ($validator->passes()) {
-                $this->formStatus = $this->formDate <= now('America/Sao_Paulo')->format('Y-m-d') ? 'settled' : 'pending';
+                $this->formStatus = $this->formDate <= \App\Support\BusinessDate::today() ? 'settled' : 'pending';
             }
         }
     }
@@ -997,7 +997,7 @@ new #[Layout('layouts.app')] class extends Component
             'createAnotherAfterSave', 'formSuccessMessage',
         ]);
         $this->formType = 'expense';
-        $this->formDate = now('America/Sao_Paulo')->format('Y-m-d');
+        $this->formDate = \App\Support\BusinessDate::today();
         $this->formStatus = 'settled';
         $this->formInstallments = 1;
         $this->resetValidation();

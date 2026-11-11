@@ -549,14 +549,14 @@ new #[Layout('layouts.app')] class extends Component
             $data['source_bank_account_id'] = null;
             $data['destination_bank_account_id'] = null;
         } elseif ($data['paid_at'] === null) {
-            $data['paid_at'] = now()->toDateString();
+            $data['paid_at'] = \App\Support\BusinessDate::today();
         }
 
         if (! $this->usesReceiptFields()) {
             $data['finalized_at'] = null;
             $data['actual_receipt_amount'] = null;
         } elseif ($data['finalized_at'] === null) {
-            $data['finalized_at'] = now()->toDateString();
+            $data['finalized_at'] = \App\Support\BusinessDate::today();
         }
 
         if (! $this->usesLostReason()) {

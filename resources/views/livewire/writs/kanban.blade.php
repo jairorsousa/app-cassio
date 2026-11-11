@@ -547,14 +547,14 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
             $data['source_bank_account_id'] = null;
             $data['destination_bank_account_id'] = null;
         } elseif ($data['paid_at'] === null) {
-            $data['paid_at'] = now()->toDateString();
+            $data['paid_at'] = \App\Support\BusinessDate::today();
         }
 
         if (! $this->usesReceiptFields()) {
             $data['finalized_at'] = null;
             $data['actual_receipt_amount'] = null;
         } elseif ($data['finalized_at'] === null) {
-            $data['finalized_at'] = now()->toDateString();
+            $data['finalized_at'] = \App\Support\BusinessDate::today();
         }
 
         if (! $this->usesLostReason()) {
@@ -726,7 +726,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         $this->promptPaidAmount = (string) $writ->paid_amount;
         $this->promptNotaryExpenses = (string) $writ->notary_expenses_amount;
         $this->promptOtherExpenses = (string) $writ->other_expenses_amount;
-        $this->promptPaidAt = now()->format('Y-m-d');
+        $this->promptPaidAt = \App\Support\BusinessDate::today();
         $this->promptSourceBankAccountId = $writ->source_bank_account_id;
         $this->promptTransactionNote = '';
 
@@ -832,7 +832,7 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         $this->promptFinalizedWritId = $id;
         $writ = Writ::findOrFail($id);
 
-        $this->promptFinalizedAt = now()->format('Y-m-d');
+        $this->promptFinalizedAt = \App\Support\BusinessDate::today();
         $this->promptActualReceiptAmount = (string) $writ->actual_receipt_amount;
         $this->promptDestinationBankAccountId = $writ->destination_bank_account_id;
         $this->promptTransactionNote = '';

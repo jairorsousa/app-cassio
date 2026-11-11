@@ -22,7 +22,7 @@ class CreateExpenseOnCommissionPaid
 
         $this->transactions->create([
             'type' => 'expense',
-            'date' => now()->toDateString(),
+            'date' => \App\Support\BusinessDate::today(),
             'amount' => $netAmount,
             'description' => 'Comissão corretor · '.$commission->broker->name
                 .' · '.$commission->caseType->name,

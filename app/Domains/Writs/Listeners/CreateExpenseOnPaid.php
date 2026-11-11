@@ -23,7 +23,7 @@ class CreateExpenseOnPaid
         if ((float) $writ->paid_amount > 0) {
             $this->transactions->create([
                 'type' => 'expense',
-                'date' => $writ->paid_at ?? now()->toDateString(),
+                'date' => $writ->paid_at ?? \App\Support\BusinessDate::today(),
                 'amount' => $writ->paid_amount,
                 'description' => 'Aquisição requisitório · '.($writ->process_number ?: '#'.$writ->id),
                 'status' => 'settled',
@@ -36,7 +36,7 @@ class CreateExpenseOnPaid
         if ((float) $writ->notary_expenses_amount > 0) {
             $this->transactions->create([
                 'type' => 'expense',
-                'date' => $writ->paid_at ?? now()->toDateString(),
+                'date' => $writ->paid_at ?? \App\Support\BusinessDate::today(),
                 'amount' => $writ->notary_expenses_amount,
                 'description' => 'Despesas cartorárias · '.($writ->process_number ?: '#'.$writ->id),
                 'status' => 'settled',
@@ -49,7 +49,7 @@ class CreateExpenseOnPaid
         if ((float) $writ->other_expenses_amount > 0) {
             $this->transactions->create([
                 'type' => 'expense',
-                'date' => $writ->paid_at ?? now()->toDateString(),
+                'date' => $writ->paid_at ?? \App\Support\BusinessDate::today(),
                 'amount' => $writ->other_expenses_amount,
                 'description' => 'Outras despesas · '.($writ->process_number ?: '#'.$writ->id),
                 'status' => 'settled',

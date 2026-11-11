@@ -64,7 +64,7 @@ class ReceivableService
                 foreach ($sources as $source) {
                     $this->eligibleOrigin($source);
                 }
-                $data['date'] = min($sources->min(fn ($source) => $source->date->toDateString()), today()->toDateString());
+                $data['date'] = min($sources->min(fn ($source) => $source->date->toDateString()), \App\Support\BusinessDate::today());
             } elseif ($data['origin'] === 'card') {
                 $card = CreditCard::where('status', true)->find($data['credit_card_id'] ?? null);
                 if (! $card) {

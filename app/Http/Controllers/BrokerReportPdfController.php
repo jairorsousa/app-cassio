@@ -44,6 +44,6 @@ class BrokerReportPdfController extends Controller
             return $startDate.'-a-'.$endDate;
         }
 
-        return $startDate ?: ($endDate ?: now()->format('Y-m-d'));
+        return $startDate ?: ($endDate ?: \App\Support\BusinessDate::today());
     }
 }

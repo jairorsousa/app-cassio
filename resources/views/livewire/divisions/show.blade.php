@@ -176,7 +176,7 @@ new #[Layout('layouts.app')] class extends Component
     private function resetExpense(): void
     {
         $this->reset('editingExpenseId', 'expenseDescription', 'expenseAmount', 'expenseNotes', 'receipt', 'transactionId', 'paymentMethod', 'payAccount', 'payCard', 'showNewCategory', 'newCategoryLabel', 'expenseKind', 'purchaseMode');
-        $this->expenseDate = now()->toDateString();
+        $this->expenseDate = \App\Support\BusinessDate::today();
         $this->expenseCategory = 'outros';
         $this->ownerCategoryId = auth()->user()->isAdmin() ? $this->service()->financeCategoryId('outros') : null;
         $this->splitMode = 'equal';
@@ -364,7 +364,7 @@ new #[Layout('layouts.app')] class extends Component
         $this->settleFrom = (string) ($from ?? $me?->id ?? '');
         $this->settleTo = (string) ($to ?? '');
         $this->settleAmount = $cents > 0 ? number_format($cents / 100, 2, '.', '') : '';
-        $this->settleDate = now()->toDateString();
+        $this->settleDate = \App\Support\BusinessDate::today();
         $this->resetValidation();
         $this->showSettleModal = true;
     }
