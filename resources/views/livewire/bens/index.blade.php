@@ -13,6 +13,8 @@ use App\Domains\Banking\Models\CreditCard;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -20,6 +22,7 @@ use Livewire\WithFileUploads;
 
 new #[Layout('layouts.app')] class extends Component {
     use WithFileUploads;
+    use SortsColumns;
 
     public bool $showForm = false;
 
@@ -674,10 +677,35 @@ new #[Layout('layouts.app')] class extends Component {
         session()->flash('status', 'Bem excluído.');
     }
 
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'properties';
+    }
+
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+        $properties = ColumnSorter::sort(
+            Property::with(['bankAccount', 'payments', 'downPayments', 'financings.installments'])->orderBy('status')->orderBy('description')->get(),
+            $by, $dir,
+            [
+                'name' => fn ($p) => $p->description,
+                'type' => fn ($p) => Property::KINDS[$p->kind] ?? $p->kind,
+                'holder' => fn ($p) => Property::OWNERS[$p->owner] ?? 'Não informado',
+                'acquisition' => fn ($p) => (float) $p->acquisition_value,
+                'current' => fn ($p) => (float) $p->current_value,
+                'status' => fn ($p) => $p->status === 'sold' ? 'Vendido' : 'Ativo',
+            ],
+            [[fn ($p) => $p->id, 'asc']]
+        );
+
         return [
-            'properties' => Property::with(['bankAccount', 'payments', 'downPayments', 'financings.installments'])->orderBy('status')->orderBy('description')->get(),
+            'properties' => $properties,
             'total' => Property::activeTotal(),
             'financingDebt' => Property::activeFinancingDebt(),
             'accounts' => BankAccount::orderBy('name')->get(['id', 'name']),
@@ -745,7 +773,16 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
         <div class="mt-space-3 hidden overflow-x-auto md:block">
             <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Bem</th><th class="text-left">Tipo</th><th class="text-left">Titular</th><th class="text-right">Aquisição / total</th><th class="text-right">Valor atual</th><th class="text-left">Situação</th><th class="text-left">Anexo</th><th></th></tr></thead>
+                <x-fx.sort-mobile list="properties" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
+                <thead><tr>
+                    <x-fx.sort-th column="name" label="Bem" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="type" label="Tipo" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="holder" label="Titular" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="acquisition" label="Aquisição / total" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="current" label="Valor atual" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="status" label="Situação" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <th class="text-left">Anexo</th><th></th>
+                </tr></thead>
                 <tbody>
                     @foreach ($properties as $p)
                         <tr>

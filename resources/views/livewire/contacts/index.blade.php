@@ -2,6 +2,8 @@
 
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Contacts\Services\CepLookupService;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
@@ -10,6 +12,17 @@ use Livewire\WithPagination;
 new #[Layout('layouts.app')] class extends Component
 {
     use WithPagination;
+    use SortsColumns;
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'contacts';
+    }
 
     #[Url]
     public string $search = '';
@@ -347,7 +360,14 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return [
-            'contacts' => $q->orderBy('name')->paginate(25),
+            'contacts' => ColumnSorter::paginate(ColumnSorter::sort($q->orderBy('name')->get(), $this->sortState()[0], $this->sortState()[1], [
+                'name' => fn ($c) => $c->name,
+                'type' => fn ($c) => $c->typeLabel(),
+                'document' => fn ($c) => $c->document ?: '',
+                'phone' => fn ($c) => $c->phone ?: '',
+                'email' => fn ($c) => $c->email ?: '',
+                'status' => fn ($c) => $c->status ? 'Ativo' : 'Inativo',
+            ], [[fn ($c) => $c->id, 'asc']]), $this, 25),
             'summary' => [
                 'total' => Contact::count(),
                 'cedentes' => Contact::ofType('cedente')->count(),
@@ -457,14 +477,15 @@ new #[Layout('layouts.app')] class extends Component
         @if ($contacts->isEmpty())
             <div class="py-10 text-center text-sm text-mono-600">Nenhum contato encontrado.</div>
         @else
+            <div class="px-4 pt-4"><x-fx.sort-mobile list="contacts" :sort-by="$sortBy" :sort-dir="$sortDir" primary /></div>
             <x-jr.table>
                 <x-slot:head>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Nome</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Tipo</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Documento</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">Telefone</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-mono-600">E-mail</th>
-                    <th class="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-mono-600">Status</th>
+                    <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
+                    <x-fx.sort-th column="type" label="Tipo" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
+                    <x-fx.sort-th column="document" label="Documento" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
+                    <x-fx.sort-th column="phone" label="Telefone" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
+                    <x-fx.sort-th column="email" label="E-mail" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
+                    <x-fx.sort-th column="status" label="Status" align="center" :sort-by="$sortBy" :sort-dir="$sortDir" class="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-mono-600" />
                     <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-mono-600">Ações</th>
                 </x-slot>
 
