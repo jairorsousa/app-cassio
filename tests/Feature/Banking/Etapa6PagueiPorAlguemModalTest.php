@@ -34,7 +34,7 @@ class Etapa6PagueiPorAlguemModalTest extends TestCase
         Volt::test('banking.transactions.index')->call('create', 'expense')
             ->assertSee('Nova despesa')
             ->assertSee('Paguei por alguém')
-            ->assertSee('Abre Valores a receber');
+            ->assertSee('Abre a tela');
 
         Volt::test('banking.transactions.index')->call('create', 'card_expense')
             ->assertSee('Nova despesa no cartão')
@@ -79,7 +79,7 @@ class Etapa6PagueiPorAlguemModalTest extends TestCase
             'amount' => '150.50',
             'description' => 'Jantar com Ana',
             'bank_account_id' => $account->id,
-        ]))->assertOk()->assertSee('Novo valor a receber')->assertSee('Jantar com Ana');
+        ]))->assertOk()->assertSee('Paguei por alguém')->assertSee('Jantar com Ana');
     }
 
     public function test_existing_expense_shortcut_opens_receivables_with_transaction_id(): void
