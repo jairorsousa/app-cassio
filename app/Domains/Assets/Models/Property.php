@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Bem patrimonial (imóvel, veículo...). O cadastro em si não gera lançamento.
  * Pagamentos (PropertyPayment) geram lançamento na conta ou compra no cartão, na categoria "Aquisição de bem" (fora do resultado).
+ * Financiamento: entradas (PropertyDownPayment) e parcelas (PropertyFinancingInstallment); parcela inteira fora do resultado; juros só no painel.
  */
 class Property extends Model
 {
@@ -92,6 +93,16 @@ class Property extends Model
         return $this->hasMany(PropertyPayment::class)->orderByRaw('date is null')->orderBy('date')->orderBy('id');
     }
 
+    public function downPayments(): HasMany
+    {
+        return $this->hasMany(PropertyDownPayment::class)->orderByRaw('date is null')->orderBy('date')->orderBy('id');
+    }
+
+    public function financings(): HasMany
+    {
+        return $this->hasMany(PropertyFinancing::class)->orderBy('id');
+    }
+
     /** Pago, previsto e quanto falta do valor total da compra (valor de aquisição). Em centavos para não errar arredondamento. */
     public function paymentSummary(): array
     {
@@ -113,6 +124,69 @@ class Property extends Model
     public function hasAttachment(): bool
     {
         return (bool) $this->attachment_path && Storage::disk('local')->exists($this->attachment_path);
+    }
+
+    /**
+     * Painel da forma de pagamento: preço, total já pago, saldo devedor, parcelas restantes, total final e juros.
+     * Juros = (entradas + todas as parcelas) − preço do bem (Opção A: não entram no resultado do mês).
+     */
+    public function financingSummary(): array
+    {
+        $downs = $this->relationLoaded('downPayments') ? $this->downPayments : $this->downPayments()->get();
+        $payments = $this->relationLoaded('payments') ? $this->payments : $this->payments()->get();
+        $financings = $this->relationLoaded('financings') ? $this->financings : $this->financings()->with('installments')->get();
+
+        $downPaid = (int) $downs->where('status', 'paid')->sum(fn ($p) => (int) round((float) $p->amount * 100));
+        $downAll = (int) $downs->sum(fn ($p) => (int) round((float) $p->amount * 100));
+        $payPaid = (int) $payments->where('status', 'paid')->sum(fn ($p) => (int) round((float) $p->amount * 100));
+        $payAll = (int) $payments->sum(fn ($p) => (int) round((float) $p->amount * 100));
+
+        $instPaid = $instAll = $instOpen = $debt = 0;
+        $remainingCount = 0;
+        $debtIncludesInterest = false;
+        foreach ($financings as $f) {
+            $instPaid += $f->paidCents();
+            $instAll += $f->totalInstallmentsCents();
+            $instOpen += $f->openCents();
+            $debt += (int) round($f->remainingDebt() * 100);
+            $remainingCount += $f->remainingCount();
+            $debtIncludesInterest = $debtIncludesInterest || $f->remainingDebtIncludesFutureInterest();
+        }
+
+        $price = $this->acquisition_value !== null ? (int) round((float) $this->acquisition_value * 100) : null;
+        $totalPaid = $downPaid + $instPaid + $payPaid;
+        $totalFinal = $downAll + $instAll + $payAll;
+        $interest = $price !== null ? max(0, ($downAll + $instAll) - $price) : null;
+
+        return [
+            'price' => $price !== null ? $price / 100 : null,
+            'paid' => $totalPaid / 100,
+            'down_paid' => $downPaid / 100,
+            'installments_paid' => $instPaid / 100,
+            'other_paid' => $payPaid / 100,
+            'remaining_debt' => $debt / 100,
+            'remaining_count' => $remainingCount,
+            'open_installments' => $instOpen / 100,
+            'debt_includes_future_interest' => $debtIncludesInterest && $remainingCount > 0,
+            'total_final' => $totalFinal / 100,
+            'interest_cost' => $interest !== null ? $interest / 100 : null,
+            'has_financing' => $financings->isNotEmpty(),
+            'has_down' => $downs->isNotEmpty(),
+        ];
+    }
+
+    /** Saldo devedor deste bem (financiamentos), em reais. */
+    public function remainingDebt(): float
+    {
+        $financings = $this->relationLoaded('financings') ? $this->financings : $this->financings()->with('installments')->get();
+
+        return round((float) $financings->sum(fn ($f) => $f->remainingDebt()), 2);
+    }
+
+    /** Soma do saldo devedor de todos os bens não excluídos. */
+    public static function activeFinancingDebt(): float
+    {
+        return round((float) PropertyFinancing::with('installments')->whereHas('property')->get()->sum(fn ($f) => $f->remainingDebt()), 2);
     }
 
     /** Valor patrimonial: valor atual informado; sem ele, o de aquisição. Vendidos não contam. */
