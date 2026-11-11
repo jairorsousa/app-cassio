@@ -7,9 +7,27 @@ use App\Domains\Investments\Services\BrapiQuoteProvider;
 use App\Domains\Investments\Services\InvestmentBankSyncService;
 use App\Domains\Investments\Support\MarketTicker;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'assets';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['assets'];
+    }
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
     public bool $showFormModal = false;
     public ?int $editingId = null;
 
@@ -176,7 +194,13 @@ new #[Layout('layouts.app')] class extends Component {
         AssetClass::ensureCatalog();
 
         return [
-            'assets' => Asset::with('assetClass', 'position', 'linkedBankAccount')->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))->when($this->classFilter, fn ($q) => $q->where('asset_class_id', $this->classFilter))->orderBy('ticker')->get(),
+            'assets' => Asset::with('assetClass', 'position', 'linkedBankAccount')->when($this->search, fn ($q) => $q->where(fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))->when($this->classFilter, fn ($q) => $q->where('asset_class_id', $this->classFilter))->orderBy('ticker')->get()->pipe(fn ($items) => $this->sortRows($items, 'assets', [
+                'ticker' => fn ($a) => $a->ticker,
+                'name' => fn ($a) => $a->name,
+                'class' => fn ($a) => $a->assetClass?->name,
+                'quantity' => fn ($a) => (float) ($a->position?->quantity ?? 0),
+                'avg_price' => fn ($a) => (float) ($a->position?->average_price ?? 0),
+            ], [[fn ($a) => $a->ticker, 'asc']])),
             'classes' => AssetClass::ordered(),
             'checkingAccounts' => BankAccount::active()->where('type', 'checking')->orderBy('name')->get(),
         ];
@@ -200,14 +224,10 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($assets->isEmpty())
             <div class="text-sm text-mono-600">Nenhum ativo cadastrado.</div>
         @else
-            <div class="overflow-x-auto"><table class="investment-table">
+            <x-fx.sort-mobile list="assets" :sort-by="$sortBy" :sort-dir="$sortDir" primary /><div class="overflow-x-auto"><table class="investment-table">
                 <thead>
                     <tr>
-                        <th class="text-left">Ticker</th>
-                        <th class="text-left">Nome</th>
-                        <th class="text-left">Classe</th>
-                        <th class="text-right">Quantidade</th>
-                        <th class="text-right">Preço médio</th>
+                        <x-fx.sort-th column="ticker" label="Ticker" list="assets" :sorts="$sorts" /><x-fx.sort-th column="name" label="Nome" list="assets" :sorts="$sorts" /><x-fx.sort-th column="class" label="Classe" list="assets" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Quantidade" list="assets" :sorts="$sorts" align="right" /><x-fx.sort-th column="avg_price" label="Preço médio" list="assets" :sorts="$sorts" align="right" />
                         <th></th>
                     </tr>
                 </thead>

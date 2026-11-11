@@ -6,10 +6,23 @@ use App\Domains\Investments\Services\Statements\BrokerStatementImportService;
 use App\Domains\Investments\Services\Statements\BrokerStatementParser;
 use App\Domains\Investments\Services\Statements\StatementAiAssistant;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'statement_events';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['statement_events', 'statement_rows'];
+    }
+
     use WithFileUploads;
 
     public $file = null;
@@ -58,6 +71,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->loadSort();
         $open = BrokerStatementImport::whereIn('status', ['draft', 'needs_review'])->where('expires_at', '>', now())->where('created_by', auth()->id())->latest('id')->first();
         if ($open) {
             $this->load($open);
@@ -166,7 +180,17 @@ new #[Layout('layouts.app')] class extends Component {
 
         return [
             'import' => $import,
-            'rows' => $import ? $import->rows()->with('duplicateOf')->limit(500)->get() : collect(),
+            'rows' => $import ? $this->sortRows($import->rows()->with('duplicateOf')->limit(500)->get(), 'statement_rows', [
+                'number' => fn ($r) => (float) $r->row_number,
+                'date' => fn ($r) => $r->date,
+                'ticker' => fn ($r) => $r->ticker,
+                'type' => fn ($r) => BrokerStatementRow::KINDS[$r->kind] ?? $r->kind,
+                'quantity' => fn ($r) => $r->quantity === null ? null : (float) $r->quantity,
+                'gross' => fn ($r) => $r->gross_amount === null ? null : (float) $r->gross_amount,
+                'tax' => fn ($r) => $r->withholding_tax === null ? null : (float) $r->withholding_tax,
+                'net' => fn ($r) => $r->net_amount === null ? null : (float) $r->net_amount,
+                'status' => fn ($r) => $r->status,
+            ], [[fn ($r) => (float) $r->row_number, 'asc']]) : collect(),
             'fields' => BrokerStatementParser::FIELDS,
             'kinds' => BrokerStatementRow::KINDS,
             'aiEnabled' => $ai->enabled(),
@@ -187,7 +211,10 @@ new #[Layout('layouts.app')] class extends Component {
         foreach (self::VIEW_GROUPS as $k => [$label, $st]) {
             $counts[$k] = $st === null ? (int) $byStatus->sum() : (int) $byStatus->only($st)->sum();
         }
-        $q = $batch->rows()->with('duplicateOf')->orderBy('row_number');
+        // Ordem escolhida pela setinha direto no banco, porque a lista carrega de 50 em 50.
+        [$sortBy, $sortDir] = $this->sortState('statement_events');
+        $sortColumn = ['date' => 'date', 'ticker' => 'ticker', 'description' => 'source_type_label', 'type' => 'kind', 'amount' => 'net_amount', 'status' => 'status'][$sortBy] ?? 'date';
+        $q = $batch->rows()->with('duplicateOf')->reorder()->orderBy($sortColumn, $sortDir)->orderBy('row_number', $sortColumn === 'date' ? $sortDir : 'asc');
         $st = self::VIEW_GROUPS[$this->viewGroup][1] ?? null;
         if ($st !== null) {
             $q->whereIn('status', $st);
@@ -265,7 +292,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <p class="mt-4 text-sm">Linhas: <strong>{{ $s['rows'] ?? 0 }}</strong> · prontas: <strong>{{ $s['by_status']['ready'] ?? 0 }}</strong> (R$ {{ number_format($s['ready_net'] ?? 0, 2, ',', '.') }}) · duplicadas: {{ $s['by_status']['duplicate'] ?? 0 }} · possíveis duplicadas: {{ $s['by_status']['duplicate_candidate'] ?? 0 }} · pendentes manuais: {{ $s['by_status']['pending_manual'] ?? 0 }} · erros: {{ $s['by_status']['error'] ?? 0 }} · excluídas: {{ $s['by_status']['excluded'] ?? 0 }}</p>
                 <div class="mt-4 overflow-x-auto">
                     <table class="w-full text-xs">
-                        <thead><tr class="text-left text-mono-600"><th>#</th><th>Data</th><th>Ticker</th><th>Tipo</th><th class="text-right">Qtd</th><th class="text-right">Bruto</th><th class="text-right">IR</th><th class="text-right">Líquido</th><th>Status</th><th></th></tr></thead>
+                        <thead><tr class="text-left text-mono-600"><x-fx.sort-th column="number" label="#" list="statement_rows" :sorts="$sorts" /><x-fx.sort-th column="date" label="Data" list="statement_rows" :sorts="$sorts" /><x-fx.sort-th column="ticker" label="Ticker" list="statement_rows" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="statement_rows" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtd" list="statement_rows" :sorts="$sorts" align="right" /><x-fx.sort-th column="gross" label="Bruto" list="statement_rows" :sorts="$sorts" align="right" /><x-fx.sort-th column="tax" label="IR" list="statement_rows" :sorts="$sorts" align="right" /><x-fx.sort-th column="net" label="Líquido" list="statement_rows" :sorts="$sorts" align="right" /><x-fx.sort-th column="status" label="Status" list="statement_rows" :sorts="$sorts" /><th></th></tr></thead>
                         <tbody>
                         @foreach ($rows as $row)
                             <tr class="border-t border-mono-100" wire:key="r{{ $row->id }}">
@@ -310,7 +337,7 @@ new #[Layout('layouts.app')] class extends Component {
                                 @endforeach
                             </div>
                             <input wire:model.live.debounce.400ms="viewSearch" placeholder="Buscar ticker, descrição, data (dd/mm/aaaa) ou valor" class="h-10 w-full text-xs md:text-sm rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2" />
-                            <div class="space-y-2 md:hidden" data-mobile="batch-rows">
+                            <x-fx.sort-mobile list="statement_events" :sort-by="$sortBy" :sort-dir="$sortDir" primary /><div class="space-y-2 md:hidden" data-mobile="batch-rows">
                                 @forelse ($viewRows as $r)
                                     <div class="rounded-sm border border-cryptex-border-default p-3 text-xs">
                                         <div class="flex items-start justify-between gap-2"><span>{{ $r->date?->format('d/m/Y') }} · <strong>{{ $r->ticker ?? '—' }}</strong> · {{ $kinds[$r->kind] ?? $r->kind }}</span><strong class="{{ (float) $r->net_amount < 0 ? 'text-system-down' : 'text-system-up' }}">{{ $r->net_amount === null ? '—' : number_format((float) $r->net_amount, 2, ',', '.') }}</strong></div>
@@ -323,7 +350,7 @@ new #[Layout('layouts.app')] class extends Component {
                             </div>
                             <div class="hidden overflow-x-auto md:block">
                                 <table class="fx-table w-full text-xs">
-                                    <thead><tr><th class="text-left">Data</th><th class="text-left">Ticker</th><th class="text-left">Descrição</th><th class="text-left">Tipo</th><th class="text-right">Valor</th><th class="text-left">Situação</th></tr></thead>
+                                    <thead><tr><x-fx.sort-th column="date" label="Data" list="statement_events" :sorts="$sorts" /><x-fx.sort-th column="ticker" label="Ticker" list="statement_events" :sorts="$sorts" /><x-fx.sort-th column="description" label="Descrição" list="statement_events" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="statement_events" :sorts="$sorts" /><x-fx.sort-th column="amount" label="Valor" list="statement_events" :sorts="$sorts" align="right" /><x-fx.sort-th column="status" label="Situação" list="statement_events" :sorts="$sorts" /></tr></thead>
                                     <tbody>
                                         @forelse ($viewRows as $r)
                                             <tr>

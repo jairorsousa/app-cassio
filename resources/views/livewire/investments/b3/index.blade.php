@@ -7,11 +7,29 @@ use App\Domains\Investments\Services\B3MidasImportService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'b3_incomes';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['b3_incomes', 'b3_positions', 'b3_years'];
+    }
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
     use WithFileUploads, WithPagination;
 
     public $positionFile = null;
@@ -116,12 +134,41 @@ new #[Layout('layouts.app')] class extends Component {
             ->when($this->ticker !== '', fn ($q) => $q->where('ticker', strtoupper($this->ticker)))
             ->orderByDesc('payment_date')->orderByDesc('id');
 
+        $baseDateShown = $positions->first()?->base_date;
+        $positions = $this->sortRows($positions, 'b3_positions', [
+            'asset' => fn ($p) => $p->ticker,
+            'status' => fn ($p) => B3PositionSnapshot::ORIGIN_LABELS[$p->origin] ?? $p->origin,
+            'quantity' => fn ($p) => (float) $p->quantity,
+            'custody' => fn ($p) => $p->quantity_custody === null ? null : (float) $p->quantity_custody,
+            'lent' => fn ($p) => $p->quantity_lent === null ? null : (float) $p->quantity_lent,
+            'avg_price' => fn ($p) => $p->hasAveragePrice() ? (float) $p->average_price : null,
+            'close' => fn ($p) => $p->close_price === null ? null : (float) $p->close_price,
+            'value' => fn ($p) => (float) $p->market_value,
+            'institutions' => fn ($p) => $p->institutions,
+        ], [[fn ($p) => $p->ticker, 'asc']]);
+        $byYear = AssetIncomeEvent::selectRaw('substr(payment_date, 1, 4) as y, type, sum(net_amount) as total, count(*) as n')->groupBy('y', 'type')->orderBy('y')->get()->groupBy('y');
+        [$yearBy, $yearDir] = $this->sortState('b3_years');
+        $byYear = $yearBy === 'total'
+            ? ($yearDir === 'asc' ? $byYear->sortBy(fn ($r) => (float) $r->sum('total')) : $byYear->sortByDesc(fn ($r) => (float) $r->sum('total')))
+            : ($yearDir === 'asc' ? $byYear->sortKeys() : $byYear->sortKeysDesc());
+        $sortedEvents = $this->sortRows((clone $events)->get(), 'b3_incomes', [
+            'date' => fn ($e) => $e->payment_date,
+            'asset' => fn ($e) => $e->ticker,
+            'type' => fn ($e) => $e->typeLabel(),
+            'quantity' => fn ($e) => $e->quantity === null ? null : (float) $e->quantity,
+            'gross' => fn ($e) => $e->gross_amount === null ? null : (float) $e->gross_amount,
+            'tax' => fn ($e) => $e->withholding_tax === null ? null : (float) $e->withholding_tax,
+            'net' => fn ($e) => (float) $e->net_amount,
+            'broker' => fn ($e) => $e->broker_name,
+            'source' => fn ($e) => $e->source === 'b3_midas' ? 'B3 (Midas)' : ($e->source === 'broker_statement' ? 'Extrato corretora' : $e->source),
+        ], [[fn ($e) => $e->id, $this->sortState('b3_incomes')[1]]]);
+
         return [
             'positions' => $positions,
-            'baseDateShown' => $positions->first()?->base_date,
-            'events' => (clone $events)->paginate(50),
+            'baseDateShown' => $baseDateShown,
+            'events' => \App\Support\ColumnSorter::paginate($sortedEvents, $this, 50),
             'eventsTotal' => (float) (clone $events)->sum('net_amount'),
-            'byYear' => AssetIncomeEvent::selectRaw('substr(payment_date, 1, 4) as y, type, sum(net_amount) as total, count(*) as n')->groupBy('y', 'type')->orderBy('y')->get()->groupBy('y'),
+            'byYear' => $byYear,
             'years' => AssetIncomeEvent::selectRaw('distinct substr(payment_date, 1, 4) as y')->orderByDesc('y')->pluck('y'),
         ];
     }
@@ -171,7 +218,7 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
             <div class="mt-space-3 hidden overflow-x-auto md:block">
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Ativo</th><th class="text-left">Situação</th><th class="text-right">Quantidade</th><th class="text-right">Custódia</th><th class="text-right">Emprestada</th><th class="text-right">PM</th><th class="text-right">Fechamento</th><th class="text-right">Valor</th><th class="text-left">Instituições (B3)</th></tr></thead>
+                    <thead><tr><x-fx.sort-th column="asset" label="Ativo" list="b3_positions" :sorts="$sorts" /><x-fx.sort-th column="status" label="Situação" list="b3_positions" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Quantidade" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="custody" label="Custódia" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="lent" label="Emprestada" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="avg_price" label="PM" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="close" label="Fechamento" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="value" label="Valor" list="b3_positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="institutions" label="Instituições (B3)" list="b3_positions" :sorts="$sorts" /></tr></thead>
                     <tbody>
                         @foreach ($positions as $p)
                             <tr>
@@ -203,7 +250,7 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($byYear->isNotEmpty())
             <div class="overflow-x-auto mb-space-3">
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Ano</th>@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)@if (! in_array($k, ['other', 'yield']))<th class="text-right">{{ $l }}</th>@endif @endforeach<th class="text-right">Total</th></tr></thead>
+                    <thead><tr><x-fx.sort-th column="year" label="Ano" list="b3_years" :sorts="$sorts" />@foreach (\App\Domains\Investments\Models\AssetIncomeEvent::TYPE_LABELS as $k => $l)@if (! in_array($k, ['other', 'yield']))<th class="text-right">{{ $l }}</th>@endif @endforeach<x-fx.sort-th column="total" label="Total" list="b3_years" :sorts="$sorts" align="right" /></tr></thead>
                     <tbody>
                         @foreach ($byYear as $y => $rows)
                             <tr><td>{{ $y }}</td>@foreach (['dividend', 'jcp', 'fii_income', 'lending_reimbursement', 'lending_fee'] as $k)<td class="text-right">{{ $m($rows->firstWhere('type', $k)?->total ?? 0) }}</td>@endforeach<td class="text-right font-semibold">{{ $m($rows->sum('total')) }}</td></tr>
@@ -218,6 +265,7 @@ new #[Layout('layouts.app')] class extends Component {
             <label class="flex flex-col gap-1">Ticker<input wire:model.live.debounce.500ms="ticker" class="h-10 w-28 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2 uppercase" /></label>
             <div class="ml-auto">Total filtrado: <strong>{{ $m($eventsTotal) }}</strong></div>
         </div>
+        <x-fx.sort-mobile list="b3_incomes" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
         <div class="space-y-2 md:hidden" data-mobile="b3-income">
             @forelse ($events as $e)
                 <div class="rounded-sm border border-cryptex-border-default p-3 text-sm">
@@ -231,7 +279,7 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
         <div class="hidden overflow-x-auto md:block">
             <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Pagamento</th><th class="text-left">Ativo</th><th class="text-left">Tipo</th><th class="text-right">Qtd. base</th><th class="text-right">Bruto</th><th class="text-right">IR</th><th class="text-right">Líquido</th><th class="text-left">Corretora</th><th class="text-left">Origem</th></tr></thead>
+                <thead><tr><x-fx.sort-th column="date" label="Pagamento" list="b3_incomes" :sorts="$sorts" /><x-fx.sort-th column="asset" label="Ativo" list="b3_incomes" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="b3_incomes" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtd. base" list="b3_incomes" :sorts="$sorts" align="right" /><x-fx.sort-th column="gross" label="Bruto" list="b3_incomes" :sorts="$sorts" align="right" /><x-fx.sort-th column="tax" label="IR" list="b3_incomes" :sorts="$sorts" align="right" /><x-fx.sort-th column="net" label="Líquido" list="b3_incomes" :sorts="$sorts" align="right" /><x-fx.sort-th column="broker" label="Corretora" list="b3_incomes" :sorts="$sorts" /><x-fx.sort-th column="source" label="Origem" list="b3_incomes" :sorts="$sorts" /></tr></thead>
                 <tbody>
                     @forelse ($events as $e)
                         <tr><td>{{ $e->payment_date->format('d/m/Y') }}</td><td>{{ $e->ticker }}</td><td>{{ $e->typeLabel() }}</td><td class="text-right">{{ $q($e->quantity) }}</td><td class="text-right">{{ $e->gross_amount === null ? 'não informado' : $m($e->gross_amount) }}</td><td class="text-right">{{ $e->withholding_tax === null ? '—' : $m($e->withholding_tax) }}</td><td class="text-right font-semibold">{{ $m($e->net_amount) }}</td><td>{{ $e->broker_name }}</td><td>{{ $e->source === 'b3_midas' ? 'B3 (Midas)' : ($e->source === 'broker_statement' ? 'Extrato corretora' : $e->source) }}</td></tr>

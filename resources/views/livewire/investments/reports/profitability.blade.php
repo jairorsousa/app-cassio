@@ -2,13 +2,27 @@
 
 use App\Domains\Investments\Services\InvestmentAnalyticsService;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'profitability';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['profitability'];
+    }
+
     public string $from = '';
     public string $to = '';
 
-    public function mount(): void { $this->from = \App\Support\BusinessDate::now()->startOfYear()->format('Y-m-d'); $this->to = \App\Support\BusinessDate::today(); }
+    public function mount(): void {
+        $this->loadSort(); $this->from = \App\Support\BusinessDate::now()->startOfYear()->format('Y-m-d'); $this->to = \App\Support\BusinessDate::today(); }
 
     public function rules(): array { return ['from' => 'required|date', 'to' => 'required|date|after_or_equal:from|before_or_equal:'.\App\Support\BusinessDate::today()]; }
 
@@ -33,7 +47,19 @@ new #[Layout('layouts.app')] class extends Component {
     public function with(): array
     {
         $valid = validator(['from' => $this->from, 'to' => $this->to], $this->rules())->passes();
-        return ['report' => $valid ? app(InvestmentAnalyticsService::class)->period($this->from, $this->to) : null];
+        $report = $valid ? app(InvestmentAnalyticsService::class)->period($this->from, $this->to) : null;
+        if ($report) {
+            $report['rows'] = $this->sortRows($report['rows'], 'profitability', [
+                'asset' => fn ($r) => $r['ticker'],
+                'purchases' => fn ($r) => (float) $r['buys'],
+                'sales' => fn ($r) => (float) $r['sales'],
+                'gain' => fn ($r) => (float) $r['realized'],
+                'income' => fn ($r) => (float) $r['income'],
+                'result' => fn ($r) => (float) $r['result'],
+            ], [[fn ($r) => $r['ticker'], 'asc']]);
+        }
+
+        return ['report' => $report];
     }
 }; ?>
 
@@ -62,8 +88,8 @@ new #[Layout('layouts.app')] class extends Component {
             @if ($report['rows']->isEmpty())
                 <x-fx.empty-state icon="📊" title="Sem resultados neste período" description="Registre suas operações ou selecione outro período." />
             @else
-                <div class="overflow-x-auto"><table class="investment-table">
-                    <thead><tr><th class="text-left">Ativo</th><th class="text-right">Compras</th><th class="text-right">Vendas</th><th class="text-right">Lucro / prejuízo nas vendas</th><th class="text-right">Proventos</th><th class="text-right">Resultado</th></tr></thead>
+                <x-fx.sort-mobile list="profitability" :sort-by="$sortBy" :sort-dir="$sortDir" primary /><div class="overflow-x-auto"><table class="investment-table">
+                    <thead><tr><x-fx.sort-th column="asset" label="Ativo" list="profitability" :sorts="$sorts" /><x-fx.sort-th column="purchases" label="Compras" list="profitability" :sorts="$sorts" align="right" /><x-fx.sort-th column="sales" label="Vendas" list="profitability" :sorts="$sorts" align="right" /><x-fx.sort-th column="gain" label="Lucro / prejuízo nas vendas" list="profitability" :sorts="$sorts" align="right" /><x-fx.sort-th column="income" label="Proventos" list="profitability" :sorts="$sorts" align="right" /><x-fx.sort-th column="result" label="Resultado" list="profitability" :sorts="$sorts" align="right" /></tr></thead>
                     <tbody>@foreach ($report['rows'] as $row)<tr><td class="font-semibold">{{ $row['ticker'] }}</td>@foreach (['buys', 'sales', 'realized', 'income', 'result'] as $key)<td class="text-right whitespace-nowrap {{ $key === 'result' ? ($row[$key] >= 0 ? 'text-up font-bold' : 'text-down font-bold') : '' }}">R$ {{ number_format($row[$key], 2, ',', '.') }}</td>@endforeach</tr>@endforeach</tbody>
                 </table></div>
             @endif

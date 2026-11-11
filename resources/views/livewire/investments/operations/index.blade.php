@@ -10,10 +10,23 @@ use App\Domains\Investments\Support\MarketTicker;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'operations';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['operations'];
+    }
+
     use WithPagination;
 
     #[Url]
@@ -55,6 +68,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->loadSort();
         $this->opDate = \App\Support\BusinessDate::today();
     }
 
@@ -767,7 +781,16 @@ new #[Layout('layouts.app')] class extends Component {
         }
 
         return [
-            'operations' => $q->when($this->from, fn ($q) => $q->whereDate('date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('date', '<=', $this->to))->orderByDesc('date')->orderByDesc('id')->paginate(25),
+            'operations' => $q->when($this->from, fn ($q) => $q->whereDate('date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('date', '<=', $this->to))->orderByDesc('date')->orderByDesc('id')->get()->pipe(fn ($items) => \App\Support\ColumnSorter::paginate($this->sortRows($items, 'operations', [
+                'date' => fn ($op) => $op->date,
+                'broker' => fn ($op) => $op->bankAccount?->name,
+                'asset' => fn ($op) => $op->asset?->ticker,
+                'type' => fn ($op) => $op->asset?->usesAutomaticLiquidity() ? ($op->type === 'buy' ? 'Aplicação automática' : 'Resgate automático') : ($op->type === 'buy' ? 'Compra' : 'Venda'),
+                'quantity' => fn ($op) => (float) $op->quantity,
+                'price' => fn ($op) => (float) $op->unit_price,
+                'total' => fn ($op) => (float) $op->total,
+                'result' => fn ($op) => $op->realized_pnl === null ? null : (float) $op->realized_pnl,
+            ], [[fn ($op) => $op->id, $this->sortState('operations')[1]]]), $this, 25)),
             'assets' => Asset::orderBy('ticker')->get(),
             'classes' => AssetClass::ordered(),
             'brokers' => $brokers,
@@ -852,17 +875,11 @@ new #[Layout('layouts.app')] class extends Component {
             <x-fx.empty-state icon="↔" title="Nenhum registro encontrado" description="Ajuste os filtros ou registre sua primeira movimentação." />
         @else
             <div class="overflow-x-auto">
+                <x-fx.sort-mobile list="operations" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <table class="investment-table">
                     <thead>
                         <tr>
-                            <th class="text-left">Data</th>
-                            <th class="text-left">Corretora</th>
-                            <th class="text-left">Ativo</th>
-                            <th class="text-left">Tipo</th>
-                            <th class="text-right">Qtd</th>
-                            <th class="text-right">Preço</th>
-                            <th class="text-right">Total</th>
-                            <th class="text-right">Resultado realizado</th>
+                            <x-fx.sort-th column="date" label="Data" list="operations" :sorts="$sorts" /><x-fx.sort-th column="broker" label="Corretora" list="operations" :sorts="$sorts" /><x-fx.sort-th column="asset" label="Ativo" list="operations" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="operations" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtd" list="operations" :sorts="$sorts" align="right" /><x-fx.sort-th column="price" label="Preço" list="operations" :sorts="$sorts" align="right" /><x-fx.sort-th column="total" label="Total" list="operations" :sorts="$sorts" align="right" /><x-fx.sort-th column="result" label="Resultado realizado" list="operations" :sorts="$sorts" align="right" />
                             <th></th>
                         </tr>
                     </thead>

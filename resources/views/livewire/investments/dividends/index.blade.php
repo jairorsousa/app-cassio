@@ -4,10 +4,23 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Investments\Models\Asset;
 use App\Domains\Investments\Models\AssetDividend;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'dividends';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['dividends'];
+    }
+
     use WithPagination;
     public string $from = '';
     public string $to = '';
@@ -61,6 +74,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->loadSort();
         $this->payment_date = \App\Support\BusinessDate::today();
     }
 
@@ -162,7 +176,14 @@ new #[Layout('layouts.app')] class extends Component {
         if ($this->assetFilter) $q->where('asset_id', $this->assetFilter);
         if ($this->typeFilter) $q->where('type', $this->typeFilter);
         return [
-            'dividends' => $q->when($this->from, fn ($q) => $q->whereDate('payment_date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('payment_date', '<=', $this->to))->orderByDesc('payment_date')->orderByDesc('id')->paginate(25),
+            'dividends' => $q->when($this->from, fn ($q) => $q->whereDate('payment_date', '>=', $this->from))->when($this->to, fn ($q) => $q->whereDate('payment_date', '<=', $this->to))->orderByDesc('payment_date')->orderByDesc('id')->get()->pipe(fn ($items) => \App\Support\ColumnSorter::paginate($this->sortRows($items, 'dividends', [
+                'date' => fn ($d) => $d->payment_date,
+                'asset' => fn ($d) => $d->asset?->ticker,
+                'type' => fn ($d) => AssetDividend::TYPE_LABELS[$d->type] ?? $d->type,
+                'quantity' => fn ($d) => (float) $d->quantity,
+                'per_share' => fn ($d) => (float) $d->unit_amount,
+                'total' => fn ($d) => (float) $d->total,
+            ], [[fn ($d) => $d->id, $this->sortState('dividends')[1]]]), $this, 25)),
             'assets' => Asset::orderBy('ticker')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
@@ -189,15 +210,10 @@ new #[Layout('layouts.app')] class extends Component {
         @if ($dividends->isEmpty())
             <x-fx.empty-state icon="▤" title="Nenhum registro encontrado" description="Ajuste os filtros ou registre sua primeira entrada de proventos." />
         @else
-            <div class="overflow-x-auto"><table class="investment-table">
+            <x-fx.sort-mobile list="dividends" :sort-by="$sortBy" :sort-dir="$sortDir" primary /><div class="overflow-x-auto"><table class="investment-table">
                 <thead>
                     <tr>
-                        <th class="text-left">Data</th>
-                        <th class="text-left">Ativo</th>
-                        <th class="text-left">Tipo</th>
-                        <th class="text-right">Qtd</th>
-                        <th class="text-right">R$/un</th>
-                        <th class="text-right">Total</th>
+                        <x-fx.sort-th column="date" label="Data" list="dividends" :sorts="$sorts" /><x-fx.sort-th column="asset" label="Ativo" list="dividends" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="dividends" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtd" list="dividends" :sorts="$sorts" align="right" /><x-fx.sort-th column="per_share" label="R$/un" list="dividends" :sorts="$sorts" align="right" /><x-fx.sort-th column="total" label="Total" list="dividends" :sorts="$sorts" align="right" />
                         <th></th>
                     </tr>
                 </thead>

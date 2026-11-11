@@ -5,9 +5,27 @@ use App\Domains\Investments\Models\AssetPosition;
 use App\Domains\Investments\Services\AssetPositionService;
 use App\Domains\Investments\Services\RefreshAssetQuotesService;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'positions';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['positions'];
+    }
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
     public ?int $editingQuoteAssetId = null;
     public string $quotePrice = '';
     public string $quoteDate = '';
@@ -100,8 +118,17 @@ new #[Layout('layouts.app')] class extends Component {
                 ->when($this->search, fn ($q) => $q->whereHas('asset', fn ($q) => $q->where('ticker', 'like', '%'.$this->search.'%')->orWhere('name', 'like', '%'.$this->search.'%')))
                 ->where('quantity', '>', 0)
                 ->get()
-                ->sortByDesc(fn ($p) => $p->marketValue())
-                ->values(),
+                ->pipe(fn ($items) => $this->sortRows($items, 'positions', [
+                    'ticker' => fn ($p) => $p->asset?->ticker,
+                    'class' => fn ($p) => $p->asset?->assetClass?->name,
+                    'quantity' => fn ($p) => (float) $p->quantity,
+                    'avg_price' => fn ($p) => (float) $p->average_price,
+                    'invested' => fn ($p) => (float) $p->total_invested,
+                    'quote' => fn ($p) => (float) ($p->current_price ?? $p->average_price),
+                    'market' => fn ($p) => (float) $p->marketValue(),
+                    'result' => fn ($p) => (float) $p->unrealizedPnL(),
+                    'percent' => fn ($p) => (float) $p->unrealizedPnLPercent(),
+                ], [[fn ($p) => $p->asset?->ticker, 'asc']])),
         ];
     }
 }; ?>
@@ -117,18 +144,10 @@ new #[Layout('layouts.app')] class extends Component {
     @if ($positions->isEmpty())
         <div class="text-sm text-mono-600">Nenhuma posição em aberto.</div>
     @else
-        <div class="overflow-x-auto"><table class="investment-table">
+        <x-fx.sort-mobile list="positions" :sort-by="$sortBy" :sort-dir="$sortDir" primary /><div class="overflow-x-auto"><table class="investment-table">
             <thead>
                 <tr>
-                    <th class="text-left">Ticker</th>
-                    <th class="text-left">Classe</th>
-                    <th class="text-right">Quantidade</th>
-                    <th class="text-right">Preço médio</th>
-                    <th class="text-right">Investido</th>
-                    <th class="text-right">Cotação</th>
-                    <th class="text-right">Valor de mercado</th>
-                    <th class="text-right">Resultado</th>
-                    <th class="text-right">%</th>
+                    <x-fx.sort-th column="ticker" label="Ticker" list="positions" :sorts="$sorts" /><x-fx.sort-th column="class" label="Classe" list="positions" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Quantidade" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="avg_price" label="Preço médio" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="invested" label="Investido" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="quote" label="Cotação" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="market" label="Valor de mercado" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="result" label="Resultado" list="positions" :sorts="$sorts" align="right" /><x-fx.sort-th column="percent" label="%" list="positions" :sorts="$sorts" align="right" />
                     <th></th>
                 </tr>
             </thead>
