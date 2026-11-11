@@ -83,7 +83,8 @@ new #[Layout('layouts.app')] class extends Component {
 }; ?>
 
 <x-slot name="header">Novo adiantamento · {{ $broker->name }}</x-slot>
-
+<div class="flex flex-col gap-md">
+    <x-back-button :href="route('brokers.advances.index', $broker)" />
 <x-fx.card class="max-w-2xl">
     <form wire:submit="save" class="flex flex-col gap-md">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-sm">
@@ -126,3 +127,4 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     </form>
 </x-fx.card>
+</div>

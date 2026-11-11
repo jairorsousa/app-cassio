@@ -327,8 +327,8 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="mx-auto max-w-4xl space-y-6" data-users-page>
     <div>
-        <a href="{{ route('settings') }}" class="text-sm text-primary-600">← Configurações</a>
-        <h2 class="mt-2 text-2xl font-bold tracking-tight">Usuários e acessos</h2>
+        <x-back-button :href="route('settings')" />
+        <h2 class="mt-4 text-2xl font-bold tracking-tight">Usuários e acessos</h2>
         <p class="mt-2 text-sm text-mono-600">Convide pessoas e escolha quais módulos cada uma pode usar. O link pode ser copiado manualmente; o envio por e-mail só ocorre quando você clica em "Enviar por e-mail" e o remetente SMTP estiver completo.</p>
     </div>
 

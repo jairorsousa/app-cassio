@@ -1,3 +1,6 @@
+@if (! request()->routeIs('investments.dashboard'))
+    <x-back-button :href="route('investments.dashboard')" />
+@endif
 <nav class="-mx-1 flex flex-nowrap gap-5 overflow-x-auto whitespace-nowrap border-b border-mono-100 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:flex-wrap lg:gap-6 lg:overflow-visible lg:px-0" aria-label="Investimentos" data-subnav="investments">
     @foreach ([['investments.dashboard', 'dashboard', 'Visão geral'], ['investments.positions', 'account_balance_wallet', 'Carteira'], ['investments.operations.index', 'swap_horiz', 'Movimentações'], ['investments.dividends.index', 'payments', 'Proventos'], ['investments.b3', 'account_balance', 'Posição B3'], ['investments.statements', 'upload_file', 'Extratos'], ['bens.index', 'home_work', 'Bens'], ['investments.assets.index', 'category', 'Ativos'], ['investments.reports', 'query_stats', 'Rentabilidade']] as [$route, $icon, $label])
         <a href="{{ route($route) }}" @class(['inline-flex shrink-0 items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors', 'border-primary-500 text-primary-500' => request()->routeIs($route), 'border-transparent text-mono-600 hover:text-mono-900' => !request()->routeIs($route)])>

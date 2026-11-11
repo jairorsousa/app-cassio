@@ -85,7 +85,8 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="mx-auto flex w-full max-w-3xl flex-col gap-4" data-identity-requests>
     <div>
-        <h2 class="text-2xl font-bold tracking-tight">Pendências de cadastro</h2>
+        <x-back-button :href="route('settings')" />
+        <h2 class="mt-4 text-2xl font-bold tracking-tight">Pendências de cadastro</h2>
         <p class="mt-1 text-sm text-mono-600">Pedidos de troca de CPF e de exclusão de e-mail. Nada muda no cadastro até você aprovar.</p>
     </div>
 

@@ -69,8 +69,8 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
 
-    <div class="flex justify-between items-center">
-        <a href="{{ route('brokers.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">← Voltar ao corretor</a>
+    <div class="flex flex-wrap justify-between items-center gap-3">
+        <x-back-button :href="route('brokers.show', $broker)" label="Voltar ao corretor" />
         <x-fx.button href="{{ route('brokers.commissions.create', $broker) }}" variant="primary" size="sm">+ Registrar comissão</x-fx.button>
     </div>
 

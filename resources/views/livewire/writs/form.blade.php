@@ -625,7 +625,8 @@ new #[Layout('layouts.app')] class extends Component
 }; ?>
 
 <x-slot name="header">{{ $writ ? 'Editar' : 'Novo' }} requisitório</x-slot>
-
+<div class="flex flex-col gap-md">
+    <x-back-button :href="$writ ? route('writs.show', $writ) : route('writs.kanban')" />
 <x-fx.card class="max-w-4xl">
     <form wire:submit="save" class="flex flex-col gap-md">
         <section>
@@ -872,3 +873,4 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     </form>
 </x-fx.card>
+</div>

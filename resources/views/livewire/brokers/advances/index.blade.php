@@ -30,8 +30,8 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Adiantamentos · {{ $broker->name }}</x-slot>
 
 <div class="flex flex-col gap-md">
-    <div class="flex justify-between items-center">
-        <a href="{{ route('brokers.show', $broker) }}" class="fx-btn fx-btn--text fx-btn--sm">← Voltar ao corretor</a>
+    <div class="flex flex-wrap justify-between items-center gap-3">
+        <x-back-button :href="route('brokers.show', $broker)" label="Voltar ao corretor" />
         <x-fx.button href="{{ route('brokers.advances.create', $broker) }}" variant="primary" size="sm">+ Novo adiantamento</x-fx.button>
     </div>
 

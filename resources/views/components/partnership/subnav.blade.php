@@ -7,6 +7,7 @@
     $action = 'inline-flex items-center gap-1.5 pb-3 text-sm font-medium text-mono-600 transition-colors hover:text-mono-900';
 @endphp
 
+<x-back-button :href="request()->routeIs('partnership.show') ? route('partnership.index') : route('partnership.show', $partnership)" />
 <nav class="flex flex-wrap items-start gap-x-6 gap-y-2 border-b border-mono-100">
     <a
         href="{{ route('partnership.show', $partnership) }}"
@@ -48,10 +49,6 @@
         <a href="{{ route('partnership.edit', $partnership) }}" class="{{ $action }}">
             <span class="material-icons-outlined text-[18px]">edit</span>
             Editar dados
-        </a>
-        <a href="{{ route('partnership.index') }}" class="{{ $action }}">
-            <span class="material-icons-outlined text-[18px]">arrow_back</span>
-            Sociedades
         </a>
     </div>
 </nav>

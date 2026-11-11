@@ -375,16 +375,15 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-6">
-    <x-banking.subnav active="loans" />
+    @if ($selected)
+        <x-back-button action="closeDetail" label="Voltar à lista" />
+    @else
+        <x-back-button :href="route('banking.dashboard')" />
+    @endif
+    <x-banking.subnav active="loans" :back="false" />
     @if (session('status')) <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert> @endif
     @if (! $creating && $errors->any())
         <x-jr.alert variant="error"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
-    @endif
-
-    @if ($selected)
-        <x-banking.back-button action="closeDetail" label="Voltar à lista" />
-    @else
-        <x-banking.back-button :fallback="route('banking.dashboard')" />
     @endif
 
     <div class="flex flex-wrap items-center justify-between gap-4">
@@ -443,7 +442,7 @@ new #[Layout('layouts.app')] class extends Component {
                         @endif
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <x-banking.back-button action="closeDetail" label="Voltar" />
+                        <x-back-button action="closeDetail" label="Voltar" />
                         <x-jr.button variant="standard" wire:click="startEdit" data-loan-edit>
                             <span class="material-icons-outlined text-[18px]" aria-hidden="true">edit</span>Editar
                         </x-jr.button>

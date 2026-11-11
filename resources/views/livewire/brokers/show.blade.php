@@ -557,10 +557,7 @@ new #[Layout('layouts.app')] class extends Component
         $cityState = $broker->city ? trim($broker->city.' / '.$broker->state) : '—';
     @endphp
 
-    <a href="{{ route('brokers.index') }}" class="inline-flex w-fit items-center gap-xxs text-sm font-medium text-mono-600 transition-colors hover:text-primary-500">
-        <span class="material-icons-outlined text-base">arrow_back</span>
-        Voltar
-    </a>
+    <x-back-button :href="route('brokers.index')" />
 
     <x-fx.card class="p-md md:p-lg">
         <div class="flex flex-col gap-md lg:flex-row lg:items-center lg:justify-between">

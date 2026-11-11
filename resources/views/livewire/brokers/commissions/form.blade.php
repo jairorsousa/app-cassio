@@ -103,6 +103,7 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Registrar comissão · {{ $broker->name }}</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-back-button :href="route('brokers.commissions.index', $broker)" />
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
     <x-fx.card class="max-w-2xl">

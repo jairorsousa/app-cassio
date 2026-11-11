@@ -200,9 +200,7 @@ new #[Layout('layouts.app')] class extends Component
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
 
     <div class="flex items-center justify-between mb-2">
-        <a href="{{ route('writs.kanban') }}" class="inline-flex items-center gap-2 text-sm font-medium text-mono-500 hover:text-mono-900 transition-colors">
-            <span class="material-icons-outlined text-[18px]">arrow_back</span> Voltar
-        </a>
+        <x-back-button :href="route('writs.kanban')" />
         <a href="{{ route('writs.edit', $writ) }}" class="inline-flex items-center gap-2 rounded-lg border border-primary-500 px-4 py-2 text-sm font-semibold text-primary-500 hover:bg-primary-50 transition-colors">
             <span class="material-icons-outlined text-[18px]">edit_note</span> Editar dados
         </a>

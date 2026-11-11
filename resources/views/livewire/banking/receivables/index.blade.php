@@ -488,12 +488,12 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Financeiro</x-slot>
 
 <div class="flex flex-col gap-6">
-    <x-banking.subnav active="receivables" />
     @if ($selected)
-        <x-banking.back-button action="closeDetail" label="Voltar à lista" />
+        <x-back-button action="closeDetail" label="Voltar à lista" />
     @else
-        <x-banking.back-button :fallback="route('banking.dashboard')" />
+        <x-back-button :href="route('banking.dashboard')" />
     @endif
+    <x-banking.subnav active="receivables" :back="false" />
     @if (session('status')) <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert> @endif
     @if (! $creating && $errors->any())
         <x-jr.alert variant="error"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
@@ -512,7 +512,7 @@ new #[Layout('layouts.app')] class extends Component {
         <x-fx.card>
             <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-bold text-mono-900">{{ $selected->description }}</h3><a class="text-sm text-primary-500" href="{{ route('contacts.show', $selected->contact_id) }}">{{ $selected->contact->name }}</a>@php $bal = $selected->balanceAsOf(); @endphp
             <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p>
-            <p class="mt-1 text-xs text-mono-600" data-receivable-rates>Juros combinados {{ number_format((float) $selected->interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->interestType()) }}) · Multa {{ number_format((float) $selected->penalty_pct, 2, ',', '.') }}% · Mora {{ number_format((float) $selected->late_interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->lateInterestType()) }})</p></div><x-banking.back-button action="closeDetail" label="Voltar" /></div>
+            <p class="mt-1 text-xs text-mono-600" data-receivable-rates>Juros combinados {{ number_format((float) $selected->interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->interestType()) }}) · Multa {{ number_format((float) $selected->penalty_pct, 2, ',', '.') }}% · Mora {{ number_format((float) $selected->late_interest_rate_am, 2, ',', '.') }}% a.m. ({{ \App\Support\SimpleInterest::typeLabel($selected->lateInterestType()) }})</p></div><x-back-button action="closeDetail" label="Voltar" /></div>
             @if ($selected->process_reference || $selected->writ_id)<p class="mt-3 text-sm text-mono-600">Processo: {{ $selected->process_reference ?: 'Requisitório #'.$selected->writ_id }}</p>@endif
             @if ($selected->notes)<p class="mt-3 text-sm text-mono-600">{{ $selected->notes }}</p>@endif
             <div class="mt-5 overflow-x-auto">

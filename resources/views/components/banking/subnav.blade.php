@@ -1,11 +1,16 @@
-@props(['active' => null])
+@props(['active' => null, 'back' => null])
 
 @php
+    // Voltar: false = a tela cuida do próprio botão; texto = destino; vazio = Visão geral do Financeiro (exceto nela).
+    $backHref = $back === false ? null : ($back ?: (($active === 'overview' || request()->routeIs('banking.dashboard')) ? null : route('banking.dashboard')));
     $tab = 'inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors';
     $activeTab = 'border-primary-500 text-primary-500';
     $inactiveTab = 'border-transparent text-mono-600 hover:border-mono-200 hover:text-mono-900';
 @endphp
 
+@if ($backHref)
+    <x-back-button :href="$backHref" />
+@endif
 <nav class="flex flex-wrap gap-6 border-b border-mono-100">
     <a
         href="{{ route('banking.dashboard') }}"

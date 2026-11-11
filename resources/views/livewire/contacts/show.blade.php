@@ -71,10 +71,7 @@ new #[Layout('layouts.app')] class extends Component
         $cityState = $contact->city ? trim($contact->city.' / '.$contact->state) : '—';
     @endphp
 
-    <a href="{{ route('contacts.index') }}" class="inline-flex w-fit items-center gap-2 text-sm font-medium text-mono-600 transition-colors hover:text-primary-500">
-        <span class="material-icons-outlined text-[18px]">arrow_back</span>
-        Voltar
-    </a>
+    <x-back-button :href="route('contacts.index')" />
 
     <x-jr.card>
         <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">

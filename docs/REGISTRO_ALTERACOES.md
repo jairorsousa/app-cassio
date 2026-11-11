@@ -1,5 +1,12 @@
 # Registro de alterações
 
+## 2026-11-11 — Botão "← Voltar" padronizado em todas as telas internas
+
+- Novo componente único `<x-back-button>` (seta + "Voltar", área de toque de 44 px, no topo, visível no celular). Leva ao "pai" lógico da tela; se a página anterior era exatamente esse pai, usa o histórico do navegador para manter filtros e rolagem. `<x-banking.back-button>` virou apenas um atalho para ele.
+- Telas ajustadas: Divisões (grupo, no lugar do link pequeno "‹ Divisões"); Investimentos (Carteira, Movimentações, Proventos, Posição B3, Extratos, Bens, Ativos, Rentabilidade → Visão geral); Financeiro (Contas, Categorias, Cartões, Lançamentos, Recorrentes, Fluxo de caixa → Visão geral; Faturas → Cartões; Importar extrato → Lançamentos; Empréstimos e Valores a receber padronizados, com "Voltar à lista" no detalhe); Requisitórios (ficha, formulário e relatórios → kanban/ficha); Sociedade (detalhe → lista, demais telas → sociedade); Corretores (ficha, adiantamentos, comissões e formulários); Contatos (ficha e formulário); Configurações (Usuários, Auditoria, Solicitações de identidade → Configurações).
+- Sem mudança de regra de negócio nem de dados.
+- Testes: `tests/Feature/BackButtonsTest.php` (7 testes). Backup do código: `/root/app-cassio-backups/voltar-20261111/`.
+
 ## 2026-11-11 — Juros simples ou compostos em Empréstimos e Valores a receber
 
 Pedido do Cassio (card t280s1513): poder escolher o tipo de juros em todos os campos, começando em Simples.

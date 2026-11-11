@@ -632,6 +632,7 @@ new #[Layout('layouts.app')] class extends Component
 <x-slot name="header">Divisões · {{ $group->name }}</x-slot>
 
 <div class="flex flex-col gap-md" data-division-show>
+    <x-back-button :href="route('divisions.index')" />
     @if ($notice)<x-jr.alert variant="success">{{ $notice }}</x-jr.alert>@endif
     @error('expense')<x-jr.alert variant="error">{{ $message }}</x-jr.alert>@enderror
     @if ($isAdmin)
@@ -655,7 +656,6 @@ new #[Layout('layouts.app')] class extends Component
     <x-fx.card>
         <div class="flex flex-col gap-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <a href="{{ route('divisions.index') }}" class="text-xs text-primary-500">‹ Divisões</a>
                 <h2 class="text-fs-20 font-semibold text-cryptex-text-primary">{{ $group->name }}</h2>
                 <p class="text-sm text-mono-600">{{ $group->typeLabel() }} · {{ $members->count() }} participante(s) · despesas de participantes {{ $group->requires_approval ? 'precisam de aprovação' : 'entram direto' }}</p>
             </div>

@@ -4,6 +4,9 @@
     $inactiveTab = 'border-transparent text-mono-600 hover:border-mono-200 hover:text-mono-900';
 @endphp
 
+@unless (request()->routeIs('brokers.index'))
+    <x-back-button :href="route('brokers.index')" />
+@endunless
 <nav class="flex flex-wrap gap-6 border-b border-mono-100">
     <a
         href="{{ route('brokers.index') }}"

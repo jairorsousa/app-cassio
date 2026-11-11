@@ -272,7 +272,8 @@ new #[Layout('layouts.app')] class extends Component
 }; ?>
 
 <x-slot name="header">{{ $contact ? 'Editar' : 'Novo' }} contato</x-slot>
-
+<div class="flex flex-col gap-md">
+    <x-back-button :href="$contact ? route('contacts.show', $contact) : route('contacts.index')" />
 <x-jr.card class="max-w-5xl">
     <form wire:submit="save" class="flex flex-col gap-8">
         <section>
@@ -446,3 +447,4 @@ new #[Layout('layouts.app')] class extends Component
         </div>
     </form>
 </x-jr.card>
+</div>

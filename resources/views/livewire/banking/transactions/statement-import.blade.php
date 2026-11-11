@@ -371,6 +371,7 @@ new #[Layout('layouts.app')] class extends Component {
 @endphp
 
 <div class="flex flex-col gap-4" data-statement-import>
+    <x-back-button :href="route('banking.transactions.index')" />
     <div>
         <a href="{{ route('banking.transactions.index') }}" class="text-sm text-primary-600">← Lançamentos</a>
         <h2 class="mt-2 text-2xl font-bold tracking-tight">Importar extrato ou fatura</h2>

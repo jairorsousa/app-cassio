@@ -377,7 +377,7 @@ new #[Layout('layouts.app')] class extends Component {
 @endphp
 
 <div class="flex flex-col gap-md">
-    <x-banking.subnav />
+    <x-banking.subnav :back="route('banking.cards.index')" />
     @if (session('status'))
         <x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>
     @endif
@@ -685,5 +685,4 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
     @endif
 
-    <a href="{{ route('banking.cards.index') }}" class="fx-btn fx-btn--text fx-btn--sm self-start">← Voltar</a>
 </div>

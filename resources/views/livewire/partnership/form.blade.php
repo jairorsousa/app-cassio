@@ -70,6 +70,8 @@ new #[Layout('layouts.app')] class extends Component {
 <div class="flex flex-col gap-md">
     @if ($partnership)
         <x-partnership.subnav :partnership="$partnership" />
+    @else
+        <x-back-button :href="route('partnership.index')" />
     @endif
 
     <x-fx.card class="max-w-2xl">

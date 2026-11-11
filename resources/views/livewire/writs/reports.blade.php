@@ -42,6 +42,7 @@ new #[Layout('layouts.app')] class extends Component {
 <x-slot name="header">Requisitórios · Relatórios</x-slot>
 
 <div class="flex flex-col gap-md">
+    <x-back-button :href="route('writs.kanban')" />
     <div class="grid grid-cols-1 md:grid-cols-4 gap-md">
         <x-fx.card>
             <div class="text-xxs text-mono-600 uppercase">Total investido</div>

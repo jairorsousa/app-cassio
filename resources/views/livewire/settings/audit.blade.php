@@ -56,8 +56,8 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="flex flex-col gap-4" data-audit-page>
     <div>
-        <a href="{{ route('settings') }}" class="text-sm text-primary-600">← Configurações</a>
-        <h2 class="mt-2 text-2xl font-bold tracking-tight">Log de auditoria</h2>
+        <x-back-button :href="route('settings')" />
+        <h2 class="mt-4 text-2xl font-bold tracking-tight">Log de auditoria</h2>
         <p class="text-sm text-mono-600">Quem criou, editou ou excluiu cada registro, e os acessos (entrar/sair). Horários em Fortaleza (UTC−3). Somente administrador.</p>
     </div>
 
