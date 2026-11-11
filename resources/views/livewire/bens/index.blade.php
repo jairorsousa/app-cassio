@@ -1,7 +1,11 @@
 <?php
 
 use App\Domains\Assets\Models\Property;
+use App\Domains\Assets\Models\PropertyDownPayment;
+use App\Domains\Assets\Models\PropertyFinancing;
+use App\Domains\Assets\Models\PropertyFinancingInstallment;
 use App\Domains\Assets\Models\PropertyPayment;
+use App\Domains\Assets\Services\PropertyFinancingService;
 use App\Domains\Assets\Services\PropertyPaymentService;
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
@@ -80,11 +84,80 @@ new #[Layout('layouts.app')] class extends Component {
 
     public array $payWarnings = [];
 
+    public bool $showDownForm = false;
+
+    public string $downStatus = 'paid';
+
+    public string $downDate = '';
+
+    public string $downAmount = '';
+
+    public string $downAccount = '';
+
+    public string $downNotes = '';
+
+    public array $downWarnings = [];
+
+    public array $downDuplicates = [];
+
+    public string $downLinkId = '';
+
+    public bool $showFinancingForm = false;
+
+    public string $finCreditor = '';
+
+    public string $finAmount = '';
+
+    public string $finCount = '';
+
+    public string $finInstallment = '';
+
+    public string $finFirstDue = '';
+
+    public string $finRate = '';
+
+    public string $finSystem = '';
+
+    public string $finNotes = '';
+
+    public array $finWarnings = [];
+
+    public array $selectedInstallments = [];
+
+    public bool $showInstPayForm = false;
+
+    public ?int $payingInstallmentId = null;
+
+    public string $instPaidAt = '';
+
+    public string $instAccount = '';
+
+    public string $instNotes = '';
+
+    public array $instWarnings = [];
+
+    public array $instDuplicates = [];
+
+    public string $instLinkId = '';
+
+    public bool $showBatchForm = false;
+
+    public array $batchRows = [];
+
+    public array $batchWarnings = [];
+
+    public array $batchDuplicates = [];
+
+    public string $batchFillDate = '';
+
+    public string $batchFillAccount = '';
+
     public function openPayments(int $id): void
     {
         $this->payingId = Property::findOrFail($id)->id;
         $this->showPayForm = false;
         $this->resetPayForm();
+        $this->resetFinancingForms();
     }
 
     public function closePayments(): void
@@ -92,6 +165,7 @@ new #[Layout('layouts.app')] class extends Component {
         $this->payingId = null;
         $this->showPayForm = false;
         $this->resetPayForm();
+        $this->resetFinancingForms();
     }
 
     private function resetPayForm(): void
@@ -216,6 +290,274 @@ new #[Layout('layouts.app')] class extends Component {
         return 'R$ '.number_format($v, 2, ',', '.');
     }
 
+
+    private function resetFinancingForms(): void
+    {
+        $this->reset([
+            'showDownForm', 'downStatus', 'downDate', 'downAmount', 'downAccount', 'downNotes', 'downWarnings', 'downDuplicates', 'downLinkId',
+            'showFinancingForm', 'finCreditor', 'finAmount', 'finCount', 'finInstallment', 'finFirstDue', 'finRate', 'finSystem', 'finNotes', 'finWarnings',
+            'selectedInstallments', 'showInstPayForm', 'payingInstallmentId', 'instPaidAt', 'instAccount', 'instNotes', 'instWarnings', 'instDuplicates', 'instLinkId',
+            'showBatchForm', 'batchRows', 'batchWarnings', 'batchDuplicates', 'batchFillDate', 'batchFillAccount',
+        ]);
+        $this->downStatus = 'paid';
+    }
+
+    private function serializeDuplicates($rows): array
+    {
+        return $rows->map(fn ($t) => [
+            'id' => $t->id,
+            'date' => $t->date->format('d/m/Y'),
+            'amount' => abs((float) $t->amount),
+            'description' => mb_substr((string) $t->description, 0, 60),
+        ])->all();
+    }
+
+    public function newDownPayment(): void
+    {
+        $property = Property::findOrFail($this->payingId);
+        $this->reset(['downWarnings', 'downDuplicates', 'downLinkId', 'downNotes', 'downAmount', 'downAccount']);
+        $this->downStatus = 'paid';
+        $this->downDate = $property->acquired_at?->toDateString() ?: \App\Support\BusinessDate::today();
+        $this->downAccount = (string) ($property->bank_account_id ?? '');
+        $this->showDownForm = true;
+    }
+
+    public function saveDownPayment(bool $confirmed = false): void
+    {
+        $property = Property::findOrFail($this->payingId);
+        $this->downAmount = \App\Support\Money::normalize($this->downAmount);
+        $this->resetValidation();
+        $data = [
+            'status' => 'paid',
+            'date' => $this->downDate,
+            'amount' => $this->downAmount,
+            'bank_account_id' => $this->downAccount,
+            'notes' => $this->downNotes,
+        ];
+        $link = ctype_digit((string) $this->downLinkId) ? (int) $this->downLinkId : null;
+        try {
+            $result = app(PropertyFinancingService::class)->addDownPayment($property, $data, confirmed: $confirmed, linkTransactionId: $link);
+        } catch (\DomainException $e) {
+            $this->downWarnings = [];
+            $this->addError('downForm', $e->getMessage());
+
+            return;
+        }
+        if (is_array($result)) {
+            $this->downWarnings = $result['warnings'];
+            $this->downDuplicates = $this->serializeDuplicates($result['duplicates']);
+
+            return;
+        }
+        $this->showDownForm = false;
+        $this->reset(['downWarnings', 'downDuplicates', 'downLinkId', 'downAmount', 'downNotes']);
+        session()->flash('status', 'Entrada registrada.');
+    }
+
+    public function deleteDownPayment(int $id): void
+    {
+        $down = PropertyDownPayment::where('property_id', $this->payingId)->findOrFail($id);
+        try {
+            app(PropertyFinancingService::class)->deleteDownPayment($down);
+        } catch (\DomainException $e) {
+            $this->addError('downForm', $e->getMessage());
+
+            return;
+        }
+        session()->flash('status', 'Entrada apagada.');
+    }
+
+    public function newFinancing(): void
+    {
+        $this->reset(['finCreditor', 'finAmount', 'finCount', 'finInstallment', 'finFirstDue', 'finRate', 'finSystem', 'finNotes', 'finWarnings']);
+        $this->showFinancingForm = true;
+    }
+
+    public function saveFinancing(bool $confirmed = false): void
+    {
+        $property = Property::findOrFail($this->payingId);
+        $this->finAmount = \App\Support\Money::normalize($this->finAmount);
+        $this->finInstallment = \App\Support\Money::normalize($this->finInstallment);
+        $this->resetValidation();
+        $rate = trim(str_replace(',', '.', $this->finRate));
+        $data = [
+            'creditor' => $this->finCreditor,
+            'financed_amount' => $this->finAmount,
+            'installment_count' => $this->finCount,
+            'installment_amount' => $this->finInstallment,
+            'first_due_date' => $this->finFirstDue,
+            'interest_rate_am' => $rate,
+            'amortization_system' => $this->finSystem,
+            'notes' => $this->finNotes,
+        ];
+        if (! $confirmed && $property->acquisition_value !== null && is_numeric($this->finAmount)) {
+            $down = (int) $property->downPayments()->get()->sum(fn ($d) => (int) round((float) $d->amount * 100));
+            $fin = (int) round((float) $this->finAmount * 100);
+            $price = (int) round((float) $property->acquisition_value * 100);
+            $diff = $down + $fin - $price;
+            if ($diff !== 0) {
+                $this->finWarnings = ['A entrada mais o valor financiado ('.$this->brl(($down + $fin) / 100).') não fecha com o preço do bem ('.$this->brl($price / 100).'). Diferença: '.$this->brl($diff / 100).'.'];
+
+                return;
+            }
+        }
+        try {
+            app(PropertyFinancingService::class)->createFinancing($property, $data);
+        } catch (\DomainException $e) {
+            $this->finWarnings = [];
+            $this->addError('finForm', $e->getMessage());
+
+            return;
+        }
+        $this->showFinancingForm = false;
+        $this->finWarnings = [];
+        session()->flash('status', 'Financiamento criado e parcelas geradas.');
+    }
+
+    public function deleteFinancing(int $id): void
+    {
+        $fin = PropertyFinancing::where('property_id', $this->payingId)->findOrFail($id);
+        try {
+            app(PropertyFinancingService::class)->deleteFinancing($fin);
+        } catch (\DomainException $e) {
+            $this->addError('finForm', $e->getMessage());
+
+            return;
+        }
+        session()->flash('status', 'Financiamento apagado.');
+    }
+
+    public function markInstallmentForm(int $id): void
+    {
+        $inst = PropertyFinancingInstallment::whereHas('financing', fn ($q) => $q->where('property_id', $this->payingId))->findOrFail($id);
+        $this->reset(['instWarnings', 'instDuplicates', 'instLinkId', 'instNotes', 'showBatchForm']);
+        $this->payingInstallmentId = $inst->id;
+        $this->instPaidAt = $inst->due_date?->toDateString() ?? \App\Support\BusinessDate::today();
+        $this->instAccount = (string) ($inst->bank_account_id ?? '');
+        $this->showInstPayForm = true;
+    }
+
+    public function saveInstallmentPaid(bool $confirmed = false): void
+    {
+        $inst = PropertyFinancingInstallment::whereHas('financing', fn ($q) => $q->where('property_id', $this->payingId))->findOrFail($this->payingInstallmentId);
+        $this->resetValidation();
+        $link = ctype_digit((string) $this->instLinkId) ? (int) $this->instLinkId : null;
+        try {
+            $result = app(PropertyFinancingService::class)->markInstallmentPaid($inst, [
+                'paid_at' => $this->instPaidAt,
+                'bank_account_id' => $this->instAccount,
+                'notes' => $this->instNotes,
+            ], confirmed: $confirmed, linkTransactionId: $link);
+        } catch (\DomainException $e) {
+            $this->instWarnings = [];
+            $this->addError('instForm', $e->getMessage());
+
+            return;
+        }
+        if (is_array($result)) {
+            $this->instWarnings = $result['warnings'];
+            $this->instDuplicates = $this->serializeDuplicates($result['duplicates']);
+
+            return;
+        }
+        $this->showInstPayForm = false;
+        $this->payingInstallmentId = null;
+        $this->reset(['instWarnings', 'instDuplicates', 'instLinkId']);
+        session()->flash('status', 'Parcela marcada como paga.');
+    }
+
+    public function unpayInstallment(int $id): void
+    {
+        $inst = PropertyFinancingInstallment::whereHas('financing', fn ($q) => $q->where('property_id', $this->payingId))->findOrFail($id);
+        try {
+            app(PropertyFinancingService::class)->unpayInstallment($inst);
+        } catch (\DomainException $e) {
+            $this->addError('instForm', $e->getMessage());
+
+            return;
+        }
+        session()->flash('status', 'Pagamento da parcela desfeito.');
+    }
+
+    public function openBatchForm(): void
+    {
+        $ids = array_values(array_filter(array_map('intval', $this->selectedInstallments)));
+        if (! $ids) {
+            $this->addError('instForm', 'Selecione ao menos uma parcela em aberto.');
+
+            return;
+        }
+        $rows = PropertyFinancingInstallment::whereHas('financing', fn ($q) => $q->where('property_id', $this->payingId))
+            ->whereIn('id', $ids)->where('status', 'open')->orderBy('number')->get();
+        if ($rows->isEmpty()) {
+            $this->addError('instForm', 'Selecione ao menos uma parcela em aberto.');
+
+            return;
+        }
+        $this->batchRows = [];
+        foreach ($rows as $i) {
+            $this->batchRows[(string) $i->id] = [
+                'number' => $i->number,
+                'due' => $i->due_date->format('d/m/Y'),
+                'amount' => (float) $i->amount,
+                'paid_at' => $i->due_date->toDateString(),
+                'account' => (string) ($i->bank_account_id ?? ''),
+                'link' => '',
+            ];
+        }
+        $this->batchWarnings = [];
+        $this->batchDuplicates = [];
+        $this->batchFillDate = \App\Support\BusinessDate::today();
+        $this->batchFillAccount = '';
+        $this->showBatchForm = true;
+        $this->showInstPayForm = false;
+    }
+
+    public function applyBatchFill(): void
+    {
+        foreach ($this->batchRows as $id => $row) {
+            if ($this->batchFillDate !== '') {
+                $this->batchRows[$id]['paid_at'] = $this->batchFillDate;
+            }
+            $this->batchRows[$id]['account'] = $this->batchFillAccount;
+        }
+    }
+
+    public function saveBatch(): void
+    {
+        $payload = [];
+        foreach ($this->batchRows as $id => $row) {
+            $payload[(int) $id] = [
+                'paid_at' => $row['paid_at'] ?? '',
+                'bank_account_id' => $row['account'] ?? '',
+                'link_transaction_id' => ! empty($row['link']) ? (int) $row['link'] : null,
+            ];
+        }
+        $confirmed = $this->batchWarnings !== [];
+        try {
+            $result = app(PropertyFinancingService::class)->markInstallmentsPaid($payload, confirmed: $confirmed);
+        } catch (\DomainException $e) {
+            $this->addError('instForm', $e->getMessage());
+
+            return;
+        }
+        if (is_array($result) && ($result['ok'] ?? true) === false) {
+            $this->batchWarnings = $result['warnings'];
+            $this->batchDuplicates = [];
+            foreach ($result['duplicates'] as $id => $dups) {
+                $this->batchDuplicates[$id] = $this->serializeDuplicates($dups);
+            }
+
+            return;
+        }
+        $this->showBatchForm = false;
+        $this->selectedInstallments = [];
+        $this->batchRows = [];
+        $this->batchWarnings = [];
+        $this->batchDuplicates = [];
+        session()->flash('status', 'Parcelas marcadas como pagas.');
+    }
+
     public function create(): void
     {
         $this->resetForm();
@@ -317,8 +659,10 @@ new #[Layout('layouts.app')] class extends Component {
     public function delete(int $id): void
     {
         $property = Property::findOrFail($id);
-        if ($property->payments()->where('status', 'paid')->exists()) {
-            session()->flash('error', 'Este bem tem pagamentos lançados. Apague os pagamentos antes (isso também apaga os lançamentos ligados).');
+        if ($property->payments()->where('status', 'paid')->exists()
+            || $property->downPayments()->where('status', 'paid')->exists()
+            || $property->financings()->whereHas('installments', fn ($q) => $q->where('status', 'paid'))->exists()) {
+            session()->flash('error', 'Este bem tem pagamentos ou parcelas lançadas. Apague-os antes (isso também apaga os lançamentos ligados).');
 
             return;
         }
@@ -333,11 +677,12 @@ new #[Layout('layouts.app')] class extends Component {
     public function with(): array
     {
         return [
-            'properties' => Property::with(['bankAccount', 'payments'])->orderBy('status')->orderBy('description')->get(),
+            'properties' => Property::with(['bankAccount', 'payments', 'downPayments', 'financings.installments'])->orderBy('status')->orderBy('description')->get(),
             'total' => Property::activeTotal(),
+            'financingDebt' => Property::activeFinancingDebt(),
             'accounts' => BankAccount::orderBy('name')->get(['id', 'name']),
             'divisionGroups' => auth()->user()?->isAdmin() ? \App\Domains\Divisions\Models\DivisionGroup::where('status', 'approved')->orderBy('name')->get(['id', 'name']) : collect(),
-            'paying' => $this->payingId ? Property::with(['payments.bankAccount', 'payments.creditCard', 'payments.category', 'payments.transactions'])->find($this->payingId) : null,
+            'paying' => $this->payingId ? Property::with(['payments.bankAccount', 'payments.creditCard', 'payments.category', 'payments.transactions', 'downPayments.bankAccount', 'downPayments.transaction', 'financings.installments.bankAccount', 'financings.installments.transaction'])->find($this->payingId) : null,
             'payAccounts' => BankAccount::active()->whereNot('type', 'repasse')->orderBy('name')->get(['id', 'name']),
             'payCards' => CreditCard::active()->orderBy('name')->get(['id', 'name']),
             'payCategories' => Category::whereKey(Category::assetPurchaseCategoryId())->get(['id', 'name'])
@@ -355,7 +700,12 @@ new #[Layout('layouts.app')] class extends Component {
     @if (session('status'))<x-fx.alert variant="success">{{ session('status') }}</x-fx.alert>@endif
     @if (session('error'))<x-fx.alert variant="error">{{ session('error') }}</x-fx.alert>@endif
     @if ($paying)
-        @include($paying->isShared() ? 'bens.partials.society' : 'bens.partials.payments', ['p' => $paying])
+        @if ($paying->isShared())
+            @include('bens.partials.society', ['p' => $paying])
+        @else
+            @include('bens.partials.financing', ['p' => $paying])
+            @include('bens.partials.payments', ['p' => $paying])
+        @endif
     @endif
     <x-fx.card>
         <div class="flex flex-wrap items-center gap-space-3">
@@ -363,7 +713,7 @@ new #[Layout('layouts.app')] class extends Component {
                 <h3 class="text-fs-16 font-semibold text-cryptex-text-primary">Bens</h3>
                 <div class="text-fs-12 text-cryptex-text-secondary">Imóveis, veículos e outros bens. O cadastro não cria lançamento; os pagamentos de cada bem saem da conta ou entram na fatura, fora do resultado do mês.</div>
             </div>
-            <div class="ml-auto text-right"><div class="text-fs-12 text-cryptex-text-tertiary uppercase">Total em bens ativos</div><div class="text-fs-20 font-bold font-mono">{{ $m($total) }}</div></div>
+            <div class="ml-auto text-right"><div class="text-fs-12 text-cryptex-text-tertiary uppercase">Total em bens ativos</div><div class="text-fs-20 font-bold font-mono">{{ $m($total) }}</div>@if ($financingDebt > 0)<div class="text-fs-12 text-cryptex-text-secondary">Dívidas de financiamento: {{ $m($financingDebt) }}</div><div class="text-fs-12 text-cryptex-text-secondary">Patrimônio líquido dos bens: {{ $m($total - $financingDebt) }}</div>@endif</div>
             <button type="button" wire:click="create" class="min-h-[40px] px-3 rounded-sm bg-cryptex-brand-400 text-white font-semibold">Novo bem</button>
         </div>
         @if ($properties->isEmpty())
@@ -383,6 +733,7 @@ new #[Layout('layouts.app')] class extends Component {
                         <dt class="text-mono-600">{{ $p->payments->isNotEmpty() ? 'Total da compra' : 'Aquisição' }}</dt><dd class="text-right">{{ $m($p->acquisition_value) }}@if ($p->acquired_at) · {{ $p->acquired_at->format('d/m/Y') }}@endif</dd>
                     </dl>
                     @if ($p->isShared())@include('bens.partials.society-bar', ['p' => $p])@elseif ($p->payments->isNotEmpty())@include('bens.partials.bar', ['s' => $p->paymentSummary()])@endif
+                    @if ($p->remainingDebt() > 0)<div class="mt-1 text-xs text-cryptex-text-secondary">Saldo devedor: {{ $m($p->remainingDebt()) }}</div>@endif
                     <div class="mt-2 flex gap-4 text-xs">
                         @if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar anexo</a>@endif
                         <button type="button" wire:click="openPayments({{ $p->id }})" class="text-cryptex-brand-400" data-open-payments="{{ $p->id }}">Pagamentos</button>
@@ -402,7 +753,7 @@ new #[Layout('layouts.app')] class extends Component {
                             <td>{{ \App\Domains\Assets\Models\Property::KINDS[$p->kind] ?? $p->kind }}</td>
                             <td>{{ \App\Domains\Assets\Models\Property::OWNERS[$p->owner] ?? 'Não informado' }}</td>
                             <td class="text-right">{{ $m($p->acquisition_value) }}<div class="text-xs text-mono-600">{{ $p->acquired_at?->format('d/m/Y') }}</div>@if ($p->isShared())<div class="min-w-[170px] text-left">@include('bens.partials.society-bar', ['p' => $p])</div>@elseif ($p->payments->isNotEmpty())<div class="min-w-[170px] text-left">@include('bens.partials.bar', ['s' => $p->paymentSummary()])</div>@endif</td>
-                            <td class="text-right">{{ $m($p->current_value) }}<div class="text-xs text-mono-600">{{ $p->current_value_date?->format('d/m/Y') }}</div></td>
+                            <td class="text-right">{{ $m($p->current_value) }}<div class="text-xs text-mono-600">{{ $p->current_value_date?->format('d/m/Y') }}</div>@if ($p->remainingDebt() > 0)<div class="text-xs text-cryptex-text-secondary">Dívida {{ $m($p->remainingDebt()) }}</div>@endif</td>
                             <td>{{ $p->status === 'sold' ? 'Vendido'.($p->sold_at ? ' em '.$p->sold_at->format('d/m/Y') : '') : 'Ativo' }}</td>
                             <td>@if ($p->hasAttachment())<a class="text-cryptex-brand-400" href="{{ route('bens.attachment', $p) }}">Baixar</a>@else — @endif</td>
                             <td class="text-right whitespace-nowrap"><button type="button" wire:click="openPayments({{ $p->id }})" class="text-cryptex-brand-400 mr-2">Pagamentos</button><button type="button" wire:click="edit({{ $p->id }})" class="text-cryptex-brand-400">Editar</button> <button type="button" wire:click="delete({{ $p->id }})" wire:confirm="Excluir este bem?" class="text-system-down ml-2">Excluir</button></td>

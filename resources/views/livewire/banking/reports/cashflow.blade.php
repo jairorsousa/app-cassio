@@ -230,7 +230,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div>Entradas previstas<strong class="mt-1 block text-lg text-system-up">{{ $money($r['forecast']['income']) }}</strong></div>
             <div>Saídas previstas<strong class="mt-1 block text-lg text-system-down">{{ $money($r['forecast']['expense']) }}</strong></div>
         </div>
-        <p class="mt-3 text-xs text-mono-600">Realizado = lançamentos liquidados (movimento bancário, sem contas de repasse). Previsto = lançamentos pendentes, saldo das faturas que vencem no período, recorrências ativas ainda não geradas e requisitórios em Pago, Peticionamento ou Aguardando recebimento com previsão (Monitorar nunca entra).</p>
+        <p class="mt-3 text-xs text-mono-600">Realizado = lançamentos liquidados (movimento bancário, sem contas de repasse). Previsto = lançamentos pendentes, saldo das faturas que vencem no período, recorrências ativas ainda não geradas, parcelas em aberto de financiamento de bens e requisitórios em Pago, Peticionamento ou Aguardando recebimento com previsão (Monitorar nunca entra).</p>
         @if (count($r['forecast']['items']))
             <div class="overflow-x-auto mt-sm">
                 <table class="fx-table w-full text-sm">

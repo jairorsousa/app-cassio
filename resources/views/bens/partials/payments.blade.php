@@ -5,9 +5,9 @@
     $in = 'h-11 rounded-sm border border-cryptex-border-default bg-cryptex-bg-tertiary px-2 w-full';
 @endphp
 <x-fx.card data-payments="{{ $p->id }}">
-    <div x-data x-init="$el.scrollIntoView({ behavior: 'smooth', block: 'start' })" class="flex items-start gap-space-3">
+    <div class="flex items-start gap-space-3">
         <div class="min-w-0">
-            <div class="text-fs-12 uppercase text-cryptex-text-tertiary">Pagamentos</div>
+            <div class="text-fs-12 uppercase text-cryptex-text-tertiary">{{ $p->financings->isNotEmpty() || $p->downPayments->isNotEmpty() ? 'Outros pagamentos' : 'Pagamentos' }}</div>
             <h3 class="text-fs-16 font-semibold break-words">{{ $p->description }}</h3>
         </div>
         <button type="button" wire:click="closePayments" class="ml-auto min-h-[40px] px-2 text-cryptex-text-secondary" aria-label="Fechar">✕</button>
