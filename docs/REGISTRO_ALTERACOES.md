@@ -1,5 +1,21 @@
 # Registro de alterações
 
+## 2026-11-11 — Bens: financiamento (entrada, parcelas e dívida no patrimônio)
+
+Pedido do Cassio (t281u / t287u): lançar um bem comprado com entrada e financiamento (ex.: Haval H6 GT), ver o total pago com juros e o saldo devedor, e marcar cada parcela pelo carnê, em contas diferentes (boleto).
+
+1. No bem, a seção **Forma de pagamento** tem **Entrada** (valor, data, conta) e **Financiamento** (credor, valor financiado, número e valor das parcelas, 1º vencimento; taxa e tabela Price/SAC opcionais). O sistema gera as parcelas automaticamente, todas em aberto, sem conta.
+2. Cada parcela pode ser marcada como paga **uma a uma** ou **em lote**, com data e conta próprias (a conta pode ficar vazia até ele preencher). A parcela inteira vai para **Aquisição de bem** e **fica fora do resultado do mês**. Os juros aparecem só no painel (total final menos o preço do bem).
+3. Painel: preço, total já pago, saldo devedor, parcelas que faltam, total final e custo dos juros. Sem taxa informada, o saldo devedor é a soma das parcelas em aberto (o painel avisa que isso inclui juros futuros).
+4. No patrimônio do Dashboard, o bem entra pelo valor atual e a dívida aparece como passivo visível **(−) Financiamentos**; o total desconta esse saldo. Parcelas em aberto entram no **Fluxo previsto**.
+5. Pagamento com data anterior ao saldo inicial da conta (em geral 01/10/2026) fica só no histórico do bem, **sem mexer no saldo**. A partir dessa data, se já existir lançamento no extrato com o mesmo valor e data próxima, o sistema avisa e permite **vincular** em vez de criar outro (o lançamento passa a Aquisição de bem e sai do resultado).
+6. O fluxo antigo de **Pagamentos** (conta ou cartão), usado no Relógio Rolex, continua igual.
+
+**Dados reais (autorizados):** no Haval H6 GT (id 4, placa SMV2E26) o preço de aquisição passou de R$ 323.000,00 para **R$ 321.000,00**. Entrada de **R$ 221.000,00** no Banco do Brasil em 03/01/2024 (histórica, sem lançamento e sem alteração de saldo). Financiamento **Bradesco**, R$ 100.000,00, **36** parcelas de **R$ 2.869,73**, 1º vencimento em **28/01/2025**, todas em aberto e sem conta, para o Cassio marcar pelo carnê. Nenhum outro bem ou saldo de conta foi alterado.
+
+Migração: `2026_11_11_080000_property_financings` (tabelas `property_down_payments`, `property_financings`, `property_financing_installments`), rodada antes do código entrar no ar. Testes: `tests/Feature/PropertyFinancingTest.php` (e a suíte de `PropertyPaymentsTest.php` permanece). Backup: `/root/app-cassio-backups/financiamento-bens-20261111/`.
+
+
 ## 2026-11-11 — Recebimento de processo: honorário principal e honorários extras
 
 Pedido do Cassio (t282u / t286u): a parte de honorários do Recebimento de processo estava confusa, e às vezes ele cobra um honorário principal e um extra no mesmo processo.
