@@ -1,5 +1,19 @@
 # Registro de alterações
 
+## 2026-11-11 — Cartões › Faturas: gerenciar, editar/mover/excluir compras, desfazer importação e fatura automática pelo ciclo
+
+Pedido do Cassio (BB 1126): as compras importadas do extrato do cartão caíram na fatura errada e não havia um lugar fácil para editar, mover ou excluir a fatura ou as compras.
+
+1. Em cada fatura, o menu **Gerenciar** (visível no celular e no computador): Fechar ou Reabrir, Editar vencimento e fechamento, e Excluir fatura. A exclusão só vale se a fatura estiver vazia e sem pagamento; com compras ou pagamento, o menu explica o que falta fazer.
+2. Em cada compra: **Editar** (valor, data, descrição, categoria e fatura de destino), **Mover** e **Excluir** com confirmação. Dá para marcar várias e mover ou excluir de uma vez. Os totais das faturas são recalculados; saldos de conta só mudam se houver pagamento de fatura (compras no cartão não mexem na conta).
+3. **Desfazer importação**: lista as importações deste cartão (arquivo, quantidade, total e prévia), pede confirmação e remove só o que veio daquela importação. Lançamentos feitos à mão permanecem.
+4. Na **importação de extrato do cartão**, o padrão passou a ser colocar cada compra na fatura do ciclo (data da compra + dia de fechamento). Ainda é possível escolher uma fatura só para todas. Se a data não combinar com a fatura escolhida, o sistema avisa na revisão; a fatura de cada linha pode ser trocada antes de gravar.
+
+Diagnóstico só de leitura do cartão BB 1126 (nada aplicado nos dados reais): 14 das 16 compras importadas estão na fatura nov/2026, fora do ciclo; as parcelas LATAM 1/3 e 2/3 (R$ 580,55 em set e out) não são duplicatas. A correção desses lançamentos aguarda o OK. Lista completa: ver CSV do diagnóstico.
+
+Migração: `2026_11_11_020000_statement_import_batches` (lote da importação e `transactions.import_batch_id`). Testes: `tests/Feature/Banking/InvoiceManageTest.php`. Backup: `/root/app-cassio-backups/faturas-gerenciar-20261111/`.
+
+
 ## 2026-11-11 — Empréstimos: correção do salvar, devolução de vários, editar/excluir e Voltar
 
 - **Erro ao salvar "Novo empréstimo concedido"**: com o vencimento vazio, o formulário enviava data `''` e o MySQL (modo estrito) recusava com "Incorrect date value", gerando a tela de erro (nada era gravado). `LoanService` agora normaliza vencimento/observações vazios para NULL e juros vazio para 0. Mesmo defeito corrigido em `ReceivableService` (`interest_start_date` vazio passa a usar a data do lançamento).
