@@ -104,6 +104,14 @@ trait SortsColumns
         [$this->sortBy, $this->sortDir] = $this->sortState($primary);
     }
 
+    /** Ordena uma coleção pela escolha lembrada da lista (só exibição). */
+    protected function sortRows(iterable $items, string $list, array $accessors, array $tiebreakers = []): \Illuminate\Support\Collection
+    {
+        [$by, $dir] = $this->sortState($list);
+
+        return \App\Support\ColumnSorter::sort($items, $by, $dir, $accessors, $tiebreakers);
+    }
+
     private function normalizeList(?string $list): string
     {
         $list = $list ?: $this->sortListKey();
