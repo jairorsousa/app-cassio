@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 2026-11-11 — Setinhas de ordenação nas tabelas
+
+Pedido do Cassio (t292u): no extrato do corretor (e em todas as tabelas no mesmo formato), poder ordenar pelas colunas — principalmente a data — com setinha, como já existia em Financeiro › Lançamentos.
+
+- **Lançamentos:** a ordenação por Data, Descrição, Categoria, Conta e Valor (valor com sinal; despesa negativa) já estava pronta e foi mantida. A escolha continua lembrada por usuário e não some ao limpar os filtros.
+- **Núcleo reutilizável:** `UserPreferences` agora guarda a ordem de cada lista (lista fechada de colunas). `ColumnSorter` ordena em memória pela data real (não pelo texto dd/mm/aaaa), pelo número e pelo texto em pt-BR. O trait `SortsColumns` e os componentes `<x-fx.sort-th>` / `<x-fx.sort-mobile>` repetem o mesmo gesto: toque na coluna ordena (crescente na primeira vez, exceto quando o padrão da lista é data mais recente primeiro); o segundo toque inverte. No celular há o seletor "Ordenar por" com botão de 44 px. A coluna ativa fica destacada, com seta para cima ou para baixo.
+- **Extrato do corretor:** Data, Movimento, Descrição, Valor e Saldo. O **saldo corrido é calculado na ordem cronológica** e acompanha a linha, mesmo quando a tela é invertida. As abas Adiantamentos, Comissões, Repasses e Despesas de processos (esta passou a ter tabela com as mesmas informações de sempre) também têm setinhas. A ordem de cada aba é lembrada à parte.
+- **Outras listas com setinhas:** Corretores (lista, tipos de caso, e as listas avulsas de adiantamentos/comissões); Financeiro › Contas, Cartões, Recorrências, Empréstimos (lista e parcelas), Valores a receber (lista e parcelas), Fluxo de caixa (previsto, projeção, categorias e contas — o saldo projetado continua calculado mês a mês, na ordem do tempo, e só a exibição muda); Contatos; Bens.
+- **Não altera dados**, só a exibição. O histórico de baixas dos empréstimos ficou de fora porque as linhas são agrupadas por lote. Telas em cartões, sem cabeçalho de colunas (Faturas, Categorias, lista de Divisões, Usuários, etc.), também ficaram de fora nesta rodada, assim como Investimentos (movimentações, proventos, posição, B3), relatórios de Requisitórios, movimentos do grupo no Divisões e lançamentos da Sociedade — ficam para a mesma lógica, se o Cassio quiser na sequência.
+- Testes: `tests/Unit/Support/ColumnSorterTest.php`, `tests/Feature/Brokers/BrokerStatementSortTest.php`, `tests/Feature/Ui/TableSortSmokeTest.php`, e a suíte de Lançamentos (`TransactionsSortTest`) permanece. Backup: `/root/app-cassio-backups/ordenacao-tabelas-20261111/`.
+
+
 ## 2026-11-11 — Requisitórios: painel de métricas mais claro
 
 Pedido do Cassio (t291u): bater o olho no painel, entender o que está acontecendo, quanto já recebeu por mês e por ano, e as médias, com nomes mais claros e um gráfico simples. Só apresentação e cálculo; nenhum requisitório foi alterado.
