@@ -30,8 +30,9 @@ new class extends Component {
         $parts = $receipt->destinations()->with('commission')->orderBy('id')->get();
         $process = $receipt->processReceipt()->with('brokerShares')->first();
         $brokers = $process && $process->brokerShares->isNotEmpty()
-            ? $process->brokerShares->map(fn ($share) => ['key' => (string) Str::uuid(), 'broker_id' => $share->broker_id, 'base' => $share->base, 'mode' => $share->mode, 'value' => (string) $share->rate_or_amount, 'advances' => []])->all()
-            : $parts->where('kind', 'broker')->filter(fn ($part) => $part->commission)->map(fn ($part) => ['key' => (string) Str::uuid(), 'broker_id' => $part->commission->broker_id, 'base' => 'fees', 'mode' => 'fixed', 'value' => (string) $part->amount, 'advances' => []])->values()->all();
+            ? $process->brokerShares->map(fn ($share) => ['key' => (string) Str::uuid(), 'broker_id' => $share->broker_id, 'base' => $share->base, 'mode' => $share->mode, 'value' => (string) $share->rate_or_amount, 'auto' => false,
+                'advances' => $share->commission_id ? \App\Domains\Brokers\Models\BrokerCommissionSettlement::where('commission_id', $share->commission_id)->get()->groupBy('advance_id')->map(fn ($rows) => number_format((float) $rows->sum('amount_offset'), 2, '.', ''))->all() : []])->all()
+            : $parts->where('kind', 'broker')->filter(fn ($part) => $part->commission)->map(fn ($part) => ['key' => (string) Str::uuid(), 'broker_id' => $part->commission->broker_id, 'base' => 'fees', 'mode' => 'fixed', 'value' => (string) $part->amount, 'auto' => false, 'advances' => []])->values()->all();
         $this->form = array_replace($this->form, [
             'brokers' => $brokers,
             'client_contact_id' => $parts->firstWhere('kind', 'client')?->contact_id ?? $receipt->link_contact_id,
@@ -52,7 +53,8 @@ new class extends Component {
             $this->form['receivables'] = [];
             if ($this->form['client_contact_id'] && $this->form['client_name'] === '') { $this->form['client_name'] = \App\Domains\Contacts\Models\Contact::find($this->form['client_contact_id'])?->name ?? ''; }
         }
-        if ($key && preg_match('/^brokers\.(\d+)\.broker_id$/', $key, $m)) { $this->form['brokers'][$m[1]]['advances'] = []; $this->form['expenses'] = []; }
+        if ($key && preg_match('/^brokers\.(\d+)\.broker_id$/', $key, $m)) { $this->form['brokers'][$m[1]]['advances'] = []; $this->form['brokers'][$m[1]]['auto'] = false; $this->form['expenses'] = []; }
+        if ($key && preg_match('/^brokers\.(\d+)\.auto$/', $key, $m) && empty($this->form['brokers'][$m[1]]['auto'])) { $this->form['brokers'][$m[1]]['advances'] = []; }
         if ($key === 'includes_writ' && ! $this->form['includes_writ']) { $this->form['writ_id'] = null; $this->form['writ_amount'] = ''; }
         if ($key === 'writ_id' && $this->form['writ_id']) {
             $writ = Writ::with('defaultBrokers')->find($this->form['writ_id']);
@@ -84,7 +86,7 @@ new class extends Component {
     public function addBroker(): void
     {
         if (count($this->form['brokers']) < 10) {
-            $this->form['brokers'][] = ['key' => (string) Str::uuid(), 'broker_id' => null, 'base' => 'fees', 'mode' => 'percent', 'value' => '', 'advances' => []];
+            $this->form['brokers'][] = ['key' => (string) Str::uuid(), 'broker_id' => null, 'base' => 'fees', 'mode' => 'percent', 'value' => '', 'auto' => false, 'advances' => []];
         }
     }
 
@@ -145,11 +147,22 @@ new class extends Component {
         $this->form += ['brokers' => [], 'includes_writ' => false, 'writ_id' => null, 'writ_amount' => '', 'process_ref' => '', 'expenses' => []];
         $brokerIds = collect($this->form['brokers'])->pluck('broker_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $expenses = $brokerIds->isEmpty() ? collect() : BrokerProcessExpense::with('broker')->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($expense) => $expense->remainingCents() > 0);
-        $advances = $brokerIds->isEmpty() ? collect() : BrokerAdvance::personal()->whereIn('broker_id', $brokerIds)->orderBy('date')->get()->filter(fn ($advance) => $advance->remainingBalance() > 0)->groupBy('broker_id');
+        // Adiantamentos em aberto por corretor (mais antigo primeiro). Na edição, o que este recebimento já compensou conta como disponível.
+        $advances = $brokerIds->mapWithKeys(fn ($id) => [$id => $service->openAdvances($id, $receipt)])->filter(fn ($rows) => $rows->isNotEmpty());
+        // Compensação automática marcada: calcula o abatimento do mais antigo para o mais novo até o valor da comissão.
+        $autoAllocations = [];
+        $position = 0;
+        foreach ($this->form['brokers'] as $index => $row) {
+            if (empty($row['broker_id'])) { continue; }
+            if (! empty($row['auto'])) {
+                $autoAllocations[$index] = $service->autoAllocation((int) $row['broker_id'], (int) ($preview['brokers'][$position] ?? 0), $receipt);
+            }
+            $position++;
+        }
         $recovered = collect($this->form['expenses'])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
-        $offset = collect($this->form['brokers'])->sum(fn ($row) => collect($row['advances'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0));
+        $offset = collect($this->form['brokers'])->map(fn ($row, $index) => isset($autoAllocations[$index]) ? array_sum($autoAllocations[$index]) : collect($row['advances'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0))->sum();
         $writCents = $this->form['includes_writ'] && is_numeric($this->form['writ_amount']) ? (int) round((float) $this->form['writ_amount'] * 100) : 0;
-        return compact('preview', 'previewError', 'expenses', 'advances', 'recovered', 'offset', 'writCents') + [
+        return compact('preview', 'previewError', 'expenses', 'advances', 'autoAllocations', 'recovered', 'offset', 'writCents') + [
             'contacts' => \App\Domains\Contacts\Models\Contact::active()->orderBy('name')->get(),
             'clientAdvances' => empty($this->form['client_contact_id']) ? collect() : \App\Domains\Banking\Models\Receivable::with('installments.settlements')->where('contact_id', $this->form['client_contact_id'])->get()->filter(fn ($row) => $row->remainingCents() > 0),
             'clientOffset' => collect($this->form['receivables'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (float) $amount : 0),
@@ -216,7 +229,7 @@ new class extends Component {
     </section>
     <section class="space-y-4 rounded-xl border border-mono-100 p-4">
         <div class="flex items-center justify-between"><h4 class="font-semibold text-mono-900">3. Corretores <span class="text-sm font-normal text-mono-500">(opcional)</span></h4><button type="button" wire:click="addBroker" class="text-sm font-semibold text-primary-600">+ Adicionar corretor</button></div>
-        <p class="text-xs text-mono-600">Cada corretor gera uma comissão própria no módulo Corretores. Percentual sobre os honorários (padrão) ou sobre o valor bruto, ou valor fixo. A compensação de adiantamento é opcional e abate só daquele corretor.</p>
+        <p class="text-xs text-mono-600">Cada corretor gera uma comissão própria no módulo Corretores. Percentual sobre os honorários (padrão) ou sobre o valor bruto, ou valor fixo. A compensação de adiantamento é opcional e abate só daquele corretor: marque "Compensar automaticamente" para abater do mais antigo para o mais novo, ou informe os valores à mão.</p>
         @forelse ($form['brokers'] as $index => $row)
             <div wire:key="broker-row-{{ $row['key'] ?? $index }}" class="space-y-3 rounded-xl border border-mono-100 bg-mono-50 p-3">
                 <div class="grid items-end gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_auto]">
@@ -228,14 +241,47 @@ new class extends Component {
                 </div>
                 <p class="text-sm text-mono-900">Valor calculado: <strong>R$ {{ number_format(($preview['brokers'][collect($form['brokers'])->take($index + 1)->filter(fn ($r) => ! empty($r['broker_id']))->count() - 1] ?? 0) / 100, 2, ',', '.') }}</strong></p>
                 @if (! empty($row['broker_id']) && ($advances[(int) $row['broker_id']] ?? collect())->isNotEmpty())
-                    <details class="text-sm"><summary class="cursor-pointer text-primary-600">Compensar adiantamento deste corretor (opcional)</summary>
-                        @foreach ($advances[(int) $row['broker_id']] as $advance)
-                            <div wire:key="advance-choice-{{ $index }}-{{ $advance->id }}" class="mt-2 grid items-center gap-3 sm:grid-cols-[1fr_180px]">
-                                <div><strong>Adiantamento de {{ $advance->date->format('d/m/Y') }}</strong><p class="text-mono-600">{{ $advance->notes }} · Disponível: R$ {{ number_format($advance->remainingBalance(), 2, ',', '.') }}</p></div>
-                                <x-jr.input label="Compensar (R$)" :name="'form.brokers.'.$index.'.advances.'.$advance->id" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.brokers.{{ $index }}.advances.{{ $advance->id }}" />
-                            </div>
-                        @endforeach
-                    </details>
+                    @php
+                        $openRows = $advances[(int) $row['broker_id']];
+                        $isAuto = ! empty($row['auto']);
+                        $allocation = $autoAllocations[$index] ?? [];
+                        $usedCents = $isAuto ? array_sum($allocation) : collect($row['advances'] ?? [])->sum(fn ($amount) => is_numeric($amount) ? (int) round((float) $amount * 100) : 0);
+                        $openCents = $openRows->sum('available');
+                        $commissionCents = (int) ($preview['brokers'][collect($form['brokers'])->take($index + 1)->filter(fn ($r) => ! empty($r['broker_id']))->count() - 1] ?? 0);
+                    @endphp
+                    <div class="space-y-2 rounded-xl border border-mono-100 bg-white p-3 text-sm" wire:key="advances-box-{{ $row['key'] ?? $index }}">
+                        <label class="flex cursor-pointer items-start gap-2">
+                            <input type="checkbox" wire:model.live="form.brokers.{{ $index }}.auto" class="mt-0.5 h-5 w-5 rounded border-mono-300 text-primary-500 focus:ring-primary-500" data-test="auto-compensar-{{ $index }}">
+                            <span><strong class="text-mono-900">Compensar automaticamente com os adiantamentos</strong><span class="block text-xs text-mono-600">Abate do mais antigo para o mais novo até o valor da comissão. Em aberto: R$ {{ number_format($openCents / 100, 2, ',', '.') }}</span></span>
+                        </label>
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[300px] text-[11px] sm:text-xs">
+                                <thead><tr class="text-left text-mono-600"><th class="py-1 pr-2">Adiantamento</th><th class="py-1 pr-2 text-right">Disponível</th><th class="py-1 pr-2 text-right">Compensar</th><th class="py-1 text-right"><span class="sm:hidden">Fica</span><span class="hidden sm:inline">Fica a compensar</span></th></tr></thead>
+                                <tbody>
+                                @foreach ($openRows as $open)
+                                    @php
+                                        $advance = $open['advance'];
+                                        $take = $isAuto ? ($allocation[$advance->id] ?? 0) : (is_numeric($row['advances'][$advance->id] ?? null) ? (int) round((float) $row['advances'][$advance->id] * 100) : 0);
+                                    @endphp
+                                    <tr wire:key="advance-choice-{{ $index }}-{{ $advance->id }}" class="border-t border-mono-100 align-middle {{ $take > 0 ? 'bg-primary-50' : '' }}">
+                                        <td class="py-1.5 pr-2"><strong>{{ $advance->date->format('d/m/Y') }}</strong>@if ($advance->notes)<span class="block text-mono-600">{{ $advance->notes }}</span>@endif</td>
+                                        <td class="py-1.5 pr-2 text-right">R$ {{ number_format($open['available'] / 100, 2, ',', '.') }}</td>
+                                        <td class="py-1.5 pr-2 text-right">
+                                            @if ($isAuto)
+                                                <strong class="{{ $take > 0 ? 'text-primary-600' : 'text-mono-400' }}">R$ {{ number_format($take / 100, 2, ',', '.') }}</strong>
+                                            @else
+                                                <input type="text" inputmode="numeric" x-money aria-label="Compensar adiantamento de {{ $advance->date->format('d/m/Y') }}" wire:model.live.debounce.300ms="form.brokers.{{ $index }}.advances.{{ $advance->id }}" class="h-9 w-24 rounded-lg border-mono-200 px-2 text-right text-xs sm:w-28">
+                                            @endif
+                                        </td>
+                                        <td class="py-1.5 text-right {{ $open['available'] - $take > 0 ? 'text-mono-900' : 'text-success' }}">R$ {{ number_format(max(0, $open['available'] - $take) / 100, 2, ',', '.') }}</td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                                <tfoot><tr class="border-t border-mono-200 font-semibold"><td class="py-1.5 pr-2">Total</td><td class="py-1.5 pr-2 text-right">R$ {{ number_format($openCents / 100, 2, ',', '.') }}</td><td class="py-1.5 pr-2 text-right text-primary-600">R$ {{ number_format($usedCents / 100, 2, ',', '.') }}</td><td class="py-1.5 text-right">R$ {{ number_format(max(0, $openCents - $usedCents) / 100, 2, ',', '.') }}</td></tr></tfoot>
+                            </table>
+                        </div>
+                        <p class="text-xs text-mono-600">Comissão R$ {{ number_format($commissionCents / 100, 2, ',', '.') }} − compensado R$ {{ number_format($usedCents / 100, 2, ',', '.') }} = <strong>a pagar ao corretor R$ {{ number_format(max(0, $commissionCents - $usedCents) / 100, 2, ',', '.') }}</strong></p>
+                    </div>
                 @endif
             </div>
         @empty<p class="text-sm text-mono-500">Sem corretor. Os honorários ficam entre você e o escritório.</p>@endforelse

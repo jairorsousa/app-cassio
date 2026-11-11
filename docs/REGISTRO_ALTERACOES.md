@@ -1,5 +1,17 @@
 # Registro de alterações
 
+## 10/11/2026 — Recebimento de processo: compensação automática dos adiantamentos do corretor (criação e edição)
+
+Pedido do Cassio: no passo "3. Corretores", só marcar e o sistema abater os adiantamentos do mais antigo para o mais novo, mostrando quanto fica a compensar em cada um.
+
+1. Cada corretor do recebimento ganhou a caixa **Compensar automaticamente com os adiantamentos**. Marcada, o sistema abate a comissão nos adiantamentos pessoais em aberto daquele corretor, do mais antigo para o mais novo (data, depois ordem de cadastro), até acabar a comissão ou os adiantamentos.
+2. Tabela por adiantamento: Disponível, Compensar, Fica a compensar, com totais e a linha "Comissão − compensado = a pagar ao corretor". Desmarcando, volta para os campos manuais (como antes).
+3. O cálculo é refeito no servidor ao gravar (não confia no que veio da tela) e só usa adiantamentos daquele corretor.
+4. **Edição** (Editar → Salvar Lançamento, ou Ver recebimento de processo → Editar divisão): ao reabrir, as compensações já feitas por este recebimento aparecem preenchidas e o que ele compensou volta a contar como disponível. Ao gravar, as compensações dele são desfeitas e refeitas (manual ou automática), igual a uma criação, sem duplicar a comissão. Repasse ao corretor continua bloqueando a edição.
+5. "Editar divisão" passa a aparecer quando a única coisa feita no recebimento são compensações de adiantamento do corretor. "Remover divisão" continua exigindo desfazer as compensações antes.
+
+Sem migração e sem alteração de dados. O lançamento real de 06/10/2026 (José Pereira de Araújo, #1537) não foi alterado; a compensação dele aguarda o OK do Cassio. Testes: `tests/Feature/Banking/CompensacaoAutomaticaTest.php`. Backup: `/root/app-cassio-backups/compensacao-auto-20261110/`.
+
 ## 10/11/2026 — Financeiro › Lançamentos: ordenar por coluna (Auditor Fin)
 
 Pedido do Cassio: acompanhar a lista na mesma ordem dos extratos (ora do início do mês, ora do fim).

@@ -80,6 +80,64 @@ class ProcessReceiptService
         return $this->portion((string) ($row['value'] ?? '0'), $mode, $base);
     }
 
+    /**
+     * IDs das comissões geradas por este recebimento (usadas para tratar as compensações dele como disponíveis ao editar).
+     *
+     * @return array<int, int>
+     */
+    public function receiptCommissionIds(?Transaction $receipt): array
+    {
+        if (! $receipt || ! $receipt->exists) {
+            return [];
+        }
+
+        return $receipt->destinations()->whereNotNull('commission_id')->pluck('commission_id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Adiantamentos pessoais em aberto do corretor, do mais antigo para o mais novo, com o saldo disponível em centavos.
+     * Na edição, o que este recebimento já compensou volta a contar como disponível (será refeito ao gravar).
+     *
+     * @return \Illuminate\Support\Collection<int, array{advance: BrokerAdvance, available: int}>
+     */
+    public function openAdvances(int $brokerId, ?Transaction $receipt = null, bool $lock = false): \Illuminate\Support\Collection
+    {
+        $own = $this->receiptCommissionIds($receipt);
+        $query = BrokerAdvance::personal()->where('broker_id', $brokerId)->orderBy('date')->orderBy('id');
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        return $query->get()->map(function (BrokerAdvance $advance) use ($own) {
+            $settled = BrokerCommissionSettlement::where('advance_id', $advance->id)
+                ->when($own !== [], fn ($q) => $q->whereNotIn('commission_id', $own))->sum('amount_offset');
+
+            return ['advance' => $advance, 'available' => max(0, (int) round(((float) $advance->amount - (float) $settled) * 100))];
+        })->filter(fn ($row) => $row['available'] > 0)->values();
+    }
+
+    /**
+     * Compensação automática: abate a comissão do corretor nos adiantamentos em aberto, do mais antigo para o mais novo,
+     * até acabar a comissão ou os adiantamentos. Retorna [advance_id => centavos].
+     *
+     * @return array<int, int>
+     */
+    public function autoAllocation(int $brokerId, int $commissionCents, ?Transaction $receipt = null, bool $lock = false): array
+    {
+        $left = max(0, $commissionCents);
+        $result = [];
+        foreach ($this->openAdvances($brokerId, $receipt, $lock) as $row) {
+            if ($left <= 0) {
+                break;
+            }
+            $take = min($left, $row['available']);
+            $result[$row['advance']->id] = $take;
+            $left -= $take;
+        }
+
+        return $result;
+    }
+
     /** All percentages for commissions are based on fees, never on the client's share (salvo corretor com base no valor bruto). */
     public function calculate(Transaction $receipt, array $data): array
     {
@@ -155,6 +213,7 @@ class ProcessReceiptService
             'broker_rows.*.base' => 'required|in:fees,gross',
             'broker_rows.*.mode' => 'required|in:percent,fixed',
             'broker_rows.*.value' => ['required', ...$money],
+            'broker_rows.*.auto' => 'sometimes|boolean',
             'broker_rows.*.advances' => 'sometimes|array|max:200',
             'broker_rows.*.advances.*' => ['nullable', ...$money],
             'client_contact_id' => ['nullable', 'integer', Rule::exists('contacts', 'id')->where('status', true)->whereNull('deleted_at')],
@@ -226,6 +285,16 @@ class ProcessReceiptService
             if ($values['office'] > 0) {
                 $destRows[] = ['kind' => 'office', 'beneficiary' => ReceiptAccountAllocationService::OFFICE_ACCOUNT, 'amount' => $this->money($values['office'])];
             }
+            // Edição: desfaz as compensações geradas por este recebimento; elas são refeitas abaixo (manual ou automática), igual a uma criação.
+            $ownCommissionIds = $this->receiptCommissionIds($receipt);
+            if ($ownCommissionIds !== []) {
+                foreach (BrokerCommission::whereIn('id', $ownCommissionIds)->lockForUpdate()->get() as $ownCommission) {
+                    if ($ownCommission->payments()->exists()) {
+                        throw new \DomainException('Desfaça os repasses do corretor '.($ownCommission->broker?->name ?? '').' antes de alterar a divisão do recebimento.');
+                    }
+                }
+                BrokerCommissionSettlement::whereIn('commission_id', $ownCommissionIds)->delete();
+            }
             $this->destinations->replace($receipt, $destRows, automaticAdvances: false);
             $process = ProcessReceipt::create([
                 'receipt_id' => $receipt->id, 'broker_id' => $brokers[0]->id ?? null,
@@ -258,8 +327,13 @@ class ProcessReceiptService
             foreach ($rows as $index => $row) {
                 $commission = $brokerParts[$index]->commission ?? null;
                 $offset = 0;
-                $advances = (array) ($row['advances'] ?? []);
-                ksort($advances);
+                if (filter_var($row['auto'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    // Compensação automática: do adiantamento mais antigo para o mais novo, até o valor da comissão.
+                    $advances = array_map(fn ($cents) => $this->money($cents), $this->autoAllocation($brokers[$index]->id, $values['brokers'][$index], null, true));
+                } else {
+                    $advances = (array) ($row['advances'] ?? []);
+                    ksort($advances);
+                }
                 foreach ($advances as $id => $amount) {
                     if ($amount === '' || $amount === null) {
                         continue;
@@ -269,7 +343,7 @@ class ProcessReceiptService
                         continue;
                     }
                     // Compensa somente adiantamentos deste corretor; nunca de outro.
-                    $advance = BrokerAdvance::where('broker_id', $brokers[$index]->id)->lockForUpdate()->find($id);
+                    $advance = BrokerAdvance::personal()->where('broker_id', $brokers[$index]->id)->lockForUpdate()->find($id);
                     if (! $commission || ! $advance || $cents > (int) round(((float) $advance->amount - (float) $advance->settlements()->lockForUpdate()->get()->sum('amount_offset')) * 100)) {
                         throw new \DomainException('Um adiantamento selecionado não pertence ao corretor '.$brokers[$index]->name.' ou não possui saldo suficiente.');
                     }

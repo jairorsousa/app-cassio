@@ -149,7 +149,11 @@ new class extends Component {
             'clientOffsetAmount' => $parts->sum(fn ($part) => $part->offsetCents()) / 100,
             'processReceipt' => $receipt->processReceipt,
             'recoveredAmount' => $parts->sum(fn ($part) => $part->recoveredCents()) / 100,
-            'canEdit' => ! $parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty()),
+            // Recebimento de processo: compensações de adiantamento feitas por ele não bloqueiam a edição; ao gravar, são refeitas (igual a uma criação).
+            'canEdit' => $canClear = ! $parts->contains(fn ($part) => $part->paidCents() > 0 || $part->payments->isNotEmpty()),
+            'canEditProcess' => $canClear || ($receipt->processReceipt && ! $parts->contains(fn ($part) => $part->commission_id
+                ? ($part->commission && $part->commission->paidAmount() > 0) || $part->payments->isNotEmpty()
+                : $part->paidCents() > 0 || $part->payments->isNotEmpty())),
             'ownAmount' => $parts->where('kind', 'own')->sum('amount'),
         ];
     }
@@ -231,6 +235,8 @@ new class extends Component {
                 @endforeach
                 @if ($canEdit)
                     <div class="flex flex-wrap gap-4"><button type="button" wire:click="editDivision" class="text-sm font-semibold text-primary-600">Editar divisão</button><button type="button" wire:click="clear" wire:confirm="Remover a divisão deste recebimento? Comissões criadas por ela e ainda sem repasses também serão removidas." class="text-sm text-error">Remover divisão</button></div>
+                @elseif ($canEditProcess)
+                    <div class="flex flex-wrap items-center gap-4"><button type="button" wire:click="editDivision" class="text-sm font-semibold text-primary-600">Editar divisão</button><p class="text-xs text-mono-600">As compensações de adiantamento do corretor são refeitas ao gravar a edição. Para remover a divisão, desfaça antes as compensações.</p></div>
                 @else<p class="text-xs text-mono-600">Para editar a divisão, desfaça os descontos e compensações usados. Movimentações financeiras anteriores também precisam ser desvinculadas.</p>@endif
             @endif
 
