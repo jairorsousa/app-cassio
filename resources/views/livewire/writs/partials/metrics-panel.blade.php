@@ -175,10 +175,7 @@
                 <caption class="sr-only">Recebido e lucro por mês em {{ $chart['title'] }}</caption>
                 <thead>
                     <tr class="text-left text-[11px] uppercase tracking-wide text-mono-500">
-                        <th class="pb-2 pr-3 font-medium">Mês</th>
-                        <th class="pb-2 pr-3 text-right font-medium">Recebido</th>
-                        <th class="pb-2 pr-3 text-right font-medium">Lucro</th>
-                        <th class="pb-2 text-right font-medium">Qtde</th>
+                        <x-fx.sort-th column="month" label="Mês" list="writs_metrics_months" :sorts="$sorts"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="received" label="Recebido" list="writs_metrics_months" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="profit" label="Lucro" list="writs_metrics_months" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="quantity" label="Qtde" list="writs_metrics_months" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" />
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-mono-100">
@@ -211,12 +208,7 @@
                     <table class="w-full min-w-[20rem] text-sm">
                         <thead>
                             <tr class="text-left text-[11px] uppercase tracking-wide text-mono-500">
-                                <th class="pb-2 pr-3 font-medium">Ano</th>
-                                <th class="pb-2 pr-3 text-right font-medium">Recebido</th>
-                                <th class="pb-2 pr-3 text-right font-medium">Custo</th>
-                                <th class="pb-2 pr-3 text-right font-medium">Lucro</th>
-                                <th class="pb-2 pr-3 text-right font-medium">%</th>
-                                <th class="pb-2 text-right font-medium">Qtde</th>
+                                <x-fx.sort-th column="year" label="Ano" list="writs_metrics_years" :sorts="$sorts"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="received" label="Recebido" list="writs_metrics_years" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="cost" label="Custo" list="writs_metrics_years" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="profit" label="Lucro" list="writs_metrics_years" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="percent" label="%" list="writs_metrics_years" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="quantity" label="Qtde" list="writs_metrics_years" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" />
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-mono-100">
@@ -314,10 +306,7 @@
                 <table class="w-full min-w-[20rem] text-sm">
                     <thead>
                         <tr class="text-left text-[11px] uppercase tracking-wide text-mono-500">
-                            <th class="pb-2 pr-3 font-medium">Mês previsto</th>
-                            <th class="pb-2 pr-3 text-right font-medium">Deve voltar</th>
-                            <th class="pb-2 pr-3 text-right font-medium">Custo</th>
-                            <th class="pb-2 text-right font-medium">Qtde</th>
+                            <x-fx.sort-th column="month" label="Mês previsto" list="writs_metrics_forecast" :sorts="$sorts"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="expected" label="Deve voltar" list="writs_metrics_forecast" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="cost" label="Custo" list="writs_metrics_forecast" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" /><x-fx.sort-th column="quantity" label="Qtde" list="writs_metrics_forecast" :sorts="$sorts" align="right"  class="pb-1 pr-3 font-medium" />
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-mono-100">

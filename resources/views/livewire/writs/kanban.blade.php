@@ -14,10 +14,28 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Lazy;
 use Livewire\Attributes\Session;
 use Livewire\Attributes\Url;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] #[Lazy] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'writs_metrics_months';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['writs_metrics_months', 'writs_metrics_years', 'writs_metrics_forecast'];
+    }
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
     public function placeholder(): string
     {
         return <<<'HTML'
@@ -1046,6 +1064,27 @@ new #[Layout('layouts.app')] #[Lazy] class extends Component
         }
 
         $metrics = app(WritPipelineMetrics::class)->forCollection($filteredWrits, $this->metricsPeriod);
+        // Setinhas: só a ordem das linhas das tabelas muda; o gráfico e os totais continuam iguais.
+        $metrics['chart']['months'] = $this->sortRows($metrics['chart']['months'] ?? [], 'writs_metrics_months', [
+            'month' => fn ($m) => $m['key'],
+            'received' => fn ($m) => (float) $m['received'],
+            'profit' => fn ($m) => (float) $m['profit'],
+            'quantity' => fn ($m) => (float) $m['count'],
+        ], [[fn ($m) => $m['key'], 'asc']])->all();
+        $metrics['years'] = $this->sortRows($metrics['years'] ?? [], 'writs_metrics_years', [
+            'year' => fn ($y) => (float) $y['year'],
+            'received' => fn ($y) => (float) $y['received'],
+            'cost' => fn ($y) => (float) $y['cost'],
+            'profit' => fn ($y) => (float) $y['profit'],
+            'percent' => fn ($y) => $y['profit_pct'],
+            'quantity' => fn ($y) => (float) $y['count'],
+        ], [[fn ($y) => (float) $y['year'], 'desc']])->all();
+        $metrics['upcoming']['months'] = $this->sortRows($metrics['upcoming']['months'] ?? [], 'writs_metrics_forecast', [
+            'month' => fn ($m) => $m['key'],
+            'expected' => fn ($m) => (float) $m['expected_receipt'],
+            'cost' => fn ($m) => (float) $m['cost'],
+            'quantity' => fn ($m) => (float) $m['count'],
+        ], [[fn ($m) => $m['key'], 'asc']])->all();
 
         return compact('situationCounts', 'stages', 'metrics') + [
             'accounts' => BankAccount::active()->orderBy('name')->get(),

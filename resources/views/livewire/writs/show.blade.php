@@ -5,10 +5,23 @@ use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Services\WritProfitabilityCalculator;
 use App\Domains\Writs\Services\WritService;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'writs_timeline';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['writs_timeline'];
+    }
+
     public Writ $writ;
 
     public string $transitionTo = '';
@@ -45,6 +58,7 @@ new #[Layout('layouts.app')] class extends Component
 
     public function mount(Writ $writ): void
     {
+        $this->loadSort();
         $this->writ = $writ->load('history.user', 'transactions.writLinks', 'assignors.contact');
         $this->transition_monitoring_at = now()->format('Y-m-d\TH:i');
         $this->transition_cession_at = now()->format('Y-m-d\TH:i');
@@ -189,7 +203,12 @@ new #[Layout('layouts.app')] class extends Component
             'profitability' => $calc->realized($this->writ),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
             'history' => $this->writ->history,
-            'transactions' => $this->writ->transactions,
+            'transactions' => $this->sortRows($this->writ->transactions, 'writs_timeline', [
+                'date' => fn ($t) => $t->date,
+                'type' => fn ($t) => $t->type === 'income' ? 'Receita' : 'Despesa',
+                'description' => fn ($t) => $t->description,
+                'amount' => fn ($t) => $t->type === 'income' ? (float) $t->amount : -(float) $t->amount,
+            ], [[fn ($t) => $t->id, $this->sortState('writs_timeline')[1]]]),
         ];
     }
 }; ?>
@@ -678,17 +697,11 @@ new #[Layout('layouts.app')] class extends Component
                 <span class="material-icons-outlined text-primary-500">receipt_long</span>
                 <h3 class="text-lg font-bold text-mono-900">Lançamentos vinculados</h3>
             </div>
+            <x-fx.sort-mobile list="writs_timeline" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
             
             <div class="overflow-x-auto">
                 <table class="w-full text-sm text-left">
-                    <thead class="text-xs text-mono-500 font-semibold border-b border-mono-100 bg-mono-50">
-                        <tr>
-                            <th class="px-4 py-3 rounded-tl-lg">DATA</th>
-                            <th class="px-4 py-3">TIPO</th>
-                            <th class="px-4 py-3">DESCRIÇÃO</th>
-                            <th class="px-4 py-3 text-right rounded-tr-lg">VALOR</th>
-                        </tr>
-                    </thead>
+                    <thead class="text-xs text-mono-500 font-semibold border-b border-mono-100 bg-mono-50"><tr><x-fx.sort-th column="date" label="DATA" list="writs_timeline" :sorts="$sorts"  class="px-4 py-1" /><x-fx.sort-th column="type" label="TIPO" list="writs_timeline" :sorts="$sorts"  class="px-4 py-1" /><x-fx.sort-th column="description" label="DESCRIÇÃO" list="writs_timeline" :sorts="$sorts"  class="px-4 py-1" /><x-fx.sort-th column="amount" label="VALOR" list="writs_timeline" :sorts="$sorts" align="right"  class="px-4 py-1" /></tr></thead>
                     <tbody class="divide-y divide-mono-100">
                         @foreach ($transactions as $t)
                             <tr class="hover:bg-mono-50/50 transition-colors">

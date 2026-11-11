@@ -4,9 +4,27 @@ use App\Domains\Writs\Models\Writ;
 use App\Domains\Writs\Services\WritProfitabilityCalculator;
 use App\Domains\Writs\Services\WritReceiptTimeReport;
 use Livewire\Attributes\Layout;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
+    protected function sortListKey(): string
+    {
+        return 'writs_report_open';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['writs_report_open', 'writs_report_groups', 'writs_report_times', 'writs_report_profit'];
+    }
+
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
     public function with(WritProfitabilityCalculator $calc, WritReceiptTimeReport $times): array
     {
         $timeRows = $times->rows();
@@ -34,6 +52,47 @@ new #[Layout('layouts.app')] class extends Component {
             ? $rows->avg(fn ($r) => $r['profitability']['profit_percentage'])
             : 0;
         $avgMonthly = $rows->whereNotNull('profitability.monthly_rate')->avg(fn ($r) => $r['profitability']['monthly_rate']);
+
+        $situationByType = $situationByType->map(fn ($list) => $this->sortRows($list, 'writs_report_open', [
+            'beneficiary' => fn (Writ $w) => $w->beneficiaryName(),
+            'process' => fn (Writ $w) => $w->process_number ?: '#'.$w->id,
+            'type' => fn (Writ $w) => $w->type === 'rpv' ? 'RPV' : 'Precatório',
+            'purchase' => fn (Writ $w) => $w->paid_at,
+            'forecast' => fn (Writ $w) => $w->estimatedReceiptDeadline(),
+            'status' => fn (Writ $w) => $w->deadlineStatus()['label'] ?? 'Sem previsão',
+        ], [[fn (Writ $w) => $w->id, 'asc']]));
+        $groupAcc = [
+            'group' => fn ($s) => $s['label'],
+            'quantity' => fn ($s) => (float) $s['count'],
+            'real_avg' => fn ($s) => (float) $s['avg_months'],
+            'range' => fn ($s) => (float) $s['min_months'],
+            'estimated_avg' => fn ($s) => $s['avg_estimated'] === null ? null : (float) $s['avg_estimated'],
+            'diff' => fn ($s) => $s['avg_estimated'] === null ? null : (float) $s['avg_months'] - (float) $s['avg_estimated'],
+        ];
+        foreach (['by_type', 'by_court'] as $groupKey) {
+            if (isset($timeSummary[$groupKey])) {
+                $timeSummary[$groupKey] = $this->sortRows($timeSummary[$groupKey], 'writs_report_groups', $groupAcc)->all();
+            }
+        }
+        $timeRows = $this->sortRows($timeRows, 'writs_report_times', [
+            'process' => fn ($r) => $r['writ']->process_number ?: '#'.$r['writ']->id,
+            'type' => fn ($r) => $r['writ']->type === 'rpv' ? 'RPV' : 'Precatório',
+            'court' => fn ($r) => \App\Domains\Writs\Services\WritReceiptTimeReport::courtKey($r['writ']->court),
+            'purchase' => fn ($r) => $r['writ']->paid_at,
+            'receipt' => fn ($r) => $r['writ']->finalized_at,
+            'real' => fn ($r) => (float) $r['months'],
+            'estimated' => fn ($r) => $r['estimated_months'] ? (float) $r['estimated_months'] : null,
+        ], [[fn ($r) => $r['writ']->id, 'asc']])->all();
+        $rows = $this->sortRows($rows, 'writs_report_profit', [
+            'process' => fn ($r) => $r['writ']->process_number ?: '#'.$r['writ']->id,
+            'type' => fn ($r) => $r['writ']->type === 'rpv' ? 'RPV' : 'Precatório',
+            'paid' => fn ($r) => (float) $r['writ']->totalCost(),
+            'received' => fn ($r) => (float) $r['writ']->actual_receipt_amount,
+            'profit' => fn ($r) => (float) $r['profitability']['profit_amount'],
+            'percent' => fn ($r) => (float) $r['profitability']['profit_percentage'],
+            'days' => fn ($r) => $r['profitability']['days_elapsed'],
+            'monthly' => fn ($r) => $r['profitability']['monthly_rate'],
+        ], [[fn ($r) => $r['writ']->id, 'asc']]);
 
         return compact('rows', 'totalInvested', 'totalReceived', 'totalProfit', 'avgPct', 'avgMonthly', 'timeRows', 'timeSummary', 'situationByType');
     }
@@ -67,11 +126,12 @@ new #[Layout('layouts.app')] class extends Component {
 
     <x-fx.card data-situation-report>
         <h3 class="text-md font-semibold mb-sm">Situação dos requisitórios comprados</h3>
+        <x-fx.sort-mobile list="writs_report_open" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
         @forelse ($situationByType as $typeLabel => $list)
             <h4 class="mt-sm mb-xs text-sm font-semibold">{{ $typeLabel }} ({{ $list->count() }})</h4>
             <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm mb-sm">
-                <thead><tr><th class="text-left">Beneficiário</th><th class="text-left">Processo</th><th class="text-left">Tipo</th><th class="text-right">Compra</th><th class="text-right">Previsão</th><th class="text-left">Situação</th></tr></thead>
+                <thead><tr><x-fx.sort-th column="beneficiary" label="Beneficiário" list="writs_report_open" :sorts="$sorts" /><x-fx.sort-th column="process" label="Processo" list="writs_report_open" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="writs_report_open" :sorts="$sorts" /><x-fx.sort-th column="purchase" label="Compra" list="writs_report_open" :sorts="$sorts" align="right" /><x-fx.sort-th column="forecast" label="Previsão" list="writs_report_open" :sorts="$sorts" align="right" /><x-fx.sort-th column="status" label="Situação" list="writs_report_open" :sorts="$sorts" /></tr></thead>
                 <tbody>
                     @foreach ($list as $w)
                         @php $st = $w->deadlineStatus(); $col = ['on_time' => '#16a34a', 'due_soon' => '#ca8a04', 'overdue' => '#dc2626', 'received' => '#6b7280'][$st['key'] ?? ''] ?? '#6b7280'; @endphp
@@ -101,7 +161,7 @@ new #[Layout('layouts.app')] class extends Component {
             @foreach (['by_type' => 'Por tipo', 'by_court' => 'Por tribunal e tipo'] as $key => $title)
                 <h4 class="mt-sm mb-xs text-sm font-semibold">{{ $title }}</h4>
                 <table class="fx-table w-full text-sm mb-sm">
-                    <thead><tr><th class="text-left">Grupo</th><th class="text-right">Qtde</th><th class="text-right">Média real</th><th class="text-right">Mín–máx</th><th class="text-right">Média estimada</th><th class="text-right">Diferença</th></tr></thead>
+                    <thead><tr><x-fx.sort-th column="group" label="Grupo" list="writs_report_groups" :sorts="$sorts" /><x-fx.sort-th column="quantity" label="Qtde" list="writs_report_groups" :sorts="$sorts" align="right" /><x-fx.sort-th column="real_avg" label="Média real" list="writs_report_groups" :sorts="$sorts" align="right" /><x-fx.sort-th column="range" label="Mín–máx" list="writs_report_groups" :sorts="$sorts" align="right" /><x-fx.sort-th column="estimated_avg" label="Média estimada" list="writs_report_groups" :sorts="$sorts" align="right" /><x-fx.sort-th column="diff" label="Diferença" list="writs_report_groups" :sorts="$sorts" align="right" /></tr></thead>
                     <tbody>
                         @foreach ($timeSummary[$key] as $s)
                             <tr>
@@ -118,7 +178,7 @@ new #[Layout('layouts.app')] class extends Component {
             @endforeach
             <h4 class="mt-sm mb-xs text-sm font-semibold">Por requisitório</h4>
             <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Processo</th><th class="text-left">Tipo</th><th class="text-left">Tribunal</th><th class="text-right">Compra</th><th class="text-right">Recebimento</th><th class="text-right">Real</th><th class="text-right">Estimado</th></tr></thead>
+                <thead><tr><x-fx.sort-th column="process" label="Processo" list="writs_report_times" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="writs_report_times" :sorts="$sorts" /><x-fx.sort-th column="court" label="Tribunal" list="writs_report_times" :sorts="$sorts" /><x-fx.sort-th column="purchase" label="Compra" list="writs_report_times" :sorts="$sorts" align="right" /><x-fx.sort-th column="receipt" label="Recebimento" list="writs_report_times" :sorts="$sorts" align="right" /><x-fx.sort-th column="real" label="Real" list="writs_report_times" :sorts="$sorts" align="right" /><x-fx.sort-th column="estimated" label="Estimado" list="writs_report_times" :sorts="$sorts" align="right" /></tr></thead>
                 <tbody>
                     @foreach ($timeRows as $r)
                         <tr>
@@ -142,18 +202,7 @@ new #[Layout('layouts.app')] class extends Component {
             <div class="text-sm text-mono-600">Nenhuma operação encerrada ainda.</div>
         @else
             <table class="fx-table w-full text-sm">
-                <thead>
-                    <tr>
-                        <th class="text-left">Processo</th>
-                        <th class="text-left">Tipo</th>
-                        <th class="text-right">Pago</th>
-                        <th class="text-right">Recebido</th>
-                        <th class="text-right">Lucro</th>
-                        <th class="text-right">%</th>
-                        <th class="text-right">Dias</th>
-                        <th class="text-right">% a.m.</th>
-                    </tr>
-                </thead>
+                <thead><tr><x-fx.sort-th column="process" label="Processo" list="writs_report_profit" :sorts="$sorts" /><x-fx.sort-th column="type" label="Tipo" list="writs_report_profit" :sorts="$sorts" /><x-fx.sort-th column="paid" label="Pago" list="writs_report_profit" :sorts="$sorts" align="right" /><x-fx.sort-th column="received" label="Recebido" list="writs_report_profit" :sorts="$sorts" align="right" /><x-fx.sort-th column="profit" label="Lucro" list="writs_report_profit" :sorts="$sorts" align="right" /><x-fx.sort-th column="percent" label="%" list="writs_report_profit" :sorts="$sorts" align="right" /><x-fx.sort-th column="days" label="Dias" list="writs_report_profit" :sorts="$sorts" align="right" /><x-fx.sort-th column="monthly" label="% a.m." list="writs_report_profit" :sorts="$sorts" align="right" /></tr></thead>
                 <tbody>
                     @foreach ($rows as $row)
                         @php $w = $row['writ']; $p = $row['profitability']; @endphp
