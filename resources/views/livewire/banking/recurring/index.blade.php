@@ -3,11 +3,15 @@
 use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Models\RecurringTransaction;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
     public bool $showFormModal = false;
 
     public ?int $editingId = null;
@@ -32,9 +36,15 @@ new #[Layout('layouts.app')] class extends Component
 
     public string $rec_status = 'active';
 
+    protected function sortListKey(): string
+    {
+        return 'recurring';
+    }
+
     public function mount(): void
     {
         $this->start_date = \App\Support\BusinessDate::today();
+        $this->loadSort();
     }
 
     public function rules(): array
@@ -135,8 +145,16 @@ new #[Layout('layouts.app')] class extends Component
 
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+        $recurrings = ColumnSorter::sort(RecurringTransaction::with(['category', 'bankAccount'])->orderBy('description')->get(), $by, $dir, [
+            'description' => fn ($r) => $r->description,
+            'frequency' => fn ($r) => ['daily' => 'Diária', 'weekly' => 'Semanal', 'monthly' => 'Mensal', 'yearly' => 'Anual'][$r->frequency] ?? $r->frequency,
+            'amount' => fn ($r) => ($r->type === 'expense' ? -1 : 1) * (float) $r->amount,
+            'status' => fn ($r) => ['active' => 'Ativa', 'paused' => 'Pausada', 'finished' => 'Encerrada'][$r->status] ?? $r->status,
+        ], [[fn ($r) => $r->id, 'asc']]);
+
         return [
-            'recurrings' => RecurringTransaction::with(['category', 'bankAccount'])->orderBy('description')->get(),
+            'recurrings' => $recurrings,
             'categories' => Category::active()->orderBy('name')->get(),
             'accounts' => BankAccount::active()->orderBy('name')->get(),
         ];
@@ -169,12 +187,13 @@ new #[Layout('layouts.app')] class extends Component
             </x-fx.empty-state>
         @else
             <table class="fx-table w-full text-sm">
+                <x-fx.sort-mobile list="recurring" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
                 <thead>
                     <tr>
-                        <th class="text-left">Descrição</th>
-                        <th class="text-left">Frequência</th>
-                        <th class="text-right">Valor</th>
-                        <th class="text-left">Status</th>
+                        <x-fx.sort-th column="description" label="Descrição" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="frequency" label="Frequência" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="amount" label="Valor" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="status" label="Status" :sort-by="$sortBy" :sort-dir="$sortDir" />
                         <th></th>
                     </tr>
                 </thead>

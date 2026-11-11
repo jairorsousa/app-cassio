@@ -1,11 +1,15 @@
 <?php
 
 use App\Domains\Banking\Models\BankAccount;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
     public bool $showFormModal = false;
 
     public ?int $repasseAccountId = null;
@@ -187,10 +191,28 @@ new #[Layout('layouts.app')] class extends Component
         ];
     }
 
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'accounts';
+    }
+
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+        $accounts = ColumnSorter::sort(BankAccount::with('linkedAccount')->orderBy('name')->get(), $by, $dir, [
+            'name' => fn ($a) => $a->name,
+            'bank' => fn ($a) => $a->bank ?: '',
+            'type' => fn ($a) => BankAccount::TYPE_LABELS[$a->type] ?? $a->type,
+            'balance' => fn ($a) => $a->balance(),
+        ], [[fn ($a) => $a->id, 'asc']]);
+
         return [
-            'accounts' => BankAccount::with('linkedAccount')->orderBy('name')->get(),
+            'accounts' => $accounts,
             'linkableAccounts' => BankAccount::whereIn('type', ['checking', 'savings'])->when($this->editingId, fn ($q) => $q->whereKeyNot($this->editingId))->orderBy('name')->get(),
         ];
     }
@@ -229,7 +251,17 @@ new #[Layout('layouts.app')] class extends Component
                 </x-jr.button>
             </x-fx.empty-state>
         @else
-            <x-fx.table :headers="['Nome', 'Banco', 'Tipo', 'Saldo', '']">
+            <x-fx.sort-mobile list="accounts" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
+            <x-fx.table>
+                <x-slot:head>
+                    <tr>
+                        <x-fx.sort-th column="name" label="Nome" :sort-by="$sortBy" :sort-dir="$sortDir" class="bg-cryptex-bg-tertiary px-space-4 py-space-2 text-fs-12 font-mono font-medium uppercase tracking-wider border-b border-cryptex-border-subtle" />
+                        <x-fx.sort-th column="bank" label="Banco" :sort-by="$sortBy" :sort-dir="$sortDir" class="bg-cryptex-bg-tertiary px-space-4 py-space-2 text-fs-12 font-mono font-medium uppercase tracking-wider border-b border-cryptex-border-subtle" />
+                        <x-fx.sort-th column="type" label="Tipo" :sort-by="$sortBy" :sort-dir="$sortDir" class="bg-cryptex-bg-tertiary px-space-4 py-space-2 text-fs-12 font-mono font-medium uppercase tracking-wider border-b border-cryptex-border-subtle" />
+                        <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" class="bg-cryptex-bg-tertiary px-space-4 py-space-2 text-fs-12 font-mono font-medium uppercase tracking-wider border-b border-cryptex-border-subtle" />
+                        <th class="bg-cryptex-bg-tertiary px-space-4 py-space-2 border-b border-cryptex-border-subtle"></th>
+                    </tr>
+                </x-slot:head>
                 @foreach ($accounts as $a)
                     <tr>
                         <td class="px-space-4 py-space-3 text-fs-14 text-cryptex-text-primary whitespace-nowrap">{{ $a->name }} @unless($a->status)<span class="text-fs-12 text-cryptex-text-secondary ml-1">(inativa)</span>@endunless</td>

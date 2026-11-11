@@ -9,6 +9,8 @@ use App\Domains\Banking\Services\ReceivableService;
 use App\Domains\Contacts\Models\Contact;
 use App\Domains\Writs\Models\Writ;
 use Illuminate\Support\Str;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -17,6 +19,7 @@ use Livewire\WithPagination;
 
 new #[Layout('layouts.app')] class extends Component {
     use WithPagination;
+    use SortsColumns;
 
     #[Url] public string $contact = '';
     #[Url] public string $search = '';
@@ -37,6 +40,7 @@ new #[Layout('layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        $this->loadSort();
         $this->resetCreate();
         if ($this->transaction !== '') {
             $this->startCreate((int) $this->transaction);
@@ -44,6 +48,16 @@ new #[Layout('layouts.app')] class extends Component {
             return;
         }
         $this->applyCreateDraft(request()->query());
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'receivables';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['receivables', 'receivable_installments'];
     }
 
     /** Prefill a partir do atalho "Paguei por alguém" no modal de lançamento (sem criar saída duplicada). */
@@ -455,8 +469,28 @@ new #[Layout('layouts.app')] class extends Component {
             'open' => $row->balanceCents() > 0, 'paid' => $row->balanceCents() === 0,
             'overdue' => $row->statusLabel() === 'Vencido', default => true,
         })->values();
+        [$by, $dir] = $this->sortState('receivables');
+        $filtered = ColumnSorter::sort($filtered, $by, $dir, [
+            'person' => fn ($row) => trim(($row->contact?->name ?? '').' '.($row->description ?? '')),
+            'original' => fn ($row) => $row->amountCents() / 100,
+            'paid' => fn ($row) => ($row->amountCents() - $row->remainingCents()) / 100,
+            'balance' => fn ($row) => $row->balanceCents() / 100,
+            'due' => fn ($row) => $row->installments->filter(fn ($part) => $part->remainingCents() > 0 && $part->due_date)->sortBy('due_date')->first()?->due_date,
+            'status' => fn ($row) => $row->statusLabel(),
+        ], [[fn ($row) => $row->id, 'desc']]);
         $records = new \Illuminate\Pagination\LengthAwarePaginator($filtered->forPage($this->getPage(), 20)->values(), $filtered->count(), 20, $this->getPage(), ['path' => request()->url()]);
         $selected = $this->selectedId ? Receivable::with(['contact', 'writ', 'installments.transaction.invoice', 'installments.settlements.destination.receipt', 'installments.settlements.transaction.bankAccount'])->findOrFail($this->selectedId) : null;
+        $receivableInstallments = collect();
+        if ($selected) {
+            [$iBy, $iDir] = $this->sortState('receivable_installments');
+            $receivableInstallments = ColumnSorter::sort($selected->installments, $iBy, $iDir, [
+                'number' => fn ($p) => (int) $p->number,
+                'amount' => fn ($p) => (float) $p->amount,
+                'balance' => fn ($p) => $p->remainingCents() / 100,
+                'due' => fn ($p) => $p->due_date,
+                'invoice' => fn ($p) => $p->transaction?->invoice?->reference_month ?: '',
+            ], [[fn ($p) => $p->id, 'asc']]);
+        }
         $destinations = $selected ? ReceiptDestination::with('receipt')->where('kind', 'client')->where('contact_id', $selected->contact_id)->get()->filter(fn ($part) => $part->remainingCents() > 0) : collect();
         $contacts = Contact::active()->orderBy('name')->get();
         $accounts = BankAccount::active()->where('type', '!=', 'repasse')->orderBy('name')->get();
@@ -468,7 +502,7 @@ new #[Layout('layouts.app')] class extends Component {
             'lateInterestPreview' => $this->creating ? $this->lateInterestPreview() : null,
             'chargesPreview' => $this->editingCharges ? $this->chargesPreview() : null,
             'chargesLatePreview' => $this->editingCharges ? $this->chargesLatePreview() : null,
-            'records' => $records, 'summary' => $summary, 'selected' => $selected, 'destinations' => $destinations,
+            'records' => $records, 'summary' => $summary, 'selected' => $selected, 'receivableInstallments' => $receivableInstallments, 'destinations' => $destinations,
             'contacts' => $contacts,
             'accounts' => $accounts,
             'writOptions' => $this->creating ? Writ::with('assignors.contact:id,name')->get(['id', 'process_number', 'assignor_name'])->map(function ($writ) {
@@ -516,8 +550,15 @@ new #[Layout('layouts.app')] class extends Component {
             @if ($selected->process_reference || $selected->writ_id)<p class="mt-3 text-sm text-mono-600">Processo: {{ $selected->process_reference ?: 'Requisitório #'.$selected->writ_id }}</p>@endif
             @if ($selected->notes)<p class="mt-3 text-sm text-mono-600">{{ $selected->notes }}</p>@endif
             <div class="mt-5 overflow-x-auto">
-                <table class="fx-table w-full text-sm"><thead><tr><th>Parcela</th><th>Valor</th><th>Saldo</th><th>Vencimento combinado</th><th>Fatura do cartão</th></tr></thead><tbody>
-                @foreach ($selected->installments as $part)
+                <x-fx.sort-mobile list="receivable_installments" :sorts="$sorts" />
+                <table class="fx-table w-full text-sm"><thead><tr>
+                    <x-fx.sort-th column="number" label="Parcela" :sorts="$sorts" list="receivable_installments" />
+                    <x-fx.sort-th column="amount" label="Valor" align="right" :sorts="$sorts" list="receivable_installments" />
+                    <x-fx.sort-th column="balance" label="Saldo" align="right" :sorts="$sorts" list="receivable_installments" />
+                    <x-fx.sort-th column="due" label="Vencimento combinado" :sorts="$sorts" list="receivable_installments" />
+                    <x-fx.sort-th column="invoice" label="Fatura do cartão" :sorts="$sorts" list="receivable_installments" />
+                </tr></thead><tbody>
+                @foreach ($receivableInstallments as $part)
                     <tr wire:key="part-{{ $part->id }}"><td>{{ $part->number }}</td><td>R$ {{ number_format($part->amount, 2, ',', '.') }}</td><td>R$ {{ number_format($part->remainingCents() / 100, 2, ',', '.') }}</td><td>@if ($part->remainingCents())<input aria-label="Vencimento da parcela {{ $part->number }}" type="date" wire:model="dates.{{ $part->id }}" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500" />@else {{ $part->due_date?->format('d/m/Y') ?: 'Sem data' }} @endif</td><td>{{ $part->transaction?->invoice?->reference_month ?: '—' }}</td></tr>
                 @endforeach
                 </tbody></table>
@@ -594,7 +635,16 @@ new #[Layout('layouts.app')] class extends Component {
             <x-banking.contact-picker :contacts="$contacts" :selected-id="$contact" model="contact" id="filter-contact" placeholder="Todas" clear-value="" />
             <div><label for="filter-status" class="mb-2 block text-sm text-mono-600">Situação</label><select id="filter-status" wire:model.live="status" class="h-12 rounded-pill border border-mono-200 bg-mono-white px-4 text-sm text-mono-900 focus:border-primary-500 focus:ring-primary-500 w-full"><option value="open">Em aberto</option><option value="overdue">Vencidos</option><option value="paid">Encerrados</option><option value="">Todos</option></select></div>
         </div>
-        <div class="overflow-x-auto"><table class="fx-table w-full text-sm"><thead><tr><th>Pessoa / descrição</th><th>Valor original</th><th>Baixado</th><th>Saldo</th><th>Próximo vencimento</th><th>Situação</th><th></th></tr></thead><tbody>
+        <x-fx.sort-mobile list="receivables" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
+        <div class="overflow-x-auto"><table class="fx-table w-full text-sm"><thead><tr>
+            <x-fx.sort-th column="person" label="Pessoa / descrição" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <x-fx.sort-th column="original" label="Valor original" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <x-fx.sort-th column="paid" label="Baixado" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <x-fx.sort-th column="due" label="Próximo vencimento" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <x-fx.sort-th column="status" label="Situação" :sort-by="$sortBy" :sort-dir="$sortDir" />
+            <th></th>
+        </tr></thead><tbody>
         @forelse ($records as $row)
             @php
                 $next = $row->installments->filter(fn ($part) => $part->remainingCents() > 0 && $part->due_date)->sortBy('due_date')->first();

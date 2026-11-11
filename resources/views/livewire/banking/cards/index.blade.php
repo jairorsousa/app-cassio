@@ -8,9 +8,13 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Url;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 
 new #[Layout('layouts.app')] class extends Component
 {
+    use SortsColumns;
+
     public bool $showFormModal = false;
 
     public ?int $editingId = null;
@@ -163,12 +167,32 @@ new #[Layout('layouts.app')] class extends Component
         $this->resetValidation();
     }
 
+    public function mount(): void
+    {
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'cards';
+    }
+
     public function with(): array
     {
+        [$by, $dir] = $this->sortState();
+        $cards = CreditCard::with(['holderContact', 'holder', 'invoices', 'parent'])
+            ->when($this->titular !== '', fn ($q) => $q->whereIn('id', CreditCard::idsForHolderKey($this->titular)))
+            ->orderBy('name')->get();
+        $cards = ColumnSorter::sort($cards, $by, $dir, [
+            'name' => fn ($c) => $c->name,
+            'holder' => fn ($c) => $c->hasHolder() ? $c->holderLabel() : '',
+            'limit' => fn ($c) => (float) $c->limit,
+            'cycle' => fn ($c) => ($c->closing_day * 100) + $c->due_day,
+            'due' => fn ($c) => $c->invoices->filter(fn ($i) => $i->status !== 'open')->sum(fn ($i) => $i->remainingAmount()),
+        ], [[fn ($c) => $c->id, 'asc']]);
+
         return [
-            'cards' => CreditCard::with(['holderContact', 'holder', 'invoices', 'parent'])
-                ->when($this->titular !== '', fn ($q) => $q->whereIn('id', CreditCard::idsForHolderKey($this->titular)))
-                ->orderBy('name')->get(),
+            'cards' => $cards,
             'holderOptions' => CreditCard::holderFilterOptions(),
             'holders' => CardHolder::orderBy('name')->get(['id', 'name']),
             'principals' => CreditCard::whereNull('parent_card_id')->when($this->editingId, fn ($q) => $q->where('id', '!=', $this->editingId))->orderBy('name')->get(['id', 'name', 'last_four']),
@@ -211,15 +235,16 @@ new #[Layout('layouts.app')] class extends Component
                 </x-jr.button>
             </x-fx.empty-state>
         @else
+            <x-fx.sort-mobile list="cards" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
             <div class="overflow-x-auto">
             <table class="fx-table w-full text-sm">
                 <thead>
                     <tr>
-                        <th class="text-left">Cartão</th>
-                        <th class="text-left">Titular</th>
-                        <th class="text-right">Limite</th>
-                        <th class="text-center">Fech./Venc.</th>
-                        <th class="text-right">A pagar</th>
+                        <x-fx.sort-th column="name" label="Cartão" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="holder" label="Titular" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="limit" label="Limite" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="cycle" label="Fech./Venc." align="center" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                        <x-fx.sort-th column="due" label="A pagar" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
                         <th></th>
                     </tr>
                 </thead>

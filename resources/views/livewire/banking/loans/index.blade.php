@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\WithFileUploads;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -15,6 +17,7 @@ use Livewire\WithPagination;
 new #[Layout('layouts.app')] class extends Component {
     use WithPagination;
     use WithFileUploads;
+    use SortsColumns;
 
     #[Url] public string $contact = '';
     #[Url] public string $search = '';
@@ -34,6 +37,17 @@ new #[Layout('layouts.app')] class extends Component {
     public function mount(): void
     {
         $this->resetCreate();
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'loans';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['loans', 'loan_installments'];
     }
 
     public function updatedContact(): void { $this->resetPage(); }
@@ -338,6 +352,15 @@ new #[Layout('layouts.app')] class extends Component {
             'overdue' => $row->statusLabel() === 'Vencido',
             default => true,
         })->values();
+        [$by, $dir] = $this->sortState('loans');
+        $filtered = ColumnSorter::sort($filtered, $by, $dir, [
+            'date' => fn ($row) => $row->date,
+            'person' => fn ($row) => $row->contact?->name ?: '',
+            'description' => fn ($row) => $row->description,
+            'principal' => fn ($row) => (float) $row->principal,
+            'balance' => fn ($row) => $row->balanceAsOf()['balance'] ?? $row->remainingCents(),
+            'status' => fn ($row) => $row->statusLabel(),
+        ], $by === 'date' ? [[fn ($row) => $row->id, $dir]] : [[fn ($row) => $row->date, 'desc'], [fn ($row) => $row->id, 'desc']]);
         $records = new \Illuminate\Pagination\LengthAwarePaginator($filtered->forPage($this->getPage(), 20)->values(), $filtered->count(), 20, $this->getPage(), ['path' => request()->url()]);
         $selected = $this->selectedId
             ? Loan::with(['contact', 'bankAccount', 'installments.settlements', 'settlements.transaction.bankAccount', 'disbursement'])->findOrFail($this->selectedId)
@@ -347,6 +370,16 @@ new #[Layout('layouts.app')] class extends Component {
             ? \App\Domains\Banking\Models\LoanSettlement::whereIn('batch_key', $selected->settlements->pluck('batch_key')->unique())
                 ->get(['batch_key', 'loan_id'])->groupBy('batch_key')->map(fn ($rows) => $rows->pluck('loan_id')->unique()->count())->all()
             : [];
+        $loanInstallments = collect();
+        if ($selected) {
+            [$iBy, $iDir] = $this->sortState('loan_installments');
+            $loanInstallments = ColumnSorter::sort($selected->installments, $iBy, $iDir, [
+                'number' => fn ($p) => (int) $p->number,
+                'amount' => fn ($p) => (float) $p->amount,
+                'open' => fn ($p) => $p->remainingPrincipalCents(),
+                'due' => fn ($p) => $p->due_date,
+            ], [[fn ($p) => $p->id, 'asc']]);
+        }
         $editingLocked = $this->editingId ? \App\Domains\Banking\Models\LoanSettlement::where('loan_id', $this->editingId)->exists() : false;
         $returnPeople = $this->returning
             ? Contact::withTrashed()->whereIn('id', Loan::query()->select('contact_id'))->orderBy('name')->get()
@@ -359,6 +392,7 @@ new #[Layout('layouts.app')] class extends Component {
             'principalTotal' => $open->sum(fn ($row) => $row->principalOpenCents()),
             'paidCount' => $all->filter(fn ($row) => $row->remainingCents() === 0)->count(),
             'selected' => $selected,
+            'loanInstallments' => $loanInstallments,
             'selectedBalance' => $selectedBalance,
             'batchLoans' => $batchLoans,
             'editingLocked' => $editingLocked,
@@ -462,10 +496,16 @@ new #[Layout('layouts.app')] class extends Component {
                 @endif
 
                 <div class="mt-4 overflow-x-auto">
+                    <x-fx.sort-mobile list="loan_installments" :sorts="$sorts" />
                     <table class="fx-table w-full text-sm">
-                        <thead><tr><th>Parcela</th><th>Valor</th><th>Principal em aberto</th><th>Vencimento</th></tr></thead>
+                        <thead><tr>
+                            <x-fx.sort-th column="number" label="Parcela" :sorts="$sorts" list="loan_installments" />
+                            <x-fx.sort-th column="amount" label="Valor" align="right" :sorts="$sorts" list="loan_installments" />
+                            <x-fx.sort-th column="open" label="Principal em aberto" align="right" :sorts="$sorts" list="loan_installments" />
+                            <x-fx.sort-th column="due" label="Vencimento" :sorts="$sorts" list="loan_installments" />
+                        </tr></thead>
                         <tbody>
-                        @foreach ($selected->installments as $part)
+                        @foreach ($loanInstallments as $part)
                             <tr>
                                 <td>{{ $part->number }}</td>
                                 <td>R$ {{ number_format($part->amount, 2, ',', '.') }}</td>
@@ -539,8 +579,17 @@ new #[Layout('layouts.app')] class extends Component {
         @endif
 
         <div class="overflow-x-auto">
+            <x-fx.sort-mobile list="loans" :sort-by="$sortBy" :sort-dir="$sortDir" primary />
             <table class="fx-table w-full text-sm">
-                <thead><tr><th>Data</th><th>Pessoa</th><th>Descrição</th><th>Principal</th><th>Saldo</th><th>Situação</th><th></th></tr></thead>
+                <thead><tr>
+                    <x-fx.sort-th column="date" label="Data" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="person" label="Pessoa" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="description" label="Descrição" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="principal" label="Principal" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="balance" label="Saldo" align="right" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <x-fx.sort-th column="status" label="Situação" :sort-by="$sortBy" :sort-dir="$sortDir" />
+                    <th></th>
+                </tr></thead>
                 <tbody>
                 @forelse ($records as $row)
                     @php $bal = $row->balanceAsOf(); @endphp

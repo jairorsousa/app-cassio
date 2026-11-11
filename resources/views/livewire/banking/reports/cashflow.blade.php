@@ -4,11 +4,15 @@ use App\Domains\Banking\Models\BankAccount;
 use App\Domains\Banking\Models\Category;
 use App\Domains\Banking\Services\CashflowReportService;
 use App\Domains\Dashboard\Support\ReportPeriod;
+use App\Support\ColumnSorter;
+use App\Support\Concerns\SortsColumns;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.app')] class extends Component {
+    use SortsColumns;
+
     #[Url(history: true, keep: true)]
     public string $month = '';
 
@@ -38,6 +42,17 @@ new #[Layout('layouts.app')] class extends Component {
         if (! in_array($this->horizon, [3, 6, 12], true)) {
             $this->horizon = 3;
         }
+        $this->loadSort();
+    }
+
+    protected function sortListKey(): string
+    {
+        return 'cashflow_items';
+    }
+
+    protected function sortLists(): array
+    {
+        return ['cashflow_items', 'cashflow_months', 'cashflow_categories', 'cashflow_accounts'];
     }
 
     public function updatedMonth(mixed $value): void
@@ -117,6 +132,53 @@ new #[Layout('layouts.app')] class extends Component {
             'categories' => Category::orderBy('name')->get(['id', 'name']),
             'people' => $service->personOptions(),
             'exportQuery' => $this->exportQuery(),
+            'forecastItems' => (function () use ($report) {
+                [$by, $dir] = $this->sortState('cashflow_items');
+                $items = collect($report['forecast']['items'] ?? []);
+
+                return ColumnSorter::sort($items, $by, $dir, [
+                    'date' => fn ($i) => $i['date'] ?? null,
+                    'source' => fn ($i) => $i['source'] ?? '',
+                    'description' => fn ($i) => $i['description'] ?? '',
+                    'inflow' => fn ($i) => (($i['direction'] ?? '') === 'in') ? (float) $i['amount'] : 0,
+                    'outflow' => fn ($i) => (($i['direction'] ?? '') === 'out') ? (float) $i['amount'] : 0,
+                ], $by === 'date' ? [[fn ($i) => $i['description'] ?? '', $dir]] : [[fn ($i) => $i['date'] ?? '', 'desc']]);
+            })(),
+            'projectionRows' => (function () use ($projection) {
+                [$by, $dir] = $this->sortState('cashflow_months');
+
+                return ColumnSorter::sort(collect($projection['rows'] ?? []), $by, $dir, [
+                    'month' => fn ($r) => $r['key'] ?? $r['month'] ?? $r['label'] ?? '',
+                    'income' => fn ($r) => (float) ($r['income'] ?? 0),
+                    'expense' => fn ($r) => (float) ($r['expense'] ?? 0),
+                    'net' => fn ($r) => (float) ($r['net'] ?? 0),
+                    'balance' => fn ($r) => (float) ($r['balance'] ?? 0),
+                ], [[fn ($r) => $r['label'] ?? '', 'asc']]);
+            })(),
+            'categoryRows' => (function () use ($real) {
+                [$by, $dir] = $this->sortState('cashflow_categories');
+                $rows = collect($real['by_category'])->map(fn ($row, $name) => array_merge((array) $row, ['name' => $name]))->values();
+
+                return ColumnSorter::sort($rows, $by, $dir, [
+                    'category' => fn ($r) => $r['name'],
+                    'own_income' => fn ($r) => (float) ($r['own_income'] ?? 0),
+                    'own_expense' => fn ($r) => (float) ($r['own_expense'] ?? 0),
+                    'other_in' => fn ($r) => (float) ($r['third_party_in'] ?? 0),
+                    'other_out' => fn ($r) => (float) ($r['third_party_out'] ?? 0),
+                    'result' => fn ($r) => (float) (($r['own_income'] ?? 0) - ($r['own_expense'] ?? 0)),
+                ], [[fn ($r) => $r['name'], 'asc']]);
+            })(),
+            'accountRows' => (function () use ($real) {
+                [$by, $dir] = $this->sortState('cashflow_accounts');
+                $rows = collect($real['by_account'])->map(fn ($row, $name) => array_merge((array) $row, ['name' => $name]))->values();
+
+                return ColumnSorter::sort($rows, $by, $dir, [
+                    'account' => fn ($r) => $r['name'],
+                    'inflow' => fn ($r) => (float) ($r['in'] ?? 0),
+                    'outflow' => fn ($r) => (float) ($r['out'] ?? 0),
+                    'balance' => fn ($r) => (float) (($r['in'] ?? 0) - ($r['out'] ?? 0)),
+                ], [[fn ($r) => $r['name'], 'asc']]);
+            })(),
         ];
     }
 }; ?>
@@ -231,12 +293,19 @@ new #[Layout('layouts.app')] class extends Component {
             <div>Saídas previstas<strong class="mt-1 block text-lg text-system-down">{{ $money($r['forecast']['expense']) }}</strong></div>
         </div>
         <p class="mt-3 text-xs text-mono-600">Realizado = lançamentos liquidados (movimento bancário, sem contas de repasse). Previsto = lançamentos pendentes, saldo das faturas que vencem no período, recorrências ativas ainda não geradas, parcelas em aberto de financiamento de bens e requisitórios em Pago, Peticionamento ou Aguardando recebimento com previsão (Monitorar nunca entra).</p>
-        @if (count($r['forecast']['items']))
+        @if ($forecastItems->isNotEmpty())
+            <x-fx.sort-mobile list="cashflow_items" :sorts="$sorts" />
             <div class="overflow-x-auto mt-sm">
                 <table class="fx-table w-full text-sm">
-                    <thead><tr><th class="text-left">Data</th><th class="text-left">Origem</th><th class="text-left">Descrição</th><th class="text-right">Entrada</th><th class="text-right">Saída</th></tr></thead>
+                    <thead><tr>
+                        <x-fx.sort-th column="date" label="Data" :sorts="$sorts" list="cashflow_items" />
+                        <x-fx.sort-th column="source" label="Origem" :sorts="$sorts" list="cashflow_items" />
+                        <x-fx.sort-th column="description" label="Descrição" :sorts="$sorts" list="cashflow_items" />
+                        <x-fx.sort-th column="inflow" label="Entrada" align="right" :sorts="$sorts" list="cashflow_items" />
+                        <x-fx.sort-th column="outflow" label="Saída" align="right" :sorts="$sorts" list="cashflow_items" />
+                    </tr></thead>
                     <tbody>
-                        @foreach (array_slice($r['forecast']['items'], 0, 60) as $item)
+                        @foreach ($forecastItems->take(60) as $item)
                             <tr>
                                 <td>{{ \Illuminate\Support\Carbon::parse($item['date'])->format('d/m/Y') }}</td>
                                 <td>{{ $item['source'] }}</td>
@@ -266,11 +335,18 @@ new #[Layout('layouts.app')] class extends Component {
             @endif
         </p>
         <x-dashboard.chart type="line" title="Saldo projetado ao fim de cada mês" :labels="array_column($projection['rows'], 'label')" :datasets="[['name' => 'Saldo projetado', 'values' => array_column($projection['rows'], 'balance'), 'color' => '#60a5fa']]" />
+        <x-fx.sort-mobile list="cashflow_months" :sorts="$sorts" />
         <div class="overflow-x-auto mt-sm">
             <table class="fx-table w-full text-sm">
-                <thead><tr><th class="text-left">Mês</th><th class="text-right">Entradas previstas</th><th class="text-right">Saídas previstas</th><th class="text-right">Líquido</th><th class="text-right">Saldo projetado</th></tr></thead>
+                <thead><tr>
+                    <x-fx.sort-th column="month" label="Mês" :sorts="$sorts" list="cashflow_months" />
+                    <x-fx.sort-th column="income" label="Entradas previstas" align="right" :sorts="$sorts" list="cashflow_months" />
+                    <x-fx.sort-th column="expense" label="Saídas previstas" align="right" :sorts="$sorts" list="cashflow_months" />
+                    <x-fx.sort-th column="net" label="Líquido" align="right" :sorts="$sorts" list="cashflow_months" />
+                    <x-fx.sort-th column="balance" label="Saldo projetado" align="right" :sorts="$sorts" list="cashflow_months" />
+                </tr></thead>
                 <tbody>
-                    @foreach ($projection['rows'] as $row)
+                    @foreach ($projectionRows as $row)
                         <tr><td>{{ $row['label'] }}</td><td class="text-right text-system-up">{{ $money($row['income']) }}</td><td class="text-right text-system-down">{{ $money($row['expense']) }}</td><td class="text-right">{{ $money($row['net']) }}</td><td class="text-right font-semibold">{{ $money($row['balance']) }}</td></tr>
                     @endforeach
                 </tbody>
@@ -291,12 +367,20 @@ new #[Layout('layouts.app')] class extends Component {
 
     <x-fx.card class="overflow-x-auto">
         <h3 class="text-md font-semibold mb-sm">Resultado próprio e valores de terceiros por categoria</h3>
+        <x-fx.sort-mobile list="cashflow_categories" :sorts="$sorts" />
         <table class="fx-table w-full text-sm">
-            <thead><tr><th class="text-left">Categoria</th><th class="text-right">Receita própria</th><th class="text-right">Despesa própria</th><th class="text-right">Outras entradas</th><th class="text-right">Outras saídas</th><th class="text-right">Resultado próprio</th></tr></thead>
+            <thead><tr>
+                <x-fx.sort-th column="category" label="Categoria" :sorts="$sorts" list="cashflow_categories" />
+                <x-fx.sort-th column="own_income" label="Receita própria" align="right" :sorts="$sorts" list="cashflow_categories" />
+                <x-fx.sort-th column="own_expense" label="Despesa própria" align="right" :sorts="$sorts" list="cashflow_categories" />
+                <x-fx.sort-th column="other_in" label="Outras entradas" align="right" :sorts="$sorts" list="cashflow_categories" />
+                <x-fx.sort-th column="other_out" label="Outras saídas" align="right" :sorts="$sorts" list="cashflow_categories" />
+                <x-fx.sort-th column="result" label="Resultado próprio" align="right" :sorts="$sorts" list="cashflow_categories" />
+            </tr></thead>
             <tbody>
-                @foreach ($real['by_category'] as $name => $row)
+                @foreach ($categoryRows as $row)
                     <tr>
-                        <td>{{ $name }}</td>
+                        <td>{{ $row['name'] }}</td>
                         <td class="text-right text-system-up">{{ $money($row['own_income']) }}</td>
                         <td class="text-right text-system-down">{{ $money($row['own_expense']) }}</td>
                         <td class="text-right">{{ $money($row['third_party_in']) }}</td>
@@ -310,11 +394,17 @@ new #[Layout('layouts.app')] class extends Component {
 
     <x-fx.card class="overflow-x-auto">
         <h3 class="text-md font-semibold mb-sm">Por conta</h3>
+        <x-fx.sort-mobile list="cashflow_accounts" :sorts="$sorts" />
         <table class="fx-table w-full text-sm">
-            <thead><tr><th class="text-left">Conta</th><th class="text-right">Entradas</th><th class="text-right">Saídas</th><th class="text-right">Saldo do período</th></tr></thead>
+            <thead><tr>
+                <x-fx.sort-th column="account" label="Conta" :sorts="$sorts" list="cashflow_accounts" />
+                <x-fx.sort-th column="inflow" label="Entradas" align="right" :sorts="$sorts" list="cashflow_accounts" />
+                <x-fx.sort-th column="outflow" label="Saídas" align="right" :sorts="$sorts" list="cashflow_accounts" />
+                <x-fx.sort-th column="balance" label="Saldo do período" align="right" :sorts="$sorts" list="cashflow_accounts" />
+            </tr></thead>
             <tbody>
-                @foreach ($real['by_account'] as $name => $row)
-                    <tr><td>{{ $name }}</td><td class="text-right text-system-up">{{ $money($row['in']) }}</td><td class="text-right text-system-down">{{ $money($row['out']) }}</td><td class="text-right font-semibold">{{ $money($row['in'] - $row['out']) }}</td></tr>
+                @foreach ($accountRows as $row)
+                    <tr><td>{{ $row['name'] }}</td><td class="text-right text-system-up">{{ $money($row['in']) }}</td><td class="text-right text-system-down">{{ $money($row['out']) }}</td><td class="text-right font-semibold">{{ $money($row['in'] - $row['out']) }}</td></tr>
                 @endforeach
             </tbody>
         </table>
