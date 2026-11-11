@@ -106,6 +106,16 @@ new #[Layout('layouts.app')] class extends Component
             $messages['transition_lost_reason.required'] = 'Informe o motivo da perda.';
         }
 
+        // Pagamento: valor pago e data obrigatórios; despesas opcionais (em branco = 0, sem lançamento).
+        if ($this->transitionTo === 'paid') {
+            $rules['transition_paid_amount'] = 'required';
+            $rules['transition_paid_at'] = 'required|date';
+            $rules['transition_source_account'] = 'required|exists:bank_accounts,id';
+            $messages['transition_paid_amount.required'] = 'Informe o valor pago ao cedente.';
+            $messages['transition_paid_at.required'] = 'Informe a data do pagamento.';
+            $messages['transition_source_account.required'] = 'Escolha a conta de origem.';
+        }
+
         $this->validate($rules, $messages);
 
         $context = ['notes' => $this->transition_notes ?: null];
@@ -123,10 +133,9 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         if ($this->transitionTo === 'paid') {
-            $this->writ->update([
-                'notary_expenses_amount' => $this->moneyValue($this->transition_notary_expenses),
-                'other_expenses_amount' => $this->moneyValue($this->transition_other_expenses),
-            ]);
+            // Vai junto na transição: se ela for recusada, nada fica gravado pela metade.
+            $context['notary_expenses_amount'] = $this->moneyValue($this->transition_notary_expenses);
+            $context['other_expenses_amount'] = $this->moneyValue($this->transition_other_expenses);
 
             $context['paid_at'] = $this->transition_paid_at;
             $context['paid_amount'] = $this->moneyValue($this->transition_paid_amount);
@@ -539,12 +548,19 @@ new #[Layout('layouts.app')] class extends Component
                 @endif
 
                 @if ($this->transitionTo === 'paid')
-                    <x-fx.input label="Data do pagamento" type="date" wire:model="transition_paid_at" />
-                    <x-fx.input label="Valor pago" type="text" x-money wire:model="transition_paid_amount" />
-                    <x-fx.input label="Despesas cartorais" type="text" x-money wire:model="transition_notary_expenses" />
-                    <x-fx.input label="Outras despesas" type="text" x-money wire:model="transition_other_expenses" />
                     <div>
-                        <label class="block text-sm font-medium text-mono-700 mb-1">Conta de origem</label>
+                        <x-fx.input label="Data do pagamento *" type="date" wire:model="transition_paid_at" />
+                        @error('transition_paid_at') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <x-fx.input label="Valor pago *" type="text" x-money wire:model="transition_paid_amount" />
+                        @error('transition_paid_amount') <p class="mt-2 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                    </div>
+                    <x-fx.input label="Despesas cartorais (opcional)" type="text" x-money wire:model="transition_notary_expenses" />
+                    <x-fx.input label="Outras despesas (opcional)" type="text" x-money wire:model="transition_other_expenses" />
+                    <div>
+                        @error('transition_source_account') <p class="mb-1 text-xs font-medium text-error">{{ $message }}</p> @enderror
+                        <label class="block text-sm font-medium text-mono-700 mb-1">Conta de origem *</label>
                         <select wire:model="transition_source_account" class="fx-form-field">
                             <option value="">—</option>
                             @foreach ($accounts as $a)

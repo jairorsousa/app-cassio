@@ -32,6 +32,12 @@ class WritService
         'lost' => ['monitoring', 'negotiation', 'pending', 'signature', 'paid', 'petitioning', 'awaiting_receipt'],
     ];
 
+    /** @return array<string, array<int, string>> mapa completo (usado pelo kanban para não abrir modal de movimento proibido) */
+    public function allowedTransitions(): array
+    {
+        return self::ALLOWED_TRANSITIONS;
+    }
+
     /** @return array<int, string> */
     public function allowedTransitionsFrom(string $stage): array
     {
@@ -55,7 +61,9 @@ class WritService
 
         $allowed = self::ALLOWED_TRANSITIONS[$current] ?? [];
         if (! in_array($newStage, $allowed, true)) {
-            throw new \DomainException("Transição não permitida: {$current} → {$newStage}");
+            $label = fn (string $s) => Writ::STAGE_LABELS[$s] ?? $s;
+            $hint = ($current === 'pending' && $newStage === 'paid') ? ' Mova antes para Assinatura.' : '';
+            throw new \DomainException("Transição não permitida: {$label($current)} → {$label($newStage)}.{$hint}");
         }
 
         if ($newStage === 'lost' && blank($context['lost_reason'] ?? null)) {
@@ -108,6 +116,11 @@ class WritService
                 $patch['paid_at'] = $context['paid_at'] ?? ($writ->paid_at ?? \App\Support\BusinessDate::today());
                 if (isset($context['paid_amount'])) {
                     $patch['paid_amount'] = $context['paid_amount'];
+                }
+                foreach (['notary_expenses_amount', 'other_expenses_amount'] as $expense) {
+                    if (array_key_exists($expense, $context)) {
+                        $patch[$expense] = (float) ($context[$expense] ?? 0);
+                    }
                 }
                 if (isset($context['source_bank_account_id'])) {
                     $patch['source_bank_account_id'] = $context['source_bank_account_id'];

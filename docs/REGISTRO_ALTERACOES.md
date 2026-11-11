@@ -1,5 +1,13 @@
 # Registro de alterações
 
+## 2026-11-11 — Requisitórios: Confirmar Pagamento com despesas opcionais, modal de Assinatura e kanban
+
+- **Despesas cartorais e Outras despesas agora são opcionais** no modal "Confirmar Pagamento" (kanban), no painel de transição da ficha e no formulário: sem asterisco nem `required`; em branco valem 0 e não geram lançamento. "Valor pago ao cedente", "Data do pagamento" e "Conta de origem" continuam obrigatórios (agora também na ficha).
+- **Card que não ia para Assinatura**: o modal de Assinatura não existia no kanban (o servidor marcava o modal como aberto, mas nada aparecia, e o card voltava). Modal criado, com data/hora, Cancelar, X e Esc.
+- **Confirmar Pagamento que "não fazia nada"**: o kanban abria o modal ao levar um card de Cessão Pendente direto para Pagamento, mas o servidor só permite Pagamento a partir de Assinatura. O erro ficava escondido atrás do modal e o valor pago e as despesas já tinham sido gravados no requisitório (gravação pela metade). Agora: (1) o kanban conhece as transições permitidas e, se o movimento não é permitido, devolve o card e mostra "Transição não permitida: Cessão Pendente → Pagamento. Mova antes para Assinatura."; (2) valor pago e despesas vão dentro da própria transição (nada é gravado se ela falhar), no kanban e na ficha; (3) erros aparecem dentro do modal.
+- Modal de pagamento fecha por Cancelar, X, Esc ou clique fora; o card fica na etapa anterior. Despesas zeradas aparecem em branco ao abrir.
+- Sem migração. Teste: `tests/Feature/Writs/WritPaymentModalTest.php`.
+
 ## 2026-11-11 — Cartões › Faturas: gerenciar, editar/mover/excluir compras, desfazer importação e fatura automática pelo ciclo
 
 Pedido do Cassio (BB 1126): as compras importadas do extrato do cartão caíram na fatura errada e não havia um lugar fácil para editar, mover ou excluir a fatura ou as compras.
