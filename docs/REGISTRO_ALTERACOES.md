@@ -1,5 +1,18 @@
 # Registro de alterações
 
+## 2026-11-11 — Setinhas de ordenação: segunda rodada
+
+Pedido do Cassio (card t292s1584): levar as mesmas setinhas às tabelas que tinham ficado de fora. Só muda a exibição; nenhum dado foi alterado.
+
+- **Requisitórios:** Relatórios (Situação dos comprados — RPV e Precatório —, Tempo de recebimento por tipo, por tribunal e por requisitório, Operações encerradas); ficha do requisitório (Lançamentos vinculados: Data, Tipo, Descrição e Valor com sinal); painel de métricas do quadro (Recebido por mês, Resumo por ano e Próximos recebimentos previstos). O gráfico e os totais do painel não mudam; só a ordem das linhas.
+- **Investimentos:** Ativos, Movimentações, Proventos, Carteira (o padrão continua sendo o maior valor de mercado primeiro), Posição B3 (posição, proventos por ano e proventos recebidos, inclusive os cartões do celular), Rentabilidade e Extratos (prévia e conferência do lote; a conferência ordena no banco, porque carrega de 50 em 50).
+- **Divisões:** movimentos do grupo. Os saldos acumulados de cada pessoa continuam calculados na ordem cronológica e acompanham a linha.
+- **Sociedade:** Aportes, Despesas e Distribuições.
+- **Relatórios de corretores:** total anual por corretor, Comissões e Resumo do corretor. O PDF não muda.
+- Datas pela data real, valores pelo número, texto em ordem alfabética pt-BR; cada tabela lembra a sua escolha por usuário. Celular: seletor "Ordenar por" com botão de 44 px na tabela principal de cada tela.
+- Continuam de fora: histórico de baixas dos empréstimos (agrupado por lote), telas em cartões sem cabeçalho de colunas, tabelas de formulário e a prévia de importação OFX.
+- Teste novo: `tests/Feature/Ui/TableSortSecondRoundTest.php`. Backup: `/root/app-cassio-backups/ordenacao-tabelas-2-20261111/`.
+
 ## 2026-11-11 — Setinhas de ordenação nas tabelas
 
 Pedido do Cassio (t292u): no extrato do corretor (e em todas as tabelas no mesmo formato), poder ordenar pelas colunas — principalmente a data — com setinha, como já existia em Financeiro › Lançamentos.
