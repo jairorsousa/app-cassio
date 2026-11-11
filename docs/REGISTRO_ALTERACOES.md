@@ -1,5 +1,14 @@
 # Registro de alterações
 
+## 2026-11-11 — Empréstimos: correção do salvar, devolução de vários, editar/excluir e Voltar
+
+- **Erro ao salvar "Novo empréstimo concedido"**: com o vencimento vazio, o formulário enviava data `''` e o MySQL (modo estrito) recusava com "Incorrect date value", gerando a tela de erro (nada era gravado). `LoanService` agora normaliza vencimento/observações vazios para NULL e juros vazio para 0. Mesmo defeito corrigido em `ReceivableService` (`interest_start_date` vazio passa a usar a data do lançamento).
+- **Registrar devolução** (botão no topo e no detalhe): pessoa, conta, data e valor; lista de empréstimos em aberto com marcar/desmarcar; distribuição automática do mais antigo para o mais novo ou valor manual por empréstimo; prévia "Saldo na data / Abatido / Fica em aberto". Gera **um único lançamento de entrada** ligado a todos os empréstimos (baixas com a mesma chave). Juros só viram receita quando recebidos (categoria Juros de empréstimos apenas se houver juros). Estorno desfaz a devolução conjunta inteira.
+- **Gerenciar → Editar**: altera todos os campos e ajusta o lançamento de saída (conta, valor, data, descrição). Com devoluções registradas, só descrição e observações mudam (aviso explica o motivo).
+- **Gerenciar → Excluir**: pede confirmação citando valor e conta e desfaz a saída; com devoluções fica bloqueado com orientação para estornar antes.
+- **Botão Voltar** (celular e computador) em Empréstimos (lista e detalhe) e em Valores a receber — componente `x-banking.back-button`.
+- Sem migração. Teste: `tests/Feature/Banking/LoansManageTest.php`.
+
 ## 10/11/2026 — Recebimento de processo: compensação automática dos adiantamentos do corretor (criação e edição)
 
 Pedido do Cassio: no passo "3. Corretores", só marcar e o sistema abater os adiantamentos do mais antigo para o mais novo, mostrando quanto fica a compensar em cada um.

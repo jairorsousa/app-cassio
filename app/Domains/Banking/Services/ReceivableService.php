@@ -102,7 +102,7 @@ class ReceivableService
                     'interest_rate_am' => (float) ($data['interest_rate_am'] ?? 0),
                     'penalty_pct' => (float) ($data['penalty_pct'] ?? 0),
                     'late_interest_rate_am' => (float) ($data['late_interest_rate_am'] ?? 0),
-                    'interest_start_date' => $data['interest_start_date'] ?? $data['date'],
+                    'interest_start_date' => ($data['interest_start_date'] ?? null) ?: $data['date'], // '' quebra no MySQL estrito
                 ]);
                 $left = $amount;
                 $number = 0;

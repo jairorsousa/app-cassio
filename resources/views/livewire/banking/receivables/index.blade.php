@@ -290,6 +290,11 @@ new #[Layout('layouts.app')] class extends Component {
 
 <div class="flex flex-col gap-6">
     <x-banking.subnav active="receivables" />
+    @if ($selected)
+        <x-banking.back-button action="closeDetail" label="Voltar à lista" />
+    @else
+        <x-banking.back-button :fallback="route('banking.dashboard')" />
+    @endif
     @if (session('status')) <x-jr.alert variant="success">{{ session('status') }}</x-jr.alert> @endif
     @if (! $creating && $errors->any())
         <x-jr.alert variant="error"><ul class="list-inside list-disc">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></x-jr.alert>
@@ -307,7 +312,7 @@ new #[Layout('layouts.app')] class extends Component {
     @if ($selected)
         <x-fx.card>
             <div class="flex flex-wrap items-start justify-between gap-3"><div><h3 class="text-lg font-bold text-mono-900">{{ $selected->description }}</h3><a class="text-sm text-primary-500" href="{{ route('contacts.show', $selected->contact_id) }}">{{ $selected->contact->name }}</a>@php $bal = $selected->balanceAsOf(); @endphp
-            <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p></div><x-jr.button variant="standard" wire:click="closeDetail">Fechar detalhes</x-jr.button></div>
+            <p class="mt-2 text-sm text-mono-600">{{ $selected->statusLabel() }} · Principal: R$ {{ number_format($bal['principal_open']/100, 2, ',', '.') }} · Juros/mora: R$ {{ number_format(($bal['interest_open']+$bal['penalty_open'])/100, 2, ',', '.') }} · Saldo: <strong class="text-mono-900">R$ {{ number_format($bal['balance']/100, 2, ',', '.') }}</strong></p></div><x-banking.back-button action="closeDetail" label="Voltar" /></div>
             @if ($selected->process_reference || $selected->writ_id)<p class="mt-3 text-sm text-mono-600">Processo: {{ $selected->process_reference ?: 'Requisitório #'.$selected->writ_id }}</p>@endif
             @if ($selected->notes)<p class="mt-3 text-sm text-mono-600">{{ $selected->notes }}</p>@endif
             <div class="mt-5 overflow-x-auto">
