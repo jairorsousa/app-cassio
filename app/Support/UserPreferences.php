@@ -39,25 +39,96 @@ class UserPreferences
         return in_array($v, self::PER_PAGE_OPTIONS, true) ? $v : self::PER_PAGE_DEFAULT;
     }
 
-    /** Guarda a escolha do usuário (sem mexer nas outras preferências). Valor fora da lista volta ao padrão. */
     /** Ordenação da lista de Lançamentos: coluna => rótulo. Padrão: data mais nova em cima. */
     public const SORT_COLUMNS = ['date' => 'Data', 'description' => 'Descrição', 'category' => 'Categoria', 'account' => 'Conta', 'amount' => 'Valor'];
 
     public const SORT_DEFAULT = ['date', 'desc'];
+
+    /**
+     * Listas com colunas ordenáveis (fechadas). Padrão: data mais recente primeiro, quando houver data;
+     * senão, a ordem natural da tela (nome/ticker crescente, parcela crescente).
+     *
+     * @var array<string, array{columns: array<string, string>, default: array{0: string, 1: string}}>
+     */
+    public const SORT_LISTS = [
+        'transactions' => ['columns' => self::SORT_COLUMNS, 'default' => self::SORT_DEFAULT],
+        'broker_statement' => ['columns' => ['date' => 'Data', 'movement' => 'Movimento', 'description' => 'Descrição', 'amount' => 'Valor', 'balance' => 'Saldo'], 'default' => self::SORT_DEFAULT],
+        'broker_advances' => ['columns' => ['date' => 'Data', 'amount' => 'Valor', 'payment_method' => 'Forma pgto', 'account' => 'Conta', 'settled' => 'Compensado', 'balance' => 'Saldo', 'notes' => 'Notas'], 'default' => self::SORT_DEFAULT],
+        'broker_commissions' => ['columns' => ['date' => 'Data ref.', 'case_type' => 'Tipo de caso', 'name' => 'Nome', 'amount' => 'Comissão', 'settled' => 'Compensado', 'repassed' => 'Repassado', 'balance' => 'Saldo', 'status' => 'Status'], 'default' => self::SORT_DEFAULT],
+        'broker_payments' => ['columns' => ['date' => 'Data', 'case_type' => 'Tipo de caso', 'name' => 'Nome', 'account' => 'Conta', 'amount' => 'Valor', 'notes' => 'Notas'], 'default' => self::SORT_DEFAULT],
+        'broker_process_expenses' => ['columns' => ['date' => 'Data', 'description' => 'Descrição', 'account' => 'Conta', 'amount' => 'Valor', 'status' => 'Situação', 'balance' => 'Saldo'], 'default' => self::SORT_DEFAULT],
+        'brokers' => ['columns' => ['name' => 'Nome', 'document' => 'Documento', 'phone' => 'Telefone', 'advance_balance' => 'Saldo Adiantamento', 'commission_balance' => 'Saldo Corretor', 'status' => 'Status'], 'default' => ['name', 'asc']],
+        'broker_commissions_index' => ['columns' => ['date' => 'Data ref.', 'case_type' => 'Tipo de caso', 'name' => 'Nome', 'base' => 'Base', 'percent' => '%', 'amount' => 'Comissão', 'settled' => 'Compensado', 'balance' => 'A pagar', 'status' => 'Status'], 'default' => self::SORT_DEFAULT],
+        'broker_advances_index' => ['columns' => ['date' => 'Data', 'amount' => 'Valor', 'payment_method' => 'Forma pgto', 'account' => 'Conta', 'settled' => 'Compensado', 'balance' => 'Saldo', 'notes' => 'Notas'], 'default' => self::SORT_DEFAULT],
+        'case_types' => ['columns' => ['name' => 'Nome', 'status' => 'Status'], 'default' => ['name', 'asc']],
+        'broker_report_brokers' => ['columns' => ['broker' => 'Corretor', 'quantity' => 'Qtd', 'total' => 'Total'], 'default' => ['broker', 'asc']],
+        'broker_report_commissions' => ['columns' => ['date' => 'Data', 'broker' => 'Corretor', 'case_type' => 'Tipo de caso', 'name' => 'Nome', 'amount' => 'Comissão'], 'default' => self::SORT_DEFAULT],
+        'broker_report_totals' => ['columns' => ['broker' => 'Corretor', 'quantity' => 'Comissões (Qtd)', 'total' => 'Valor Total'], 'default' => ['broker', 'asc']],
+        'accounts' => ['columns' => ['name' => 'Nome', 'bank' => 'Banco', 'type' => 'Tipo', 'balance' => 'Saldo'], 'default' => ['name', 'asc']],
+        'cards' => ['columns' => ['name' => 'Cartão', 'holder' => 'Titular', 'limit' => 'Limite', 'cycle' => 'Fech./Venc.', 'due' => 'A pagar'], 'default' => ['name', 'asc']],
+        'loans' => ['columns' => ['date' => 'Data', 'person' => 'Pessoa', 'description' => 'Descrição', 'principal' => 'Principal', 'balance' => 'Saldo', 'status' => 'Situação'], 'default' => self::SORT_DEFAULT],
+        'loan_payments' => ['columns' => ['date' => 'Data', 'total' => 'Total', 'principal' => 'Principal', 'interest' => 'Juros', 'account' => 'Conta'], 'default' => self::SORT_DEFAULT],
+        'loan_installments' => ['columns' => ['number' => 'Parcela', 'amount' => 'Valor', 'open' => 'Principal em aberto', 'due' => 'Vencimento'], 'default' => ['number', 'asc']],
+        'receivables' => ['columns' => ['person' => 'Pessoa / descrição', 'original' => 'Valor original', 'paid' => 'Baixado', 'balance' => 'Saldo', 'due' => 'Próximo vencimento', 'status' => 'Situação'], 'default' => ['due', 'asc']],
+        'receivable_installments' => ['columns' => ['number' => 'Parcela', 'amount' => 'Valor', 'balance' => 'Saldo', 'due' => 'Vencimento combinado', 'invoice' => 'Fatura do cartão'], 'default' => ['number', 'asc']],
+        'recurring' => ['columns' => ['description' => 'Descrição', 'frequency' => 'Frequência', 'amount' => 'Valor', 'status' => 'Status'], 'default' => ['description', 'asc']],
+        'cashflow_items' => ['columns' => ['date' => 'Data', 'source' => 'Origem', 'description' => 'Descrição', 'inflow' => 'Entrada', 'outflow' => 'Saída'], 'default' => ['date', 'asc']],
+        'cashflow_months' => ['columns' => ['month' => 'Mês', 'income' => 'Entradas previstas', 'expense' => 'Saídas previstas', 'net' => 'Líquido', 'balance' => 'Saldo projetado'], 'default' => ['month', 'asc']],
+        'cashflow_categories' => ['columns' => ['category' => 'Categoria', 'own_income' => 'Receita própria', 'own_expense' => 'Despesa própria', 'other_in' => 'Outras entradas', 'other_out' => 'Outras saídas', 'result' => 'Resultado próprio'], 'default' => ['category', 'asc']],
+        'cashflow_accounts' => ['columns' => ['account' => 'Conta', 'inflow' => 'Entradas', 'outflow' => 'Saídas', 'balance' => 'Saldo do período'], 'default' => ['account', 'asc']],
+        'contacts' => ['columns' => ['name' => 'Nome', 'type' => 'Tipo', 'document' => 'Documento', 'phone' => 'Telefone', 'email' => 'E-mail', 'status' => 'Status'], 'default' => ['name', 'asc']],
+        'division_movements' => ['columns' => ['date' => 'Data', 'type' => 'Tipo', 'description' => 'Descrição', 'amount' => 'Valor'], 'default' => self::SORT_DEFAULT],
+        'properties' => ['columns' => ['name' => 'Bem', 'type' => 'Tipo', 'holder' => 'Titular', 'acquisition' => 'Aquisição / total', 'current' => 'Valor atual', 'status' => 'Situação'], 'default' => ['name', 'asc']],
+        'assets' => ['columns' => ['ticker' => 'Ticker', 'name' => 'Nome', 'class' => 'Classe', 'quantity' => 'Quantidade', 'avg_price' => 'Preço médio'], 'default' => ['ticker', 'asc']],
+        'operations' => ['columns' => ['date' => 'Data', 'broker' => 'Corretora', 'asset' => 'Ativo', 'type' => 'Tipo', 'quantity' => 'Qtd', 'price' => 'Preço', 'total' => 'Total', 'result' => 'Resultado realizado'], 'default' => self::SORT_DEFAULT],
+        'dividends' => ['columns' => ['date' => 'Data', 'asset' => 'Ativo', 'type' => 'Tipo', 'quantity' => 'Qtd', 'per_share' => 'R$/un', 'total' => 'Total'], 'default' => self::SORT_DEFAULT],
+        'positions' => ['columns' => ['ticker' => 'Ticker', 'class' => 'Classe', 'quantity' => 'Quantidade', 'avg_price' => 'Preço médio', 'invested' => 'Investido', 'quote' => 'Cotação', 'market' => 'Valor de mercado', 'result' => 'Resultado', 'percent' => '%'], 'default' => ['ticker', 'asc']],
+        'profitability' => ['columns' => ['asset' => 'Ativo', 'purchases' => 'Compras', 'sales' => 'Vendas', 'gain' => 'Lucro / prejuízo nas vendas', 'income' => 'Proventos', 'result' => 'Resultado'], 'default' => ['asset', 'asc']],
+        'b3_positions' => ['columns' => ['asset' => 'Ativo', 'status' => 'Situação', 'quantity' => 'Quantidade', 'custody' => 'Custódia', 'lent' => 'Emprestada', 'avg_price' => 'PM', 'close' => 'Fechamento', 'value' => 'Valor', 'institutions' => 'Instituições (B3)'], 'default' => ['asset', 'asc']],
+        'b3_years' => ['columns' => ['year' => 'Ano', 'total' => 'Total'], 'default' => ['year', 'desc']],
+        'b3_incomes' => ['columns' => ['date' => 'Pagamento', 'asset' => 'Ativo', 'type' => 'Tipo', 'quantity' => 'Qtd. base', 'gross' => 'Bruto', 'tax' => 'IR', 'net' => 'Líquido', 'broker' => 'Corretora', 'source' => 'Origem'], 'default' => self::SORT_DEFAULT],
+        'statement_rows' => ['columns' => ['number' => '#', 'date' => 'Data', 'ticker' => 'Ticker', 'type' => 'Tipo', 'quantity' => 'Qtd', 'gross' => 'Bruto', 'tax' => 'IR', 'net' => 'Líquido', 'status' => 'Status'], 'default' => ['number', 'asc']],
+        'statement_events' => ['columns' => ['date' => 'Data', 'ticker' => 'Ticker', 'description' => 'Descrição', 'type' => 'Tipo', 'amount' => 'Valor', 'status' => 'Situação'], 'default' => self::SORT_DEFAULT],
+        'writs_report_open' => ['columns' => ['beneficiary' => 'Beneficiário', 'process' => 'Processo', 'type' => 'Tipo', 'purchase' => 'Compra', 'forecast' => 'Previsão', 'status' => 'Situação'], 'default' => ['forecast', 'asc']],
+        'writs_report_groups' => ['columns' => ['group' => 'Grupo', 'quantity' => 'Qtde', 'real_avg' => 'Média real', 'range' => 'Mín–máx', 'estimated_avg' => 'Média estimada', 'diff' => 'Diferença'], 'default' => ['group', 'asc']],
+        'writs_report_times' => ['columns' => ['process' => 'Processo', 'type' => 'Tipo', 'court' => 'Tribunal', 'purchase' => 'Compra', 'receipt' => 'Recebimento', 'real' => 'Real', 'estimated' => 'Estimado'], 'default' => ['receipt', 'desc']],
+        'writs_report_profit' => ['columns' => ['process' => 'Processo', 'type' => 'Tipo', 'paid' => 'Pago', 'received' => 'Recebido', 'profit' => 'Lucro', 'percent' => '%', 'days' => 'Dias', 'monthly' => '% a.m.'], 'default' => ['profit', 'desc']],
+        'writs_timeline' => ['columns' => ['date' => 'Data', 'type' => 'Tipo', 'description' => 'Descrição', 'amount' => 'Valor'], 'default' => self::SORT_DEFAULT],
+        'writs_metrics_months' => ['columns' => ['month' => 'Mês', 'received' => 'Recebido', 'profit' => 'Lucro', 'quantity' => 'Qtde'], 'default' => ['month', 'asc']],
+        'writs_metrics_years' => ['columns' => ['year' => 'Ano', 'received' => 'Recebido', 'cost' => 'Custo', 'profit' => 'Lucro', 'percent' => '%', 'quantity' => 'Qtde'], 'default' => ['year', 'desc']],
+        'writs_metrics_forecast' => ['columns' => ['month' => 'Mês previsto', 'expected' => 'Deve voltar', 'cost' => 'Custo', 'quantity' => 'Qtde'], 'default' => ['month', 'asc']],
+        'partnership_contributions' => ['columns' => ['date' => 'Data', 'status' => 'Status', 'purpose' => 'Finalidade', 'account' => 'Conta', 'amount' => 'Valor'], 'default' => self::SORT_DEFAULT],
+        'partnership_expenses' => ['columns' => ['date' => 'Data', 'description' => 'Descrição', 'category' => 'Categoria', 'account' => 'Conta', 'total' => 'Total', 'share' => 'Participação', 'amount' => 'Valor do sócio'], 'default' => self::SORT_DEFAULT],
+        'partnership_distributions' => ['columns' => ['date' => 'Data', 'source' => 'Origem', 'account' => 'Conta de destino', 'amount' => 'Valor recebido'], 'default' => self::SORT_DEFAULT],
+        'import_preview' => ['columns' => ['date' => 'Data', 'description' => 'Descrição', 'category' => 'Categoria', 'amount' => 'Valor'], 'default' => ['date', 'asc']],
+    ];
+
+    /** @return array<string, string> */
+    public static function sortColumns(string $list = 'transactions'): array
+    {
+        return self::SORT_LISTS[$list]['columns'] ?? [];
+    }
+
+    /** @return array{0: string, 1: string} */
+    public static function sortDefault(string $list = 'transactions'): array
+    {
+        return self::SORT_LISTS[$list]['default'] ?? self::SORT_DEFAULT;
+    }
 
     /** @return array{0: string, 1: string} [coluna, direção] validados (lista fechada; inválido volta ao padrão). */
     public static function sort(?User $user, string $list = 'transactions'): array
     {
         $v = (array) (((array) ($user?->preferences ?? []))['sort'][$list] ?? []);
 
-        return self::validSort((string) ($v['by'] ?? ''), (string) ($v['dir'] ?? ''));
+        return self::validSort((string) ($v['by'] ?? ''), (string) ($v['dir'] ?? ''), $list);
     }
 
     /** @return array{0: string, 1: string} */
-    public static function validSort(string $by, string $dir): array
+    public static function validSort(string $by, string $dir, string $list = 'transactions'): array
     {
-        if (! array_key_exists($by, self::SORT_COLUMNS)) {
-            return self::SORT_DEFAULT;
+        $columns = self::sortColumns($list);
+        if ($columns === [] || ! array_key_exists($by, $columns)) {
+            return self::sortDefault($list);
         }
 
         return [$by, in_array($dir, ['asc', 'desc'], true) ? $dir : 'asc'];
@@ -66,7 +137,7 @@ class UserPreferences
     /** @return array{0: string, 1: string} */
     public static function setSort(?User $user, string $by, string $dir, string $list = 'transactions'): array
     {
-        [$by, $dir] = self::validSort($by, $dir);
+        [$by, $dir] = self::validSort($by, $dir, $list);
         if ($user) {
             $prefs = (array) ($user->fresh()?->preferences ?? $user->preferences ?? []);
             $prefs['sort'] = array_merge((array) ($prefs['sort'] ?? []), [$list => ['by' => $by, 'dir' => $dir]]);
