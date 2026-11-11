@@ -55,9 +55,10 @@ class HonorariosExtrasTest extends TestCase
         [$receipt] = $this->example();
         Volt::test('banking.transactions.process-receipt-form', ['receiptId' => $receipt->id])
             ->assertSee('1. Meus honorários')
-            ->assertSee('Honorário principal é o valor do processo')
-            ->assertSee('+ Adicionar honorário extra')
-            ->assertSee('Este recebimento é só honorário extra do mesmo processo')
+            ->assertSee('A minha parte extra é só sua')
+            ->assertSee('+ Adicionar minha parte extra')
+            ->assertSee('Este recebimento é só minha parte extra do mesmo processo')
+            ->assertDontSee('Entra na base do escritório e do corretor')
             ->assertSee('Parte do escritório (Mota e Silva Advogados)')
             ->assertDontSee('Comissão do escritório');
     }
@@ -123,6 +124,7 @@ class HonorariosExtrasTest extends TestCase
         $this->assertSame($category->id, $process->category_id);
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
             ->assertSee('Total dos honorários')
+            ->assertSee('Total da minha parte')
             ->assertSee('Honorário extra')
             ->assertSee('R$ 500,00')
             ->assertSee('Minha receita')
@@ -132,26 +134,23 @@ class HonorariosExtrasTest extends TestCase
         $this->assertEquals(2000, $report->viewData('byCategory')->get($category->name)['income']);
     }
 
-    public function test_extra_marked_in_base_increases_office_and_broker_percentages(): void
+    public function test_extra_never_enters_office_or_broker_base_even_if_flag_is_sent(): void
     {
         [$receipt, , , $data] = $this->example();
         $data['fee_extras'] = [[
             'type' => 'other', 'description' => 'Outro valor', 'amount' => '500.00', 'in_commission_base' => true,
         ]];
         $values = app(ProcessReceiptService::class)->calculate($receipt, $data);
-        $this->assertSame(350000, $values['commission_base']);
-        $this->assertSame(350000, $values['fees_total']);
-        $this->assertSame(650000, $values['client']);
-        $this->assertSame(105000, $values['office']);
-        $this->assertSame(70000, $values['broker']);
-        $this->assertSame(175000, $values['own']);
+        $this->assertSame(300000, $values['commission_base']);
+        $this->assertSame(90000, $values['office']);
+        $this->assertSame(60000, $values['broker']);
+        $this->assertSame(200000, $values['own']);
         $this->assertSame($values['total'], $values['client'] + $values['office'] + $values['broker'] + $values['own']);
         app(ProcessReceiptService::class)->save($receipt, $data);
         $item = $receipt->fresh()->processReceipt->feeItems()->sole();
-        $this->assertSame('other', $item->kind);
-        $this->assertTrue($item->in_commission_base);
+        $this->assertFalse($item->in_commission_base);
         Volt::test('banking.transactions.distribution', ['receiptId' => $receipt->id])
-            ->assertSee('entra na base do escritório e do corretor');
+            ->assertSee('Total da minha parte')->assertSee('Minha parte extra')->assertSee('Minha parte (honorário normal)');
     }
 
     public function test_principal_plus_extras_cannot_exceed_the_bank_entry(): void
@@ -184,8 +183,7 @@ class HonorariosExtrasTest extends TestCase
             ->assertSet('form.office_amount', '0.00')
             ->assertSet('form.fee_extras.0.type', 'extra')
             ->assertSet('form.fee_extras.0.amount', '800.00')
-            ->assertSet('form.fee_extras.0.in_commission_base', false)
-            ->set('form.client_name', 'Cliente')
+                        ->set('form.client_name', 'Cliente')
             ->set('form.process_ref', '0000000-00.0000.0.00.0001')
             ->set('form.category_id', $category->id)
             ->set('form.fees_mode', 'amount')
@@ -204,7 +202,7 @@ class HonorariosExtrasTest extends TestCase
         $this->assertFalse($second->destinations()->where('kind', 'office')->exists());
         $this->assertFalse($second->destinations()->where('kind', 'broker')->exists());
         Volt::test('banking.transactions.distribution', ['receiptId' => $second->id])
-            ->assertSee('Só honorário extra');
+            ->assertSee('Só minha parte extra');
     }
 
     public function test_extra_only_requires_the_process_number(): void

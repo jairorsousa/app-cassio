@@ -109,14 +109,12 @@ class ProcessReceiptService
      */
     public function extrasTotals(array $data): array
     {
-        $in = $out = 0;
+        $in = 0;
+        $out = 0;
         foreach ($this->extrasRows($data) as $row) {
             $cents = $this->destinations->cents((string) ($row['amount'] ?? '0'), true);
-            if (! empty($row['in_commission_base'])) {
-                $in += $cents;
-            } else {
-                $out += $cents;
-            }
+            // Minha parte extra é sempre só do titular: nunca entra na base do escritório nem do corretor.
+            $out += $cents;
         }
 
         return ['in' => $in, 'out' => $out, 'total' => $in + $out];
@@ -301,7 +299,6 @@ class ProcessReceiptService
             'fee_extras.*.type' => 'required|in:extra,other',
             'fee_extras.*.description' => 'nullable|string|max:200',
             'fee_extras.*.amount' => ['required', ...$money],
-            'fee_extras.*.in_commission_base' => 'sometimes|boolean',
             'includes_writ' => 'sometimes|boolean',
             'writ_id' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', 'integer', Rule::exists('writs', 'id')->whereNull('deleted_at')],
             'writ_amount' => [Rule::requiredIf(! empty($data['includes_writ'])), 'nullable', ...$money],
@@ -394,7 +391,7 @@ class ProcessReceiptService
                     'kind' => (($row['type'] ?? $row['kind'] ?? 'extra') === 'other') ? 'other' : 'extra',
                     'description' => trim((string) ($row['description'] ?? '')) ?: null,
                     'amount' => $this->money($cents),
-                    'in_commission_base' => ! empty($row['in_commission_base']),
+                    'in_commission_base' => false,
                 ]);
             }
             $client = $receipt->destinations()->where('kind', 'client')->sole();

@@ -1509,9 +1509,9 @@ new #[Layout('layouts.app')] class extends Component
                                 <x-fx.badge variant="neutral">Recebimento de processo</x-fx.badge>
                                 <div class="mt-2 space-y-1 text-xs text-cryptex-text-secondary">
                                     <div>Minha receita: <strong>R$ {{ number_format($t->destinations->where('kind', 'own')->sum('amount'), 2, ',', '.') }}</strong></div>
-                                    @if ($t->processReceipt?->is_extra_only)<div>Só honorário extra</div>@endif
+                                    @if ($t->processReceipt?->is_extra_only)<div>Só minha parte extra</div>@endif
                                     @if (($t->processReceipt?->feeItems->count() ?? 0) > 0)
-                                        <div>Honorários extras: @foreach ($t->processReceipt->feeItems as $item){{ $item->kindLabel() }}@if ($item->description) · {{ $item->description }}@endif R$ {{ number_format((float) $item->amount, 2, ',', '.') }}@if (! $loop->last); @endif @endforeach</div>
+                                        <div>Minha parte extra: @foreach ($t->processReceipt->feeItems as $item){{ $item->kindLabel() }}@if ($item->description) · {{ $item->description }}@endif R$ {{ number_format((float) $item->amount, 2, ',', '.') }}@if (! $loop->last); @endif @endforeach</div>
                                     @endif
                                     @php $writOwn = $t->destinations->sum(fn ($part) => (float) $part->payments->sum('writ_amount')); @endphp
                                     @if ($writOwn > 0)<div>Requisitórios adquiridos: <strong>R$ {{ number_format($writOwn, 2, ',', '.') }}</strong></div>@endif

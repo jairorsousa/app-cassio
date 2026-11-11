@@ -52,7 +52,6 @@ new class extends Component {
                     'type' => $item->kind === 'other' ? 'other' : 'extra',
                     'description' => (string) ($item->description ?? ''),
                     'amount' => (string) $item->amount,
-                    'in_commission_base' => (bool) $item->in_commission_base,
                 ])->all()
                 : [],
         ]);
@@ -76,9 +75,8 @@ new class extends Component {
             if (! $hasExtra) {
                 $gross = Transaction::find($this->receiptId)?->amount;
                 $this->form['fee_extras'] = [[
-                    'key' => (string) Str::uuid(), 'type' => 'extra', 'description' => 'Honorário extra',
+                    'key' => (string) Str::uuid(), 'type' => 'extra', 'description' => 'Minha parte extra',
                     'amount' => $gross ? number_format((float) $gross, 2, '.', '') : '0.00',
-                    'in_commission_base' => false,
                 ]];
             }
         }
@@ -127,7 +125,7 @@ new class extends Component {
     public function addFeeExtra(): void
     {
         if (count($this->form['fee_extras'] ?? []) < 20) {
-            $this->form['fee_extras'][] = ['key' => (string) Str::uuid(), 'type' => 'extra', 'description' => '', 'amount' => '', 'in_commission_base' => false];
+            $this->form['fee_extras'][] = ['key' => (string) Str::uuid(), 'type' => 'extra', 'description' => '', 'amount' => ''];
         }
     }
 
@@ -216,7 +214,7 @@ new class extends Component {
 }; ?>
 
 <form wire:submit="save" class="space-y-5">
-    <p class="text-sm text-mono-600">Uma única entrada no banco, com o valor bruto. Separe a parte do cliente (ou do requisitório que você comprou) e os honorários. Honorário principal é o valor do processo. Extra é um valor seu, cobrado à parte. A parte do escritório e a do corretor saem do principal, salvo se você marcar o contrário.</p>
+    <p class="text-sm text-mono-600">Uma única entrada no banco, com o valor bruto. Separe a parte do cliente (ou do requisitório que você comprou) e os honorários.</p>
     <div class="grid gap-4 md:grid-cols-2">
         <div><label for="process-client-contact" class="mb-2 block text-sm text-mono-600">Contato do cliente</label><select id="process-client-contact" wire:model.live="form.client_contact_id" class="h-12 w-full rounded-pill border-mono-200 bg-mono-white text-sm text-mono-900"><option value="">Não vinculado</option>@foreach ($contacts as $contact)<option value="{{ $contact->id }}">{{ $contact->name }}</option>@endforeach</select></div>
         <x-jr.input label="Cliente (nome no repasse) *" name="form.client_name" wire:model="form.client_name" maxlength="200" required />
@@ -235,17 +233,17 @@ new class extends Component {
     </section>
     <section class="space-y-4 rounded-xl border border-mono-100 bg-mono-50 p-4">
         <h4 class="font-semibold text-mono-900">1. Meus honorários</h4>
-        <p class="text-xs text-mono-600">Honorário principal é o valor do processo. Extra é um valor seu, cobrado à parte. A parte do escritório e a do corretor saem do principal, salvo se você marcar o contrário.</p>
-        <label class="inline-flex cursor-pointer items-start gap-3 text-sm text-mono-900"><input type="checkbox" wire:model.live="form.is_extra_only" class="mt-0.5 rounded border-mono-200 text-primary-500" data-test="so-honorario-extra"> <span><strong>Este recebimento é só honorário extra do mesmo processo</strong><span class="block text-xs text-mono-600">Use quando você já lançou o honorário principal e agora cobra um extra, em outra entrada. Informe o mesmo número do processo. Sem comissão de escritório ou corretor, salvo se você incluir.</span></span></label>
-        <div class="flex gap-2" role="group" aria-label="Informar honorário principal por">
+        <p class="text-xs text-mono-600">O honorário normal é dividido entre você, o escritório e o corretor. A minha parte extra é só sua: não entra na parte do escritório nem do corretor.</p>
+        <label class="inline-flex cursor-pointer items-start gap-3 text-sm text-mono-900"><input type="checkbox" wire:model.live="form.is_extra_only" class="mt-0.5 rounded border-mono-200 text-primary-500" data-test="so-honorario-extra"> <span><strong>Este recebimento é só minha parte extra do mesmo processo</strong><span class="block text-xs text-mono-600">Use quando você já lançou o honorário principal e agora cobra um extra, em outra entrada. Informe o mesmo número do processo. Ele é só seu: sem parte do escritório nem do corretor.</span></span></label>
+        <div class="flex gap-2" role="group" aria-label="Informar honorário normal por">
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('fees_mode', '{{ $mode }}')" aria-pressed="{{ $form['fees_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['fees_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
         <div class="grid items-end gap-4 md:grid-cols-2">
             <div wire:key="process-fees-{{ $form['fees_mode'] }}">
                 @if ($form['fees_mode'] === 'percent')
-                    <x-jr.input label="Honorário principal (% do recebimento)" name="form.fees" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.fees" required />
+                    <x-jr.input label="Honorário normal (% do recebimento)" name="form.fees" type="text" x-decimal="2" wire:model.live.debounce.300ms="form.fees" required />
                 @else
-                    <x-jr.input label="Honorário principal (R$)" name="form.fees" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fees" required />
+                    <x-jr.input label="Honorário normal (R$)" name="form.fees" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fees" required />
                 @endif
             </div>
             @if ($preview)<p class="pb-3 text-sm text-mono-900">Valor bruto do cliente: <strong>R$ {{ number_format($preview['client'] / 100, 2, ',', '.') }}</strong></p>@endif
@@ -255,7 +253,7 @@ new class extends Component {
                 <div wire:key="fee-extra-{{ $extra['key'] ?? $index }}" class="space-y-3 rounded-xl border border-mono-100 bg-white p-3">
                     <div class="grid items-end gap-3 md:grid-cols-[1fr_1.4fr_1fr_auto]">
                         <div>
-                            <label class="mb-1 block text-xs text-mono-600" for="fee-extra-type-{{ $index }}">Tipo</label>
+                            <label class="mb-1 block text-xs text-mono-600" for="fee-extra-type-{{ $index }}">Minha parte extra · tipo</label>
                             <select id="fee-extra-type-{{ $index }}" wire:model.live="form.fee_extras.{{ $index }}.type" class="h-11 w-full rounded-xl border-mono-200 text-sm">
                                 <option value="extra">Extra</option>
                                 <option value="other">Outro</option>
@@ -263,17 +261,18 @@ new class extends Component {
                         </div>
                         <x-jr.input label="Descrição" :name="'form.fee_extras.'.$index.'.description'" wire:model="form.fee_extras.{{ $index }}.description" maxlength="200" />
                         <x-jr.input label="Valor (R$)" :name="'form.fee_extras.'.$index.'.amount'" type="text" inputmode="numeric" x-money wire:model.live.debounce.300ms="form.fee_extras.{{ $index }}.amount" />
-                        <button type="button" wire:click="removeFeeExtra({{ $index }})" class="h-11 px-2 text-sm text-error" aria-label="Remover honorário extra {{ $index + 1 }}">Remover</button>
+                        <button type="button" wire:click="removeFeeExtra({{ $index }})" class="h-11 px-2 text-sm text-error" aria-label="Remover minha parte extra {{ $index + 1 }}">Remover</button>
                     </div>
-                    <label class="inline-flex cursor-pointer items-start gap-2 text-sm text-mono-900"><input type="checkbox" wire:model.live="form.fee_extras.{{ $index }}.in_commission_base" class="mt-0.5 rounded border-mono-200 text-primary-500"> Entra na base do escritório e do corretor</label>
                 </div>
             @endforeach
-            <button type="button" wire:click="addFeeExtra" class="text-sm font-semibold text-primary-600">+ Adicionar honorário extra</button>
+            <button type="button" wire:click="addFeeExtra" class="text-sm font-semibold text-primary-600">+ Adicionar minha parte extra</button>
         </div>
         @if ($preview)
             <div class="grid gap-3 sm:grid-cols-2 text-sm text-mono-900">
+                <p>Minha parte (honorário normal): <strong>R$ {{ number_format(($preview['own'] - ($preview['extras'] ?? 0)) / 100, 2, ',', '.') }}</strong></p>
+                <p>Minha parte extra: <strong>R$ {{ number_format(($preview['extras'] ?? 0) / 100, 2, ',', '.') }}</strong></p>
+                <p>Total da minha parte: <strong>R$ {{ number_format($preview['own'] / 100, 2, ',', '.') }}</strong></p>
                 <p>Total dos honorários: <strong>R$ {{ number_format(($preview['fees_total'] ?? $preview['fees']) / 100, 2, ',', '.') }}</strong></p>
-                <p>Minha receita: <strong>R$ {{ number_format($preview['own'] / 100, 2, ',', '.') }}</strong></p>
             </div>
         @endif
     </section>
@@ -282,7 +281,7 @@ new class extends Component {
         <div class="flex gap-2" role="group" aria-label="Informar comissões por">
             @foreach (['amount' => 'Valor (R$)', 'percent' => 'Percentual (%)'] as $mode => $label)<button type="button" wire:click="setMode('commission_mode', '{{ $mode }}')" aria-pressed="{{ $form['commission_mode'] === $mode ? 'true' : 'false' }}" class="rounded-pill border px-4 py-2 text-sm {{ $form['commission_mode'] === $mode ? 'border-primary-500 bg-primary-50 text-primary-600' : 'border-mono-200 bg-white text-mono-600' }}">{{ $label }}</button>@endforeach
         </div>
-        <p class="text-xs text-mono-600">Este seletor vale para a parte do escritório (percentual sobre o honorário principal, mais os extras que você marcar). Cada corretor tem a própria base e modo abaixo.</p>
+        <p class="text-xs text-mono-600">Este seletor vale para a parte do escritório (percentual sobre o honorário normal; a minha parte extra nunca entra). Cada corretor tem a própria base e modo abaixo.</p>
         <p class="text-sm text-mono-600">Ao salvar, o valor líquido do cliente ficará negativo na conta <strong>Cliente</strong> e a parte do escritório na conta <strong>Mota e Silva Advogados</strong>, indicando os valores a repassar. O dinheiro permanece na conta bancária até o pagamento. Registre pagamentos totais ou parciais em <strong>Contas → Gerenciar repasses</strong>. Cadastre essas contas com o tipo <strong>Repasse</strong> em <a href="{{ route('banking.accounts.index') }}" class="font-semibold text-primary-600">Contas</a>.</p>
 
         <div class="grid gap-4 md:grid-cols-2">
@@ -387,7 +386,9 @@ new class extends Component {
                 $brokerNames = $brokers->keyBy('id');
                 foreach (collect($form['brokers'])->filter(fn ($r) => ! empty($r['broker_id']))->values() as $i => $r) { $summary['Corretor · '.($brokerNames[(int) $r['broker_id']]->name ?? '#'.$r['broker_id'])] = $preview['brokers'][$i] ?? 0; }
                 if ($offset) { $summary['Adiantamentos compensados'] = $offset; }
-                $summary['Minha receita'] = $preview['own'];
+                $summary['Minha parte (honorário normal)'] = $preview['own'] - ($preview['extras'] ?? 0);
+                if (($preview['extras'] ?? 0) > 0) { $summary['Minha parte extra'] = $preview['extras']; }
+                $summary['Total da minha parte'] = $preview['own'];
             @endphp
             @foreach ($summary as $label => $value)
                 <div class="{{ $value < 0 ? 'text-error' : 'text-mono-900' }}">{{ $label }}<strong class="mt-1 block">R$ {{ number_format($value / 100, 2, ',', '.') }}</strong></div>

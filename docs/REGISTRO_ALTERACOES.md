@@ -1,5 +1,14 @@
 # Registro de alterações
 
+## 2026-11-11 — Recebimento de processo: "Minha parte extra" é só do Cassio
+
+Pedido do Cassio (t290u): o honorário extra é sempre só dele, nunca entra na parte do escritório nem na base do corretor.
+
+- A caixa "Entra na base do escritório e do corretor" saiu da tela. O servidor ignora esse campo: a parte extra nunca entra na base do escritório nem do corretor. Nenhum registro estava marcado (0 extras gravados até agora).
+- Novos nomes: "+ Adicionar minha parte extra"; no resumo e no detalhe aparecem "Minha parte (honorário normal)", "Minha parte extra" e "Total da minha parte". O campo principal passou a se chamar "Honorário normal".
+- O texto de ajuda aparece uma vez só, dentro de "1. Meus honorários", e diz que a parte extra é só sua.
+- Sem migração. Os 5 recebimentos existentes continuam iguais. Teste: `tests/Feature/Banking/HonorariosExtrasTest.php`.
+
 ## 2026-11-11 — Bens: financiamento (entrada, parcelas e dívida no patrimônio)
 
 Pedido do Cassio (t281u / t287u): lançar um bem comprado com entrada e financiamento (ex.: Haval H6 GT), ver o total pago com juros e o saldo devedor, e marcar cada parcela pelo carnê, em contas diferentes (boleto).

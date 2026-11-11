@@ -178,20 +178,21 @@ new class extends Component {
                 @if ($processReceipt)
                     <div class="rounded-xl bg-mono-50 p-4 text-sm text-mono-900">
                         @if ($processReceipt->is_extra_only)
-                            <p class="mb-2 font-semibold">Só honorário extra{{ $processReceipt->process_ref ? " · processo ".$processReceipt->process_ref : "" }}</p>
+                            <p class="mb-2 font-semibold">Só minha parte extra{{ $processReceipt->process_ref ? " · processo ".$processReceipt->process_ref : "" }}</p>
                         @endif
                         <p>Corretor: <strong>{{ $processReceipt->broker?->name ?? 'Sem corretor' }}</strong></p>
-                        <p>Honorário principal: <strong>R$ {{ number_format((float) $processReceipt->fees_amount, 2, ',', '.') }}</strong>@if ($processReceipt->extrasCents() > 0)<span> · Extras: <strong>R$ {{ number_format($processReceipt->extrasCents() / 100, 2, ',', '.') }}</strong></span>@endif · Total dos honorários: <strong>R$ {{ number_format($processReceipt->totalFeesCents() / 100, 2, ',', '.') }}</strong></p>
+                        <p>Honorário normal: <strong>R$ {{ number_format((float) $processReceipt->fees_amount, 2, ',', '.') }}</strong>@if ($processReceipt->extrasCents() > 0)<span> · Minha parte extra: <strong>R$ {{ number_format($processReceipt->extrasCents() / 100, 2, ',', '.') }}</strong></span>@endif · Total dos honorários: <strong>R$ {{ number_format($processReceipt->totalFeesCents() / 100, 2, ',', '.') }}</strong></p>
                         <p>Cliente bruto: <strong>R$ {{ number_format(((int) round((float) $receipt->amount * 100) - $processReceipt->totalFeesCents()) / 100, 2, ',', '.') }}</strong></p>
                         @foreach ($processReceipt->feeItems as $item)
-                            <p>{{ $item->kindLabel() }}{{ $item->description ? ' · '.$item->description : '' }}: <strong>R$ {{ number_format((float) $item->amount, 2, ',', '.') }}</strong>{{ $item->in_commission_base ? ' · entra na base do escritório e do corretor' : '' }}</p>
+                            <p>Minha parte extra · {{ $item->kindLabel() }}{{ $item->description ? ' · '.$item->description : '' }}: <strong>R$ {{ number_format((float) $item->amount, 2, ',', '.') }}</strong></p>
                         @endforeach
                         <p>Despesas recuperadas: <strong>R$ {{ number_format($recoveredAmount, 2, ',', '.') }}</strong></p>
                         <p>Categoria da minha receita: <strong>{{ $processReceipt->category?->name ?? 'Sem categoria' }}</strong></p>
                     </div>
                 @endif
                 <div class="grid gap-3 md:grid-cols-3">
-                    <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Minha receita<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong></div>
+                    @php $extraAmount = $processReceipt ? $processReceipt->extrasCents() / 100 : 0; @endphp
+                    <div class="rounded-xl bg-green-50 p-4 text-sm text-green-800">Total da minha parte<strong class="mt-1 block text-xl">R$ {{ number_format($ownAmount, 2, ',', '.') }}</strong>@if ($extraAmount > 0)<span class="mt-1 block text-xs">Minha parte (honorário normal): R$ {{ number_format($ownAmount - $extraAmount, 2, ',', '.') }} · Minha parte extra: R$ {{ number_format($extraAmount, 2, ',', '.') }}</span>@endif</div>
                     <div class="rounded-xl bg-orange-50 p-4 text-sm text-orange-800">Cliente líquido<strong class="mt-1 block text-xl">R$ {{ number_format($parts->where('kind', 'client')->sum('amount') - $recoveredAmount - $clientOffsetAmount, 2, ',', '.') }}</strong></div>
                     <div class="rounded-xl bg-blue-50 p-4 text-sm text-blue-800">{{ $parts->contains('kind', 'broker') ? 'Corretores e parte do escritório' : 'Parte do escritório (Mota e Silva Advogados)' }}<strong class="mt-1 block text-xl">R$ {{ number_format($parts->whereIn('kind', ['broker', 'office'])->sum('amount'), 2, ',', '.') }}</strong></div>
                 </div>

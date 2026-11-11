@@ -58,8 +58,7 @@ class ProcessReceipt extends Model
 
     public function commissionBaseCents(): int
     {
-        $inBase = (int) round((float) $this->feeItems->where('in_commission_base', true)->sum('amount') * 100);
-
-        return (int) round((float) $this->fees_amount * 100) + $inBase;
+        // A parte extra nunca entra na base do escritório nem do corretor.
+        return (int) round((float) $this->fees_amount * 100);
     }
 }
