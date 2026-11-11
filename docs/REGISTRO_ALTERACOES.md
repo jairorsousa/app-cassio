@@ -1,5 +1,13 @@
 # Registro de alterações
 
+## 2026-11-11 — Paguei por alguém: correção do erro ao salvar e tela mais clara
+
+- O campo/atalho **Paguei por alguém** fica no Financeiro › Lançamentos (botão no rodapé da despesa ou da compra no cartão) e abre Financeiro › Valores a receber.
+- Erro encontrado no `laravel.log` (09/11/2026, 01:15, horário de Brasília): ao salvar “Multa S10, Heleno” (contato Heleno Mota, id 447), o MySQL rejeitou a data vazia em `interest_start_date` (`SQLSTATE[22007]`). A tentativa está em transação e **não deixou valor a receber nem saída bancária pela metade**.
+- Correções: a máscara brasileira de dinheiro (ex.: 1.467,35) é normalizada antes de validar; data de juros vazia passa a valer a data do pagamento; erros de validação e falhas inesperadas aparecem dentro do formulário, em português, em vez de uma tela de erro.
+- A tela explica o que acontece com o dinheiro, reordena os campos (quem, o quê, como pagou, quando devolve), mostra uma prévia antes de salvar e ficou mais fácil de usar no celular. A regra de negócio não mudou.
+- Testes: `tests/Feature/Banking/Etapa6PagueiPorAlguemClarezaTest.php` (e ajustes em `Etapa6PagueiPorAlguemModalTest.php` e `Etapa6ValoresReceberEmprestimosTest.php`). Backup do código: `/root/app-cassio-backups/paguei-por-alguem-20261111/`.
+
 ## 2026-11-11 — Requisitórios: Confirmar Pagamento com despesas opcionais, modal de Assinatura e kanban
 
 - **Despesas cartorais e Outras despesas agora são opcionais** no modal "Confirmar Pagamento" (kanban), no painel de transição da ficha e no formulário: sem asterisco nem `required`; em branco valem 0 e não geram lançamento. "Valor pago ao cedente", "Data do pagamento" e "Conta de origem" continuam obrigatórios (agora também na ficha).
