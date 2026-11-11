@@ -642,6 +642,11 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
+        $normalizedAmount = \App\Support\Money::normalize($this->formAmount);
+        if ($normalizedAmount !== '') {
+            $this->formAmount = $normalizedAmount;
+        }
+
         $this->validate([
             'formDate' => 'required|date',
             'formAmount' => 'required|numeric|min:0.01',
@@ -650,6 +655,14 @@ new #[Layout('layouts.app')] class extends Component
             'formCreditCardId' => [Rule::requiredIf($this->formIsCard), 'nullable', Rule::exists('credit_cards', 'id')->whereNull('deleted_at')->where('status', true)],
             'formInstallments' => 'nullable|integer|min:1|max:36',
             'formNotes' => 'nullable|string|max:5000',
+        ], [
+            'formDate.required' => 'Informe a data do pagamento.',
+            'formAmount.required' => 'Informe o valor do pagamento.',
+            'formAmount.numeric' => 'Informe o valor no formato de dinheiro, por exemplo 150,00.',
+            'formAmount.min' => 'Informe um valor maior que zero.',
+            'formDescription.required' => 'Informe a descrição do pagamento.',
+            'formBankAccountId.required' => 'Selecione a conta de onde o dinheiro sai.',
+            'formCreditCardId.required' => 'Selecione o cartão utilizado.',
         ]);
 
         $params = [
@@ -2012,7 +2025,7 @@ new #[Layout('layouts.app')] class extends Component
                                     <span class="material-icons-outlined text-[18px]" aria-hidden="true">request_quote</span>
                                     Paguei por alguém
                                 </button>
-                                <p class="mt-1 text-xs text-mono-600">Abre Valores a receber com estes dados. Não cria outra saída — a parte de terceiros é separada da despesa própria.</p>
+                                <p class="mt-1 text-xs text-mono-600">Abre a tela “Paguei por alguém” com estes dados. O valor não sai de novo: a parte da outra pessoa vira um valor a receber e o que sobrar fica como sua despesa.</p>
                             @endif
                         </div>
                         <div class="flex shrink-0 flex-wrap items-center justify-end gap-3">
