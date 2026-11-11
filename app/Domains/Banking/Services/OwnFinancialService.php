@@ -138,6 +138,13 @@ class OwnFinancialService
             if ($this->isAssetPurchase($row)) {
                 return 0;
             }
+            // Entrada ou parcela de financiamento de bem (Opção A: parcela inteira fora do resultado).
+            if (in_array($row->source_type, [
+                \App\Domains\Assets\Models\PropertyFinancingInstallment::class,
+                \App\Domains\Assets\Models\PropertyDownPayment::class,
+            ], true)) {
+                return 0;
+            }
             if ($row->credit_card_invoice_id && $regime !== self::ACCRUAL) {
                 return 0;
             }

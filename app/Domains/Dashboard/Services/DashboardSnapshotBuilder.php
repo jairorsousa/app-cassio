@@ -79,6 +79,7 @@ class DashboardSnapshotBuilder
         $dividends12m = (float) $portfolio['dividends_12m'];
         $portfolioSource = $portfolio['source'] === 'b3' ? 'b3:'.$portfolio['base_date']->toDateString() : 'operations';
         $propertiesValue = \App\Domains\Assets\Models\Property::activeTotal();
+        $propertiesFinancingDebt = \App\Domains\Assets\Models\Property::activeFinancingDebt();
 
         // ---- Partnership ----
         $partnerships = Partnership::active()->get();
@@ -136,7 +137,8 @@ class DashboardSnapshotBuilder
             + $writsCapitalAtRisk
             + $thirdPartyReceivable
             + $propertiesValue
-            - $openInvoicesTotal,
+            - $openInvoicesTotal
+            - $propertiesFinancingDebt,
             2
         );
 
@@ -171,6 +173,7 @@ class DashboardSnapshotBuilder
                 'third_party_receivable' => round($thirdPartyReceivable, 2),
                 'open_invoices_total' => round($openInvoicesTotal, 2),
                 'properties' => $propertiesValue,
+                'properties_financing_debt' => round($propertiesFinancingDebt, 2),
                 'portfolio_source' => $portfolioSource,
             ],
             'distribution' => $distribution,

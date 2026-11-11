@@ -205,7 +205,8 @@ class CashflowReportService
 
     /**
      * Previsto no intervalo: lançamentos pendentes, faturas com vencimento no intervalo (saldo restante),
-     * recorrências ativas ainda não geradas e requisitórios adquiridos com previsão (Pago, Peticionamento, Aguardando).
+     * recorrências ativas ainda não geradas, parcelas em aberto de financiamento de bens e requisitórios
+     * adquiridos com previsão (Pago, Peticionamento, Aguardando).
      *
      * @return array{items: list<array>, income: float, expense: float, net: float}
      */
@@ -269,6 +270,27 @@ class CashflowReportService
                 }
                 $split = $w->receiptSplit($amount);
                 $items[] = ['date' => $date->toDateString(), 'source' => 'Requisitório', 'description' => trim(($w->process_number ?: 'Requisitório #'.$w->id).' · '.$w->stageLabel()), 'category' => Category::WRIT_PROFIT_NAME, 'direction' => 'in', 'amount' => round($amount, 2), 'profit' => $split['profit'], 'capital' => $split['capital']];
+            }
+        }
+
+        if (! ($f['person'] ?? null)) {
+            $installments = \App\Domains\Assets\Models\PropertyFinancingInstallment::with(['financing.property', 'bankAccount'])
+                ->where('status', 'open')
+                ->whereBetween('due_date', [$s->toDateString(), $e->toDateString()])
+                ->when($f['account_id'] ?? null, fn ($q, $id) => $q->where('bank_account_id', $id))
+                ->when($f['category_id'] ?? null, fn ($q, $id) => $q->where('category_id', $id))
+                ->get();
+            foreach ($installments as $i) {
+                $fin = $i->financing;
+                $property = $fin?->property;
+                $items[] = [
+                    'date' => $i->due_date->toDateString(),
+                    'source' => 'Financiamento',
+                    'description' => trim('Parcela '.$i->number.'/'.($fin->installment_count ?? '').' · '.($property->description ?? 'Bem').' · '.($fin->creditor ?? '')),
+                    'category' => 'Aquisição de bem',
+                    'direction' => 'out',
+                    'amount' => round((float) $i->amount, 2),
+                ];
             }
         }
 

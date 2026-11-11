@@ -106,7 +106,11 @@ class StatementImportAnalyzer
             } elseif ($dup = $same->first(fn ($t) => round(abs((float) $t->amount), 2) === $abs && abs($t->date->diffInDays(Carbon::parse($r['date']))) <= 2)) {
                 $status = 'duplicate';
                 $note = 'Possível duplicata: já há '.$dup->date->format('d/m').' R$ '.number_format($abs, 2, ',', '.').' · '.mb_substr((string) $dup->description, 0, 40);
-                if ($dup->source_type === \App\Domains\Assets\Models\PropertyPayment::class) {
+                if (in_array($dup->source_type, [
+                    \App\Domains\Assets\Models\PropertyPayment::class,
+                    \App\Domains\Assets\Models\PropertyFinancingInstallment::class,
+                    \App\Domains\Assets\Models\PropertyDownPayment::class,
+                ], true)) {
                     $note = 'Possível duplicata: pagamento de bem já lançado em '.$dup->date->format('d/m').' R$ '.number_format($abs, 2, ',', '.').' · '.mb_substr((string) $dup->description, 0, 40).'. Se for o mesmo, não importe.';
                 }
             } elseif ($kind === 'payment') {

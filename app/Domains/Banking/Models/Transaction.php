@@ -200,9 +200,30 @@ class Transaction extends Model
         return $this->belongsTo(\App\Domains\Assets\Models\PropertyPayment::class, 'source_id');
     }
 
+    public function financingInstallment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Assets\Models\PropertyFinancingInstallment::class, 'source_id');
+    }
+
+    public function downPayment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Domains\Assets\Models\PropertyDownPayment::class, 'source_id');
+    }
+
+    /** Bem ligado a este lançamento (pagamento avulso, entrada ou parcela de financiamento). */
     public function propertyPaymentLink(): ?\App\Domains\Assets\Models\Property
     {
-        return $this->source_type === \App\Domains\Assets\Models\PropertyPayment::class ? $this->propertyPayment?->property : null;
+        if ($this->source_type === \App\Domains\Assets\Models\PropertyPayment::class) {
+            return $this->propertyPayment?->property;
+        }
+        if ($this->source_type === \App\Domains\Assets\Models\PropertyFinancingInstallment::class) {
+            return $this->financingInstallment?->financing?->property;
+        }
+        if ($this->source_type === \App\Domains\Assets\Models\PropertyDownPayment::class) {
+            return $this->downPayment?->property;
+        }
+
+        return null;
     }
 
     /** Despesa do Divisões cuja parte do Cassio é este lançamento (gerado pela despesa ou "sua parte"), para "Trocar categoria". */
